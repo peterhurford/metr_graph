@@ -1845,7 +1845,7 @@ def render_rli():
     rli_current_score = rli_current['rli_score']
 
     # ── Build trajectories ────────────────────────────────────────────────
-    proj_end_date = datetime(2028, 12, 31)
+    proj_end_date = datetime(2026, 12, 31)
     proj_n_days = (proj_end_date - rli_current['date']).days + 1
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [rli_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
@@ -2099,6 +2099,7 @@ def render_rli():
         ("Dec 2026", datetime(2026, 12, 31)),
         ("2027EOY", datetime(2027, 12, 31)),
         ("2028EOY", datetime(2028, 12, 31)),
+        ("2029EOY", datetime(2029, 12, 31)),
     ]
 
     def _proj_rli_at(elapsed_days, start_logit, logit_slopes, superexp=False, hl=None, slope_floor_val=None):
