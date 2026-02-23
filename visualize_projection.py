@@ -1724,6 +1724,7 @@ def render_rli():
         st.markdown("---")
         rli_show_milestones = st.toggle("Milestones", value=True, key="rli_milestones")
         rli_show_labels = st.toggle("Labels", value=True, key="rli_labels")
+        rli_use_log_scale = st.toggle("Log scale", value=False, key="rli_log_scale")
 
         st.markdown("---")
         st.selectbox(
@@ -1995,12 +1996,6 @@ def render_rli():
                 showarrow=False, xanchor='left', yanchor='middle',
                 font=dict(size=10, color=color))
 
-    # --- Median line ---
-    fig.add_trace(go.Scatter(
-        x=proj_dates, y=pct50.tolist(),
-        mode='lines', line=dict(color='#3498db', width=2, dash='dash'),
-        name='Median projection', hoverinfo='skip', showlegend=True,
-    ))
 
     # --- Today vline ---
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2057,7 +2052,32 @@ def render_rli():
             ))
 
     # --- Layout ---
-    y_max = min(max(pct95[-1], max(m['rli_score'] for m in rli_all) + 2, 55) + 5, 105)
+    if rli_use_log_scale:
+        _rli_y_min_data = min(m['rli_score'] for m in rli_all)
+        y_min = _rli_y_min_data * 0.5
+        y_max = min(max(pct95[-1], max(m['rli_score'] for m in rli_all) + 2, 55) + 5, 105)
+        yaxis_cfg = dict(
+            title="RLI Score (%, log scale)",
+            type='log',
+            range=[np.log10(y_min), np.log10(y_max)],
+            gridcolor='rgba(0,0,0,0.1)',
+            zeroline=False,
+            ticksuffix='%',
+            tickfont=dict(color='#1a1a2e'),
+            title_font=dict(color='#1a1a2e'),
+        )
+    else:
+        y_max = min(max(pct95[-1], max(m['rli_score'] for m in rli_all) + 2, 55) + 5, 105)
+        yaxis_cfg = dict(
+            title="RLI Score (%)",
+            range=[0, y_max],
+            gridcolor='rgba(0,0,0,0.1)',
+            zeroline=False,
+            ticksuffix='%',
+            tickfont=dict(color='#1a1a2e'),
+            title_font=dict(color='#1a1a2e'),
+        )
+
     fig.update_layout(
         height=650,
         margin=dict(l=50, r=140, t=50, b=40),
@@ -2069,15 +2089,7 @@ def render_rli():
             tickfont=dict(color='#1a1a2e'),
             zeroline=False,
         ),
-        yaxis=dict(
-            title="RLI Score (%)",
-            range=[0, y_max],
-            gridcolor='rgba(0,0,0,0.1)',
-            zeroline=False,
-            ticksuffix='%',
-            tickfont=dict(color='#1a1a2e'),
-            title_font=dict(color='#1a1a2e'),
-        ),
+        yaxis=yaxis_cfg,
         hovermode='x unified',
         legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
                     bgcolor='rgba(255,255,255,0.95)',
