@@ -1337,9 +1337,9 @@ def render_eci():
         font=dict(size=10, color='gray'), yanchor='top')
 
     # --- Data points ---
-    # Non-frontier models: only show those within 30 pts of frontier max to reduce clutter
+    # Non-frontier models: only show those within 10 pts of frontier max to reduce clutter
     _eci_frontier_max = max(m['eci_score'] for m in eci_all if m['is_frontier'])
-    _eci_nf_cutoff = _eci_frontier_max - 30
+    _eci_nf_cutoff = _eci_frontier_max - 10
     for m in eci_all:
         if m['is_frontier'] or m['eci_score'] < _eci_nf_cutoff:
             continue
