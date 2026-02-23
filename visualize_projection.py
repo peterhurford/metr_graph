@@ -478,13 +478,17 @@ def render_metr():
         use_log_scale = st.toggle("Log scale", value=True, key="log_scale")
 
         st.markdown("---")
-        st.selectbox(
-            "Project as of",
-            frontier_names,
-            index=frontier_names.index(proj_as_of_name),
-            key='_proj_as_of',
-            help="Backtest: project from an earlier model's vantage point.",
-        )
+        with st.expander("Projection range"):
+            st.selectbox(
+                "Project as of",
+                frontier_names,
+                index=frontier_names.index(proj_as_of_name),
+                key='_proj_as_of',
+                help="Backtest: project from an earlier model's vantage point.",
+            )
+            _metr_end_year = st.radio(
+                "Project through", [2026, 2027, 2028, 2029],
+                index=0, horizontal=True, key="metr_end_year")
 
     # ── Reliability metric keys ──────────────────────────────────────────────
     _val_key = 'p80_min' if use_p80 else 'p50_min'
@@ -612,7 +616,7 @@ def render_metr():
 
     # ── Plotly chart ─────────────────────────────────────────────────────────
 
-    proj_end_date = datetime(2026, 12, 31)
+    proj_end_date = datetime(_metr_end_year, 12, 31)
     proj_n_days = (proj_end_date - current['date']).days + 1
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
@@ -1129,13 +1133,17 @@ def render_eci():
         eci_show_labels = st.toggle("Labels", value=True, key="eci_labels")
 
         st.markdown("---")
-        st.selectbox(
-            "Project as of",
-            eci_frontier_names,
-            index=eci_frontier_names.index(eci_proj_as_of_name),
-            key='_eci_proj_as_of',
-            help="Backtest: project from an earlier model's vantage point.",
-        )
+        with st.expander("Projection range"):
+            st.selectbox(
+                "Project as of",
+                eci_frontier_names,
+                index=eci_frontier_names.index(eci_proj_as_of_name),
+                key='_eci_proj_as_of',
+                help="Backtest: project from an earlier model's vantage point.",
+            )
+            _eci_end_year = st.radio(
+                "Project through", [2026, 2027, 2028, 2029],
+                index=0, horizontal=True, key="eci_end_year")
 
     # ── Build data arrays ────────────────────────────────────────────────────
     eci_frontier_used = eci_frontier_all[:eci_proj_as_of_idx + 1]
@@ -1237,7 +1245,7 @@ def render_eci():
     eci_current_score = eci_current['eci_score']
 
     # ── Build trajectories ────────────────────────────────────────────────
-    proj_end_date = datetime(2026, 12, 31)
+    proj_end_date = datetime(_eci_end_year, 12, 31)
     proj_n_days = (proj_end_date - eci_current['date']).days + 1
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [eci_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
@@ -1727,13 +1735,17 @@ def render_rli():
         rli_use_log_scale = st.toggle("Log scale", value=False, key="rli_log_scale")
 
         st.markdown("---")
-        st.selectbox(
-            "Project as of",
-            rli_frontier_names,
-            index=rli_frontier_names.index(rli_proj_as_of_name),
-            key='_rli_proj_as_of',
-            help="Backtest: project from an earlier model's vantage point.",
-        )
+        with st.expander("Projection range"):
+            st.selectbox(
+                "Project as of",
+                rli_frontier_names,
+                index=rli_frontier_names.index(rli_proj_as_of_name),
+                key='_rli_proj_as_of',
+                help="Backtest: project from an earlier model's vantage point.",
+            )
+            _rli_end_year = st.radio(
+                "Project through", [2026, 2027, 2028, 2029],
+                index=0, horizontal=True, key="rli_end_year")
 
     # ── Build data arrays ────────────────────────────────────────────────────
     rli_frontier_used = rli_frontier_all[:rli_proj_as_of_idx + 1]
@@ -1846,7 +1858,7 @@ def render_rli():
     rli_current_score = rli_current['rli_score']
 
     # ── Build trajectories ────────────────────────────────────────────────
-    proj_end_date = datetime(2026, 12, 31)
+    proj_end_date = datetime(_rli_end_year, 12, 31)
     proj_n_days = (proj_end_date - rli_current['date']).days + 1
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [rli_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
