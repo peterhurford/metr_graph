@@ -235,6 +235,10 @@ def load_eci_frontier(_mtime=None):
             best_by_name[name] = m
     deduped = sorted(best_by_name.values(), key=lambda m: m['date'])
 
+    # Filter to GPT-4 era onward (Mar 2023+)
+    _gpt4_date = datetime(2023, 3, 14)
+    deduped = [m for m in deduped if m['date'] >= _gpt4_date]
+
     # Frontier detection: running max
     max_score = -float('inf')
     for m in deduped:
@@ -955,13 +959,15 @@ def render_eci():
 
         if _eci_is_linear:
             with st.expander("Advanced options"):
-                _eci_dpp_lo_col, _eci_dpp_hi_col = st.columns(2)
-                eci_custom_dpp_lo = _eci_dpp_lo_col.number_input(
-                    "DPP CI low (days)", value=20,
-                    min_value=1, max_value=2000, step=5, key="eci_custom_dpp_lo")
-                eci_custom_dpp_hi = _eci_dpp_hi_col.number_input(
-                    "DPP CI high (days)", value=50,
-                    min_value=1, max_value=2000, step=5, key="eci_custom_dpp_hi")
+                _eci_ppy_lo_col, _eci_ppy_hi_col = st.columns(2)
+                eci_custom_ppy_lo = _eci_ppy_lo_col.number_input(
+                    "+Pts/Yr CI low", value=7.0,
+                    min_value=0.5, max_value=365.0, step=0.5, key="eci_custom_ppy_lo")
+                eci_custom_ppy_hi = _eci_ppy_hi_col.number_input(
+                    "+Pts/Yr CI high", value=18.0,
+                    min_value=0.5, max_value=365.0, step=0.5, key="eci_custom_ppy_hi")
+                eci_custom_dpp_lo = 365.25 / eci_custom_ppy_hi  # high PPY = low DPP (fast)
+                eci_custom_dpp_hi = 365.25 / eci_custom_ppy_lo  # low PPY = high DPP (slow)
 
                 # Position CI: fitted score +/- 2
                 _eci_cur = eci_frontier_all[eci_proj_as_of_idx]
@@ -1016,7 +1022,7 @@ def render_eci():
         eci_is_superexp = False
         if eci_proj_basis == "Superexponential":
             eci_is_superexp = True
-            _eci_default_dpp_init = 35
+            _eci_default_ppy_init = 10.0
             # Estimate from recent frontier
             if len(eci_frontier_all[:eci_proj_as_of_idx + 1]) >= 2:
                 _eci_base = eci_frontier_all[0]['date']
@@ -1025,28 +1031,32 @@ def render_eci():
                 _eci_fs = np.array([m['eci_score'] for m in _eci_fr])
                 _eci_fp = fit_line(_eci_fd, _eci_fs)
                 if _eci_fp[1] > 0:
-                    _eci_default_dpp_init = int(round(1.0 / _eci_fp[1]))
+                    _eci_default_ppy_init = round(365.25 * _eci_fp[1], 1)
 
             with st.expander("Advanced options"):
                 _eci_se_col1, _eci_se_col2 = st.columns(2)
-                eci_superexp_dpp_initial = _eci_se_col1.number_input(
-                    "Initial DPP (days)", value=_eci_default_dpp_init,
-                    min_value=1, max_value=2000, step=5, key="eci_superexp_dpp_init")
+                eci_superexp_ppy_initial = _eci_se_col1.number_input(
+                    "Initial +Pts/Yr", value=_eci_default_ppy_init,
+                    min_value=0.5, max_value=365.0, step=0.5, key="eci_superexp_ppy_init")
+                eci_superexp_dpp_initial = 365.25 / eci_superexp_ppy_initial
                 eci_superexp_halflife = _eci_se_col2.number_input(
-                    "DPP half-life (days)", value=365,
+                    "Rate half-life (days)", value=365,
                     min_value=30, max_value=5000, step=30, key="eci_superexp_halflife",
-                    help="How quickly DPP shrinks. Lower = faster.")
-                eci_superexp_dpp_floor = st.number_input(
-                    "Min DPP floor (days)", value=10,
-                    min_value=1, max_value=500, step=5, key="eci_superexp_dpp_floor",
-                    help="DPP can't shrink below this. Prevents runaway projections.")
+                    help="How quickly rate grows. Lower = faster.")
+                eci_superexp_ppy_ceiling = st.number_input(
+                    "Max +Pts/Yr ceiling", value=37.0,
+                    min_value=1.0, max_value=365.0, step=1.0, key="eci_superexp_ppy_ceiling",
+                    help="Rate can't exceed this. Prevents runaway projections.")
+                eci_superexp_dpp_floor = 365.25 / eci_superexp_ppy_ceiling
                 _eci_se_ci1, _eci_se_ci2 = st.columns(2)
-                eci_superexp_dpp_ci_lo = _eci_se_ci1.number_input(
-                    "DPP CI low (days)", value=15,
-                    min_value=1, max_value=2000, step=5, key="eci_superexp_dpp_ci_lo")
-                eci_superexp_dpp_ci_hi = _eci_se_ci2.number_input(
-                    "DPP CI high (days)", value=60,
-                    min_value=1, max_value=2000, step=5, key="eci_superexp_dpp_ci_hi")
+                eci_superexp_ppy_ci_lo = _eci_se_ci1.number_input(
+                    "+Pts/Yr CI low", value=6.0,
+                    min_value=0.5, max_value=365.0, step=0.5, key="eci_superexp_ppy_ci_lo")
+                eci_superexp_ppy_ci_hi = _eci_se_ci2.number_input(
+                    "+Pts/Yr CI high", value=24.0,
+                    min_value=0.5, max_value=365.0, step=0.5, key="eci_superexp_ppy_ci_hi")
+                eci_superexp_dpp_ci_lo = 365.25 / eci_superexp_ppy_ci_hi  # high PPY = low DPP
+                eci_superexp_dpp_ci_hi = 365.25 / eci_superexp_ppy_ci_lo  # low PPY = high DPP
                 _eci_cur = eci_frontier_all[eci_proj_as_of_idx]
                 _eci_def_score = _eci_cur['eci_score']
                 _eci_se_pos1, _eci_se_pos2 = st.columns(2)
@@ -1261,7 +1271,7 @@ def render_eci():
                     fig.add_trace(go.Scatter(
                         x=dates_seg, y=y_seg,
                         mode='lines', line=dict(color='#2c3e50', width=2.5),
-                        name=f'Segment {si+1} ({seg_dpp:.0f}d/pt, CI {eci_custom_dpp_lo}\u2013{eci_custom_dpp_hi}d)',
+                        name=f'Segment {si+1} ({365.25/seg_dpp:.1f} pts/yr, CI {eci_custom_ppy_lo}\u2013{eci_custom_ppy_hi})',
                         hovertext=hover_seg, hoverinfo='text',
                     ))
                 else:
@@ -1271,7 +1281,7 @@ def render_eci():
                     fig.add_trace(go.Scatter(
                         x=dates_seg, y=y_seg,
                         mode='lines', line=dict(color=_seg_colors[si % len(_seg_colors)], width=2, dash='dash'),
-                        name=f'Segment {si+1} ({seg_dpp:.0f}d/pt)',
+                        name=f'Segment {si+1} ({365.25/seg_dpp:.1f} pts/yr)',
                         hovertext=hover_seg, hoverinfo='text',
                     ))
         else:
@@ -1282,7 +1292,7 @@ def render_eci():
             fig.add_trace(go.Scatter(
                 x=dates_seg, y=y_seg,
                 mode='lines', line=dict(color='#2c3e50', width=2.5),
-                name=f'OLS trend ({eci_ols_dpp:.0f}d/pt, CI {eci_custom_dpp_lo}\u2013{eci_custom_dpp_hi}d)',
+                name=f'OLS trend ({365.25/eci_ols_dpp:.1f} pts/yr, CI {eci_custom_ppy_lo}\u2013{eci_custom_ppy_hi})',
                 hovertext=hover_seg, hoverinfo='text',
             ))
     elif eci_proj_basis == "Superexponential":
@@ -1295,7 +1305,7 @@ def render_eci():
         fig.add_trace(go.Scatter(
             x=dates_seg, y=y_scores_seg.tolist(),
             mode='lines', line=dict(color='#8e44ad', width=2.5),
-            name=f'Superexp fit (current DPP\u2248{eci_superexp_dpp_fitted:.0f}d, half-life={eci_superexp_halflife}d)',
+            name=f'Superexp fit ({365.25/eci_superexp_dpp_fitted:.1f} pts/yr, half-life={eci_superexp_halflife}d)',
             hovertext=hover_seg, hoverinfo='text',
         ))
 
@@ -1327,9 +1337,11 @@ def render_eci():
         font=dict(size=10, color='gray'), yanchor='top')
 
     # --- Data points ---
-    # First plot all non-frontier models as grey
+    # Non-frontier models: only show those within 30 pts of frontier max to reduce clutter
+    _eci_frontier_max = max(m['eci_score'] for m in eci_all if m['is_frontier'])
+    _eci_nf_cutoff = _eci_frontier_max - 30
     for m in eci_all:
-        if m['is_frontier']:
+        if m['is_frontier'] or m['eci_score'] < _eci_nf_cutoff:
             continue
         hover = f"{m['display_name']}<br>{m['date'].strftime('%b %d, %Y')}<br>ECI: {m['eci_score']:.1f}"
         fig.add_trace(go.Scatter(
@@ -1377,7 +1389,7 @@ def render_eci():
 
     # --- Layout ---
     # Determine y range from data and projections
-    all_scores = [m['eci_score'] for m in eci_all]
+    all_scores = [m['eci_score'] for m in eci_all if m['is_frontier'] or m['eci_score'] >= _eci_nf_cutoff]
     y_min = min(all_scores) - 5
     y_max = max(pct95[-1], max(all_scores) + 5, 170) + 5
     yaxis_cfg = dict(
@@ -1517,7 +1529,7 @@ def render_eci():
                 })
             st.table(arrival_rows)
 
-    st.caption("ECI = Epoch Capabilities Index. DPP = Days Per Point (how many days per +1 ECI point).")
+    st.caption("ECI = Epoch Capabilities Index. +Pts/Yr = ECI points gained per year.")
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
