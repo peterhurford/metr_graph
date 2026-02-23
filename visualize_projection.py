@@ -497,7 +497,6 @@ def render_metr():
             proj_dt = _normal_from_ci(_eff_dt_lo, _eff_dt_hi, n_custom)
         # Position: noise centered on OLS-fitted position, spread from user CI
         if custom_pos_dist == "Log-log":
-            # log(X) ~ Lognormal, centered on OLS-fitted (work in minutes for numerical safety)
             _cu_fitted_min = _cu_fitted_hrs * 60
             _cu_pos_sigma_y = (np.log(np.log(custom_pos_hi * 60)) - np.log(np.log(custom_pos_lo * 60))) / (2 * 1.282)
             _cu_pos_mu_y = np.log(np.log(_cu_fitted_min))
@@ -537,10 +536,10 @@ def render_metr():
         _se_eff_dt_lo = superexp_dt_ci_lo * _se_dt_shift
         _se_eff_dt_hi = superexp_dt_ci_hi * _se_dt_shift
         proj_dt = _lognormal_from_ci(_se_eff_dt_lo, _se_eff_dt_hi, n_superexp)
-        # Position: lognormal noise centered on the fitted trend position
+        # Position: lognormal noise centered on fitted trend position
         _se_fitted_hrs = 2**_se_fitted_pos / 60
         _se_pos_sigma = (np.log(superexp_pos_hi) - np.log(superexp_pos_lo)) / (2 * 1.282)
-        _se_pos_mu = np.log(_se_fitted_hrs)  # center on fitted trend, not raw model
+        _se_pos_mu = np.log(_se_fitted_hrs)
         proj_start = np.log2(np.random.lognormal(_se_pos_mu, max(_se_pos_sigma, 0), n_superexp) * 60)
 
     # ── Current SOTA (selected "as of" model) ────────────────────────────────
@@ -855,17 +854,13 @@ def render_metr():
             doublings = elapsed_days / dt_arr
         return start_hrs * (2 ** doublings)
 
-    # Current model + projected horizon row
-    _cur_lo = current.get(_lo_key)
-    _cur_hi = current.get(_hi_key)
-    _cur_ci = f"80% CI: {fmt_hrs(_cur_lo/60)} \u2013 {fmt_hrs(_cur_hi/60)}" if _cur_lo and _cur_hi else ""
-    n_proj_cols = len(eoy_targets)
-    cols = st.columns([1.2] + [1] * n_proj_cols)
-    with cols[0]:
-        st.metric(label=f"{current_label} ({current['date'].strftime('%b %Y')})", value=fmt_hrs(current_hrs))
-        if _cur_ci:
-            st.caption(_cur_ci)
-    for col, (label, target_date) in zip(cols[1:], eoy_targets):
+    # All columns use the projection model for coherent "all things considered" forecasts
+    all_targets = [
+        (f"{current_label} ({current['date'].strftime('%b %Y')})", current['date']),
+    ] + eoy_targets
+    n_all_cols = len(all_targets)
+    cols = st.columns([1.2] + [1] * (n_all_cols - 1))
+    for col, (label, target_date) in zip(cols, all_targets):
         elapsed = (target_date - current['date']).days
         proj_hrs = _proj_hrs_at(elapsed, start_hrs_samples, proj_dt, is_superexp, superexp_halflife, superexp_dt_floor if is_superexp else None)
         p10_h, p50_h, p90_h = np.percentile(proj_hrs, [10, 50, 90])
@@ -1137,9 +1132,8 @@ def render_eci():
         else:
             eci_proj_dpp = _normal_from_ci(_eci_eff_dpp_lo, _eci_eff_dpp_hi, n_eci)
 
-        # Position samples (ECI score is linear, so use normal by default)
+        # Position samples centered on OLS-fitted position
         if eci_custom_pos_dist == "Lognormal":
-            # Shift to positive range for lognormal sampling
             _eci_pos_offset = 50  # shift so values are safely positive
             _eci_pos_sigma = (np.log(eci_custom_pos_hi + _eci_pos_offset) - np.log(eci_custom_pos_lo + _eci_pos_offset)) / (2 * 1.282)
             _eci_pos_mu = np.log(_eci_fitted_score + _eci_pos_offset)
@@ -1172,7 +1166,7 @@ def render_eci():
         _eci_se_eff_dpp_hi = eci_superexp_dpp_ci_hi * _eci_se_dpp_shift
         eci_proj_dpp = _lognormal_from_ci(_eci_se_eff_dpp_lo, _eci_se_eff_dpp_hi, n_eci)
 
-        # Position: normal noise centered on the fitted trend position
+        # Position: normal noise centered on fitted trend position
         _eci_se_pos_sigma = (eci_superexp_pos_hi - eci_superexp_pos_lo) / (2 * 1.282)
         eci_proj_start = np.random.normal(_eci_se_fitted_score, max(_eci_se_pos_sigma, 0), n_eci)
 
@@ -1453,12 +1447,13 @@ def render_eci():
             pts = elapsed_days / dpp_arr
         return start_scores + pts
 
-    n_proj_cols = len(eoy_targets)
-    cols = st.columns([1.2] + [1] * n_proj_cols)
-    with cols[0]:
-        st.metric(label=f"{eci_current_label} ({eci_current['date'].strftime('%b %Y')})",
-                  value=f"{eci_current_score:.1f}")
-    for col, (label, target_date) in zip(cols[1:], eoy_targets):
+    # All columns use the projection model for coherent forecasts
+    all_targets = [
+        (f"{eci_current_label} ({eci_current['date'].strftime('%b %Y')})", eci_current['date']),
+    ] + eoy_targets
+    n_all_cols = len(all_targets)
+    cols = st.columns([1.2] + [1] * (n_all_cols - 1))
+    for col, (label, target_date) in zip(cols, all_targets):
         elapsed = (target_date - eci_current['date']).days
         proj_scores = _proj_score_at(
             elapsed, eci_start_samples, eci_proj_dpp,
