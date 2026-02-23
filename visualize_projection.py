@@ -315,9 +315,20 @@ rli_frontier_names = [m['name'] for m in rli_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "Remote Labor Index"]
+_TAB_SLUG = {"metr": 0, "eci": 1, "rli": 2}
+
+# Read ?tab= from URL for deep-linking
+_url_tab = st.query_params.get("tab", "").lower()
+_default_tab_idx = _TAB_SLUG.get(_url_tab, 0)
+
 with st.sidebar:
-    active_tab = st.radio("Tab", ["METR Horizon", "Epoch ECI", "Remote Labor Index"], horizontal=True, key="_active_tab")
+    active_tab = st.radio("Tab", _TAB_OPTIONS, index=_default_tab_idx, horizontal=True, key="_active_tab")
     st.markdown("---")
+
+# Keep URL in sync with selected tab
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli"}
+st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
 
 
 
