@@ -945,7 +945,7 @@ def render_eci():
 
         # --- Projection basis ---
         eci_basis_options = ["Linear", "Piecewise linear", "Superexponential"]
-        eci_proj_basis = st.radio("Projection basis", eci_basis_options, index=1, key="eci_proj_basis")
+        eci_proj_basis = st.radio("Projection basis", eci_basis_options, index=0, key="eci_proj_basis")
 
         eci_custom_dpp_lo = eci_custom_dpp_hi = None
         eci_custom_pos_lo = eci_custom_pos_hi = None
