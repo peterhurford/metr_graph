@@ -154,6 +154,17 @@ def _log_lognormal_from_ci(lo, hi, n):
     return np.exp(log_x)
 
 
+def _logit(p):
+    """Logit transform: log(p / (1-p)). p in (0,1)."""
+    p = np.clip(p, 1e-10, 1 - 1e-10)
+    return np.log(p / (1 - p))
+
+
+def _inv_logit(x):
+    """Inverse logit (sigmoid): 1 / (1 + exp(-x))."""
+    return 1.0 / (1.0 + np.exp(-np.clip(x, -500, 500)))
+
+
 # ── Data loading ─────────────────────────────────────────────────────────
 
 def _yaml_mtime():
@@ -251,6 +262,42 @@ def load_eci_frontier(_mtime=None):
     return deduped
 
 
+# ── RLI data (hardcoded – small dataset from remotelabor.ai) ─────────────
+
+_RLI_RAW = [
+    {"name": "Gemini 2.5 Pro", "date": "2025-03-25", "rli_score": 0.83},
+    {"name": "Grok 4",         "date": "2025-07-01", "rli_score": 2.10},
+    {"name": "GPT-5",          "date": "2025-08-07", "rli_score": 1.67},
+    {"name": "Sonnet 4.5",     "date": "2025-09-20", "rli_score": 2.08},
+    {"name": "Manus 1.5",      "date": "2025-10-20", "rli_score": 2.50},
+    {"name": "Opus 4.5",       "date": "2025-11-15", "rli_score": 3.75},
+    {"name": "Gemini 3 Pro",   "date": "2025-12-10", "rli_score": 1.25},
+    {"name": "GPT-5.2",        "date": "2025-12-20", "rli_score": 2.50},
+]
+
+
+def load_rli_data():
+    models = []
+    for r in _RLI_RAW:
+        models.append({
+            'name': r['name'],
+            'date': datetime.strptime(r['date'], '%Y-%m-%d'),
+            'rli_score': r['rli_score'],
+        })
+    models.sort(key=lambda m: m['date'])
+
+    # Frontier detection: running max
+    max_score = -float('inf')
+    for m in models:
+        if m['rli_score'] > max_score:
+            max_score = m['rli_score']
+            m['is_frontier'] = True
+        else:
+            m['is_frontier'] = False
+
+    return models
+
+
 # ── Load data (before sidebar, so model names are available) ─────────────
 
 frontier_all = load_frontier(_mtime=_yaml_mtime())
@@ -261,11 +308,15 @@ eci_all = load_eci_frontier(_mtime=_eci_mtime())
 eci_frontier_all = [m for m in eci_all if m['is_frontier']]
 eci_frontier_names = [m['display_name'] for m in eci_frontier_all]
 
+rli_all = load_rli_data()
+rli_frontier_all = [m for m in rli_all if m['is_frontier']]
+rli_frontier_names = [m['name'] for m in rli_frontier_all]
+
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
 with st.sidebar:
-    active_tab = st.radio("Tab", ["METR Horizon", "Epoch ECI"], horizontal=True, key="_active_tab")
+    active_tab = st.radio("Tab", ["METR Horizon", "Epoch ECI", "Remote Labor Index"], horizontal=True, key="_active_tab")
     st.markdown("---")
 
 
@@ -1527,9 +1578,616 @@ def render_eci():
     st.caption("ECI = Epoch Capabilities Index. +Pts/Yr = ECI points gained per year.")
 
 
+# ── Remote Labor Index ───────────────────────────────────────────────────
+
+def render_rli():
+    # ── RLI Sidebar controls ─────────────────────────────────────────────
+    with st.sidebar:
+        st.header("RLI Projection")
+
+        # Read "project as of" from session state
+        rli_proj_as_of_name = st.session_state.get('_rli_proj_as_of', rli_frontier_names[-1])
+        if rli_proj_as_of_name not in rli_frontier_names:
+            rli_proj_as_of_name = rli_frontier_names[-1]
+        rli_proj_as_of_idx = rli_frontier_names.index(rli_proj_as_of_name)
+
+        # --- Projection basis ---
+        rli_basis_options = ["Linear (logit)", "Piecewise linear (logit)", "Superexponential (logit)"]
+        rli_proj_basis = st.radio("Projection basis", rli_basis_options, index=0, key="rli_proj_basis",
+                                  help="All projections use logit-space fitting to keep scores bounded 0–100%.")
+
+        rli_custom_dt_lo = rli_custom_dt_hi = None
+        rli_custom_pos_lo = rli_custom_pos_hi = None
+        rli_custom_dt_dist = "Lognormal"
+        rli_custom_pos_dist = "Normal"
+        rli_piecewise_n_segments = 1
+        rli_piecewise_breakpoints = []
+        _rli_is_linear = rli_proj_basis in ("Linear (logit)", "Piecewise linear (logit)")
+        if rli_proj_basis == "Piecewise linear (logit)":
+            rli_piecewise_n_segments = 2
+
+        if _rli_is_linear:
+            with st.expander("Advanced options"):
+                # Doubling time CI (days for odds to double)
+                _rli_dt_lo_col, _rli_dt_hi_col = st.columns(2)
+                rli_custom_dt_lo = _rli_dt_lo_col.number_input(
+                    "Odds 2x time CI low (days)", value=50.0,
+                    min_value=5.0, max_value=2000.0, step=5.0, key="rli_custom_dt_lo",
+                    help="Fast scenario: days for odds p/(1-p) to double.")
+                rli_custom_dt_hi = _rli_dt_hi_col.number_input(
+                    "Odds 2x time CI high (days)", value=250.0,
+                    min_value=5.0, max_value=5000.0, step=5.0, key="rli_custom_dt_hi",
+                    help="Slow scenario: days for odds to double.")
+
+                # Position CI in percentage points
+                _rli_cur = rli_frontier_all[rli_proj_as_of_idx]
+                _rli_def_score = _rli_cur['rli_score']
+                _rli_pos_lo_col, _rli_pos_hi_col = st.columns(2)
+                rli_custom_pos_lo = _rli_pos_lo_col.number_input(
+                    "Pos CI low (%)", value=round(max(_rli_def_score - 1.0, 0.1), 2),
+                    min_value=0.01, step=0.1, key="rli_custom_pos_lo")
+                rli_custom_pos_hi = _rli_pos_hi_col.number_input(
+                    "Pos CI high (%)", value=round(_rli_def_score + 1.0, 2),
+                    step=0.1, key="rli_custom_pos_hi")
+
+                rli_piecewise_n_segments = st.radio(
+                    "Segments", [1, 2, 3],
+                    index={1: 0, 2: 1, 3: 2}[rli_piecewise_n_segments],
+                    horizontal=True, key="rli_piecewise_n_seg")
+                _rli_bp_names = [m['name'] for m in rli_frontier_all[:rli_proj_as_of_idx + 1]]
+                if rli_piecewise_n_segments >= 2:
+                    _rli_default_bp1 = _rli_bp_names[len(_rli_bp_names) // 2]
+                    _rli_bp1_idx = _rli_bp_names.index(_rli_default_bp1) if _rli_default_bp1 in _rli_bp_names else len(_rli_bp_names) // 2
+                    rli_bp1_name = st.selectbox(
+                        "Breakpoint", _rli_bp_names[1:],
+                        index=max(0, _rli_bp1_idx - 1), key="rli_bp1_select")
+                    rli_piecewise_breakpoints.append(rli_bp1_name)
+                if rli_piecewise_n_segments >= 3:
+                    _rli_bp1_pos = _rli_bp_names.index(rli_bp1_name)
+                    _rli_remaining = _rli_bp_names[_rli_bp1_pos + 1:]
+                    if len(_rli_remaining) >= 2:
+                        rli_bp2_name = st.selectbox(
+                            "Breakpoint 2", _rli_remaining[:-1],
+                            index=len(_rli_remaining[:-1]) // 2, key="rli_bp2_select")
+                        rli_piecewise_breakpoints.append(rli_bp2_name)
+                    else:
+                        st.warning("Not enough models for 3 segments.")
+                        rli_piecewise_n_segments = 2
+
+                rli_custom_dt_dist = st.radio(
+                    "Trend distribution", ["Normal", "Lognormal", "Log-log"], index=1,
+                    horizontal=True, key="rli_custom_dt_dist")
+                rli_custom_pos_dist = st.radio(
+                    "Position distribution", ["Normal", "Lognormal"], index=0,
+                    horizontal=True, key="rli_custom_pos_dist")
+
+        # --- Superexponential controls ---
+        rli_superexp_dt_initial = rli_superexp_halflife = None
+        rli_superexp_dt_ci_lo = rli_superexp_dt_ci_hi = None
+        rli_superexp_pos_lo = rli_superexp_pos_hi = None
+        rli_superexp_dt_floor = 10
+        rli_is_superexp = False
+        if rli_proj_basis == "Superexponential (logit)":
+            rli_is_superexp = True
+            _rli_default_dt_init = 100.0
+            if len(rli_frontier_all[:rli_proj_as_of_idx + 1]) >= 2:
+                _rli_base = rli_frontier_all[0]['date']
+                _rli_fr = rli_frontier_all[:rli_proj_as_of_idx + 1]
+                _rli_fd = np.array([(m['date'] - _rli_base).days for m in _rli_fr], dtype=float)
+                _rli_flogit = _logit(np.array([m['rli_score'] / 100 for m in _rli_fr]))
+                _rli_fp = fit_line(_rli_fd, _rli_flogit)
+                if _rli_fp[1] > 0:
+                    _rli_default_dt_init = round(np.log(2) / _rli_fp[1], 0)
+
+            with st.expander("Advanced options"):
+                _rli_se_col1, _rli_se_col2 = st.columns(2)
+                rli_superexp_dt_initial = _rli_se_col1.number_input(
+                    "Initial odds 2x time (days)", value=_rli_default_dt_init,
+                    min_value=5.0, max_value=2000.0, step=5.0, key="rli_superexp_dt_init")
+                rli_superexp_halflife = _rli_se_col2.number_input(
+                    "Rate half-life (days)", value=365,
+                    min_value=30, max_value=5000, step=30, key="rli_superexp_halflife",
+                    help="How quickly rate grows. Lower = faster.")
+                rli_superexp_dt_floor_input = st.number_input(
+                    "Min odds 2x time (days)", value=15.0,
+                    min_value=1.0, max_value=500.0, step=1.0, key="rli_superexp_dt_floor",
+                    help="Rate can't exceed this. Prevents runaway projections.")
+                rli_superexp_dt_floor = rli_superexp_dt_floor_input
+                _rli_se_ci1, _rli_se_ci2 = st.columns(2)
+                rli_superexp_dt_ci_lo = _rli_se_ci1.number_input(
+                    "Odds 2x CI low (days)", value=40.0,
+                    min_value=5.0, max_value=2000.0, step=5.0, key="rli_superexp_dt_ci_lo")
+                rli_superexp_dt_ci_hi = _rli_se_ci2.number_input(
+                    "Odds 2x CI high (days)", value=300.0,
+                    min_value=5.0, max_value=5000.0, step=5.0, key="rli_superexp_dt_ci_hi")
+                _rli_cur = rli_frontier_all[rli_proj_as_of_idx]
+                _rli_def_score = _rli_cur['rli_score']
+                _rli_se_pos1, _rli_se_pos2 = st.columns(2)
+                rli_superexp_pos_lo = _rli_se_pos1.number_input(
+                    "Pos CI low (%)", value=round(max(_rli_def_score - 1.0, 0.1), 2),
+                    min_value=0.01, step=0.1, key="rli_superexp_pos_lo")
+                rli_superexp_pos_hi = _rli_se_pos2.number_input(
+                    "Pos CI high (%)", value=round(_rli_def_score + 1.0, 2),
+                    step=0.1, key="rli_superexp_pos_hi")
+
+        st.markdown("---")
+        rli_show_milestones = st.toggle("Milestones", value=True, key="rli_milestones")
+        rli_show_labels = st.toggle("Labels", value=True, key="rli_labels")
+
+        st.markdown("---")
+        st.selectbox(
+            "Project as of",
+            rli_frontier_names,
+            index=rli_frontier_names.index(rli_proj_as_of_name),
+            key='_rli_proj_as_of',
+            help="Backtest: project from an earlier model's vantage point.",
+        )
+
+    # ── Build data arrays ────────────────────────────────────────────────────
+    rli_frontier_used = rli_frontier_all[:rli_proj_as_of_idx + 1]
+
+    base_date = rli_frontier_all[0]['date']
+    days_all_rli = np.array([(m['date'] - base_date).days for m in rli_frontier_all], dtype=float)
+    scores_all_rli = np.array([m['rli_score'] for m in rli_frontier_all])
+    logit_all_rli = _logit(scores_all_rli / 100)
+
+    _rli_fit_start = 0
+    _rli_fit_end = rli_proj_as_of_idx + 1
+    rli_frontier_used = rli_frontier_all[_rli_fit_start:_rli_fit_end]
+    days_used = days_all_rli[_rli_fit_start:_rli_fit_end]
+    logit_used = logit_all_rli[_rli_fit_start:_rli_fit_end]
+    n_used = len(rli_frontier_used)
+
+    # Doubling time of odds: dt = ln(2) / logit_slope_per_day
+    # logit_slope = ln(2) / dt
+
+    if rli_proj_basis in ("Linear (logit)", "Piecewise linear (logit)"):
+        if rli_piecewise_n_segments >= 2:
+            _rli_bp_names_used = [m['name'] for m in rli_frontier_used]
+            _rli_seg_break_idxs = []
+            for bp_name in rli_piecewise_breakpoints:
+                if bp_name in _rli_bp_names_used:
+                    _rli_seg_break_idxs.append(_rli_bp_names_used.index(bp_name))
+            _rli_last_seg_start = _rli_seg_break_idxs[-1] if _rli_seg_break_idxs else 0
+            _rli_last_seg_range = list(range(_rli_last_seg_start, n_used))
+            _rli_params = fit_line(days_used[_rli_last_seg_range], logit_used[_rli_last_seg_range])
+        else:
+            _rli_params = fit_line(days_used, logit_used)
+
+        _rli_current_day = (rli_frontier_used[-1]['date'] - base_date).days
+        if rli_piecewise_n_segments >= 2:
+            _rli_seg_d = days_used[_rli_last_seg_range]
+            _rli_seg_y = logit_used[_rli_last_seg_range]
+        else:
+            _rli_seg_d = days_used
+            _rli_seg_y = logit_used
+        _rli_intercept = np.mean(_rli_seg_y - _rli_params[1] * _rli_seg_d)
+        _rli_fitted_logit = _rli_intercept + _rli_params[1] * _rli_current_day
+
+        # OLS doubling time of odds
+        _rli_ols_dt = np.log(2) / _rli_params[1] if _rli_params[1] > 0 else (rli_custom_dt_lo + rli_custom_dt_hi) / 2
+        # Shift CI to center on OLS dt
+        _rli_ci_center = np.sqrt(rli_custom_dt_lo * rli_custom_dt_hi)
+        _rli_dt_shift = _rli_ols_dt / _rli_ci_center
+        _rli_eff_dt_lo = rli_custom_dt_lo * _rli_dt_shift
+        _rli_eff_dt_hi = rli_custom_dt_hi * _rli_dt_shift
+
+        n_rli = 20000
+        if rli_custom_dt_dist == "Log-log":
+            rli_proj_dt = _log_lognormal_from_ci(_rli_eff_dt_lo, _rli_eff_dt_hi, n_rli)
+        elif rli_custom_dt_dist == "Lognormal":
+            rli_proj_dt = _lognormal_from_ci(_rli_eff_dt_lo, _rli_eff_dt_hi, n_rli)
+        else:
+            rli_proj_dt = _normal_from_ci(_rli_eff_dt_lo, _rli_eff_dt_hi, n_rli)
+
+        # Convert doubling times to logit slopes: slope = ln(2) / dt
+        rli_proj_logit_slope = np.log(2) / rli_proj_dt
+
+        # Position samples in logit space
+        if rli_custom_pos_dist == "Lognormal":
+            _rli_pos_logit_lo = _logit(rli_custom_pos_lo / 100)
+            _rli_pos_logit_hi = _logit(rli_custom_pos_hi / 100)
+            _rli_pos_offset = 10  # shift so values are safely positive
+            _rli_pos_sigma = (np.log(_rli_pos_logit_hi + _rli_pos_offset) - np.log(_rli_pos_logit_lo + _rli_pos_offset)) / (2 * 1.282)
+            _rli_pos_mu = np.log(_rli_fitted_logit + _rli_pos_offset)
+            rli_proj_start_logit = np.random.lognormal(_rli_pos_mu, max(_rli_pos_sigma, 0), n_rli) - _rli_pos_offset
+        else:
+            _rli_pos_logit_lo = _logit(rli_custom_pos_lo / 100)
+            _rli_pos_logit_hi = _logit(rli_custom_pos_hi / 100)
+            _rli_pos_sigma = (_rli_pos_logit_hi - _rli_pos_logit_lo) / (2 * 1.282)
+            rli_proj_start_logit = np.random.normal(_rli_fitted_logit, max(_rli_pos_sigma, 0), n_rli)
+
+    elif rli_proj_basis == "Superexponential (logit)":
+        # In logit space: logit = A + K * 2^(d/halflife)
+        _rli_se_days = np.array([(m['date'] - base_date).days for m in rli_frontier_used], dtype=float)
+        _rli_se_logit = _logit(np.array([m['rli_score'] / 100 for m in rli_frontier_used]))
+        _rli_se_z = 2 ** (_rli_se_days / rli_superexp_halflife)
+        _rli_se_X = np.column_stack([np.ones_like(_rli_se_z), _rli_se_z])
+        (_rli_se_A, _rli_se_K), *_ = np.linalg.lstsq(_rli_se_X, _rli_se_logit, rcond=None)
+
+        _rli_se_current_day = (rli_frontier_used[-1]['date'] - base_date).days
+        _rli_se_fitted_logit = _rli_se_A + _rli_se_K * 2 ** (_rli_se_current_day / rli_superexp_halflife)
+
+        # Implied doubling time at current date
+        if _rli_se_K > 0:
+            _rli_se_logit_slope = _rli_se_K * np.log(2) * 2 ** (_rli_se_current_day / rli_superexp_halflife) / rli_superexp_halflife
+            rli_superexp_dt_fitted = np.log(2) / _rli_se_logit_slope
+        else:
+            rli_superexp_dt_fitted = float('inf')
+
+        n_rli = 20000
+        _rli_se_ci_center = np.sqrt(rli_superexp_dt_ci_lo * rli_superexp_dt_ci_hi)
+        _rli_se_dt_shift = rli_superexp_dt_fitted / _rli_se_ci_center
+        _rli_se_eff_dt_lo = rli_superexp_dt_ci_lo * _rli_se_dt_shift
+        _rli_se_eff_dt_hi = rli_superexp_dt_ci_hi * _rli_se_dt_shift
+        rli_proj_dt = _lognormal_from_ci(_rli_se_eff_dt_lo, _rli_se_eff_dt_hi, n_rli)
+        rli_proj_logit_slope = np.log(2) / rli_proj_dt
+
+        # Position: normal noise in logit space
+        _rli_se_pos_logit_lo = _logit(rli_superexp_pos_lo / 100)
+        _rli_se_pos_logit_hi = _logit(rli_superexp_pos_hi / 100)
+        _rli_se_pos_sigma = (_rli_se_pos_logit_hi - _rli_se_pos_logit_lo) / (2 * 1.282)
+        rli_proj_start_logit = np.random.normal(_rli_se_fitted_logit, max(_rli_se_pos_sigma, 0), n_rli)
+
+    # ── Current SOTA ──────────────────────────────────────────────────────
+    rli_current = rli_frontier_used[-1]
+    rli_current_score = rli_current['rli_score']
+
+    # ── Build trajectories ────────────────────────────────────────────────
+    proj_end_date = datetime(2028, 12, 31)
+    proj_n_days = (proj_end_date - rli_current['date']).days + 1
+    proj_days_arr = np.arange(0, proj_n_days, 1)
+    proj_dates = [rli_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
+
+    n_samples = len(rli_proj_dt)
+    all_logit_traj = np.zeros((n_samples, len(proj_days_arr)))
+    if rli_is_superexp:
+        halflife_val = rli_superexp_halflife
+        # logit_slope(t) = slope_0 * 2^(t/H), floored at max slope (= ln2/dt_floor)
+        slope_floor = np.log(2) / rli_superexp_dt_floor
+        for i in range(n_samples):
+            slope_0 = rli_proj_logit_slope[i]
+            if slope_0 < slope_floor:
+                t_cap = halflife_val * np.log2(slope_floor / slope_0)
+            else:
+                t_cap = 0.0
+            se_phase = np.minimum(proj_days_arr, t_cap)
+            logit_se = (halflife_val / np.log(2)) * slope_0 * (2**(se_phase / halflife_val) - 1)
+            linear_phase = np.maximum(proj_days_arr - t_cap, 0)
+            logit_lin = linear_phase * slope_floor
+            all_logit_traj[i] = rli_proj_start_logit[i] + logit_se + logit_lin
+    else:
+        for i in range(n_samples):
+            all_logit_traj[i] = rli_proj_start_logit[i] + proj_days_arr * rli_proj_logit_slope[i]
+
+    # Convert to percentage space
+    all_trajectories = _inv_logit(all_logit_traj) * 100
+
+    pct5 = np.percentile(all_trajectories, 5, axis=0)
+    pct10 = np.percentile(all_trajectories, 10, axis=0)
+    pct25 = np.percentile(all_trajectories, 25, axis=0)
+    pct50 = np.percentile(all_trajectories, 50, axis=0)
+    pct75 = np.percentile(all_trajectories, 75, axis=0)
+    pct90 = np.percentile(all_trajectories, 90, axis=0)
+    pct95 = np.percentile(all_trajectories, 95, axis=0)
+
+    fig = go.Figure()
+
+    # --- Fan bands ---
+    bands_spec = [
+        (pct5, pct95, 'rgba(52,152,219,0.10)', '90% CI'),
+        (pct10, pct90, 'rgba(52,152,219,0.18)', '80% CI'),
+        (pct25, pct75, 'rgba(52,152,219,0.28)', '50% CI'),
+    ]
+    for lo, hi, color, label in bands_spec:
+        x_poly = proj_dates + proj_dates[::-1]
+        y_poly = list(hi) + list(lo[::-1])
+        fig.add_trace(go.Scatter(
+            x=x_poly, y=y_poly,
+            fill='toself', fillcolor=color,
+            line=dict(width=0),
+            name=label, hoverinfo='skip', showlegend=True,
+        ))
+
+    # --- Trend line (in logit space, converted back) ---
+    if rli_proj_basis in ("Linear (logit)", "Piecewise linear (logit)"):
+        _seg_colors = ['#e74c3c', '#f39c12', '#27ae60']
+        if rli_piecewise_n_segments >= 2:
+            _rli_bp_names_used = [m['name'] for m in rli_frontier_used]
+            _rli_break_idxs = []
+            for bp_name in rli_piecewise_breakpoints:
+                if bp_name in _rli_bp_names_used:
+                    _rli_break_idxs.append(_rli_bp_names_used.index(bp_name))
+            _rli_seg_bounds = [0] + _rli_break_idxs + [n_used]
+            _rli_segments = []
+            for si in range(len(_rli_seg_bounds) - 1):
+                end = _rli_seg_bounds[si + 1] + 1 if si < len(_rli_seg_bounds) - 2 else _rli_seg_bounds[si + 1]
+                _rli_segments.append(list(range(_rli_seg_bounds[si], min(end, n_used))))
+            for si, seg_idx in enumerate(_rli_segments):
+                if len(seg_idx) < 2:
+                    continue
+                seg_params = fit_line(days_used[seg_idx], logit_used[seg_idx])
+                seg_dt = np.log(2) / seg_params[1] if seg_params[1] > 0 else float('inf')
+                is_last = (si == len(_rli_segments) - 1)
+                if is_last:
+                    d0 = int(days_used[seg_idx[0]])
+                    d1 = (proj_end_date - base_date).days
+                else:
+                    d0 = int(days_used[seg_idx[0]])
+                    d1 = int(days_used[seg_idx[-1]])
+                days_range = np.arange(d0, d1 + 1, 1)
+                logit_trend = seg_params[0] + seg_params[1] * days_range
+                y_trend = _inv_logit(logit_trend) * 100
+                dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
+                hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_seg, y_trend)]
+                if is_last:
+                    fig.add_trace(go.Scatter(
+                        x=dates_seg, y=y_trend.tolist(),
+                        mode='lines', line=dict(color='#2c3e50', width=2.5),
+                        name=f'Segment {si+1} (2x odds: {seg_dt:.0f}d)',
+                        hovertext=hover_seg, hoverinfo='text',
+                    ))
+                else:
+                    fig.add_trace(go.Scatter(
+                        x=dates_seg, y=y_trend.tolist(),
+                        mode='lines', line=dict(color=_seg_colors[si % len(_seg_colors)], width=2, dash='dash'),
+                        name=f'Segment {si+1} (2x odds: {seg_dt:.0f}d)',
+                        hovertext=hover_seg, hoverinfo='text',
+                    ))
+        else:
+            rli_ols_params = fit_line(days_used, logit_used)
+            rli_ols_dt = np.log(2) / rli_ols_params[1] if rli_ols_params[1] > 0 else float('inf')
+            d0, d1 = int(days_used[0]), (proj_end_date - base_date).days
+            days_range = np.arange(d0, d1 + 1, 1)
+            logit_trend = rli_ols_params[0] + rli_ols_params[1] * days_range
+            y_trend = _inv_logit(logit_trend) * 100
+            dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
+            hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_seg, y_trend)]
+            fig.add_trace(go.Scatter(
+                x=dates_seg, y=y_trend.tolist(),
+                mode='lines', line=dict(color='#2c3e50', width=2.5),
+                name=f'OLS trend (2x odds: {rli_ols_dt:.0f}d)',
+                hovertext=hover_seg, hoverinfo='text',
+            ))
+    elif rli_proj_basis == "Superexponential (logit)":
+        d_start = int(days_used[0])
+        d_end = (proj_end_date - base_date).days
+        days_range = np.arange(d_start, d_end + 1, 1)
+        logit_trend = _rli_se_A + _rli_se_K * 2 ** (days_range / rli_superexp_halflife)
+        y_trend = _inv_logit(logit_trend) * 100
+        dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
+        hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_seg, y_trend)]
+        fig.add_trace(go.Scatter(
+            x=dates_seg, y=y_trend.tolist(),
+            mode='lines', line=dict(color='#8e44ad', width=2.5),
+            name=f'Superexp fit (2x odds: {rli_superexp_dt_fitted:.0f}d, HL={rli_superexp_halflife}d)',
+            hovertext=hover_seg, hoverinfo='text',
+        ))
+
+    # --- Milestone hlines ---
+    if rli_show_milestones:
+        x_lo = rli_all[0]['date'] - timedelta(days=30)
+        x_hi = proj_end_date
+        for score_val, label, color in [
+            (5,  "RLI 5%",  '#888888'),
+            (10, "RLI 10%", '#666666'),
+            (25, "RLI 25%", '#c0392b'),
+            (50, "RLI 50%", '#8e44ad'),
+        ]:
+            fig.add_trace(go.Scatter(
+                x=[x_lo, x_hi], y=[score_val, score_val],
+                mode='lines', line=dict(color=color, width=1.2, dash='dot'),
+                hoverinfo='skip', showlegend=False,
+            ))
+            fig.add_annotation(
+                x=1.0, xref='paper', y=score_val, text=f"  {label}",
+                showarrow=False, xanchor='left', yanchor='middle',
+                font=dict(size=10, color=color))
+
+    # --- Median line ---
+    fig.add_trace(go.Scatter(
+        x=proj_dates, y=pct50.tolist(),
+        mode='lines', line=dict(color='#3498db', width=2, dash='dash'),
+        name='Median projection', hoverinfo='skip', showlegend=True,
+    ))
+
+    # --- Today vline ---
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
+    fig.add_annotation(
+        x=today, y=1.0, yref='paper', text='Today', showarrow=False,
+        font=dict(size=10, color='gray'), yanchor='top')
+
+    # --- Data points ---
+    for m in rli_all:
+        if m['is_frontier']:
+            continue
+        hover = f"{m['name']}<br>{m['date'].strftime('%b %d, %Y')}<br>RLI: {m['rli_score']:.2f}%"
+        fig.add_trace(go.Scatter(
+            x=[m['date']], y=[m['rli_score']],
+            mode='markers' + ('+text' if rli_show_labels else ''),
+            marker=dict(color='#aaaaaa', size=6, symbol='circle-open',
+                        line=dict(color='#bbbbbb', width=1)),
+            text=[m['name']] if rli_show_labels else None,
+            textposition='top right',
+            textfont=dict(size=8, color='#bbbbbb'),
+            hovertext=hover, hoverinfo='text', showlegend=False,
+        ))
+
+    for idx_m, m in enumerate(rli_frontier_all):
+        is_used = idx_m <= rli_proj_as_of_idx
+        is_selected = idx_m == rli_proj_as_of_idx
+        hover = f"{m['name']}<br>{m['date'].strftime('%b %d, %Y')}<br>RLI: {m['rli_score']:.2f}%"
+
+        if is_used:
+            color = '#e74c3c' if is_selected else '#4F8DFD'
+            sym = 'star' if is_selected else 'circle'
+            sz = 14 if is_selected else 10
+            fig.add_trace(go.Scatter(
+                x=[m['date']], y=[m['rli_score']],
+                mode='markers' + ('+text' if rli_show_labels else ''),
+                marker=dict(color=color, size=sz, symbol=sym,
+                            line=dict(color='white', width=1)),
+                text=[m['name']] if rli_show_labels else None,
+                textposition='top right',
+                textfont=dict(size=9, color='#c0392b' if is_selected else '#1a1a2e'),
+                hovertext=hover, hoverinfo='text', showlegend=False,
+            ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=[m['date']], y=[m['rli_score']],
+                mode='markers' + ('+text' if rli_show_labels else ''),
+                marker=dict(color='#aaaaaa', size=10, symbol='circle-open',
+                            line=dict(color='#777777', width=2)),
+                text=[m['name']] if rli_show_labels else None,
+                textposition='top right',
+                textfont=dict(size=9, color='#999999'),
+                hovertext=hover, hoverinfo='text', showlegend=False,
+            ))
+
+    # --- Layout ---
+    y_max = min(max(pct95[-1], max(m['rli_score'] for m in rli_all) + 2, 55) + 5, 105)
+    fig.update_layout(
+        height=650,
+        margin=dict(l=50, r=140, t=50, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(
+            range=[rli_all[0]['date'] - timedelta(days=30),
+                   proj_end_date + timedelta(days=30)],
+            gridcolor='rgba(0,0,0,0.1)',
+            tickfont=dict(color='#1a1a2e'),
+            zeroline=False,
+        ),
+        yaxis=dict(
+            title="RLI Score (%)",
+            range=[0, y_max],
+            gridcolor='rgba(0,0,0,0.1)',
+            zeroline=False,
+            ticksuffix='%',
+            tickfont=dict(color='#1a1a2e'),
+            title_font=dict(color='#1a1a2e'),
+        ),
+        hovermode='x unified',
+        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
+                    bgcolor='rgba(255,255,255,0.95)',
+                    font=dict(color='#1a1a2e')),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+    )
+
+    # ── Render chart + metrics ──────────────────────────────────────────────
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── Projections row ───────────────────────────────────────────────────
+    rli_start_logit = rli_proj_start_logit
+    rli_current_label = rli_current['name']
+
+    eoy_targets = [
+        ("Projected today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
+        ("2026 Jun EOM", datetime(2026, 6, 30)),
+        ("Dec 2026", datetime(2026, 12, 31)),
+        ("2027EOY", datetime(2027, 12, 31)),
+        ("2028EOY", datetime(2028, 12, 31)),
+    ]
+
+    def _proj_rli_at(elapsed_days, start_logit, logit_slopes, superexp=False, hl=None, slope_floor_val=None):
+        """Project RLI score forward by elapsed_days. Returns percentage (0-100)."""
+        if superexp and hl is not None:
+            if slope_floor_val is not None and slope_floor_val > 0:
+                t_cap = np.where(logit_slopes < slope_floor_val, hl * np.log2(slope_floor_val / logit_slopes), 0.0)
+                se_phase = np.minimum(elapsed_days, t_cap)
+                logit_se = (hl / np.log(2)) * logit_slopes * (2**(se_phase / hl) - 1)
+                logit_lin = np.maximum(elapsed_days - t_cap, 0) * slope_floor_val
+                logit_total = logit_se + logit_lin
+            else:
+                logit_total = (hl / np.log(2)) * logit_slopes * (2**(elapsed_days / hl) - 1)
+        else:
+            logit_total = elapsed_days * logit_slopes
+        return _inv_logit(start_logit + logit_total) * 100
+
+    _rli_slope_floor = np.log(2) / rli_superexp_dt_floor if rli_is_superexp else None
+
+    all_targets = [
+        (f"{rli_current_label} ({rli_current['date'].strftime('%b %Y')})", rli_current['date']),
+    ] + eoy_targets
+    n_all_cols = len(all_targets)
+    cols = st.columns([1.2] + [1] * (n_all_cols - 1))
+    for col, (label, target_date) in zip(cols, all_targets):
+        elapsed = (target_date - rli_current['date']).days
+        proj_scores = _proj_rli_at(
+            elapsed, rli_start_logit, rli_proj_logit_slope,
+            rli_is_superexp, rli_superexp_halflife, _rli_slope_floor)
+        p10_s, p50_s, p90_s = np.percentile(proj_scores, [10, 50, 90])
+        with col:
+            st.metric(label=label, value=f"{p50_s:.1f}%")
+            st.caption(f"80% CI: {p10_s:.1f}% \u2013 {p90_s:.1f}%")
+
+    # Milestone tables
+    rli_milestone_thresholds = [
+        (5,  "RLI 5%"),
+        (10, "RLI 10%"),
+        (25, "RLI 25%"),
+        (50, "RLI 50%"),
+    ]
+
+    with st.expander("Milestone details"):
+        tcol1, tcol2 = st.columns(2)
+
+        with tcol1:
+            st.markdown("**Probabilities**")
+            rows = []
+            for score_threshold, ms_label in rli_milestone_thresholds:
+                row = {"Milestone": ms_label}
+                for eoy_label, target_date in eoy_targets:
+                    elapsed = (target_date - rli_current['date']).days
+                    proj_scores = _proj_rli_at(
+                        elapsed, rli_start_logit, rli_proj_logit_slope,
+                        rli_is_superexp, rli_superexp_halflife, _rli_slope_floor)
+                    prob = np.mean(proj_scores >= score_threshold) * 100
+                    row[eoy_label] = f"{prob:.0f}%"
+                rows.append(row)
+            st.table(rows)
+
+        with tcol2:
+            st.markdown("**Estimated arrival**")
+            arrival_rows = []
+            # For arrival estimates, simulate forward in time
+            for score_threshold, ms_label in rli_milestone_thresholds:
+                logit_threshold = _logit(score_threshold / 100)
+                logit_needed = logit_threshold - rli_start_logit
+                if rli_is_superexp and rli_superexp_halflife is not None:
+                    slope_fl = np.log(2) / rli_superexp_dt_floor
+                    t_cap = np.where(rli_proj_logit_slope < slope_fl,
+                                     rli_superexp_halflife * np.log2(slope_fl / rli_proj_logit_slope), 0.0)
+                    logit_at_cap = (rli_superexp_halflife / np.log(2)) * rli_proj_logit_slope * (2**(t_cap / rli_superexp_halflife) - 1)
+                    arg = 1 + logit_needed * np.log(2) / (rli_proj_logit_slope * rli_superexp_halflife)
+                    arg = np.maximum(arg, 1e-10)
+                    days_se_only = rli_superexp_halflife * np.log2(arg)
+                    leftover = np.maximum(logit_needed - logit_at_cap, 0)
+                    days_with_floor = t_cap + leftover / slope_fl
+                    days_to = np.where(logit_needed <= logit_at_cap, days_se_only, days_with_floor)
+                else:
+                    days_to = logit_needed / rli_proj_logit_slope
+                days_to = np.maximum(days_to, 0)
+                p10_d, p50_d, p90_d = np.percentile(days_to, [10, 50, 90])
+                med_date = rli_current['date'] + timedelta(days=max(p50_d, 0))
+                early_date = rli_current['date'] + timedelta(days=max(p10_d, 0))
+                late_date = rli_current['date'] + timedelta(days=max(p90_d, 0))
+                arrival_rows.append({
+                    "Milestone": ms_label,
+                    "Median": med_date.strftime('%b %Y'),
+                    "80% CI": f"{early_date.strftime('%b %Y')} \u2013 {late_date.strftime('%b %Y')}",
+                })
+            st.table(arrival_rows)
+
+    st.caption("RLI = Remote Labor Index (remotelabor.ai). Projections use logit-space fitting to keep scores bounded 0\u2013100%.")
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
 if active_tab == "METR Horizon":
     render_metr()
 elif active_tab == "Epoch ECI":
     render_eci()
+elif active_tab == "Remote Labor Index":
+    render_rli()
