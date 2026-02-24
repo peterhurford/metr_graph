@@ -154,6 +154,26 @@ def _log_lognormal_from_ci(lo, hi, n):
     return np.exp(log_x)
 
 
+def superexp_trajectory(days, dt_0, halflife, dt_floor):
+    """Deterministic superexponential trajectory starting at 0.
+
+    Returns the cumulative growth (in the same units as the y-axis) over `days`.
+    DT decays exponentially: dt(t) = dt_0 * 2^(-t/halflife), floored at dt_floor.
+    Growth = integral of 1/dt(t) dt, so:
+      - Before floor hit: (H / (dt_0 * ln2)) * (2^(t/H) - 1)
+      - After floor hit:  linear at rate 1/dt_floor
+    """
+    if dt_0 > dt_floor:
+        t_cap = halflife * np.log2(dt_0 / dt_floor)
+    else:
+        t_cap = 0.0
+    se_phase = np.minimum(days, t_cap)
+    y_se = (halflife / (dt_0 * np.log(2))) * (2 ** (se_phase / halflife) - 1)
+    linear_phase = np.maximum(days - t_cap, 0)
+    y_lin = linear_phase / dt_floor
+    return y_se + y_lin
+
+
 def _logit(p):
     """Logit transform: log(p / (1-p)). p in (0,1)."""
     p = np.clip(p, 1e-10, 1 - 1e-10)
@@ -720,21 +740,9 @@ def render_metr():
     n_samples = len(proj_dt)
     all_trajectories = np.zeros((n_samples, len(proj_days_arr)))
     if is_superexp:
-        halflife_val = superexp_halflife
-        dt_floor = superexp_dt_floor
         for i in range(n_samples):
-            # Time when DT hits the floor: dt_0 * 2^(-t_cap/H) = floor
-            if proj_dt[i] > dt_floor:
-                t_cap = halflife_val * np.log2(proj_dt[i] / dt_floor)
-            else:
-                t_cap = 0.0  # already at or below floor
-            # Before t_cap: superexponential growth
-            se_phase = np.minimum(proj_days_arr, t_cap)
-            y_se = (halflife_val / (proj_dt[i] * np.log(2))) * (2**(se_phase / halflife_val) - 1)
-            # After t_cap: linear growth at floor DT
-            linear_phase = np.maximum(proj_days_arr - t_cap, 0)
-            y_lin = linear_phase / dt_floor
-            all_trajectories[i] = proj_start[i] + y_se + y_lin
+            all_trajectories[i] = proj_start[i] + superexp_trajectory(
+                proj_days_arr, proj_dt[i], superexp_halflife, superexp_dt_floor)
     else:
         for i in range(n_samples):
             all_trajectories[i] = proj_start[i] + proj_days_arr / proj_dt[i]
@@ -872,20 +880,36 @@ def render_metr():
                 hovertext=hover_proj, hoverinfo='text',
             ))
     elif proj_basis == "Superexponential":
-        # Reuse the fit computed earlier: y = _se_A + _se_K * 2^(d / halflife)
+        # Historical portion: fit curve through data
         d_start = int(days_used[0])
-        d_end = (proj_end_date - base_date).days
-        days_range = np.arange(d_start, d_end + 1, 1)
-        y_log2_seg = _se_A_disp + _se_K * 2 ** (days_range / superexp_halflife)
-        dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
-        hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {fmt_hrs(2**y / 60)}" for dt, y in zip(dates_seg, y_log2_seg)]
-        y_seg = _yconv(y_log2_seg)
-        y_seg = y_seg.tolist() if hasattr(y_seg, 'tolist') else list(y_seg)
+        d_last = int(days_used[-1])
+        days_hist = np.arange(d_start, d_last + 1, 1)
+        y_hist = _se_A_disp + _se_K * 2 ** (days_hist / superexp_halflife)
+        dates_hist = [base_date + timedelta(days=int(d)) for d in days_hist]
+        hover_hist = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {fmt_hrs(2**y / 60)}" for dt, y in zip(dates_hist, y_hist)]
+        y_hist_conv = _yconv(y_hist)
+        y_hist_conv = y_hist_conv.tolist() if hasattr(y_hist_conv, 'tolist') else list(y_hist_conv)
         fig.add_trace(go.Scatter(
-            x=dates_seg, y=y_seg,
-            mode='lines', line=dict(color='#8e44ad', width=2.5),
-            name=f'Superexp fit (current DT\u2248{superexp_dt_fitted:.0f}d, half-life={superexp_halflife}d)',
-            hovertext=hover_seg, hoverinfo='text',
+            x=dates_hist, y=y_hist_conv,
+            mode='lines', line=dict(color='#2c3e50', width=2.5),
+            name=f'Superexp fit (DT\u2248{superexp_dt_fitted:.0f}d, HL={superexp_halflife}d)',
+            hovertext=hover_hist, hoverinfo='text',
+        ))
+        # Projected portion: use same formula as trajectories with center DT
+        _se_user_dt = np.sqrt(superexp_dt_ci_lo * superexp_dt_ci_hi)
+        d_end = (proj_end_date - base_date).days
+        days_proj = np.arange(0, d_end - d_last + 1, 1)
+        y_proj_growth = superexp_trajectory(days_proj, _se_user_dt, superexp_halflife, superexp_dt_floor)
+        y_proj_log2 = _se_fitted_pos + y_proj_growth
+        dates_proj = [current['date'] + timedelta(days=int(d)) for d in days_proj]
+        hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {fmt_hrs(2**y / 60)}" for dt, y in zip(dates_proj, y_proj_log2)]
+        y_proj_conv = _yconv(y_proj_log2)
+        y_proj_conv = y_proj_conv.tolist() if hasattr(y_proj_conv, 'tolist') else list(y_proj_conv)
+        fig.add_trace(go.Scatter(
+            x=dates_proj, y=y_proj_conv,
+            mode='lines', line=dict(color='#2980b9', width=2.5),
+            name=f'Projection (DT={_se_user_dt:.0f}d, CI {superexp_dt_ci_lo}\u2013{superexp_dt_ci_hi}d)',
+            hovertext=hover_proj, hoverinfo='text',
         ))
 
     # --- Milestone hlines ---
@@ -1428,21 +1452,10 @@ def render_eci():
     n_samples = len(eci_proj_dpp)
     all_trajectories = np.zeros((n_samples, len(proj_days_arr)))
     if eci_is_superexp:
-        halflife_val = eci_superexp_halflife
-        dpp_floor = eci_superexp_dpp_floor
         for i in range(n_samples):
-            # For ECI (linear score): points gained = integral of 1/dpp(t) dt
-            # dpp(t) = dpp_0 * 2^(-t/H), so points = (H/(dpp_0*ln2)) * (2^(t/H) - 1)
-            # After DPP hits floor: linear at floor rate
-            if eci_proj_dpp[i] > dpp_floor:
-                t_cap = halflife_val * np.log2(eci_proj_dpp[i] / dpp_floor)
-            else:
-                t_cap = 0.0
-            se_phase = np.minimum(proj_days_arr, t_cap)
-            pts_se = (halflife_val / (eci_proj_dpp[i] * np.log(2))) * (2**(se_phase / halflife_val) - 1)
-            linear_phase = np.maximum(proj_days_arr - t_cap, 0)
-            pts_lin = linear_phase / dpp_floor
-            all_trajectories[i] = eci_proj_start[i] + pts_se + pts_lin
+            # DPP is "days per point" which is analogous to DT
+            all_trajectories[i] = eci_proj_start[i] + superexp_trajectory(
+                proj_days_arr, eci_proj_dpp[i], eci_superexp_halflife, eci_superexp_dpp_floor)
     else:
         for i in range(n_samples):
             all_trajectories[i] = eci_proj_start[i] + proj_days_arr / eci_proj_dpp[i]
@@ -1568,17 +1581,32 @@ def render_eci():
                 hovertext=hover_proj, hoverinfo='text',
             ))
     elif eci_proj_basis == "Superexponential":
+        # Historical portion: fit curve through data
         d_start = int(days_used[0])
-        d_end = (proj_end_date - base_date).days
-        days_range = np.arange(d_start, d_end + 1, 1)
-        y_scores_seg = _eci_se_A + _eci_se_K * 2 ** (days_range / eci_superexp_halflife)
-        dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
-        hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.1f}" for dt, y in zip(dates_seg, y_scores_seg)]
+        d_last = int(days_used[-1])
+        days_hist = np.arange(d_start, d_last + 1, 1)
+        y_hist = _eci_se_A + _eci_se_K * 2 ** (days_hist / eci_superexp_halflife)
+        dates_hist = [base_date + timedelta(days=int(d)) for d in days_hist]
+        hover_hist = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.1f}" for dt, y in zip(dates_hist, y_hist)]
         fig.add_trace(go.Scatter(
-            x=dates_seg, y=y_scores_seg.tolist(),
-            mode='lines', line=dict(color='#8e44ad', width=2.5),
-            name=f'Superexp fit ({365.25/eci_superexp_dpp_fitted:.1f} pts/yr, half-life={eci_superexp_halflife}d)',
-            hovertext=hover_seg, hoverinfo='text',
+            x=dates_hist, y=y_hist.tolist(),
+            mode='lines', line=dict(color='#2c3e50', width=2.5),
+            name=f'Superexp fit ({365.25/eci_superexp_dpp_fitted:.1f} pts/yr, HL={eci_superexp_halflife}d)',
+            hovertext=hover_hist, hoverinfo='text',
+        ))
+        # Projected portion: use same formula as trajectories with center DPP
+        _eci_user_dpp = np.sqrt(eci_superexp_dpp_ci_lo * eci_superexp_dpp_ci_hi)
+        d_end = (proj_end_date - base_date).days
+        days_proj = np.arange(0, d_end - d_last + 1, 1)
+        y_proj_growth = superexp_trajectory(days_proj, _eci_user_dpp, eci_superexp_halflife, eci_superexp_dpp_floor)
+        y_proj = _eci_se_fitted_score + y_proj_growth
+        dates_proj = [eci_current['date'] + timedelta(days=int(d)) for d in days_proj]
+        hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.1f}" for dt, y in zip(dates_proj, y_proj)]
+        fig.add_trace(go.Scatter(
+            x=dates_proj, y=y_proj.tolist(),
+            mode='lines', line=dict(color='#2980b9', width=2.5),
+            name=f'Projection (DPP={_eci_user_dpp:.0f}d, CI {eci_superexp_dpp_ci_lo:.0f}\u2013{eci_superexp_dpp_ci_hi:.0f}d)',
+            hovertext=hover_proj, hoverinfo='text',
         ))
 
     # --- Milestone hlines ---
@@ -2120,20 +2148,11 @@ def render_rli():
     n_samples = len(rli_proj_dt)
     all_logit_traj = np.zeros((n_samples, len(proj_days_arr)))
     if rli_is_superexp:
-        halflife_val = rli_superexp_halflife
-        # logit_slope(t) = slope_0 * 2^(t/H), floored at max slope (= ln2/dt_floor)
-        slope_floor = np.log(2) / rli_superexp_dt_floor
         for i in range(n_samples):
-            slope_0 = rli_proj_logit_slope[i]
-            if slope_0 < slope_floor:
-                t_cap = halflife_val * np.log2(slope_floor / slope_0)
-            else:
-                t_cap = 0.0
-            se_phase = np.minimum(proj_days_arr, t_cap)
-            logit_se = (halflife_val / np.log(2)) * slope_0 * (2**(se_phase / halflife_val) - 1)
-            linear_phase = np.maximum(proj_days_arr - t_cap, 0)
-            logit_lin = linear_phase * slope_floor
-            all_logit_traj[i] = rli_proj_start_logit[i] + logit_se + logit_lin
+            # In logit space, DT = "days for odds to double" = days per +ln(2) in logit
+            # So logit growth = ln(2) * superexp_trajectory(days, dt, H, dt_floor)
+            all_logit_traj[i] = rli_proj_start_logit[i] + np.log(2) * superexp_trajectory(
+                proj_days_arr, rli_proj_dt[i], rli_superexp_halflife, rli_superexp_dt_floor)
     else:
         for i in range(n_samples):
             all_logit_traj[i] = rli_proj_start_logit[i] + proj_days_arr * rli_proj_logit_slope[i]
@@ -2268,18 +2287,35 @@ def render_rli():
                 hovertext=hover_proj, hoverinfo='text',
             ))
     elif rli_proj_basis == "Superexponential (logit)":
+        # Historical portion: fit curve through data
         d_start = int(days_used[0])
-        d_end = (proj_end_date - base_date).days
-        days_range = np.arange(d_start, d_end + 1, 1)
-        logit_trend = _rli_se_A + _rli_se_K * 2 ** (days_range / rli_superexp_halflife)
-        y_trend = _inv_logit(logit_trend) * 100
-        dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
-        hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_seg, y_trend)]
+        d_last = int(days_used[-1])
+        days_hist = np.arange(d_start, d_last + 1, 1)
+        logit_hist = _rli_se_A + _rli_se_K * 2 ** (days_hist / rli_superexp_halflife)
+        y_hist = _inv_logit(logit_hist) * 100
+        dates_hist = [base_date + timedelta(days=int(d)) for d in days_hist]
+        hover_hist = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_hist, y_hist)]
         fig.add_trace(go.Scatter(
-            x=dates_seg, y=y_trend.tolist(),
-            mode='lines', line=dict(color='#8e44ad', width=2.5),
+            x=dates_hist, y=y_hist.tolist(),
+            mode='lines', line=dict(color='#2c3e50', width=2.5),
             name=f'Superexp fit (2x odds: {rli_superexp_dt_fitted:.0f}d, HL={rli_superexp_halflife}d)',
-            hovertext=hover_seg, hoverinfo='text',
+            hovertext=hover_hist, hoverinfo='text',
+        ))
+        # Projected portion: use same formula as trajectories with center DT
+        _rli_user_dt = np.sqrt(rli_superexp_dt_ci_lo * rli_superexp_dt_ci_hi)
+        d_end = (proj_end_date - base_date).days
+        days_proj = np.arange(0, d_end - d_last + 1, 1)
+        logit_proj_growth = np.log(2) * superexp_trajectory(
+            days_proj, _rli_user_dt, rli_superexp_halflife, rli_superexp_dt_floor)
+        logit_proj = _rli_se_fitted_logit + logit_proj_growth
+        y_proj = _inv_logit(logit_proj) * 100
+        dates_proj = [rli_current['date'] + timedelta(days=int(d)) for d in days_proj]
+        hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
+        fig.add_trace(go.Scatter(
+            x=dates_proj, y=y_proj.tolist(),
+            mode='lines', line=dict(color='#2980b9', width=2.5),
+            name=f'Projection (2x odds: {_rli_user_dt:.0f}d, CI {rli_superexp_dt_ci_lo}\u2013{rli_superexp_dt_ci_hi}d)',
+            hovertext=hover_proj, hoverinfo='text',
         ))
 
     # --- Milestone hlines ---
@@ -2552,9 +2588,10 @@ def render_rli():
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
-if active_tab == "METR Horizon":
-    render_metr()
-elif active_tab == "Epoch ECI":
-    render_eci()
-elif active_tab == "Remote Labor Index":
-    render_rli()
+if not os.environ.get("_VP_TESTING"):
+    if active_tab == "METR Horizon":
+        render_metr()
+    elif active_tab == "Epoch ECI":
+        render_eci()
+    elif active_tab == "Remote Labor Index":
+        render_rli()
