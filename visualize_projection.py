@@ -455,6 +455,9 @@ def render_metr():
                 custom_dt_hi = custom_dt_hi.number_input(
                     "DT CI high (days)", value=200,
                     min_value=10, max_value=2000, step=5, key="custom_dt_hi")
+                if custom_dt_lo > custom_dt_hi:
+                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.stop()
 
                 _cur = frontier_all[proj_as_of_idx]
                 _def_lo_hrs = (_cur.get(_sb_lo_key) or _cur[_sb_val_key]) / 60
@@ -541,6 +544,9 @@ def render_metr():
                 superexp_dt_ci_hi = _se_ci2.number_input(
                     "DT CI high (days)", value=250,
                     min_value=10, max_value=2000, step=5, key="superexp_dt_ci_hi")
+                if superexp_dt_ci_lo > superexp_dt_ci_hi:
+                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.stop()
                 _cur = frontier_all[proj_as_of_idx]
                 _def_lo_hrs = (_cur.get(_sb_lo_key) or _cur[_sb_val_key]) / 60
                 _def_hi_hrs = (_cur.get(_sb_hi_key) or _cur[_sb_val_key]) / 60
@@ -1147,6 +1153,9 @@ def render_eci():
                 eci_custom_ppy_hi = _eci_ppy_hi_col.number_input(
                     "+Pts/Yr CI high", value=18.0,
                     min_value=0.5, max_value=365.0, step=0.5, key="eci_custom_ppy_hi")
+                if eci_custom_ppy_lo > eci_custom_ppy_hi:
+                    st.error("+Pts/Yr CI low must be ≤ +Pts/Yr CI high.")
+                    st.stop()
                 eci_custom_dpp_lo = 365.25 / eci_custom_ppy_hi  # high PPY = low DPP (fast)
                 eci_custom_dpp_hi = 365.25 / eci_custom_ppy_lo  # low PPY = high DPP (slow)
 
@@ -1236,6 +1245,9 @@ def render_eci():
                 eci_superexp_ppy_ci_hi = _eci_se_ci2.number_input(
                     "+Pts/Yr CI high", value=24.0,
                     min_value=0.5, max_value=365.0, step=0.5, key="eci_superexp_ppy_ci_hi")
+                if eci_superexp_ppy_ci_lo > eci_superexp_ppy_ci_hi:
+                    st.error("+Pts/Yr CI low must be ≤ +Pts/Yr CI high.")
+                    st.stop()
                 eci_superexp_dpp_ci_lo = 365.25 / eci_superexp_ppy_ci_hi  # high PPY = low DPP
                 eci_superexp_dpp_ci_hi = 365.25 / eci_superexp_ppy_ci_lo  # low PPY = high DPP
                 _eci_cur = eci_frontier_all[eci_proj_as_of_idx]
@@ -1794,6 +1806,9 @@ def render_rli():
                     "Odds 2x time CI high (days)", value=200.0,
                     min_value=5.0, max_value=5000.0, step=5.0, key="rli_custom_dt_hi",
                     help="Slow scenario: days for odds to double.")
+                if rli_custom_dt_lo > rli_custom_dt_hi:
+                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.stop()
 
                 # Position CI in percentage points
                 _rli_cur = rli_frontier_all[rli_proj_as_of_idx]
@@ -1876,6 +1891,9 @@ def render_rli():
                 rli_superexp_dt_ci_hi = _rli_se_ci2.number_input(
                     "Odds 2x CI high (days)", value=200.0,
                     min_value=5.0, max_value=5000.0, step=5.0, key="rli_superexp_dt_ci_hi")
+                if rli_superexp_dt_ci_lo > rli_superexp_dt_ci_hi:
+                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.stop()
                 _rli_cur = rli_frontier_all[rli_proj_as_of_idx]
                 _rli_def_score = _rli_cur['rli_score']
                 _rli_se_pos1, _rli_se_pos2 = st.columns(2)
