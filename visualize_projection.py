@@ -498,7 +498,9 @@ def render_metr():
                               "custom_pos_lo_p50", "custom_pos_lo_p80",
                               "custom_pos_hi_p50", "custom_pos_hi_p80",
                               "piecewise_n_seg", "bp1_select", "bp2_select",
-                              "custom_dt_dist", "custom_pos_dist"]:
+                              "custom_dt_dist", "custom_pos_dist",
+                              "milestones", "labels", "post_gpt4o", "p80",
+                              "log_scale", "_proj_as_of", "metr_end_year"]:
                         st.session_state.pop(k, None)
                 st.button("Reset to defaults", key="reset_linear", on_click=_reset_linear)
                 custom_dt_lo, custom_dt_hi = st.columns(2)
@@ -596,7 +598,9 @@ def render_metr():
                               "superexp_dt_floor", "superexp_dt_ci_lo",
                               "superexp_dt_ci_hi", "superexp_pos_lo_p50",
                               "superexp_pos_lo_p80", "superexp_pos_hi_p50",
-                              "superexp_pos_hi_p80"]:
+                              "superexp_pos_hi_p80",
+                              "milestones", "labels", "post_gpt4o", "p80",
+                              "log_scale", "_proj_as_of", "metr_end_year"]:
                         st.session_state.pop(k, None)
                 st.button("Reset to defaults", key="reset_superexp", on_click=_reset_superexp)
                 _se_col1, _se_col2 = st.columns(2)
@@ -1274,7 +1278,9 @@ def render_eci():
                               "eci_custom_pos_lo", "eci_custom_pos_hi",
                               "eci_piecewise_n_seg", "eci_bp1_select",
                               "eci_bp2_select", "eci_custom_dpp_dist",
-                              "eci_custom_pos_dist"]:
+                              "eci_custom_pos_dist",
+                              "eci_proj_basis", "eci_milestones", "eci_labels",
+                              "_eci_proj_as_of", "eci_end_year"]:
                         st.session_state.pop(k, None)
                 st.button("Reset to defaults", key="reset_eci_linear", on_click=_reset_eci_linear)
                 _eci_ppy_lo_col, _eci_ppy_hi_col = st.columns(2)
@@ -1373,7 +1379,9 @@ def render_eci():
                     for k in ["eci_superexp_ppy_init", "eci_superexp_halflife",
                               "eci_superexp_ppy_ceiling", "eci_superexp_ppy_ci_lo",
                               "eci_superexp_ppy_ci_hi", "eci_superexp_pos_lo",
-                              "eci_superexp_pos_hi"]:
+                              "eci_superexp_pos_hi",
+                              "eci_proj_basis", "eci_milestones", "eci_labels",
+                              "_eci_proj_as_of", "eci_end_year"]:
                         st.session_state.pop(k, None)
                 st.button("Reset to defaults", key="reset_eci_superexp", on_click=_reset_eci_superexp)
                 _eci_se_col1, _eci_se_col2 = st.columns(2)
@@ -2005,7 +2013,9 @@ def render_rli():
                               "rli_custom_pos_lo", "rli_custom_pos_hi",
                               "rli_piecewise_n_seg", "rli_bp1_select",
                               "rli_bp2_select", "rli_custom_dt_dist",
-                              "rli_custom_pos_dist"]:
+                              "rli_custom_pos_dist",
+                              "rli_proj_basis", "rli_milestones", "rli_labels",
+                              "rli_log_scale", "_rli_proj_as_of", "rli_end_year"]:
                         st.session_state.pop(k, None)
                 st.button("Reset to defaults", key="reset_rli_linear", on_click=_reset_rli_linear)
                 # Doubling time CI (days for odds to double)
@@ -2101,7 +2111,9 @@ def render_rli():
                     for k in ["rli_superexp_dt_init", "rli_superexp_halflife",
                               "rli_superexp_dt_floor", "rli_superexp_dt_ci_lo",
                               "rli_superexp_dt_ci_hi", "rli_superexp_pos_lo",
-                              "rli_superexp_pos_hi"]:
+                              "rli_superexp_pos_hi",
+                              "rli_proj_basis", "rli_milestones", "rli_labels",
+                              "rli_log_scale", "_rli_proj_as_of", "rli_end_year"]:
                         st.session_state.pop(k, None)
                 st.button("Reset to defaults", key="reset_rli_superexp", on_click=_reset_rli_superexp)
                 _rli_se_col1, _rli_se_col2 = st.columns(2)
