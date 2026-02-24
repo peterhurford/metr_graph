@@ -793,14 +793,29 @@ def render_metr():
                 seg_dt = 1.0 / seg_params[1] if seg_params[1] > 0 else float('inf')
                 is_last = (si == len(_segments) - 1)
                 if is_last:
+                    # Historical portion: OLS through data points
                     d0 = int(days_used[seg_idx[0]])
-                    d1 = (proj_end_date - base_date).days
-                    dates_seg, y_seg, hover_seg = _trend_hover(seg_params, d0, d1, base_date)
+                    d_last = int(days_used[seg_idx[-1]])
+                    dates_seg, y_seg, hover_seg = _trend_hover(seg_params, d0, d_last, base_date)
                     fig.add_trace(go.Scatter(
                         x=dates_seg, y=y_seg,
                         mode='lines', line=dict(color='#2c3e50', width=2.5),
-                        name=f'Segment {si+1} ({seg_dt:.0f}d doubling, CI {custom_dt_lo}\u2013{custom_dt_hi}d)',
+                        name=f'Segment {si+1} ({seg_dt:.0f}d doubling)',
                         hovertext=hover_seg, hoverinfo='text',
+                    ))
+                    # Projected portion: user DT slope from last data point
+                    _user_dt_center = np.sqrt(custom_dt_lo * custom_dt_hi)
+                    _user_slope = 1.0 / _user_dt_center
+                    _ols_val_at_last = seg_params[0] + seg_params[1] * d_last
+                    _proj_intercept = _ols_val_at_last - _user_slope * d_last
+                    _proj_params = np.array([_proj_intercept, _user_slope])
+                    d1 = (proj_end_date - base_date).days
+                    dates_proj, y_proj, hover_proj = _trend_hover(_proj_params, d_last, d1, base_date)
+                    fig.add_trace(go.Scatter(
+                        x=dates_proj, y=y_proj,
+                        mode='lines', line=dict(color='#2c3e50', width=2.5),
+                        name=f'Projection ({_user_dt_center:.0f}d doubling, CI {custom_dt_lo}\u2013{custom_dt_hi}d)',
+                        hovertext=hover_proj, hoverinfo='text',
                     ))
                 else:
                     d0 = int(days_used[seg_idx[0]])
@@ -813,16 +828,32 @@ def render_metr():
                         hovertext=hover_seg, hoverinfo='text',
                     ))
         else:
-            # Single OLS through full used frontier, extended to EOY
+            # Single OLS through full used frontier
             custom_params = _fit_slope_p50_intercept_display(days_used, log2_used, log2_disp_used)
             custom_ols_dt = 1.0 / custom_params[1] if custom_params[1] > 0 else float('inf')
-            d0, d1 = int(days_used[0]), (proj_end_date - base_date).days
-            dates_seg, y_seg, hover_seg = _trend_hover(custom_params, d0, d1, base_date)
+            # Historical portion: OLS through data points
+            d0 = int(days_used[0])
+            d_last = int(days_used[-1])
+            dates_seg, y_seg, hover_seg = _trend_hover(custom_params, d0, d_last, base_date)
             fig.add_trace(go.Scatter(
                 x=dates_seg, y=y_seg,
                 mode='lines', line=dict(color='#2c3e50', width=2.5),
-                name=f'OLS trend ({custom_ols_dt:.0f}d doubling, CI {custom_dt_lo}\u2013{custom_dt_hi}d)',
+                name=f'OLS trend ({custom_ols_dt:.0f}d doubling)',
                 hovertext=hover_seg, hoverinfo='text',
+            ))
+            # Projected portion: user DT slope from last data point
+            _user_dt_center = np.sqrt(custom_dt_lo * custom_dt_hi)
+            _user_slope = 1.0 / _user_dt_center
+            _ols_val_at_last = custom_params[0] + custom_params[1] * d_last
+            _proj_intercept = _ols_val_at_last - _user_slope * d_last
+            _proj_params = np.array([_proj_intercept, _user_slope])
+            d1 = (proj_end_date - base_date).days
+            dates_proj, y_proj, hover_proj = _trend_hover(_proj_params, d_last, d1, base_date)
+            fig.add_trace(go.Scatter(
+                x=dates_proj, y=y_proj,
+                mode='lines', line=dict(color='#2c3e50', width=2.5),
+                name=f'Projection ({_user_dt_center:.0f}d doubling, CI {custom_dt_lo}\u2013{custom_dt_hi}d)',
+                hovertext=hover_proj, hoverinfo='text',
             ))
     elif proj_basis == "Superexponential":
         # Reuse the fit computed earlier: y = _se_A + _se_K * 2^(d / halflife)
@@ -1442,14 +1473,30 @@ def render_eci():
                 seg_dpp = 1.0 / seg_params[1] if seg_params[1] > 0 else float('inf')
                 is_last = (si == len(_eci_segments) - 1)
                 if is_last:
+                    # Historical portion: OLS through data points
                     d0 = int(days_used[seg_idx[0]])
-                    d1 = (proj_end_date - base_date).days
-                    dates_seg, y_seg, hover_seg = _eci_trend_hover(seg_params, d0, d1, base_date)
+                    d_last = int(days_used[seg_idx[-1]])
+                    dates_seg, y_seg, hover_seg = _eci_trend_hover(seg_params, d0, d_last, base_date)
                     fig.add_trace(go.Scatter(
                         x=dates_seg, y=y_seg,
                         mode='lines', line=dict(color='#2c3e50', width=2.5),
-                        name=f'Segment {si+1} ({365.25/seg_dpp:.1f} pts/yr, CI {eci_custom_ppy_lo}\u2013{eci_custom_ppy_hi})',
+                        name=f'Segment {si+1} ({365.25/seg_dpp:.1f} pts/yr)',
                         hovertext=hover_seg, hoverinfo='text',
+                    ))
+                    # Projected portion: user DPP slope from last data point
+                    _user_dpp_center = np.sqrt(eci_custom_dpp_lo * eci_custom_dpp_hi)
+                    _user_ppy_center = 365.25 / _user_dpp_center
+                    _user_slope = 1.0 / _user_dpp_center
+                    _ols_val_at_last = seg_params[0] + seg_params[1] * d_last
+                    _proj_intercept = _ols_val_at_last - _user_slope * d_last
+                    _proj_params = np.array([_proj_intercept, _user_slope])
+                    d1 = (proj_end_date - base_date).days
+                    dates_proj, y_proj, hover_proj = _eci_trend_hover(_proj_params, d_last, d1, base_date)
+                    fig.add_trace(go.Scatter(
+                        x=dates_proj, y=y_proj,
+                        mode='lines', line=dict(color='#2c3e50', width=2.5),
+                        name=f'Projection ({_user_ppy_center:.1f} pts/yr, CI {eci_custom_ppy_lo}\u2013{eci_custom_ppy_hi})',
+                        hovertext=hover_proj, hoverinfo='text',
                     ))
                 else:
                     d0 = int(days_used[seg_idx[0]])
@@ -1464,13 +1511,30 @@ def render_eci():
         else:
             eci_ols_params = fit_line(days_used, scores_used)
             eci_ols_dpp = 1.0 / eci_ols_params[1] if eci_ols_params[1] > 0 else float('inf')
-            d0, d1 = int(days_used[0]), (proj_end_date - base_date).days
-            dates_seg, y_seg, hover_seg = _eci_trend_hover(eci_ols_params, d0, d1, base_date)
+            # Historical portion: OLS through data points
+            d0 = int(days_used[0])
+            d_last = int(days_used[-1])
+            dates_seg, y_seg, hover_seg = _eci_trend_hover(eci_ols_params, d0, d_last, base_date)
             fig.add_trace(go.Scatter(
                 x=dates_seg, y=y_seg,
                 mode='lines', line=dict(color='#2c3e50', width=2.5),
-                name=f'OLS trend ({365.25/eci_ols_dpp:.1f} pts/yr, CI {eci_custom_ppy_lo}\u2013{eci_custom_ppy_hi})',
+                name=f'OLS trend ({365.25/eci_ols_dpp:.1f} pts/yr)',
                 hovertext=hover_seg, hoverinfo='text',
+            ))
+            # Projected portion: user DPP slope from last data point
+            _user_dpp_center = np.sqrt(eci_custom_dpp_lo * eci_custom_dpp_hi)
+            _user_ppy_center = 365.25 / _user_dpp_center
+            _user_slope = 1.0 / _user_dpp_center
+            _ols_val_at_last = eci_ols_params[0] + eci_ols_params[1] * d_last
+            _proj_intercept = _ols_val_at_last - _user_slope * d_last
+            _proj_params = np.array([_proj_intercept, _user_slope])
+            d1 = (proj_end_date - base_date).days
+            dates_proj, y_proj, hover_proj = _eci_trend_hover(_proj_params, d_last, d1, base_date)
+            fig.add_trace(go.Scatter(
+                x=dates_proj, y=y_proj,
+                mode='lines', line=dict(color='#2c3e50', width=2.5),
+                name=f'Projection ({_user_ppy_center:.1f} pts/yr, CI {eci_custom_ppy_lo}\u2013{eci_custom_ppy_hi})',
+                hovertext=hover_proj, hoverinfo='text',
             ))
     elif eci_proj_basis == "Superexponential":
         d_start = int(days_used[0])
@@ -2078,24 +2142,45 @@ def render_rli():
                 seg_dt = np.log(2) / seg_params[1] if seg_params[1] > 0 else float('inf')
                 is_last = (si == len(_rli_segments) - 1)
                 if is_last:
+                    # Historical portion: OLS through data points
                     d0 = int(days_used[seg_idx[0]])
-                    d1 = (proj_end_date - base_date).days
-                else:
-                    d0 = int(days_used[seg_idx[0]])
-                    d1 = int(days_used[seg_idx[-1]])
-                days_range = np.arange(d0, d1 + 1, 1)
-                logit_trend = seg_params[0] + seg_params[1] * days_range
-                y_trend = _inv_logit(logit_trend) * 100
-                dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
-                hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_seg, y_trend)]
-                if is_last:
+                    d_last = int(days_used[seg_idx[-1]])
+                    days_range = np.arange(d0, d_last + 1, 1)
+                    logit_trend = seg_params[0] + seg_params[1] * days_range
+                    y_trend = _inv_logit(logit_trend) * 100
+                    dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
+                    hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_seg, y_trend)]
                     fig.add_trace(go.Scatter(
                         x=dates_seg, y=y_trend.tolist(),
                         mode='lines', line=dict(color='#2c3e50', width=2.5),
                         name=f'Segment {si+1} (2x odds: {seg_dt:.0f}d)',
                         hovertext=hover_seg, hoverinfo='text',
                     ))
+                    # Projected portion: user DT slope from last data point
+                    _user_dt_center = np.sqrt(rli_custom_dt_lo * rli_custom_dt_hi)
+                    _user_logit_slope = np.log(2) / _user_dt_center
+                    _ols_logit_at_last = seg_params[0] + seg_params[1] * d_last
+                    _proj_intercept = _ols_logit_at_last - _user_logit_slope * d_last
+                    d1 = (proj_end_date - base_date).days
+                    days_proj = np.arange(d_last, d1 + 1, 1)
+                    logit_proj = _proj_intercept + _user_logit_slope * days_proj
+                    y_proj = _inv_logit(logit_proj) * 100
+                    dates_proj = [base_date + timedelta(days=int(d)) for d in days_proj]
+                    hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
+                    fig.add_trace(go.Scatter(
+                        x=dates_proj, y=y_proj.tolist(),
+                        mode='lines', line=dict(color='#2c3e50', width=2.5),
+                        name=f'Projection (2x odds: {_user_dt_center:.0f}d, CI {rli_custom_dt_lo}\u2013{rli_custom_dt_hi}d)',
+                        hovertext=hover_proj, hoverinfo='text',
+                    ))
                 else:
+                    d0 = int(days_used[seg_idx[0]])
+                    d1 = int(days_used[seg_idx[-1]])
+                    days_range = np.arange(d0, d1 + 1, 1)
+                    logit_trend = seg_params[0] + seg_params[1] * days_range
+                    y_trend = _inv_logit(logit_trend) * 100
+                    dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
+                    hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_seg, y_trend)]
                     fig.add_trace(go.Scatter(
                         x=dates_seg, y=y_trend.tolist(),
                         mode='lines', line=dict(color=_seg_colors[si % len(_seg_colors)], width=2, dash='dash'),
@@ -2105,8 +2190,10 @@ def render_rli():
         else:
             rli_ols_params = fit_line(days_used, logit_used)
             rli_ols_dt = np.log(2) / rli_ols_params[1] if rli_ols_params[1] > 0 else float('inf')
-            d0, d1 = int(days_used[0]), (proj_end_date - base_date).days
-            days_range = np.arange(d0, d1 + 1, 1)
+            # Historical portion: OLS through data points
+            d0 = int(days_used[0])
+            d_last = int(days_used[-1])
+            days_range = np.arange(d0, d_last + 1, 1)
             logit_trend = rli_ols_params[0] + rli_ols_params[1] * days_range
             y_trend = _inv_logit(logit_trend) * 100
             dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
@@ -2116,6 +2203,23 @@ def render_rli():
                 mode='lines', line=dict(color='#2c3e50', width=2.5),
                 name=f'OLS trend (2x odds: {rli_ols_dt:.0f}d)',
                 hovertext=hover_seg, hoverinfo='text',
+            ))
+            # Projected portion: user DT slope from last data point
+            _user_dt_center = np.sqrt(rli_custom_dt_lo * rli_custom_dt_hi)
+            _user_logit_slope = np.log(2) / _user_dt_center
+            _ols_logit_at_last = rli_ols_params[0] + rli_ols_params[1] * d_last
+            _proj_intercept = _ols_logit_at_last - _user_logit_slope * d_last
+            d1 = (proj_end_date - base_date).days
+            days_proj = np.arange(d_last, d1 + 1, 1)
+            logit_proj = _proj_intercept + _user_logit_slope * days_proj
+            y_proj = _inv_logit(logit_proj) * 100
+            dates_proj = [base_date + timedelta(days=int(d)) for d in days_proj]
+            hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
+            fig.add_trace(go.Scatter(
+                x=dates_proj, y=y_proj.tolist(),
+                mode='lines', line=dict(color='#2c3e50', width=2.5),
+                name=f'Projection (2x odds: {_user_dt_center:.0f}d, CI {rli_custom_dt_lo}\u2013{rli_custom_dt_hi}d)',
+                hovertext=hover_proj, hoverinfo='text',
             ))
     elif rli_proj_basis == "Superexponential (logit)":
         d_start = int(days_used[0])
