@@ -329,9 +329,9 @@ def load_eci_frontier(_mtime=None):
             best_by_name[name] = m
     deduped = sorted(best_by_name.values(), key=lambda m: m['date'])
 
-    # Filter to GPT-4 era onward (Mar 2023+)
-    _gpt4_date = datetime(2023, 3, 14)
-    deduped = [m for m in deduped if m['date'] >= _gpt4_date]
+    # Filter to Claude 3 Opus era onward (Feb 2024+)
+    _cutoff_date = datetime(2024, 2, 29)
+    deduped = [m for m in deduped if m['date'] >= _cutoff_date]
 
     # Frontier detection: running max
     max_score = -float('inf')
