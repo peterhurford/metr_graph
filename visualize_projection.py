@@ -466,6 +466,17 @@ def render_metr():
         _is_linear = proj_basis in ("Linear", "Piecewise linear")
         if proj_basis == "Piecewise linear":
             piecewise_n_segments = 2  # default for piecewise
+
+        # Pre-compute OLS DT for data-driven defaults
+        _pre_fr = frontier_all[:proj_as_of_idx + 1]
+        _pre_base = frontier_all[0]['date']
+        _pre_days = np.array([(m['date'] - _pre_base).days for m in _pre_fr], dtype=float)
+        _pre_vals = np.array([np.log2(m['p50_min']) for m in _pre_fr])
+        _pre_params = fit_line(_pre_days, _pre_vals)
+        _pre_ols_dt = round(1.0 / _pre_params[1]) if _pre_params[1] > 0 else 100
+        _default_dt_lo = max(10, int(round(_pre_ols_dt / 2)))
+        _default_dt_hi = int(round(_pre_ols_dt * 2))
+
         if _is_linear:
             with st.expander("Advanced options"):
                 if st.button("Reset to defaults", key="reset_linear"):
@@ -478,10 +489,10 @@ def render_metr():
                     st.rerun()
                 custom_dt_lo, custom_dt_hi = st.columns(2)
                 custom_dt_lo = custom_dt_lo.number_input(
-                    "DT CI low (days)", value=50,
+                    "DT CI low (days)", value=_default_dt_lo,
                     min_value=10, max_value=2000, step=5, key="custom_dt_lo")
                 custom_dt_hi = custom_dt_hi.number_input(
-                    "DT CI high (days)", value=200,
+                    "DT CI high (days)", value=_default_dt_hi,
                     min_value=10, max_value=2000, step=5, key="custom_dt_hi")
                 if custom_dt_lo > custom_dt_hi:
                     st.error("DT CI low must be ≤ DT CI high.")
@@ -552,6 +563,19 @@ def render_metr():
                 if _sb_params[1] > 0:
                     _default_dt_init = int(round(1.0 / _sb_params[1]))
 
+            # Pre-compute superexp fit at default halflife to get implied DT for CI defaults
+            _pre_se_halflife = 365
+            _pre_se_z = 2 ** (_pre_days / _pre_se_halflife)
+            _pre_se_X = np.column_stack([np.ones_like(_pre_se_z), _pre_se_z])
+            (_pre_se_A, _pre_se_K), *_ = np.linalg.lstsq(_pre_se_X, _pre_vals, rcond=None)
+            _pre_se_d_last = _pre_days[-1]
+            if _pre_se_K > 0:
+                _pre_se_dt = _pre_se_halflife / (_pre_se_K * np.log(2) * 2 ** (_pre_se_d_last / _pre_se_halflife))
+            else:
+                _pre_se_dt = _pre_ols_dt
+            _default_se_dt_lo = max(10, int(round(_pre_se_dt / 2)))
+            _default_se_dt_hi = int(round(_pre_se_dt * 2))
+
             with st.expander("Advanced options"):
                 if st.button("Reset to defaults", key="reset_superexp"):
                     for k in ["superexp_dt_init", "superexp_halflife",
@@ -575,10 +599,10 @@ def render_metr():
                     help="DT can't shrink below this. Prevents runaway projections.")
                 _se_ci1, _se_ci2 = st.columns(2)
                 superexp_dt_ci_lo = _se_ci1.number_input(
-                    "DT CI low (days)", value=80,
+                    "DT CI low (days)", value=_default_se_dt_lo,
                     min_value=10, max_value=2000, step=5, key="superexp_dt_ci_lo")
                 superexp_dt_ci_hi = _se_ci2.number_input(
-                    "DT CI high (days)", value=250,
+                    "DT CI high (days)", value=_default_se_dt_hi,
                     min_value=10, max_value=2000, step=5, key="superexp_dt_ci_hi")
                 if superexp_dt_ci_lo > superexp_dt_ci_hi:
                     st.error("DT CI low must be ≤ DT CI high.")
@@ -1205,6 +1229,16 @@ def render_eci():
         if eci_proj_basis == "Piecewise linear":
             eci_piecewise_n_segments = 2
 
+        # Pre-compute OLS PPY for data-driven defaults
+        _eci_pre_fr = [m for m in eci_all if m['is_frontier']][:eci_proj_as_of_idx + 1]
+        _eci_pre_base = _eci_pre_fr[0]['date'] if _eci_pre_fr else eci_frontier_all[0]['date']
+        _eci_pre_days = np.array([(m['date'] - _eci_pre_base).days for m in _eci_pre_fr], dtype=float)
+        _eci_pre_scores = np.array([m['eci_score'] for m in _eci_pre_fr])
+        _eci_pre_params = fit_line(_eci_pre_days, _eci_pre_scores) if len(_eci_pre_fr) >= 2 else np.array([0, 0.046])
+        _eci_pre_ppy = round(_eci_pre_params[1] * 365.25, 1) if _eci_pre_params[1] > 0 else 16.9
+        _eci_default_ppy_lo = round(_eci_pre_ppy / 2, 1)
+        _eci_default_ppy_hi = round(_eci_pre_ppy * 2, 1)
+
         if _eci_is_linear:
             with st.expander("Advanced options"):
                 if st.button("Reset to defaults", key="reset_eci_linear"):
@@ -1217,10 +1251,10 @@ def render_eci():
                     st.rerun()
                 _eci_ppy_lo_col, _eci_ppy_hi_col = st.columns(2)
                 eci_custom_ppy_lo = _eci_ppy_lo_col.number_input(
-                    "+Pts/Yr CI low", value=10.0,
+                    "+Pts/Yr CI low", value=_eci_default_ppy_lo,
                     min_value=0.5, max_value=365.0, step=0.5, key="eci_custom_ppy_lo")
                 eci_custom_ppy_hi = _eci_ppy_hi_col.number_input(
-                    "+Pts/Yr CI high", value=28.5,
+                    "+Pts/Yr CI high", value=_eci_default_ppy_hi,
                     min_value=0.5, max_value=365.0, step=0.5, key="eci_custom_ppy_hi")
                 if eci_custom_ppy_lo > eci_custom_ppy_hi:
                     st.error("+Pts/Yr CI low must be ≤ +Pts/Yr CI high.")
@@ -1292,6 +1326,20 @@ def render_eci():
                 if _eci_fp[1] > 0:
                     _eci_default_ppy_init = round(365.25 * _eci_fp[1], 1)
 
+            # Pre-compute superexp fit at default halflife to get implied PPY for CI defaults
+            _eci_pre_se_halflife = 365
+            _eci_pre_se_z = 2 ** (_eci_pre_days / _eci_pre_se_halflife)
+            _eci_pre_se_X = np.column_stack([np.ones_like(_eci_pre_se_z), _eci_pre_se_z])
+            (_eci_pre_se_A, _eci_pre_se_K), *_ = np.linalg.lstsq(_eci_pre_se_X, _eci_pre_scores, rcond=None)
+            _eci_pre_se_d_last = _eci_pre_days[-1]
+            if _eci_pre_se_K > 0:
+                _eci_pre_se_dpp = _eci_pre_se_halflife / (_eci_pre_se_K * np.log(2) * 2 ** (_eci_pre_se_d_last / _eci_pre_se_halflife))
+                _eci_pre_se_ppy = round(365.25 / _eci_pre_se_dpp, 1)
+            else:
+                _eci_pre_se_ppy = _eci_pre_ppy
+            _eci_default_se_ppy_lo = round(max(0.5, _eci_pre_se_ppy / 2), 1)
+            _eci_default_se_ppy_hi = round(_eci_pre_se_ppy * 2, 1)
+
             with st.expander("Advanced options"):
                 if st.button("Reset to defaults", key="reset_eci_superexp"):
                     for k in ["eci_superexp_ppy_init", "eci_superexp_halflife",
@@ -1316,10 +1364,10 @@ def render_eci():
                 eci_superexp_dpp_floor = 365.25 / eci_superexp_ppy_ceiling
                 _eci_se_ci1, _eci_se_ci2 = st.columns(2)
                 eci_superexp_ppy_ci_lo = _eci_se_ci1.number_input(
-                    "+Pts/Yr CI low", value=6.0,
+                    "+Pts/Yr CI low", value=_eci_default_se_ppy_lo,
                     min_value=0.5, max_value=365.0, step=0.5, key="eci_superexp_ppy_ci_lo")
                 eci_superexp_ppy_ci_hi = _eci_se_ci2.number_input(
-                    "+Pts/Yr CI high", value=24.0,
+                    "+Pts/Yr CI high", value=_eci_default_se_ppy_hi,
                     min_value=0.5, max_value=365.0, step=0.5, key="eci_superexp_ppy_ci_hi")
                 if eci_superexp_ppy_ci_lo > eci_superexp_ppy_ci_hi:
                     st.error("+Pts/Yr CI low must be ≤ +Pts/Yr CI high.")
@@ -1898,6 +1946,16 @@ def render_rli():
         if rli_proj_basis == "Piecewise linear (logit)":
             rli_piecewise_n_segments = 2
 
+        # Pre-compute OLS DT for data-driven defaults
+        _rli_pre_fr = rli_frontier_all[:rli_proj_as_of_idx + 1]
+        _rli_pre_base = rli_frontier_all[0]['date']
+        _rli_pre_days = np.array([(m['date'] - _rli_pre_base).days for m in _rli_pre_fr], dtype=float)
+        _rli_pre_logit = _logit(np.array([m['rli_score'] / 100 for m in _rli_pre_fr]))
+        _rli_pre_params = fit_line(_rli_pre_days, _rli_pre_logit) if len(_rli_pre_fr) >= 2 else np.array([0, 0.007])
+        _rli_pre_dt = round(np.log(2) / _rli_pre_params[1]) if _rli_pre_params[1] > 0 else 100
+        _rli_default_dt_lo = round(max(5.0, _rli_pre_dt / 2), 0)
+        _rli_default_dt_hi = round(_rli_pre_dt * 2, 0)
+
         if _rli_is_linear:
             with st.expander("Advanced options"):
                 if st.button("Reset to defaults", key="reset_rli_linear"):
@@ -1911,11 +1969,11 @@ def render_rli():
                 # Doubling time CI (days for odds to double)
                 _rli_dt_lo_col, _rli_dt_hi_col = st.columns(2)
                 rli_custom_dt_lo = _rli_dt_lo_col.number_input(
-                    "Odds 2x time CI low (days)", value=50.0,
+                    "Odds 2x time CI low (days)", value=_rli_default_dt_lo,
                     min_value=5.0, max_value=2000.0, step=5.0, key="rli_custom_dt_lo",
                     help="Fast scenario: days for odds p/(1-p) to double.")
                 rli_custom_dt_hi = _rli_dt_hi_col.number_input(
-                    "Odds 2x time CI high (days)", value=200.0,
+                    "Odds 2x time CI high (days)", value=_rli_default_dt_hi,
                     min_value=5.0, max_value=5000.0, step=5.0, key="rli_custom_dt_hi",
                     help="Slow scenario: days for odds to double.")
                 if rli_custom_dt_lo > rli_custom_dt_hi:
@@ -1982,6 +2040,20 @@ def render_rli():
                 if _rli_fp[1] > 0:
                     _rli_default_dt_init = round(np.log(2) / _rli_fp[1], 0)
 
+            # Pre-compute superexp fit at default halflife for CI defaults
+            _rli_pre_se_halflife = 365
+            _rli_pre_se_z = 2 ** (_rli_pre_days / _rli_pre_se_halflife)
+            _rli_pre_se_X = np.column_stack([np.ones_like(_rli_pre_se_z), _rli_pre_se_z])
+            (_rli_pre_se_A, _rli_pre_se_K), *_ = np.linalg.lstsq(_rli_pre_se_X, _rli_pre_logit, rcond=None)
+            _rli_pre_se_d_last = _rli_pre_days[-1]
+            if _rli_pre_se_K > 0:
+                _rli_pre_se_logit_slope = _rli_pre_se_K * np.log(2) * 2 ** (_rli_pre_se_d_last / _rli_pre_se_halflife) / _rli_pre_se_halflife
+                _rli_pre_se_dt = round(np.log(2) / _rli_pre_se_logit_slope, 0)
+            else:
+                _rli_pre_se_dt = _rli_pre_dt
+            _rli_default_se_dt_lo = round(max(5.0, _rli_pre_se_dt / 2), 0)
+            _rli_default_se_dt_hi = round(_rli_pre_se_dt * 2, 0)
+
             with st.expander("Advanced options"):
                 if st.button("Reset to defaults", key="reset_rli_superexp"):
                     for k in ["rli_superexp_dt_init", "rli_superexp_halflife",
@@ -2005,10 +2077,10 @@ def render_rli():
                 rli_superexp_dt_floor = rli_superexp_dt_floor_input
                 _rli_se_ci1, _rli_se_ci2 = st.columns(2)
                 rli_superexp_dt_ci_lo = _rli_se_ci1.number_input(
-                    "Odds 2x CI low (days)", value=100.0,
+                    "Odds 2x CI low (days)", value=_rli_default_se_dt_lo,
                     min_value=5.0, max_value=2000.0, step=5.0, key="rli_superexp_dt_ci_lo")
                 rli_superexp_dt_ci_hi = _rli_se_ci2.number_input(
-                    "Odds 2x CI high (days)", value=200.0,
+                    "Odds 2x CI high (days)", value=_rli_default_se_dt_hi,
                     min_value=5.0, max_value=5000.0, step=5.0, key="rli_superexp_dt_ci_hi")
                 if rli_superexp_dt_ci_lo > rli_superexp_dt_ci_hi:
                     st.error("DT CI low must be ≤ DT CI high.")

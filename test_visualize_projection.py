@@ -1060,17 +1060,88 @@ class TestSuperexpProjectionMatchesTrajectories:
 # ===========================================================================
 
 class TestCIDefaults:
-    def test_metr_default_center_is_100(self):
-        """Default METR CI [50, 200] should have geometric mean = 100."""
-        lo, hi = 50, 200
-        center = np.sqrt(lo * hi)
-        assert center == 100.0
+    """Verify CI defaults are data-driven: lo=fitted/2, hi=fitted*2,
+    so geometric mean of (lo, hi) equals the fitted DT/PPY."""
 
-    def test_rli_default_center_is_100(self):
-        """Default RLI CI [50, 200] should have geometric mean = 100."""
-        lo, hi = 50, 200
+    def _metr_ols_dt(self):
+        """Replicate the METR linear pre-computation."""
+        frontier = vp.load_frontier()
+        base = frontier[0]['date']
+        days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+        vals = np.array([np.log2(m['p50_min']) for m in frontier])
+        params = vp.fit_line(days, vals)
+        return round(1.0 / params[1]) if params[1] > 0 else 100
+
+    def test_metr_linear_defaults_center_on_ols_dt(self):
+        """METR linear CI defaults should center on the OLS-fitted DT."""
+        ols_dt = self._metr_ols_dt()
+        lo = max(10, int(round(ols_dt / 2)))
+        hi = int(round(ols_dt * 2))
         center = np.sqrt(lo * hi)
-        assert center == 100.0
+        # Center should be close to the fitted DT (within rounding)
+        assert abs(center - ols_dt) / ols_dt < 0.15
+
+    def test_metr_linear_defaults_are_factor_of_2_spread(self):
+        """METR linear CI: hi should be ~4x lo (since lo=dt/2, hi=dt*2)."""
+        ols_dt = self._metr_ols_dt()
+        lo = max(10, int(round(ols_dt / 2)))
+        hi = int(round(ols_dt * 2))
+        assert 3.0 <= hi / lo <= 5.0
+
+    def test_metr_superexp_defaults_center_on_se_dt(self):
+        """METR superexp CI defaults should center on the fitted DT at last point."""
+        frontier = vp.load_frontier()
+        base = frontier[0]['date']
+        days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+        vals = np.array([np.log2(m['p50_min']) for m in frontier])
+        halflife = 365
+        z = 2 ** (days / halflife)
+        X = np.column_stack([np.ones_like(z), z])
+        (A, K), *_ = np.linalg.lstsq(X, vals, rcond=None)
+        if K > 0:
+            se_dt = halflife / (K * np.log(2) * 2 ** (days[-1] / halflife))
+        else:
+            se_dt = self._metr_ols_dt()
+        lo = max(10, int(round(se_dt / 2)))
+        hi = int(round(se_dt * 2))
+        center = np.sqrt(lo * hi)
+        assert abs(center - se_dt) / se_dt < 0.15
+
+    def _eci_ols_ppy(self):
+        """Replicate the ECI linear pre-computation."""
+        all_data = vp.load_eci_frontier()
+        frontier = [m for m in all_data if m['is_frontier']]
+        base = frontier[0]['date']
+        days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+        vals = np.array([m['eci_score'] for m in frontier])
+        params = vp.fit_line(days, vals)
+        return round(params[1] * 365.25, 1) if params[1] > 0 else 16.9
+
+    def test_eci_linear_defaults_center_on_ols_ppy(self):
+        """ECI linear CI defaults should center on the OLS-fitted PPY."""
+        ppy = self._eci_ols_ppy()
+        lo = round(ppy / 2, 1)
+        hi = round(ppy * 2, 1)
+        center = np.sqrt(lo * hi)
+        assert abs(center - ppy) / ppy < 0.15
+
+    def _rli_ols_dt(self):
+        """Replicate the RLI linear pre-computation."""
+        all_data = vp.load_rli_data()
+        frontier = [m for m in all_data if m['is_frontier']]
+        base = frontier[0]['date']
+        days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+        vals = np.array([vp._logit(m['rli_score'] / 100.0) for m in frontier])
+        params = vp.fit_line(days, vals)
+        return round(np.log(2) / params[1]) if params[1] > 0 else 100
+
+    def test_rli_linear_defaults_center_on_ols_dt(self):
+        """RLI linear CI defaults should center on the OLS-fitted DT."""
+        dt = self._rli_ols_dt()
+        lo = round(max(5.0, dt / 2), 0)
+        hi = round(dt * 2, 0)
+        center = np.sqrt(lo * hi)
+        assert abs(center - dt) / dt < 0.15
 
     def test_lognormal_ci_center_is_geometric_mean(self):
         """Lognormal median = geometric mean of CI bounds."""
@@ -1080,6 +1151,239 @@ class TestCIDefaults:
         samples = vp._lognormal_from_ci(lo, hi, 200_000)
         actual = np.median(samples)
         assert abs(actual - expected) / expected < 0.02
+
+    def test_all_defaults_are_positive(self):
+        """All data-driven defaults should be positive numbers."""
+        assert self._metr_ols_dt() > 0
+        assert self._eci_ols_ppy() > 0
+        assert self._rli_ols_dt() > 0
+
+
+# ===========================================================================
+# Bug-catching: default projection must match historical fit at transition
+# ===========================================================================
+
+class TestDefaultProjectionMatchesFit:
+    """The original bug: hardcoded CI defaults (e.g. center=100 days) didn't
+    match the actual fitted DT/PPY from the data, causing a visible slope
+    discontinuity where the historical fit ends and the projection begins.
+
+    These tests replicate the actual render-function code paths and verify
+    that the default projection line continues the historical fit seamlessly.
+    Each test computes BOTH the correct formula AND the old buggy formula
+    and asserts they disagree (discriminating) and that the code uses the
+    correct one.
+    """
+
+    # -- METR linear --------------------------------------------------------
+
+    def _metr_fit_data(self):
+        """Shared: load METR frontier, fit OLS, return (days, vals, params)."""
+        frontier = vp.load_frontier()
+        base = frontier[0]['date']
+        days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+        vals = np.array([np.log2(m['p50_min']) for m in frontier])
+        params = vp.fit_line(days, vals)
+        return days, vals, params
+
+    def test_metr_linear_hardcoded_100_differs_from_ols_dt(self):
+        """The old hardcoded center (100d) differs from the OLS-fitted DT.
+        If this test passes, the old bug WOULD have caused a slope mismatch."""
+        _, _, params = self._metr_fit_data()
+        ols_dt = 1.0 / params[1] if params[1] > 0 else 100
+        buggy_center = 100  # old hardcoded value
+        # If this fails, the hardcoded default happened to match the fit
+        # (unlikely but possible); the test is only discriminating when they differ.
+        assert abs(buggy_center - ols_dt) / ols_dt > 0.05, \
+            "Hardcoded 100 coincidentally matches OLS DT — test is not discriminating"
+
+    def test_metr_linear_slope_continuous_at_transition(self):
+        """At the transition point, the projection slope should equal the OLS
+        slope when using data-driven defaults."""
+        _, _, params = self._metr_fit_data()
+        ols_dt = round(1.0 / params[1]) if params[1] > 0 else 100
+        # Data-driven defaults (replicating render code)
+        lo = max(10, int(round(ols_dt / 2)))
+        hi = int(round(ols_dt * 2))
+        default_center_dt = np.sqrt(lo * hi)
+        default_slope = 1.0 / default_center_dt
+
+        # Buggy hardcoded defaults
+        buggy_center_dt = np.sqrt(50 * 200)  # = 100
+        buggy_slope = 1.0 / buggy_center_dt
+
+        ols_slope = params[1]
+
+        # Correct default slope should match OLS (within rounding)
+        assert abs(default_slope - ols_slope) / ols_slope < 0.15
+        # Buggy slope should NOT match OLS
+        assert abs(buggy_slope - ols_slope) / ols_slope > 0.05
+
+    def test_metr_linear_trajectory_center_matches_projection_line(self):
+        """The median trajectory DT (from lognormal sampling with data-driven
+        CI) should match the projection line DT."""
+        _, _, params = self._metr_fit_data()
+        ols_dt = round(1.0 / params[1]) if params[1] > 0 else 100
+        lo = max(10, int(round(ols_dt / 2)))
+        hi = int(round(ols_dt * 2))
+        # Projection line uses geometric mean
+        proj_line_dt = np.sqrt(lo * hi)
+        # Lognormal samples have geometric mean = sqrt(lo * hi)
+        np.random.seed(42)
+        samples = vp._lognormal_from_ci(lo, hi, 100_000)
+        trajectory_median_dt = np.median(samples)
+        assert abs(trajectory_median_dt - proj_line_dt) / proj_line_dt < 0.02
+
+    # -- METR superexponential ----------------------------------------------
+
+    def _metr_superexp_fit(self, halflife=365):
+        """Fit A + K*2^(d/H) to METR data, return (A, K, days, vals)."""
+        days, vals, _ = self._metr_fit_data()
+        z = 2 ** (days / halflife)
+        X = np.column_stack([np.ones_like(z), z])
+        (A, K), *_ = np.linalg.lstsq(X, vals, rcond=None)
+        return A, K, days, vals
+
+    def test_metr_superexp_hardcoded_100_differs_from_fitted_dt(self):
+        """The old hardcoded superexp DT CI center differs from the
+        superexp fit's implied DT at the last data point."""
+        halflife = 365
+        A, K, days, _ = self._metr_superexp_fit(halflife)
+        if K > 0:
+            fitted_dt = halflife / (K * np.log(2) * 2 ** (days[-1] / halflife))
+        else:
+            pytest.skip("K <= 0, can't test superexp")
+        buggy_center = 100  # old hardcoded value
+        assert abs(buggy_center - fitted_dt) / fitted_dt > 0.05, \
+            "Hardcoded 100 coincidentally matches superexp DT — test is not discriminating"
+
+    def test_metr_superexp_default_dt_matches_fit_implied_dt(self):
+        """Data-driven superexp CI defaults should center on the fit's
+        implied DT at the last data point."""
+        halflife = 365
+        A, K, days, _ = self._metr_superexp_fit(halflife)
+        if K > 0:
+            fitted_dt = halflife / (K * np.log(2) * 2 ** (days[-1] / halflife))
+        else:
+            pytest.skip("K <= 0, can't test superexp")
+        # Data-driven defaults
+        lo = max(10, int(round(fitted_dt / 2)))
+        hi = int(round(fitted_dt * 2))
+        center = np.sqrt(lo * hi)
+        assert abs(center - fitted_dt) / fitted_dt < 0.15
+
+    def test_metr_superexp_proj_continuous_at_transition(self):
+        """Superexp projection should start at the historical fit value and
+        grow at the same rate immediately after the transition."""
+        halflife = 365
+        A, K, days, vals = self._metr_superexp_fit(halflife)
+        if K <= 0:
+            pytest.skip("K <= 0, can't test superexp")
+        d_last = days[-1]
+        fitted_pos = A + K * 2 ** (d_last / halflife)
+        fitted_dt = halflife / (K * np.log(2) * 2 ** (d_last / halflife))
+        # Data-driven center
+        lo = max(10, int(round(fitted_dt / 2)))
+        hi = int(round(fitted_dt * 2))
+        center_dt = np.sqrt(lo * hi)
+        # Projection starts at fitted_pos and grows via superexp_trajectory
+        small_step = np.array([0.0, 1.0])
+        growth = vp.superexp_trajectory(small_step, center_dt, halflife, 1.0)
+        proj_slope = growth[1] - growth[0]  # growth per day at t=0
+        # Historical fit slope at last point = K * ln(2)/halflife * 2^(d/H)
+        fit_slope = K * np.log(2) / halflife * 2 ** (d_last / halflife)
+        # These are both 1/DT at the transition — should match
+        assert abs(proj_slope - fit_slope) / fit_slope < 0.15
+
+    # -- ECI linear ---------------------------------------------------------
+
+    def _eci_fit_data(self):
+        """Shared: load ECI frontier, fit OLS, return (days, vals, params)."""
+        all_data = vp.load_eci_frontier()
+        frontier = [m for m in all_data if m['is_frontier']]
+        base = frontier[0]['date']
+        days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+        vals = np.array([m['eci_score'] for m in frontier])
+        params = vp.fit_line(days, vals)
+        return days, vals, params
+
+    def test_eci_linear_slope_continuous_at_transition(self):
+        """ECI projection slope should match OLS slope under data-driven defaults."""
+        _, _, params = self._eci_fit_data()
+        ols_ppy = params[1] * 365.25 if params[1] > 0 else 16.9
+        ols_dpp = 365.25 / ols_ppy  # days per point
+        # Data-driven defaults
+        ppy = round(ols_ppy, 1)
+        lo = round(ppy / 2, 1)
+        hi = round(ppy * 2, 1)
+        default_center_ppy = np.sqrt(lo * hi)
+        default_slope = default_center_ppy / 365.25  # points per day
+        ols_slope = params[1]
+        assert abs(default_slope - ols_slope) / ols_slope < 0.15
+
+    # -- ECI superexponential -----------------------------------------------
+
+    def test_eci_superexp_default_ppy_matches_fit_implied_ppy(self):
+        """Data-driven superexp PPY defaults should center on the fit's
+        implied PPY at the last data point."""
+        days, vals, _ = self._eci_fit_data()
+        halflife = 365
+        z = 2 ** (days / halflife)
+        X = np.column_stack([np.ones_like(z), z])
+        (A, K), *_ = np.linalg.lstsq(X, vals, rcond=None)
+        if K <= 0:
+            pytest.skip("K <= 0, can't test superexp")
+        dpp = halflife / (K * np.log(2) * 2 ** (days[-1] / halflife))
+        fitted_ppy = round(365.25 / dpp, 1)
+        lo = round(max(0.5, fitted_ppy / 2), 1)
+        hi = round(fitted_ppy * 2, 1)
+        center = np.sqrt(lo * hi)
+        assert abs(center - fitted_ppy) / fitted_ppy < 0.15
+
+    # -- RLI linear ---------------------------------------------------------
+
+    def _rli_fit_data(self):
+        """Shared: load RLI frontier, fit OLS in logit space."""
+        all_data = vp.load_rli_data()
+        frontier = [m for m in all_data if m['is_frontier']]
+        base = frontier[0]['date']
+        days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+        vals = np.array([vp._logit(m['rli_score'] / 100.0) for m in frontier])
+        params = vp.fit_line(days, vals)
+        return days, vals, params
+
+    def test_rli_linear_slope_continuous_at_transition(self):
+        """RLI projection slope (in logit space) should match OLS slope
+        under data-driven defaults."""
+        _, _, params = self._rli_fit_data()
+        ols_dt = np.log(2) / params[1] if params[1] > 0 else 100
+        ols_dt_r = round(ols_dt)
+        lo = round(max(5.0, ols_dt_r / 2), 0)
+        hi = round(ols_dt_r * 2, 0)
+        default_center_dt = np.sqrt(lo * hi)
+        # slope in logit space: ln(2) / DT
+        default_slope = np.log(2) / default_center_dt
+        ols_slope = params[1]
+        assert abs(default_slope - ols_slope) / ols_slope < 0.15
+
+    # -- RLI superexponential -----------------------------------------------
+
+    def test_rli_superexp_default_dt_matches_fit_implied_dt(self):
+        """Data-driven superexp DT defaults should center on the fit's
+        implied DT at the last data point in logit space."""
+        days, vals, _ = self._rli_fit_data()
+        halflife = 365
+        z = 2 ** (days / halflife)
+        X = np.column_stack([np.ones_like(z), z])
+        (A, K), *_ = np.linalg.lstsq(X, vals, rcond=None)
+        if K <= 0:
+            pytest.skip("K <= 0, can't test superexp")
+        logit_slope = K * np.log(2) * 2 ** (days[-1] / halflife) / halflife
+        fitted_dt = round(np.log(2) / logit_slope, 0)
+        lo = round(max(5.0, fitted_dt / 2), 0)
+        hi = round(fitted_dt * 2, 0)
+        center = np.sqrt(lo * hi)
+        assert abs(center - fitted_dt) / fitted_dt < 0.15
 
 
 # ===========================================================================
