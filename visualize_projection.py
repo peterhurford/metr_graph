@@ -635,13 +635,8 @@ def render_metr():
         _cu_intercept = np.mean(_seg_y - _cu_params[1] * _seg_d)  # best intercept given fixed slope
         _cu_fitted_pos = _cu_intercept + _cu_params[1] * _cu_current_day  # log2(minutes)
         _cu_fitted_hrs = 2**_cu_fitted_pos / 60
-        # OLS doubling time from the fitted segment (used to center the DT CI on the trend)
-        _cu_ols_dt = 1.0 / _cu_params[1] if _cu_params[1] > 0 else (custom_dt_lo + custom_dt_hi) / 2
-        # Shift the user CI so its center aligns with the OLS DT, preserving the CI width ratio
-        _cu_ci_center = np.sqrt(custom_dt_lo * custom_dt_hi)  # geometric mean of user CI
-        _cu_dt_shift = _cu_ols_dt / _cu_ci_center
-        _eff_dt_lo = custom_dt_lo * _cu_dt_shift
-        _eff_dt_hi = custom_dt_hi * _cu_dt_shift
+        _eff_dt_lo = custom_dt_lo
+        _eff_dt_hi = custom_dt_hi
         n_custom = 20000
         # Trend: sample doubling times from chosen distribution, centered on OLS slope
         if custom_dt_dist == "Log-log":
@@ -684,13 +679,8 @@ def render_metr():
             superexp_dt_fitted = superexp_halflife / (_se_K * np.log(2) * 2 ** (_se_current_day / superexp_halflife))
         else:
             superexp_dt_fitted = float('inf')
-        # Sample DT from user CI, re-centered on the fitted DT at current date
         n_superexp = 20000
-        _se_ci_center = np.sqrt(superexp_dt_ci_lo * superexp_dt_ci_hi)
-        _se_dt_shift = superexp_dt_fitted / _se_ci_center
-        _se_eff_dt_lo = superexp_dt_ci_lo * _se_dt_shift
-        _se_eff_dt_hi = superexp_dt_ci_hi * _se_dt_shift
-        proj_dt = _lognormal_from_ci(_se_eff_dt_lo, _se_eff_dt_hi, n_superexp)
+        proj_dt = _lognormal_from_ci(superexp_dt_ci_lo, superexp_dt_ci_hi, n_superexp)
         # Position: lognormal noise centered on fitted trend position
         _se_fitted_hrs = 2**_se_fitted_pos / 60
         _se_pos_sigma = (np.log(superexp_pos_hi) - np.log(superexp_pos_lo)) / (2 * 1.282)
@@ -1318,13 +1308,8 @@ def render_eci():
         _eci_intercept = np.mean(_eci_seg_y - _eci_params[1] * _eci_seg_d)
         _eci_fitted_score = _eci_intercept + _eci_params[1] * _eci_current_day
 
-        # OLS DPP
-        _eci_ols_dpp = 1.0 / _eci_params[1] if _eci_params[1] > 0 else (eci_custom_dpp_lo + eci_custom_dpp_hi) / 2
-        # Shift CI to center on OLS DPP
-        _eci_ci_center = np.sqrt(eci_custom_dpp_lo * eci_custom_dpp_hi)
-        _eci_dpp_shift = _eci_ols_dpp / _eci_ci_center
-        _eci_eff_dpp_lo = eci_custom_dpp_lo * _eci_dpp_shift
-        _eci_eff_dpp_hi = eci_custom_dpp_hi * _eci_dpp_shift
+        _eci_eff_dpp_lo = eci_custom_dpp_lo
+        _eci_eff_dpp_hi = eci_custom_dpp_hi
 
         n_eci = 20000
         if eci_custom_dpp_dist == "Log-log":
@@ -1362,11 +1347,7 @@ def render_eci():
             eci_superexp_dpp_fitted = float('inf')
 
         n_eci = 20000
-        _eci_se_ci_center = np.sqrt(eci_superexp_dpp_ci_lo * eci_superexp_dpp_ci_hi)
-        _eci_se_dpp_shift = eci_superexp_dpp_fitted / _eci_se_ci_center
-        _eci_se_eff_dpp_lo = eci_superexp_dpp_ci_lo * _eci_se_dpp_shift
-        _eci_se_eff_dpp_hi = eci_superexp_dpp_ci_hi * _eci_se_dpp_shift
-        eci_proj_dpp = _lognormal_from_ci(_eci_se_eff_dpp_lo, _eci_se_eff_dpp_hi, n_eci)
+        eci_proj_dpp = _lognormal_from_ci(eci_superexp_dpp_ci_lo, eci_superexp_dpp_ci_hi, n_eci)
 
         # Position: normal noise centered on fitted trend position
         _eci_se_pos_sigma = (eci_superexp_pos_hi - eci_superexp_pos_lo) / (2 * 1.282)
@@ -1963,21 +1944,13 @@ def render_rli():
         _rli_intercept = np.mean(_rli_seg_y - _rli_params[1] * _rli_seg_d)
         _rli_fitted_logit = _rli_intercept + _rli_params[1] * _rli_current_day
 
-        # OLS doubling time of odds
-        _rli_ols_dt = np.log(2) / _rli_params[1] if _rli_params[1] > 0 else (rli_custom_dt_lo + rli_custom_dt_hi) / 2
-        # Shift CI to center on OLS dt
-        _rli_ci_center = np.sqrt(rli_custom_dt_lo * rli_custom_dt_hi)
-        _rli_dt_shift = _rli_ols_dt / _rli_ci_center
-        _rli_eff_dt_lo = rli_custom_dt_lo * _rli_dt_shift
-        _rli_eff_dt_hi = rli_custom_dt_hi * _rli_dt_shift
-
         n_rli = 20000
         if rli_custom_dt_dist == "Log-log":
-            rli_proj_dt = _log_lognormal_from_ci(_rli_eff_dt_lo, _rli_eff_dt_hi, n_rli)
+            rli_proj_dt = _log_lognormal_from_ci(rli_custom_dt_lo, rli_custom_dt_hi, n_rli)
         elif rli_custom_dt_dist == "Lognormal":
-            rli_proj_dt = _lognormal_from_ci(_rli_eff_dt_lo, _rli_eff_dt_hi, n_rli)
+            rli_proj_dt = _lognormal_from_ci(rli_custom_dt_lo, rli_custom_dt_hi, n_rli)
         else:
-            rli_proj_dt = _normal_from_ci(_rli_eff_dt_lo, _rli_eff_dt_hi, n_rli)
+            rli_proj_dt = _normal_from_ci(rli_custom_dt_lo, rli_custom_dt_hi, n_rli)
 
         # Convert doubling times to logit slopes: slope = ln(2) / dt
         rli_proj_logit_slope = np.log(2) / rli_proj_dt
@@ -2015,11 +1988,7 @@ def render_rli():
             rli_superexp_dt_fitted = float('inf')
 
         n_rli = 20000
-        _rli_se_ci_center = np.sqrt(rli_superexp_dt_ci_lo * rli_superexp_dt_ci_hi)
-        _rli_se_dt_shift = rli_superexp_dt_fitted / _rli_se_ci_center
-        _rli_se_eff_dt_lo = rli_superexp_dt_ci_lo * _rli_se_dt_shift
-        _rli_se_eff_dt_hi = rli_superexp_dt_ci_hi * _rli_se_dt_shift
-        rli_proj_dt = _lognormal_from_ci(_rli_se_eff_dt_lo, _rli_se_eff_dt_hi, n_rli)
+        rli_proj_dt = _lognormal_from_ci(rli_superexp_dt_ci_lo, rli_superexp_dt_ci_hi, n_rli)
         rli_proj_logit_slope = np.log(2) / rli_proj_dt
 
         # Position: normal noise in logit space
