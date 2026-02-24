@@ -813,7 +813,7 @@ def render_metr():
                     dates_proj, y_proj, hover_proj = _trend_hover(_proj_params, d_last, d1, base_date)
                     fig.add_trace(go.Scatter(
                         x=dates_proj, y=y_proj,
-                        mode='lines', line=dict(color='#2c3e50', width=2.5),
+                        mode='lines', line=dict(color='#1a5276', width=2.5),
                         name=f'Projection ({_user_dt_center:.0f}d doubling, CI {custom_dt_lo}\u2013{custom_dt_hi}d)',
                         hovertext=hover_proj, hoverinfo='text',
                     ))
@@ -851,7 +851,7 @@ def render_metr():
             dates_proj, y_proj, hover_proj = _trend_hover(_proj_params, d_last, d1, base_date)
             fig.add_trace(go.Scatter(
                 x=dates_proj, y=y_proj,
-                mode='lines', line=dict(color='#2c3e50', width=2.5),
+                mode='lines', line=dict(color='#1a5276', width=2.5),
                 name=f'Projection ({_user_dt_center:.0f}d doubling, CI {custom_dt_lo}\u2013{custom_dt_hi}d)',
                 hovertext=hover_proj, hoverinfo='text',
             ))
@@ -1494,7 +1494,7 @@ def render_eci():
                     dates_proj, y_proj, hover_proj = _eci_trend_hover(_proj_params, d_last, d1, base_date)
                     fig.add_trace(go.Scatter(
                         x=dates_proj, y=y_proj,
-                        mode='lines', line=dict(color='#2c3e50', width=2.5),
+                        mode='lines', line=dict(color='#1a5276', width=2.5),
                         name=f'Projection ({_user_ppy_center:.1f} pts/yr, CI {eci_custom_ppy_lo}\u2013{eci_custom_ppy_hi})',
                         hovertext=hover_proj, hoverinfo='text',
                     ))
@@ -1532,7 +1532,7 @@ def render_eci():
             dates_proj, y_proj, hover_proj = _eci_trend_hover(_proj_params, d_last, d1, base_date)
             fig.add_trace(go.Scatter(
                 x=dates_proj, y=y_proj,
-                mode='lines', line=dict(color='#2c3e50', width=2.5),
+                mode='lines', line=dict(color='#1a5276', width=2.5),
                 name=f'Projection ({_user_ppy_center:.1f} pts/yr, CI {eci_custom_ppy_lo}\u2013{eci_custom_ppy_hi})',
                 hovertext=hover_proj, hoverinfo='text',
             ))
@@ -2169,7 +2169,7 @@ def render_rli():
                     hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
                     fig.add_trace(go.Scatter(
                         x=dates_proj, y=y_proj.tolist(),
-                        mode='lines', line=dict(color='#2c3e50', width=2.5),
+                        mode='lines', line=dict(color='#1a5276', width=2.5),
                         name=f'Projection (2x odds: {_user_dt_center:.0f}d, CI {rli_custom_dt_lo}\u2013{rli_custom_dt_hi}d)',
                         hovertext=hover_proj, hoverinfo='text',
                     ))
@@ -2217,7 +2217,7 @@ def render_rli():
             hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
             fig.add_trace(go.Scatter(
                 x=dates_proj, y=y_proj.tolist(),
-                mode='lines', line=dict(color='#2c3e50', width=2.5),
+                mode='lines', line=dict(color='#1a5276', width=2.5),
                 name=f'Projection (2x odds: {_user_dt_center:.0f}d, CI {rli_custom_dt_lo}\u2013{rli_custom_dt_hi}d)',
                 hovertext=hover_proj, hoverinfo='text',
             ))
