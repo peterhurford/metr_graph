@@ -900,7 +900,7 @@ def render_metr():
     eoy_targets = [
         ("Projected today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
         ("2026 Jun EOM", datetime(2026, 6, 30)),
-        ("Dec 2026", datetime(2026, 12, 31)),
+        ("2026EOY", datetime(2026, 12, 31)),
         ("2027EOY", datetime(2027, 12, 31)),
         ("2028EOY", datetime(2028, 12, 31)),
         ("2029EOY", datetime(2029, 12, 31)),
@@ -1496,7 +1496,7 @@ def render_eci():
     eoy_targets = [
         ("Projected today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
         ("2026 Jun EOM", datetime(2026, 6, 30)),
-        ("Dec 2026", datetime(2026, 12, 31)),
+        ("2026EOY", datetime(2026, 12, 31)),
         ("2027EOY", datetime(2027, 12, 31)),
         ("2028EOY", datetime(2028, 12, 31)),
         ("2029EOY", datetime(2029, 12, 31)),
@@ -1630,11 +1630,11 @@ def render_rli():
                 # Doubling time CI (days for odds to double)
                 _rli_dt_lo_col, _rli_dt_hi_col = st.columns(2)
                 rli_custom_dt_lo = _rli_dt_lo_col.number_input(
-                    "Odds 2x time CI low (days)", value=50.0,
+                    "Odds 2x time CI low (days)", value=100.0,
                     min_value=5.0, max_value=2000.0, step=5.0, key="rli_custom_dt_lo",
                     help="Fast scenario: days for odds p/(1-p) to double.")
                 rli_custom_dt_hi = _rli_dt_hi_col.number_input(
-                    "Odds 2x time CI high (days)", value=250.0,
+                    "Odds 2x time CI high (days)", value=200.0,
                     min_value=5.0, max_value=5000.0, step=5.0, key="rli_custom_dt_hi",
                     help="Slow scenario: days for odds to double.")
 
@@ -1714,10 +1714,10 @@ def render_rli():
                 rli_superexp_dt_floor = rli_superexp_dt_floor_input
                 _rli_se_ci1, _rli_se_ci2 = st.columns(2)
                 rli_superexp_dt_ci_lo = _rli_se_ci1.number_input(
-                    "Odds 2x CI low (days)", value=40.0,
+                    "Odds 2x CI low (days)", value=100.0,
                     min_value=5.0, max_value=2000.0, step=5.0, key="rli_superexp_dt_ci_lo")
                 rli_superexp_dt_ci_hi = _rli_se_ci2.number_input(
-                    "Odds 2x CI high (days)", value=300.0,
+                    "Odds 2x CI high (days)", value=200.0,
                     min_value=5.0, max_value=5000.0, step=5.0, key="rli_superexp_dt_ci_hi")
                 _rli_cur = rli_frontier_all[rli_proj_as_of_idx]
                 _rli_def_score = _rli_cur['rli_score']
@@ -2120,7 +2120,7 @@ def render_rli():
     eoy_targets = [
         ("Projected today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
         ("2026 Jun EOM", datetime(2026, 6, 30)),
-        ("Dec 2026", datetime(2026, 12, 31)),
+        ("2026EOY", datetime(2026, 12, 31)),
         ("2027EOY", datetime(2027, 12, 31)),
         ("2028EOY", datetime(2028, 12, 31)),
         ("2029EOY", datetime(2029, 12, 31)),
