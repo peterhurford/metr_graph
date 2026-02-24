@@ -474,8 +474,22 @@ def render_metr():
         _pre_vals = np.array([np.log2(m['p50_min']) for m in _pre_fr])
         _pre_params = fit_line(_pre_days, _pre_vals)
         _pre_ols_dt = round(1.0 / _pre_params[1]) if _pre_params[1] > 0 else 100
-        _default_dt_lo = max(10, int(round(_pre_ols_dt / 2)))
-        _default_dt_hi = int(round(_pre_ols_dt * 2))
+
+        # For piecewise: pre-compute last segment DT using default breakpoint (GPT-4o)
+        if proj_basis == "Piecewise linear" and gpt4o_idx <= proj_as_of_idx:
+            _pre_pw_start = gpt4o_idx  # default breakpoint
+            _pre_pw_days = _pre_days[_pre_pw_start:]
+            _pre_pw_vals = _pre_vals[_pre_pw_start:]
+            if len(_pre_pw_days) >= 2:
+                _pre_pw_params = fit_line(_pre_pw_days, _pre_pw_vals)
+                _pre_pw_dt = round(1.0 / _pre_pw_params[1]) if _pre_pw_params[1] > 0 else _pre_ols_dt
+            else:
+                _pre_pw_dt = _pre_ols_dt
+            _default_dt_lo = max(10, int(round(_pre_pw_dt / 2)))
+            _default_dt_hi = int(round(_pre_pw_dt * 2))
+        else:
+            _default_dt_lo = max(10, int(round(_pre_ols_dt / 2)))
+            _default_dt_hi = int(round(_pre_ols_dt * 2))
 
         if _is_linear:
             with st.expander("Advanced options"):
@@ -1236,8 +1250,22 @@ def render_eci():
         _eci_pre_scores = np.array([m['eci_score'] for m in _eci_pre_fr])
         _eci_pre_params = fit_line(_eci_pre_days, _eci_pre_scores) if len(_eci_pre_fr) >= 2 else np.array([0, 0.046])
         _eci_pre_ppy = round(_eci_pre_params[1] * 365.25, 1) if _eci_pre_params[1] > 0 else 16.9
-        _eci_default_ppy_lo = round(_eci_pre_ppy / 2, 1)
-        _eci_default_ppy_hi = round(_eci_pre_ppy * 2, 1)
+
+        # For piecewise: use last segment (from midpoint) PPY as default
+        if eci_proj_basis == "Piecewise linear" and len(_eci_pre_fr) >= 4:
+            _eci_pw_start = len(_eci_pre_fr) // 2  # default breakpoint = midpoint
+            _eci_pw_days = _eci_pre_days[_eci_pw_start:]
+            _eci_pw_scores = _eci_pre_scores[_eci_pw_start:]
+            if len(_eci_pw_days) >= 2:
+                _eci_pw_params = fit_line(_eci_pw_days, _eci_pw_scores)
+                _eci_pw_ppy = round(_eci_pw_params[1] * 365.25, 1) if _eci_pw_params[1] > 0 else _eci_pre_ppy
+            else:
+                _eci_pw_ppy = _eci_pre_ppy
+            _eci_default_ppy_lo = round(_eci_pw_ppy / 2, 1)
+            _eci_default_ppy_hi = round(_eci_pw_ppy * 2, 1)
+        else:
+            _eci_default_ppy_lo = round(_eci_pre_ppy / 2, 1)
+            _eci_default_ppy_hi = round(_eci_pre_ppy * 2, 1)
 
         if _eci_is_linear:
             with st.expander("Advanced options"):
@@ -1953,8 +1981,22 @@ def render_rli():
         _rli_pre_logit = _logit(np.array([m['rli_score'] / 100 for m in _rli_pre_fr]))
         _rli_pre_params = fit_line(_rli_pre_days, _rli_pre_logit) if len(_rli_pre_fr) >= 2 else np.array([0, 0.007])
         _rli_pre_dt = round(np.log(2) / _rli_pre_params[1]) if _rli_pre_params[1] > 0 else 100
-        _rli_default_dt_lo = round(max(5.0, _rli_pre_dt / 2), 0)
-        _rli_default_dt_hi = round(_rli_pre_dt * 2, 0)
+
+        # For piecewise: use last segment (from midpoint) DT as default
+        if rli_proj_basis == "Piecewise linear (logit)" and len(_rli_pre_fr) >= 4:
+            _rli_pw_start = len(_rli_pre_fr) // 2
+            _rli_pw_days = _rli_pre_days[_rli_pw_start:]
+            _rli_pw_logit = _rli_pre_logit[_rli_pw_start:]
+            if len(_rli_pw_days) >= 2:
+                _rli_pw_params = fit_line(_rli_pw_days, _rli_pw_logit)
+                _rli_pw_dt = round(np.log(2) / _rli_pw_params[1]) if _rli_pw_params[1] > 0 else _rli_pre_dt
+            else:
+                _rli_pw_dt = _rli_pre_dt
+            _rli_default_dt_lo = float(round(max(5.0, _rli_pw_dt / 2), 0))
+            _rli_default_dt_hi = float(round(_rli_pw_dt * 2, 0))
+        else:
+            _rli_default_dt_lo = float(round(max(5.0, _rli_pre_dt / 2), 0))
+            _rli_default_dt_hi = float(round(_rli_pre_dt * 2, 0))
 
         if _rli_is_linear:
             with st.expander("Advanced options"):
@@ -2051,8 +2093,8 @@ def render_rli():
                 _rli_pre_se_dt = round(np.log(2) / _rli_pre_se_logit_slope, 0)
             else:
                 _rli_pre_se_dt = _rli_pre_dt
-            _rli_default_se_dt_lo = round(max(5.0, _rli_pre_se_dt / 2), 0)
-            _rli_default_se_dt_hi = round(_rli_pre_se_dt * 2, 0)
+            _rli_default_se_dt_lo = float(round(max(5.0, _rli_pre_se_dt / 2), 0))
+            _rli_default_se_dt_hi = float(round(_rli_pre_se_dt * 2, 0))
 
             with st.expander("Advanced options"):
                 if st.button("Reset to defaults", key="reset_rli_superexp"):
