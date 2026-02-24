@@ -493,14 +493,14 @@ def render_metr():
 
         if _is_linear:
             with st.expander("Advanced options"):
-                if st.button("Reset to defaults", key="reset_linear"):
+                def _reset_linear():
                     for k in ["custom_dt_lo", "custom_dt_hi",
                               "custom_pos_lo_p50", "custom_pos_lo_p80",
                               "custom_pos_hi_p50", "custom_pos_hi_p80",
                               "piecewise_n_seg", "bp1_select", "bp2_select",
                               "custom_dt_dist", "custom_pos_dist"]:
                         st.session_state.pop(k, None)
-                    st.rerun()
+                st.button("Reset to defaults", key="reset_linear", on_click=_reset_linear)
                 custom_dt_lo, custom_dt_hi = st.columns(2)
                 custom_dt_lo = custom_dt_lo.number_input(
                     "DT CI low (days)", value=_default_dt_lo,
@@ -591,14 +591,14 @@ def render_metr():
             _default_se_dt_hi = int(round(_pre_se_dt * 2))
 
             with st.expander("Advanced options"):
-                if st.button("Reset to defaults", key="reset_superexp"):
+                def _reset_superexp():
                     for k in ["superexp_dt_init", "superexp_halflife",
                               "superexp_dt_floor", "superexp_dt_ci_lo",
                               "superexp_dt_ci_hi", "superexp_pos_lo_p50",
                               "superexp_pos_lo_p80", "superexp_pos_hi_p50",
                               "superexp_pos_hi_p80"]:
                         st.session_state.pop(k, None)
-                    st.rerun()
+                st.button("Reset to defaults", key="reset_superexp", on_click=_reset_superexp)
                 _se_col1, _se_col2 = st.columns(2)
                 superexp_dt_initial = _se_col1.number_input(
                     "Initial DT (days)", value=_default_dt_init,
@@ -1269,14 +1269,14 @@ def render_eci():
 
         if _eci_is_linear:
             with st.expander("Advanced options"):
-                if st.button("Reset to defaults", key="reset_eci_linear"):
+                def _reset_eci_linear():
                     for k in ["eci_custom_ppy_lo", "eci_custom_ppy_hi",
                               "eci_custom_pos_lo", "eci_custom_pos_hi",
                               "eci_piecewise_n_seg", "eci_bp1_select",
                               "eci_bp2_select", "eci_custom_dpp_dist",
                               "eci_custom_pos_dist"]:
                         st.session_state.pop(k, None)
-                    st.rerun()
+                st.button("Reset to defaults", key="reset_eci_linear", on_click=_reset_eci_linear)
                 _eci_ppy_lo_col, _eci_ppy_hi_col = st.columns(2)
                 eci_custom_ppy_lo = _eci_ppy_lo_col.number_input(
                     "+Pts/Yr CI low", value=_eci_default_ppy_lo,
@@ -1369,13 +1369,13 @@ def render_eci():
             _eci_default_se_ppy_hi = round(_eci_pre_se_ppy * 2, 1)
 
             with st.expander("Advanced options"):
-                if st.button("Reset to defaults", key="reset_eci_superexp"):
+                def _reset_eci_superexp():
                     for k in ["eci_superexp_ppy_init", "eci_superexp_halflife",
                               "eci_superexp_ppy_ceiling", "eci_superexp_ppy_ci_lo",
                               "eci_superexp_ppy_ci_hi", "eci_superexp_pos_lo",
                               "eci_superexp_pos_hi"]:
                         st.session_state.pop(k, None)
-                    st.rerun()
+                st.button("Reset to defaults", key="reset_eci_superexp", on_click=_reset_eci_superexp)
                 _eci_se_col1, _eci_se_col2 = st.columns(2)
                 eci_superexp_ppy_initial = _eci_se_col1.number_input(
                     "Initial +Pts/Yr", value=_eci_default_ppy_init,
@@ -2000,14 +2000,14 @@ def render_rli():
 
         if _rli_is_linear:
             with st.expander("Advanced options"):
-                if st.button("Reset to defaults", key="reset_rli_linear"):
+                def _reset_rli_linear():
                     for k in ["rli_custom_dt_lo", "rli_custom_dt_hi",
                               "rli_custom_pos_lo", "rli_custom_pos_hi",
                               "rli_piecewise_n_seg", "rli_bp1_select",
                               "rli_bp2_select", "rli_custom_dt_dist",
                               "rli_custom_pos_dist"]:
                         st.session_state.pop(k, None)
-                    st.rerun()
+                st.button("Reset to defaults", key="reset_rli_linear", on_click=_reset_rli_linear)
                 # Doubling time CI (days for odds to double)
                 _rli_dt_lo_col, _rli_dt_hi_col = st.columns(2)
                 rli_custom_dt_lo = _rli_dt_lo_col.number_input(
@@ -2097,13 +2097,13 @@ def render_rli():
             _rli_default_se_dt_hi = float(round(_rli_pre_se_dt * 2, 0))
 
             with st.expander("Advanced options"):
-                if st.button("Reset to defaults", key="reset_rli_superexp"):
+                def _reset_rli_superexp():
                     for k in ["rli_superexp_dt_init", "rli_superexp_halflife",
                               "rli_superexp_dt_floor", "rli_superexp_dt_ci_lo",
                               "rli_superexp_dt_ci_hi", "rli_superexp_pos_lo",
                               "rli_superexp_pos_hi"]:
                         st.session_state.pop(k, None)
-                    st.rerun()
+                st.button("Reset to defaults", key="reset_rli_superexp", on_click=_reset_rli_superexp)
                 _rli_se_col1, _rli_se_col2 = st.columns(2)
                 rli_superexp_dt_initial = _rli_se_col1.number_input(
                     "Initial odds 2x time (days)", value=_rli_default_dt_init,
