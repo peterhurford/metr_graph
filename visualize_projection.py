@@ -450,10 +450,10 @@ def render_metr():
             with st.expander("Advanced options"):
                 custom_dt_lo, custom_dt_hi = st.columns(2)
                 custom_dt_lo = custom_dt_lo.number_input(
-                    "DT CI low (days)", value=55,
+                    "DT CI low (days)", value=50,
                     min_value=10, max_value=2000, step=5, key="custom_dt_lo")
                 custom_dt_hi = custom_dt_hi.number_input(
-                    "DT CI high (days)", value=180,
+                    "DT CI high (days)", value=200,
                     min_value=10, max_value=2000, step=5, key="custom_dt_hi")
                 if custom_dt_lo > custom_dt_hi:
                     st.error("DT CI low must be ≤ DT CI high.")
@@ -1169,10 +1169,10 @@ def render_eci():
             with st.expander("Advanced options"):
                 _eci_ppy_lo_col, _eci_ppy_hi_col = st.columns(2)
                 eci_custom_ppy_lo = _eci_ppy_lo_col.number_input(
-                    "+Pts/Yr CI low", value=7.0,
+                    "+Pts/Yr CI low", value=10.0,
                     min_value=0.5, max_value=365.0, step=0.5, key="eci_custom_ppy_lo")
                 eci_custom_ppy_hi = _eci_ppy_hi_col.number_input(
-                    "+Pts/Yr CI high", value=18.0,
+                    "+Pts/Yr CI high", value=28.5,
                     min_value=0.5, max_value=365.0, step=0.5, key="eci_custom_ppy_hi")
                 if eci_custom_ppy_lo > eci_custom_ppy_hi:
                     st.error("+Pts/Yr CI low must be ≤ +Pts/Yr CI high.")
@@ -1844,7 +1844,7 @@ def render_rli():
                 # Doubling time CI (days for odds to double)
                 _rli_dt_lo_col, _rli_dt_hi_col = st.columns(2)
                 rli_custom_dt_lo = _rli_dt_lo_col.number_input(
-                    "Odds 2x time CI low (days)", value=100.0,
+                    "Odds 2x time CI low (days)", value=50.0,
                     min_value=5.0, max_value=2000.0, step=5.0, key="rli_custom_dt_lo",
                     help="Fast scenario: days for odds p/(1-p) to double.")
                 rli_custom_dt_hi = _rli_dt_hi_col.number_input(
