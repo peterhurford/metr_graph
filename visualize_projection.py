@@ -165,6 +165,89 @@ def _inv_logit(x):
     return 1.0 / (1.0 + np.exp(-np.clip(x, -500, 500)))
 
 
+# ── Backtesting helpers ──────────────────────────────────────────────────
+
+def _backtest_stats(future_models, all_trajectories, proj_start_date, proj_end_date,
+                    get_value, get_name):
+    """Compute backtest statistics for future frontier models vs. projected trajectories."""
+    results = []
+    for m in future_models:
+        if m['date'] <= proj_start_date or m['date'] > proj_end_date:
+            continue
+        day_idx = (m['date'] - proj_start_date).days
+        if day_idx < 0 or day_idx >= all_trajectories.shape[1]:
+            continue
+        traj_col = all_trajectories[:, day_idx]
+        val = get_value(m)
+        pctile = float(np.mean(traj_col <= val) * 100)
+        p5, p10, p25, p75, p90, p95 = np.percentile(traj_col, [5, 10, 25, 75, 90, 95])
+        results.append({
+            'model': m, 'name': get_name(m), 'date': m['date'], 'value': val,
+            'percentile': pctile,
+            'within_50': bool(p25 <= val <= p75),
+            'within_80': bool(p10 <= val <= p90),
+            'within_90': bool(p5 <= val <= p95),
+        })
+    return results
+
+
+def _bt_color_for(r):
+    """Return color for a backtest result based on CI band membership."""
+    if r['within_50']:
+        return '#27ae60'
+    if r['within_80']:
+        return '#f1c40f'
+    if r['within_90']:
+        return '#e67e22'
+    return '#e74c3c'
+
+
+def _add_backtest_traces(fig, backtest_results, proj_start_date, yconv=None):
+    """Add cutoff line and actual trajectory line to a plotly figure."""
+    _yc = yconv if yconv else (lambda x: x)
+    # Cutoff line
+    fig.add_vline(
+        x=proj_start_date,
+        line=dict(color='#e67e22', width=2, dash='dash'),
+        opacity=0.8,
+    )
+    fig.add_annotation(
+        x=proj_start_date, y=1.0, yref='paper',
+        text='  Projection start', showarrow=False, textangle=-90,
+        font=dict(size=10, color='#e67e22'),
+        xanchor='right', yanchor='top',
+    )
+    # Actual trajectory line
+    if len(backtest_results) >= 2:
+        dates = [r['date'] for r in backtest_results]
+        values = [_yc(r['value']) for r in backtest_results]
+        fig.add_trace(go.Scatter(
+            x=dates, y=values,
+            mode='lines',
+            line=dict(color='#27ae60', width=2, dash='dash'),
+            name='Actual trajectory',
+            hoverinfo='skip', showlegend=True,
+        ))
+
+
+def _backtest_summary(backtest_results):
+    """Show st.info() summary bar for backtest results."""
+    if not backtest_results:
+        return
+    n = len(backtest_results)
+    n_50 = sum(1 for r in backtest_results if r['within_50'])
+    n_80 = sum(1 for r in backtest_results if r['within_80'])
+    n_90 = sum(1 for r in backtest_results if r['within_90'])
+    mean_pct = np.mean([r['percentile'] for r in backtest_results])
+    st.info(
+        f"**Backtest: {n} future models.** "
+        f"Within 50% CI: {n_50}/{n} | "
+        f"Within 80% CI: {n_80}/{n} | "
+        f"Within 90% CI: {n_90}/{n} | "
+        f"Mean percentile: {mean_pct:.0f}%"
+    )
+
+
 # ── Data loading ─────────────────────────────────────────────────────────
 
 def _yaml_mtime():
@@ -789,6 +872,19 @@ def render_metr():
         x=today, y=1.0, yref='paper', text='Today', showarrow=False,
         font=dict(size=10, color='gray'), yanchor='top')
 
+    # --- Backtesting ---
+    is_backtesting = proj_as_of_idx < len(frontier_all) - 1
+    backtest_results = []
+    _bt_lookup = {}
+    if is_backtesting:
+        _bt_future = frontier_all[proj_as_of_idx + 1:]
+        backtest_results = _backtest_stats(
+            _bt_future, all_trajectories, current['date'], proj_end_date,
+            lambda m: np.log2(m[_val_key]),
+            lambda m: pretty(m['name']),
+        )
+        _bt_lookup = {r['name']: r for r in backtest_results}
+
     # --- Data points: distinguish used vs future ---
     for idx_m, m in enumerate(frontier_plot):
         global_idx = idx_m + plot_start_idx  # index into frontier_all
@@ -821,17 +917,34 @@ def render_metr():
                     hoverinfo='skip', showlegend=False,
                 ))
         else:
-            # Grey markers for future models (not used in fitting)
-            fig.add_trace(go.Scatter(
-                x=[m['date']], y=[lv],
-                mode='markers' + ('+text' if show_labels else ''),
-                marker=dict(color='#aaaaaa', size=10, symbol='circle-open',
-                            line=dict(color='#777777', width=2)),
-                text=[pretty(m['name'])] if show_labels else None,
-                textposition='top right',
-                textfont=dict(size=9, color='#999999'),
-                hovertext=hover, hoverinfo='text', showlegend=False,
-            ))
+            _bt_name = pretty(m['name'])
+            if is_backtesting and _bt_name in _bt_lookup:
+                r = _bt_lookup[_bt_name]
+                _btc = _bt_color_for(r)
+                _bt_label = f"{_bt_name} (p{r['percentile']:.0f})"
+                fig.add_trace(go.Scatter(
+                    x=[m['date']], y=[lv],
+                    mode='markers+text',
+                    marker=dict(color=_btc, size=12, symbol='diamond',
+                                line=dict(color='white', width=1)),
+                    text=[_bt_label],
+                    textposition='top right',
+                    textfont=dict(size=9, color=_btc),
+                    hovertext=hover + f"<br>Percentile: {r['percentile']:.0f}%",
+                    hoverinfo='text', showlegend=False,
+                ))
+            else:
+                # Grey markers for future models (not used in fitting)
+                fig.add_trace(go.Scatter(
+                    x=[m['date']], y=[lv],
+                    mode='markers' + ('+text' if show_labels else ''),
+                    marker=dict(color='#aaaaaa', size=10, symbol='circle-open',
+                                line=dict(color='#777777', width=2)),
+                    text=[pretty(m['name'])] if show_labels else None,
+                    textposition='top right',
+                    textfont=dict(size=9, color='#999999'),
+                    hovertext=hover, hoverinfo='text', showlegend=False,
+                ))
             if m.get(_lo_key) and m.get(_hi_key):
                 fig.add_trace(go.Scatter(
                     x=[m['date'], m['date']],
@@ -839,6 +952,10 @@ def render_metr():
                     mode='lines', line=dict(color='#999999', width=3), opacity=0.25,
                     hoverinfo='skip', showlegend=False,
                 ))
+
+    # --- Backtest overlay ---
+    if is_backtesting and backtest_results:
+        _add_backtest_traces(fig, backtest_results, current['date'], yconv=_yconv)
 
     # --- Layout ---
     if use_log_scale:
@@ -889,6 +1006,8 @@ def render_metr():
 
     # ── Render chart + metrics ──────────────────────────────────────────────
     st.plotly_chart(fig, use_container_width=True)
+    if is_backtesting and backtest_results:
+        _backtest_summary(backtest_results)
 
     # ── Projections ───────────────────────────────────────────────────────────
 
@@ -1400,6 +1519,19 @@ def render_eci():
         x=today, y=1.0, yref='paper', text='Today', showarrow=False,
         font=dict(size=10, color='gray'), yanchor='top')
 
+    # --- Backtesting ---
+    eci_is_backtesting = eci_proj_as_of_idx < len(eci_frontier_all) - 1
+    eci_backtest_results = []
+    _eci_bt_lookup = {}
+    if eci_is_backtesting:
+        _eci_bt_future = eci_frontier_all[eci_proj_as_of_idx + 1:]
+        eci_backtest_results = _backtest_stats(
+            _eci_bt_future, all_trajectories, eci_current['date'], proj_end_date,
+            lambda m: m['eci_score'],
+            lambda m: m['display_name'],
+        )
+        _eci_bt_lookup = {r['name']: r for r in eci_backtest_results}
+
     # --- Data points ---
     # Non-frontier models: only show those within 10 pts of frontier max to reduce clutter
     _eci_frontier_max = max(m['eci_score'] for m in eci_all if m['is_frontier'])
@@ -1440,16 +1572,37 @@ def render_eci():
                 hovertext=hover, hoverinfo='text', showlegend=False,
             ))
         else:
-            fig.add_trace(go.Scatter(
-                x=[m['date']], y=[m['eci_score']],
-                mode='markers' + ('+text' if eci_show_labels else ''),
-                marker=dict(color='#aaaaaa', size=10, symbol='circle-open',
-                            line=dict(color='#777777', width=2)),
-                text=[m['display_name']] if eci_show_labels else None,
-                textposition='top right',
-                textfont=dict(size=9, color='#999999'),
-                hovertext=hover, hoverinfo='text', showlegend=False,
-            ))
+            _eci_bt_name = m['display_name']
+            if eci_is_backtesting and _eci_bt_name in _eci_bt_lookup:
+                r = _eci_bt_lookup[_eci_bt_name]
+                _btc = _bt_color_for(r)
+                _bt_label = f"{_eci_bt_name} (p{r['percentile']:.0f})"
+                fig.add_trace(go.Scatter(
+                    x=[m['date']], y=[m['eci_score']],
+                    mode='markers+text',
+                    marker=dict(color=_btc, size=12, symbol='diamond',
+                                line=dict(color='white', width=1)),
+                    text=[_bt_label],
+                    textposition='top right',
+                    textfont=dict(size=9, color=_btc),
+                    hovertext=hover + f"<br>Percentile: {r['percentile']:.0f}%",
+                    hoverinfo='text', showlegend=False,
+                ))
+            else:
+                fig.add_trace(go.Scatter(
+                    x=[m['date']], y=[m['eci_score']],
+                    mode='markers' + ('+text' if eci_show_labels else ''),
+                    marker=dict(color='#aaaaaa', size=10, symbol='circle-open',
+                                line=dict(color='#777777', width=2)),
+                    text=[m['display_name']] if eci_show_labels else None,
+                    textposition='top right',
+                    textfont=dict(size=9, color='#999999'),
+                    hovertext=hover, hoverinfo='text', showlegend=False,
+                ))
+
+    # --- Backtest overlay ---
+    if eci_is_backtesting and eci_backtest_results:
+        _add_backtest_traces(fig, eci_backtest_results, eci_current['date'])
 
     # --- Layout ---
     # Determine y range from data and projections
@@ -1487,6 +1640,8 @@ def render_eci():
 
     # ── Render chart + metrics ──────────────────────────────────────────────
     st.plotly_chart(fig, use_container_width=True)
+    if eci_is_backtesting and eci_backtest_results:
+        _backtest_summary(eci_backtest_results)
 
     # ── Projections row ───────────────────────────────────────────────────
 
@@ -2016,6 +2171,19 @@ def render_rli():
         x=today, y=1.0, yref='paper', text='Today', showarrow=False,
         font=dict(size=10, color='gray'), yanchor='top')
 
+    # --- Backtesting ---
+    rli_is_backtesting = rli_proj_as_of_idx < len(rli_frontier_all) - 1
+    rli_backtest_results = []
+    _rli_bt_lookup = {}
+    if rli_is_backtesting:
+        _rli_bt_future = rli_frontier_all[rli_proj_as_of_idx + 1:]
+        rli_backtest_results = _backtest_stats(
+            _rli_bt_future, all_trajectories, rli_current['date'], proj_end_date,
+            lambda m: m['rli_score'],
+            lambda m: m['name'],
+        )
+        _rli_bt_lookup = {r['name']: r for r in rli_backtest_results}
+
     # --- Data points ---
     for m in rli_all:
         if m['is_frontier']:
@@ -2052,16 +2220,37 @@ def render_rli():
                 hovertext=hover, hoverinfo='text', showlegend=False,
             ))
         else:
-            fig.add_trace(go.Scatter(
-                x=[m['date']], y=[m['rli_score']],
-                mode='markers' + ('+text' if rli_show_labels else ''),
-                marker=dict(color='#aaaaaa', size=10, symbol='circle-open',
-                            line=dict(color='#777777', width=2)),
-                text=[m['name']] if rli_show_labels else None,
-                textposition='top right',
-                textfont=dict(size=9, color='#999999'),
-                hovertext=hover, hoverinfo='text', showlegend=False,
-            ))
+            _rli_bt_name = m['name']
+            if rli_is_backtesting and _rli_bt_name in _rli_bt_lookup:
+                r = _rli_bt_lookup[_rli_bt_name]
+                _btc = _bt_color_for(r)
+                _bt_label = f"{_rli_bt_name} (p{r['percentile']:.0f})"
+                fig.add_trace(go.Scatter(
+                    x=[m['date']], y=[m['rli_score']],
+                    mode='markers+text',
+                    marker=dict(color=_btc, size=12, symbol='diamond',
+                                line=dict(color='white', width=1)),
+                    text=[_bt_label],
+                    textposition='top right',
+                    textfont=dict(size=9, color=_btc),
+                    hovertext=hover + f"<br>Percentile: {r['percentile']:.0f}%",
+                    hoverinfo='text', showlegend=False,
+                ))
+            else:
+                fig.add_trace(go.Scatter(
+                    x=[m['date']], y=[m['rli_score']],
+                    mode='markers' + ('+text' if rli_show_labels else ''),
+                    marker=dict(color='#aaaaaa', size=10, symbol='circle-open',
+                                line=dict(color='#777777', width=2)),
+                    text=[m['name']] if rli_show_labels else None,
+                    textposition='top right',
+                    textfont=dict(size=9, color='#999999'),
+                    hovertext=hover, hoverinfo='text', showlegend=False,
+                ))
+
+    # --- Backtest overlay ---
+    if rli_is_backtesting and rli_backtest_results:
+        _add_backtest_traces(fig, rli_backtest_results, rli_current['date'])
 
     # --- Layout ---
     if rli_use_log_scale:
@@ -2112,6 +2301,8 @@ def render_rli():
 
     # ── Render chart + metrics ──────────────────────────────────────────────
     st.plotly_chart(fig, use_container_width=True)
+    if rli_is_backtesting and rli_backtest_results:
+        _backtest_summary(rli_backtest_results)
 
     # ── Projections row ───────────────────────────────────────────────────
     rli_start_logit = rli_proj_start_logit
