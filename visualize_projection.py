@@ -62,7 +62,7 @@ def fmt_hrs(h):
     minutes = h * 60
     if h < 1:
         return f"{int(round(minutes))}m"
-    if h < 8:
+    if h < 100:
         hrs = int(h)
         mins = int(round((h - hrs) * 60))
         if mins == 60:
@@ -1049,8 +1049,9 @@ def render_metr():
         elapsed = (target_date - current['date']).days
         proj_hrs = _proj_hrs_at(elapsed, start_hrs_samples, proj_dt, is_superexp, superexp_halflife, superexp_dt_floor if is_superexp else None)
         p10_h, p50_h, p90_h = np.percentile(proj_hrs, [10, 50, 90])
+        display_h = current_hrs if elapsed == 0 else p50_h
         with col:
-            st.metric(label=label, value=fmt_hrs(p50_h))
+            st.metric(label=label, value=fmt_hrs(display_h))
             st.caption(f"80% CI: {fmt_hrs(p10_h)} \u2013 {fmt_hrs(p90_h)}")
 
     # Milestone tables in expander
@@ -1685,8 +1686,9 @@ def render_eci():
             eci_is_superexp, eci_superexp_halflife,
             eci_superexp_dpp_floor if eci_is_superexp else None)
         p10_s, p50_s, p90_s = np.percentile(proj_scores, [10, 50, 90])
+        display_s = eci_current_score if elapsed == 0 else p50_s
         with col:
-            st.metric(label=label, value=f"{p50_s:.1f}")
+            st.metric(label=label, value=f"{display_s:.1f}")
             st.caption(f"80% CI: {p10_s:.1f} \u2013 {p90_s:.1f}")
 
     # Milestone tables
@@ -2345,8 +2347,9 @@ def render_rli():
             elapsed, rli_start_logit, rli_proj_logit_slope,
             rli_is_superexp, rli_superexp_halflife, _rli_slope_floor)
         p10_s, p50_s, p90_s = np.percentile(proj_scores, [10, 50, 90])
+        display_s = rli_current_score if elapsed == 0 else p50_s
         with col:
-            st.metric(label=label, value=f"{p50_s:.1f}%")
+            st.metric(label=label, value=f"{display_s:.1f}%")
             st.caption(f"80% CI: {p10_s:.1f}% \u2013 {p90_s:.1f}%")
 
     # Milestone tables
