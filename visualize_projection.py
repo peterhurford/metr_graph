@@ -450,10 +450,10 @@ def render_metr():
             with st.expander("Advanced options"):
                 custom_dt_lo, custom_dt_hi = st.columns(2)
                 custom_dt_lo = custom_dt_lo.number_input(
-                    "DT CI low (days)", value=100,
+                    "DT CI low (days)", value=55,
                     min_value=10, max_value=2000, step=5, key="custom_dt_lo")
                 custom_dt_hi = custom_dt_hi.number_input(
-                    "DT CI high (days)", value=200,
+                    "DT CI high (days)", value=180,
                     min_value=10, max_value=2000, step=5, key="custom_dt_hi")
                 if custom_dt_lo > custom_dt_hi:
                     st.error("DT CI low must be ≤ DT CI high.")
