@@ -450,6 +450,7 @@ _METR_RESET_KEYS = [
     "superexp_pos_hi_p80",
     "milestones", "labels", "post_gpt4o", "p80",
     "log_scale", "_proj_as_of", "metr_end_year",
+    "_metr_seg_config",
 ]
 
 def render_metr():
@@ -495,26 +496,58 @@ def render_metr():
         _pre_params = fit_line(_pre_days, _pre_vals)
         _pre_ols_dt = round(1.0 / _pre_params[1]) if _pre_params[1] > 0 else 100
 
-        # For piecewise: pre-compute last segment DT using default breakpoint (GPT-4o)
-        if proj_basis == "Piecewise linear" and gpt4o_idx <= proj_as_of_idx:
-            _pre_pw_start = gpt4o_idx  # default breakpoint
-            _pre_pw_days = _pre_days[_pre_pw_start:]
-            _pre_pw_vals = _pre_vals[_pre_pw_start:]
-            if len(_pre_pw_days) >= 2:
-                _pre_pw_params = fit_line(_pre_pw_days, _pre_pw_vals)
-                _pre_pw_dt = round(1.0 / _pre_pw_params[1]) if _pre_pw_params[1] > 0 else _pre_ols_dt
-            else:
-                _pre_pw_dt = _pre_ols_dt
-            _default_dt_lo = max(10, int(round(_pre_pw_dt / 2)))
-            _default_dt_hi = int(round(_pre_pw_dt * 2))
-        else:
-            _default_dt_lo = max(10, int(round(_pre_ols_dt / 2)))
-            _default_dt_hi = int(round(_pre_ols_dt * 2))
-
         if _is_linear:
             with st.expander("Advanced options"):
                 st.button("Reset to defaults", key="reset_linear",
                           on_click=lambda: st.session_state.update(_reset_metr=True))
+
+                # Segments & breakpoints first, so DT defaults use the actual last segment
+                _bp_names = [pretty(m['name']) for m in frontier_all[:proj_as_of_idx + 1]]
+                _seg_options = [1, 2, 3] if len(_bp_names) >= 5 else [1, 2]
+                if piecewise_n_segments not in _seg_options:
+                    piecewise_n_segments = _seg_options[-1]
+                piecewise_n_segments = st.radio(
+                    "Segments", _seg_options,
+                    index=_seg_options.index(piecewise_n_segments),
+                    horizontal=True, key="piecewise_n_seg")
+                if piecewise_n_segments >= 2:
+                    _default_bp1 = pretty(frontier_all[gpt4o_idx]['name']) if gpt4o_idx <= proj_as_of_idx else _bp_names[len(_bp_names) // 2]
+                    _bp1_idx = _bp_names.index(_default_bp1) if _default_bp1 in _bp_names else len(_bp_names) // 2
+                    bp1_name = st.selectbox(
+                        "Breakpoint", _bp_names[1:],
+                        index=max(0, _bp1_idx - 1), key="bp1_select")
+                    piecewise_breakpoints.append(bp1_name)
+                if piecewise_n_segments >= 3:
+                    _bp1_pos = _bp_names.index(bp1_name)
+                    _remaining = _bp_names[_bp1_pos + 1:]
+                    bp2_name = st.selectbox(
+                        "Breakpoint 2", _remaining[:-1],
+                        index=len(_remaining[:-1]) // 2, key="bp2_select")
+                    piecewise_breakpoints.append(bp2_name)
+
+                # Compute DT defaults from the actual last segment
+                if piecewise_n_segments >= 2 and piecewise_breakpoints:
+                    _last_bp_idx = _bp_names.index(piecewise_breakpoints[-1]) if piecewise_breakpoints[-1] in _bp_names else 0
+                    _pw_seg_days = _pre_days[_last_bp_idx:]
+                    _pw_seg_vals = _pre_vals[_last_bp_idx:]
+                    if len(_pw_seg_days) >= 2:
+                        _pw_seg_params = fit_line(_pw_seg_days, _pw_seg_vals)
+                        _pw_seg_dt = round(1.0 / _pw_seg_params[1]) if _pw_seg_params[1] > 0 else _pre_ols_dt
+                    else:
+                        _pw_seg_dt = _pre_ols_dt
+                    _default_dt_lo = max(10, int(round(_pw_seg_dt / 2)))
+                    _default_dt_hi = int(round(_pw_seg_dt * 2))
+                else:
+                    _default_dt_lo = max(10, int(round(_pre_ols_dt / 2)))
+                    _default_dt_hi = int(round(_pre_ols_dt * 2))
+
+                # Auto-update DT CIs when segment config changes
+                _seg_config = (piecewise_n_segments, tuple(piecewise_breakpoints))
+                if st.session_state.get("_metr_seg_config") != _seg_config:
+                    st.session_state["_metr_seg_config"] = _seg_config
+                    st.session_state.pop("custom_dt_lo", None)
+                    st.session_state.pop("custom_dt_hi", None)
+
                 custom_dt_lo, custom_dt_hi = st.columns(2)
                 custom_dt_lo = custom_dt_lo.number_input(
                     "DT CI low (days)", value=_default_dt_lo,
@@ -537,30 +570,6 @@ def render_metr():
                 custom_pos_hi = _pos_hi_col.number_input(
                     "Pos CI high (h)", value=round(_def_hi_hrs, 1),
                     min_value=0.01, step=0.5, key="custom_pos_hi" + _p_suffix)
-
-                piecewise_n_segments = st.radio(
-                    "Segments", [1, 2, 3],
-                    index={1: 0, 2: 1, 3: 2}[piecewise_n_segments],
-                    horizontal=True, key="piecewise_n_seg")
-                _bp_names = [pretty(m['name']) for m in frontier_all[:proj_as_of_idx + 1]]
-                if piecewise_n_segments >= 2:
-                    _default_bp1 = pretty(frontier_all[gpt4o_idx]['name']) if gpt4o_idx <= proj_as_of_idx else _bp_names[len(_bp_names) // 2]
-                    _bp1_idx = _bp_names.index(_default_bp1) if _default_bp1 in _bp_names else len(_bp_names) // 2
-                    bp1_name = st.selectbox(
-                        "Breakpoint", _bp_names[1:],
-                        index=max(0, _bp1_idx - 1), key="bp1_select")
-                    piecewise_breakpoints.append(bp1_name)
-                if piecewise_n_segments >= 3:
-                    _bp1_pos = _bp_names.index(bp1_name)
-                    _remaining = _bp_names[_bp1_pos + 1:]
-                    if len(_remaining) >= 2:
-                        bp2_name = st.selectbox(
-                            "Breakpoint 2", _remaining[:-1],
-                            index=len(_remaining[:-1]) // 2, key="bp2_select")
-                        piecewise_breakpoints.append(bp2_name)
-                    else:
-                        st.warning("Not enough models for 3 segments.")
-                        piecewise_n_segments = 2
 
                 custom_dt_dist = st.radio(
                     "Trend distribution", ["Normal", "Lognormal", "Log-log"], index=1,
@@ -1238,6 +1247,7 @@ _ECI_RESET_KEYS = [
     "eci_superexp_pos_hi",
     "eci_proj_basis", "eci_milestones", "eci_labels",
     "_eci_proj_as_of", "eci_end_year",
+    "_eci_seg_config",
 ]
 
 def render_eci():
@@ -1278,26 +1288,58 @@ def render_eci():
         _eci_pre_params = fit_line(_eci_pre_days, _eci_pre_scores) if len(_eci_pre_fr) >= 2 else np.array([0, 0.046])
         _eci_pre_ppy = round(_eci_pre_params[1] * 365.25, 1) if _eci_pre_params[1] > 0 else 16.9
 
-        # For piecewise: use last segment (from midpoint) PPY as default
-        if eci_proj_basis == "Piecewise linear" and len(_eci_pre_fr) >= 4:
-            _eci_pw_start = len(_eci_pre_fr) // 2  # default breakpoint = midpoint
-            _eci_pw_days = _eci_pre_days[_eci_pw_start:]
-            _eci_pw_scores = _eci_pre_scores[_eci_pw_start:]
-            if len(_eci_pw_days) >= 2:
-                _eci_pw_params = fit_line(_eci_pw_days, _eci_pw_scores)
-                _eci_pw_ppy = round(_eci_pw_params[1] * 365.25, 1) if _eci_pw_params[1] > 0 else _eci_pre_ppy
-            else:
-                _eci_pw_ppy = _eci_pre_ppy
-            _eci_default_ppy_lo = round(_eci_pw_ppy / 2, 1)
-            _eci_default_ppy_hi = round(_eci_pw_ppy * 2, 1)
-        else:
-            _eci_default_ppy_lo = round(_eci_pre_ppy / 2, 1)
-            _eci_default_ppy_hi = round(_eci_pre_ppy * 2, 1)
-
         if _eci_is_linear:
             with st.expander("Advanced options"):
                 st.button("Reset to defaults", key="reset_eci_linear",
                           on_click=lambda: st.session_state.update(_reset_eci=True))
+
+                # Segments & breakpoints first, so PPY defaults use the actual last segment
+                _eci_bp_names = [m['display_name'] for m in eci_frontier_all[:eci_proj_as_of_idx + 1]]
+                _eci_seg_options = [1, 2, 3] if len(_eci_bp_names) >= 5 else [1, 2]
+                if eci_piecewise_n_segments not in _eci_seg_options:
+                    eci_piecewise_n_segments = _eci_seg_options[-1]
+                eci_piecewise_n_segments = st.radio(
+                    "Segments", _eci_seg_options,
+                    index=_eci_seg_options.index(eci_piecewise_n_segments),
+                    horizontal=True, key="eci_piecewise_n_seg")
+                if eci_piecewise_n_segments >= 2:
+                    _eci_default_bp1 = _eci_bp_names[len(_eci_bp_names) // 2]
+                    _eci_bp1_idx = _eci_bp_names.index(_eci_default_bp1) if _eci_default_bp1 in _eci_bp_names else len(_eci_bp_names) // 2
+                    eci_bp1_name = st.selectbox(
+                        "Breakpoint", _eci_bp_names[1:],
+                        index=max(0, _eci_bp1_idx - 1), key="eci_bp1_select")
+                    eci_piecewise_breakpoints.append(eci_bp1_name)
+                if eci_piecewise_n_segments >= 3:
+                    _eci_bp1_pos = _eci_bp_names.index(eci_bp1_name)
+                    _eci_remaining = _eci_bp_names[_eci_bp1_pos + 1:]
+                    eci_bp2_name = st.selectbox(
+                        "Breakpoint 2", _eci_remaining[:-1],
+                        index=len(_eci_remaining[:-1]) // 2, key="eci_bp2_select")
+                    eci_piecewise_breakpoints.append(eci_bp2_name)
+
+                # Compute PPY defaults from the actual last segment
+                if eci_piecewise_n_segments >= 2 and eci_piecewise_breakpoints:
+                    _eci_last_bp_idx = _eci_bp_names.index(eci_piecewise_breakpoints[-1]) if eci_piecewise_breakpoints[-1] in _eci_bp_names else 0
+                    _eci_pw_seg_days = _eci_pre_days[_eci_last_bp_idx:]
+                    _eci_pw_seg_scores = _eci_pre_scores[_eci_last_bp_idx:]
+                    if len(_eci_pw_seg_days) >= 2:
+                        _eci_pw_seg_params = fit_line(_eci_pw_seg_days, _eci_pw_seg_scores)
+                        _eci_pw_seg_ppy = round(_eci_pw_seg_params[1] * 365.25, 1) if _eci_pw_seg_params[1] > 0 else _eci_pre_ppy
+                    else:
+                        _eci_pw_seg_ppy = _eci_pre_ppy
+                    _eci_default_ppy_lo = round(_eci_pw_seg_ppy / 2, 1)
+                    _eci_default_ppy_hi = round(_eci_pw_seg_ppy * 2, 1)
+                else:
+                    _eci_default_ppy_lo = round(_eci_pre_ppy / 2, 1)
+                    _eci_default_ppy_hi = round(_eci_pre_ppy * 2, 1)
+
+                # Auto-update PPY CIs when segment config changes
+                _eci_seg_config = (eci_piecewise_n_segments, tuple(eci_piecewise_breakpoints))
+                if st.session_state.get("_eci_seg_config") != _eci_seg_config:
+                    st.session_state["_eci_seg_config"] = _eci_seg_config
+                    st.session_state.pop("eci_custom_ppy_lo", None)
+                    st.session_state.pop("eci_custom_ppy_hi", None)
+
                 _eci_ppy_lo_col, _eci_ppy_hi_col = st.columns(2)
                 eci_custom_ppy_lo = _eci_ppy_lo_col.number_input(
                     "+Pts/Yr CI low", value=_eci_default_ppy_lo,
@@ -1321,30 +1363,6 @@ def render_eci():
                 eci_custom_pos_hi = _eci_pos_hi_col.number_input(
                     "Pos CI high (ECI)", value=round(_eci_def_score + 2, 1),
                     step=0.5, key="eci_custom_pos_hi")
-
-                eci_piecewise_n_segments = st.radio(
-                    "Segments", [1, 2, 3],
-                    index={1: 0, 2: 1, 3: 2}[eci_piecewise_n_segments],
-                    horizontal=True, key="eci_piecewise_n_seg")
-                _eci_bp_names = [m['display_name'] for m in eci_frontier_all[:eci_proj_as_of_idx + 1]]
-                if eci_piecewise_n_segments >= 2:
-                    _eci_default_bp1 = _eci_bp_names[len(_eci_bp_names) // 2]
-                    _eci_bp1_idx = _eci_bp_names.index(_eci_default_bp1) if _eci_default_bp1 in _eci_bp_names else len(_eci_bp_names) // 2
-                    eci_bp1_name = st.selectbox(
-                        "Breakpoint", _eci_bp_names[1:],
-                        index=max(0, _eci_bp1_idx - 1), key="eci_bp1_select")
-                    eci_piecewise_breakpoints.append(eci_bp1_name)
-                if eci_piecewise_n_segments >= 3:
-                    _eci_bp1_pos = _eci_bp_names.index(eci_bp1_name)
-                    _eci_remaining = _eci_bp_names[_eci_bp1_pos + 1:]
-                    if len(_eci_remaining) >= 2:
-                        eci_bp2_name = st.selectbox(
-                            "Breakpoint 2", _eci_remaining[:-1],
-                            index=len(_eci_remaining[:-1]) // 2, key="eci_bp2_select")
-                        eci_piecewise_breakpoints.append(eci_bp2_name)
-                    else:
-                        st.warning("Not enough models for 3 segments.")
-                        eci_piecewise_n_segments = 2
 
                 eci_custom_dpp_dist = st.radio(
                     "Trend distribution", ["Normal", "Lognormal", "Log-log"], index=1,
@@ -1976,6 +1994,7 @@ _RLI_RESET_KEYS = [
     "rli_superexp_pos_hi",
     "rli_proj_basis", "rli_milestones", "rli_labels",
     "rli_log_scale", "_rli_proj_as_of", "rli_end_year",
+    "_rli_seg_config",
 ]
 
 def render_rli():
@@ -2017,26 +2036,58 @@ def render_rli():
         _rli_pre_params = fit_line(_rli_pre_days, _rli_pre_logit) if len(_rli_pre_fr) >= 2 else np.array([0, 0.007])
         _rli_pre_dt = round(np.log(2) / _rli_pre_params[1]) if _rli_pre_params[1] > 0 else 100
 
-        # For piecewise: use last segment (from midpoint) DT as default
-        if rli_proj_basis == "Piecewise linear (logit)" and len(_rli_pre_fr) >= 4:
-            _rli_pw_start = len(_rli_pre_fr) // 2
-            _rli_pw_days = _rli_pre_days[_rli_pw_start:]
-            _rli_pw_logit = _rli_pre_logit[_rli_pw_start:]
-            if len(_rli_pw_days) >= 2:
-                _rli_pw_params = fit_line(_rli_pw_days, _rli_pw_logit)
-                _rli_pw_dt = round(np.log(2) / _rli_pw_params[1]) if _rli_pw_params[1] > 0 else _rli_pre_dt
-            else:
-                _rli_pw_dt = _rli_pre_dt
-            _rli_default_dt_lo = float(round(max(5.0, _rli_pw_dt / 2), 0))
-            _rli_default_dt_hi = float(round(_rli_pw_dt * 2, 0))
-        else:
-            _rli_default_dt_lo = float(round(max(5.0, _rli_pre_dt / 2), 0))
-            _rli_default_dt_hi = float(round(_rli_pre_dt * 2, 0))
-
         if _rli_is_linear:
             with st.expander("Advanced options"):
                 st.button("Reset to defaults", key="reset_rli_linear",
                           on_click=lambda: st.session_state.update(_reset_rli=True))
+
+                # Segments & breakpoints first, so DT defaults use the actual last segment
+                _rli_bp_names = [m['name'] for m in rli_frontier_all[:rli_proj_as_of_idx + 1]]
+                _rli_seg_options = [1, 2, 3] if len(_rli_bp_names) >= 5 else [1, 2]
+                if rli_piecewise_n_segments not in _rli_seg_options:
+                    rli_piecewise_n_segments = _rli_seg_options[-1]
+                rli_piecewise_n_segments = st.radio(
+                    "Segments", _rli_seg_options,
+                    index=_rli_seg_options.index(rli_piecewise_n_segments),
+                    horizontal=True, key="rli_piecewise_n_seg")
+                if rli_piecewise_n_segments >= 2:
+                    _rli_default_bp1 = _rli_bp_names[len(_rli_bp_names) // 2]
+                    _rli_bp1_idx = _rli_bp_names.index(_rli_default_bp1) if _rli_default_bp1 in _rli_bp_names else len(_rli_bp_names) // 2
+                    rli_bp1_name = st.selectbox(
+                        "Breakpoint", _rli_bp_names[1:],
+                        index=max(0, _rli_bp1_idx - 1), key="rli_bp1_select")
+                    rli_piecewise_breakpoints.append(rli_bp1_name)
+                if rli_piecewise_n_segments >= 3:
+                    _rli_bp1_pos = _rli_bp_names.index(rli_bp1_name)
+                    _rli_remaining = _rli_bp_names[_rli_bp1_pos + 1:]
+                    rli_bp2_name = st.selectbox(
+                        "Breakpoint 2", _rli_remaining[:-1],
+                        index=len(_rli_remaining[:-1]) // 2, key="rli_bp2_select")
+                    rli_piecewise_breakpoints.append(rli_bp2_name)
+
+                # Compute DT defaults from the actual last segment
+                if rli_piecewise_n_segments >= 2 and rli_piecewise_breakpoints:
+                    _rli_last_bp_idx = _rli_bp_names.index(rli_piecewise_breakpoints[-1]) if rli_piecewise_breakpoints[-1] in _rli_bp_names else 0
+                    _rli_pw_seg_days = _rli_pre_days[_rli_last_bp_idx:]
+                    _rli_pw_seg_logit = _rli_pre_logit[_rli_last_bp_idx:]
+                    if len(_rli_pw_seg_days) >= 2:
+                        _rli_pw_seg_params = fit_line(_rli_pw_seg_days, _rli_pw_seg_logit)
+                        _rli_pw_seg_dt = round(np.log(2) / _rli_pw_seg_params[1]) if _rli_pw_seg_params[1] > 0 else _rli_pre_dt
+                    else:
+                        _rli_pw_seg_dt = _rli_pre_dt
+                    _rli_default_dt_lo = float(round(max(5.0, _rli_pw_seg_dt / 2), 0))
+                    _rli_default_dt_hi = float(round(_rli_pw_seg_dt * 2, 0))
+                else:
+                    _rli_default_dt_lo = float(round(max(5.0, _rli_pre_dt / 2), 0))
+                    _rli_default_dt_hi = float(round(_rli_pre_dt * 2, 0))
+
+                # Auto-update DT CIs when segment config changes
+                _rli_seg_config = (rli_piecewise_n_segments, tuple(rli_piecewise_breakpoints))
+                if st.session_state.get("_rli_seg_config") != _rli_seg_config:
+                    st.session_state["_rli_seg_config"] = _rli_seg_config
+                    st.session_state.pop("rli_custom_dt_lo", None)
+                    st.session_state.pop("rli_custom_dt_hi", None)
+
                 # Doubling time CI (days for odds to double)
                 _rli_dt_lo_col, _rli_dt_hi_col = st.columns(2)
                 rli_custom_dt_lo = _rli_dt_lo_col.number_input(
@@ -2061,30 +2112,6 @@ def render_rli():
                 rli_custom_pos_hi = _rli_pos_hi_col.number_input(
                     "Pos CI high (%)", value=round(_rli_def_score + 1.0, 2),
                     step=0.1, key="rli_custom_pos_hi")
-
-                rli_piecewise_n_segments = st.radio(
-                    "Segments", [1, 2, 3],
-                    index={1: 0, 2: 1, 3: 2}[rli_piecewise_n_segments],
-                    horizontal=True, key="rli_piecewise_n_seg")
-                _rli_bp_names = [m['name'] for m in rli_frontier_all[:rli_proj_as_of_idx + 1]]
-                if rli_piecewise_n_segments >= 2:
-                    _rli_default_bp1 = _rli_bp_names[len(_rli_bp_names) // 2]
-                    _rli_bp1_idx = _rli_bp_names.index(_rli_default_bp1) if _rli_default_bp1 in _rli_bp_names else len(_rli_bp_names) // 2
-                    rli_bp1_name = st.selectbox(
-                        "Breakpoint", _rli_bp_names[1:],
-                        index=max(0, _rli_bp1_idx - 1), key="rli_bp1_select")
-                    rli_piecewise_breakpoints.append(rli_bp1_name)
-                if rli_piecewise_n_segments >= 3:
-                    _rli_bp1_pos = _rli_bp_names.index(rli_bp1_name)
-                    _rli_remaining = _rli_bp_names[_rli_bp1_pos + 1:]
-                    if len(_rli_remaining) >= 2:
-                        rli_bp2_name = st.selectbox(
-                            "Breakpoint 2", _rli_remaining[:-1],
-                            index=len(_rli_remaining[:-1]) // 2, key="rli_bp2_select")
-                        rli_piecewise_breakpoints.append(rli_bp2_name)
-                    else:
-                        st.warning("Not enough models for 3 segments.")
-                        rli_piecewise_n_segments = 2
 
                 rli_custom_dt_dist = st.radio(
                     "Trend distribution", ["Normal", "Lognormal", "Log-log"], index=1,

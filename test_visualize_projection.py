@@ -1295,6 +1295,91 @@ class TestDefaultProjectionMatchesFit:
         assert abs(full_center - seg_dt) / seg_dt > 0.05, \
             "Full-data OLS defaults coincidentally match last segment DT"
 
+    # -- Segment config changes should update CI defaults --------------------
+
+    def _metr_last_seg_dt(self, bp_idx):
+        """DT of the last segment starting at bp_idx."""
+        days, vals, _ = _load_metr_fit()
+        seg = vp.fit_line(days[bp_idx:], vals[bp_idx:])
+        return 1.0 / seg[1] if seg[1] > 0 else 100
+
+    def test_metr_ci_defaults_track_segment_changes(self):
+        """Changing breakpoints should change CI defaults.
+        Tests the full chain: breakpoint → last segment DT → CI lo/hi → fan slope."""
+        days, vals, _ = _load_metr_fit()
+        frontier = vp.load_frontier()
+        gpt4o_idx = next(i for i, m in enumerate(frontier) if m['name'] == 'gpt_4o_inspect')
+
+        # Two different breakpoints should yield different last-segment DTs
+        bp_a = gpt4o_idx  # default 2-seg breakpoint
+        remaining = list(range(gpt4o_idx + 1, len(frontier)))
+        bp_b = remaining[len(remaining) // 2]  # 3-seg second breakpoint
+
+        dt_a = self._metr_last_seg_dt(bp_a)
+        dt_b = self._metr_last_seg_dt(bp_b)
+        assert abs(dt_a - dt_b) / dt_a > 0.05, \
+            "Different breakpoints yield same DT — test not discriminating"
+
+        # CI defaults derived from each should also differ
+        ci_center_a = np.sqrt(max(10, int(round(dt_a / 2))) * int(round(dt_a * 2)))
+        ci_center_b = np.sqrt(max(10, int(round(dt_b / 2))) * int(round(dt_b * 2)))
+        assert abs(ci_center_a - ci_center_b) / ci_center_a > 0.05
+
+        # Each CI center should match its own last-segment DT (the inheritance property)
+        assert abs(ci_center_a - dt_a) / dt_a < 0.15
+        assert abs(ci_center_b - dt_b) / dt_b < 0.15
+
+    def test_eci_ci_defaults_track_segment_changes(self):
+        """Same inheritance chain for ECI: breakpoint → last segment PPY → CI."""
+        days, vals, _ = _load_eci_fit()
+        all_data = vp.load_eci_frontier()
+        frontier = [m for m in all_data if m['is_frontier']]
+        mid = len(frontier) // 2
+        remaining = list(range(mid + 1, len(frontier)))
+        if len(remaining) < 3:
+            pytest.skip("Not enough ECI models for 3-segment test")
+
+        bp_a = mid
+        bp_b = remaining[len(remaining) // 2]
+
+        ppy_a = vp.fit_line(days[bp_a:], vals[bp_a:])[1] * 365.25
+        ppy_b = vp.fit_line(days[bp_b:], vals[bp_b:])[1] * 365.25
+        assert abs(ppy_a - ppy_b) / ppy_a > 0.05, \
+            "Different breakpoints yield same PPY — test not discriminating"
+
+        ci_a = np.sqrt(round(ppy_a / 2, 1) * round(ppy_a * 2, 1))
+        ci_b = np.sqrt(round(ppy_b / 2, 1) * round(ppy_b * 2, 1))
+        assert abs(ci_a - ci_b) / ci_a > 0.05
+        assert abs(ci_a - ppy_a) / ppy_a < 0.15
+        assert abs(ci_b - ppy_b) / ppy_b < 0.15
+
+    def test_rli_ci_defaults_track_segment_changes(self):
+        """Same inheritance chain for RLI: breakpoint → last segment DT → CI.
+        Uses 2-segment with two different breakpoints (not 3-segment, since
+        RLI has few frontier models)."""
+        days, vals, params = _load_rli_fit()
+        all_data = vp.load_rli_data()
+        frontier = [m for m in all_data if m['is_frontier']]
+        if len(frontier) < 4:
+            pytest.skip("Not enough RLI models for breakpoint test")
+
+        # Two different breakpoint positions
+        bp_a = 1
+        bp_b = len(frontier) - 2
+
+        slope_a = vp.fit_line(days[bp_a:], vals[bp_a:])[1]
+        slope_b = vp.fit_line(days[bp_b:], vals[bp_b:])[1]
+        if slope_a <= 0 or slope_b <= 0:
+            pytest.skip("Non-positive slope in RLI segments")
+        dt_a = np.log(2) / slope_a
+        dt_b = np.log(2) / slope_b
+        assert abs(dt_a - dt_b) / dt_a > 0.05, \
+            "Different breakpoints yield same DT — test not discriminating"
+
+        ci_a = np.sqrt(max(5, round(dt_a / 2)) * round(dt_a * 2))
+        ci_b = np.sqrt(max(5, round(dt_b / 2)) * round(dt_b * 2))
+        assert abs(ci_a - ci_b) / ci_a > 0.05
+
 
 # ===========================================================================
 # Streamlit number_input type consistency
