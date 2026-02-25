@@ -454,10 +454,25 @@ _METR_RESET_KEYS = [
     "_metr_seg_config",
 ]
 
+_METR_DEFAULTS = {
+    "metr_proj_basis": "Piecewise linear",
+    "piecewise_n_seg": 2,
+    "custom_dt_dist": "Lognormal",
+    "custom_pos_dist": "Lognormal",
+    "milestones": True,
+    "labels": True,
+    "post_gpt4o": False,
+    "p80": False,
+    "log_scale": True,
+    "metr_end_year": 2026,
+}
+
 def render_metr():
     if st.session_state.pop("_reset_metr", False):
         for k in _METR_RESET_KEYS:
             st.session_state.pop(k, None)
+        # Explicitly set known defaults to override Streamlit's widget state cache
+        st.session_state.update(_METR_DEFAULTS)
         st.rerun()
 
     # ── METR Sidebar controls ─────────────────────────────────────────────
@@ -1251,10 +1266,21 @@ _ECI_RESET_KEYS = [
     "_eci_seg_config",
 ]
 
+_ECI_DEFAULTS = {
+    "eci_proj_basis": "Linear",
+    "eci_piecewise_n_seg": 1,
+    "eci_custom_dpp_dist": "Lognormal",
+    "eci_custom_pos_dist": "Lognormal",
+    "eci_milestones": True,
+    "eci_labels": True,
+    "eci_end_year": 2026,
+}
+
 def render_eci():
     if st.session_state.pop("_reset_eci", False):
         for k in _ECI_RESET_KEYS:
             st.session_state.pop(k, None)
+        st.session_state.update(_ECI_DEFAULTS)
         st.rerun()
 
     # ── ECI Sidebar controls ─────────────────────────────────────────────
@@ -1998,10 +2024,22 @@ _RLI_RESET_KEYS = [
     "_rli_seg_config",
 ]
 
+_RLI_DEFAULTS = {
+    "rli_proj_basis": "Linear (logit)",
+    "rli_piecewise_n_seg": 1,
+    "rli_custom_dt_dist": "Lognormal",
+    "rli_custom_pos_dist": "Normal",
+    "rli_milestones": True,
+    "rli_labels": True,
+    "rli_log_scale": False,
+    "rli_end_year": 2026,
+}
+
 def render_rli():
     if st.session_state.pop("_reset_rli", False):
         for k in _RLI_RESET_KEYS:
             st.session_state.pop(k, None)
+        st.session_state.update(_RLI_DEFAULTS)
         st.rerun()
 
     # ── RLI Sidebar controls ─────────────────────────────────────────────
