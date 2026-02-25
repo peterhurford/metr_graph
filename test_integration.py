@@ -44,7 +44,7 @@ class TestNonDefaultProjectionBases:
         """METR defaults to Piecewise; verify Linear works."""
         at = _fresh_app()
         at.run()
-        proj = [r for r in at.radio if r.label == "Projection basis"][0]
+        proj = at.radio(key="metr_proj_basis")
         proj.set_value("Linear").run()
         _assert_no_error(at, "METR / Linear")
 
@@ -115,7 +115,7 @@ class TestDefaultValues:
         """METR superexp CI defaults should be data-driven."""
         at = _fresh_app()
         at.run()
-        proj = [r for r in at.radio if r.label == "Projection basis"][0]
+        proj = at.radio(key="metr_proj_basis")
         proj.set_value("Superexponential").run()
         _assert_no_error(at, "METR / Superexponential")
         dt_lo = at.number_input(key="superexp_dt_ci_lo").value
@@ -257,13 +257,17 @@ class TestReset:
         pw_dt_lo_default = at.number_input(key="custom_dt_lo").value
         pw_dt_hi_default = at.number_input(key="custom_dt_hi").value
         # Switch to superexp and modify something
-        proj = [r for r in at.radio if r.label == "Projection basis"][0]
+        proj = at.radio(key="metr_proj_basis")
         proj.set_value("Superexponential").run()
         at.number_input(key="superexp_dt_ci_lo").set_value(10).run()
         # Reset (clears ALL metr keys including proj basis → reverts to Piecewise)
         at.button(key="reset_superexp").click().run()
         _assert_no_error(at, "after superexp reset")
         # After reset, should be back on Piecewise linear with correct defaults
+        assert at.radio(key="metr_proj_basis").value == "Piecewise linear", \
+            f"Projection basis not reset: {at.radio(key='metr_proj_basis').value}"
+        assert at.radio(key="piecewise_n_seg").value == 2, \
+            f"Segments not reset to 2: {at.radio(key='piecewise_n_seg').value}"
         assert at.number_input(key="custom_dt_lo").value == pw_dt_lo_default
         assert at.number_input(key="custom_dt_hi").value == pw_dt_hi_default
 

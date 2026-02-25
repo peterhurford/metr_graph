@@ -448,6 +448,7 @@ _METR_RESET_KEYS = [
     "superexp_dt_ci_hi", "superexp_pos_lo_p50",
     "superexp_pos_lo_p80", "superexp_pos_hi_p50",
     "superexp_pos_hi_p80",
+    "metr_proj_basis",
     "milestones", "labels", "post_gpt4o", "p80",
     "log_scale", "_proj_as_of", "metr_end_year",
     "_metr_seg_config",
@@ -471,7 +472,7 @@ def render_metr():
 
         # --- Projection basis ---
         basis_options = ["Linear", "Piecewise linear", "Superexponential"]
-        proj_basis = st.radio("Projection basis", basis_options, index=1)
+        proj_basis = st.radio("Projection basis", basis_options, index=1, key="metr_proj_basis")
 
         # Read p80 toggle from session state (widget rendered below, but state persists)
         _sidebar_p80 = st.session_state.get('p80', False)
