@@ -26,99 +26,62 @@ def _assert_no_error(at, context):
     assert not excs, f"{context}: {excs[0]}"
 
 
-# ===========================================================================
-# Each tab renders without error on default settings
-# ===========================================================================
-
-class TestDefaultRender:
-    def test_metr_default(self):
-        at = _fresh_app()
-        at.run()
-        _assert_no_error(at, "METR default")
-
-    def test_eci_default(self):
-        at = _fresh_app()
-        at.run()
-        [r for r in at.radio if r.label == "Tab"][0].set_value("Epoch ECI").run()
-        _assert_no_error(at, "ECI default")
-
-    def test_rli_default(self):
-        at = _fresh_app()
-        at.run()
-        [r for r in at.radio if r.label == "Tab"][0].set_value("Remote Labor Index").run()
-        _assert_no_error(at, "RLI default")
-
-
-# ===========================================================================
-# Every tab x projection basis combination renders without error
-# ===========================================================================
-
-class TestAllProjectionBases:
-    """3 tabs x 3 projection bases = 9 combinations."""
-
-    # -- METR (no explicit key on projection basis radio) -------------------
-
-    def _metr_with_basis(self, basis):
-        at = _fresh_app()
-        at.run()
-        proj = [r for r in at.radio if r.label == "Projection basis"][0]
-        proj.set_value(basis).run()
-        _assert_no_error(at, f"METR / {basis}")
-
-    def test_metr_linear(self):
-        self._metr_with_basis("Linear")
-
-    def test_metr_piecewise(self):
-        self._metr_with_basis("Piecewise linear")
-
-    def test_metr_superexp(self):
-        self._metr_with_basis("Superexponential")
-
-    # -- ECI ----------------------------------------------------------------
-
-    def _eci_with_basis(self, basis):
-        at = _fresh_app()
-        at.run()
-        [r for r in at.radio if r.label == "Tab"][0].set_value("Epoch ECI").run()
-        at.radio(key="eci_proj_basis").set_value(basis).run()
-        _assert_no_error(at, f"ECI / {basis}")
-
-    def test_eci_linear(self):
-        self._eci_with_basis("Linear")
-
-    def test_eci_piecewise(self):
-        self._eci_with_basis("Piecewise linear")
-
-    def test_eci_superexp(self):
-        self._eci_with_basis("Superexponential")
-
-    # -- RLI ----------------------------------------------------------------
-
-    def _rli_with_basis(self, basis):
-        at = _fresh_app()
-        at.run()
-        [r for r in at.radio if r.label == "Tab"][0].set_value("Remote Labor Index").run()
-        at.radio(key="rli_proj_basis").set_value(basis).run()
-        _assert_no_error(at, f"RLI / {basis}")
-
-    def test_rli_linear(self):
-        self._rli_with_basis("Linear (logit)")
-
-    def test_rli_piecewise(self):
-        self._rli_with_basis("Piecewise linear (logit)")
-
-    def test_rli_superexp(self):
-        self._rli_with_basis("Superexponential (logit)")
-
-
-# ===========================================================================
-# Helpers
-# ===========================================================================
-
 def _switch_tab(at, tab_name):
     """Switch to a tab and run."""
     [r for r in at.radio if r.label == "Tab"][0].set_value(tab_name).run()
     _assert_no_error(at, f"switch to {tab_name}")
+
+
+# ===========================================================================
+# Non-default projection bases render without error
+# ===========================================================================
+
+class TestNonDefaultProjectionBases:
+    """Test that switching to a non-default projection basis renders OK.
+    Default bases are covered by TestDefaultValues."""
+
+    def test_metr_linear(self):
+        """METR defaults to Piecewise; verify Linear works."""
+        at = _fresh_app()
+        at.run()
+        proj = [r for r in at.radio if r.label == "Projection basis"][0]
+        proj.set_value("Linear").run()
+        _assert_no_error(at, "METR / Linear")
+
+    def test_eci_piecewise(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Epoch ECI")
+        at.radio(key="eci_proj_basis").set_value("Piecewise linear").run()
+        _assert_no_error(at, "ECI / Piecewise linear")
+
+    def test_eci_superexp(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Epoch ECI")
+        at.radio(key="eci_proj_basis").set_value("Superexponential").run()
+        _assert_no_error(at, "ECI / Superexponential")
+
+    def test_rli_linear(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Remote Labor Index")
+        at.radio(key="rli_proj_basis").set_value("Linear (logit)").run()
+        _assert_no_error(at, "RLI / Linear (logit)")
+
+    def test_rli_piecewise(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Remote Labor Index")
+        at.radio(key="rli_proj_basis").set_value("Piecewise linear (logit)").run()
+        _assert_no_error(at, "RLI / Piecewise linear (logit)")
+
+    def test_rli_superexp(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Remote Labor Index")
+        at.radio(key="rli_proj_basis").set_value("Superexponential (logit)").run()
+        _assert_no_error(at, "RLI / Superexponential (logit)")
 
 
 # ===========================================================================
@@ -133,8 +96,7 @@ class TestDefaultValues:
         """METR piecewise-linear CI defaults + toggles + segment count."""
         at = _fresh_app()
         at.run()
-        _assert_no_error(at, "setup")
-        # Default projection basis is "Piecewise linear" (index=1)
+        _assert_no_error(at, "METR default")
         # DT CI values should be positive with ~4x spread (lo=dt/2, hi=dt*2)
         dt_lo = at.number_input(key="custom_dt_lo").value
         dt_hi = at.number_input(key="custom_dt_hi").value
@@ -155,7 +117,7 @@ class TestDefaultValues:
         at.run()
         proj = [r for r in at.radio if r.label == "Projection basis"][0]
         proj.set_value("Superexponential").run()
-        _assert_no_error(at, "superexp setup")
+        _assert_no_error(at, "METR / Superexponential")
         dt_lo = at.number_input(key="superexp_dt_ci_lo").value
         dt_hi = at.number_input(key="superexp_dt_ci_hi").value
         assert dt_lo > 0 and dt_hi > dt_lo
@@ -215,7 +177,6 @@ class TestWidgetPropagation:
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Epoch ECI")
-        # ECI defaults to "Linear" (1-segment)
         ppy_lo_1seg = at.number_input(key="eci_custom_ppy_lo").value
         at.radio(key="eci_piecewise_n_seg").set_value(2).run()
         _assert_no_error(at, "ECI 2-segment")
