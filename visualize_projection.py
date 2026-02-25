@@ -437,7 +437,27 @@ st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
 
 # ── METR Horizon ─────────────────────────────────────────────────────────
 
+_METR_RESET_KEYS = [
+    "custom_dt_lo", "custom_dt_hi",
+    "custom_pos_lo_p50", "custom_pos_lo_p80",
+    "custom_pos_hi_p50", "custom_pos_hi_p80",
+    "piecewise_n_seg", "bp1_select", "bp2_select",
+    "custom_dt_dist", "custom_pos_dist",
+    "superexp_dt_init", "superexp_halflife",
+    "superexp_dt_floor", "superexp_dt_ci_lo",
+    "superexp_dt_ci_hi", "superexp_pos_lo_p50",
+    "superexp_pos_lo_p80", "superexp_pos_hi_p50",
+    "superexp_pos_hi_p80",
+    "milestones", "labels", "post_gpt4o", "p80",
+    "log_scale", "_proj_as_of", "metr_end_year",
+]
+
 def render_metr():
+    if st.session_state.pop("_reset_metr", False):
+        for k in _METR_RESET_KEYS:
+            st.session_state.pop(k, None)
+        st.rerun()
+
     # ── METR Sidebar controls ─────────────────────────────────────────────
     with st.sidebar:
         st.header("METR Projection")
@@ -493,16 +513,8 @@ def render_metr():
 
         if _is_linear:
             with st.expander("Advanced options"):
-                def _reset_linear():
-                    for k in ["custom_dt_lo", "custom_dt_hi",
-                              "custom_pos_lo_p50", "custom_pos_lo_p80",
-                              "custom_pos_hi_p50", "custom_pos_hi_p80",
-                              "piecewise_n_seg", "bp1_select", "bp2_select",
-                              "custom_dt_dist", "custom_pos_dist",
-                              "milestones", "labels", "post_gpt4o", "p80",
-                              "log_scale", "_proj_as_of", "metr_end_year"]:
-                        st.session_state.pop(k, None)
-                st.button("Reset to defaults", key="reset_linear", on_click=_reset_linear)
+                st.button("Reset to defaults", key="reset_linear",
+                          on_click=lambda: st.session_state.update(_reset_metr=True))
                 custom_dt_lo, custom_dt_hi = st.columns(2)
                 custom_dt_lo = custom_dt_lo.number_input(
                     "DT CI low (days)", value=_default_dt_lo,
@@ -593,16 +605,8 @@ def render_metr():
             _default_se_dt_hi = int(round(_pre_se_dt * 2))
 
             with st.expander("Advanced options"):
-                def _reset_superexp():
-                    for k in ["superexp_dt_init", "superexp_halflife",
-                              "superexp_dt_floor", "superexp_dt_ci_lo",
-                              "superexp_dt_ci_hi", "superexp_pos_lo_p50",
-                              "superexp_pos_lo_p80", "superexp_pos_hi_p50",
-                              "superexp_pos_hi_p80",
-                              "milestones", "labels", "post_gpt4o", "p80",
-                              "log_scale", "_proj_as_of", "metr_end_year"]:
-                        st.session_state.pop(k, None)
-                st.button("Reset to defaults", key="reset_superexp", on_click=_reset_superexp)
+                st.button("Reset to defaults", key="reset_superexp",
+                          on_click=lambda: st.session_state.update(_reset_metr=True))
                 _se_col1, _se_col2 = st.columns(2)
                 superexp_dt_initial = _se_col1.number_input(
                     "Initial DT (days)", value=_default_dt_init,
@@ -1222,7 +1226,26 @@ def render_metr():
 
 # ── Epoch ECI ────────────────────────────────────────────────────────────
 
+_ECI_RESET_KEYS = [
+    "eci_custom_ppy_lo", "eci_custom_ppy_hi",
+    "eci_custom_pos_lo", "eci_custom_pos_hi",
+    "eci_piecewise_n_seg", "eci_bp1_select",
+    "eci_bp2_select", "eci_custom_dpp_dist",
+    "eci_custom_pos_dist",
+    "eci_superexp_ppy_init", "eci_superexp_halflife",
+    "eci_superexp_ppy_ceiling", "eci_superexp_ppy_ci_lo",
+    "eci_superexp_ppy_ci_hi", "eci_superexp_pos_lo",
+    "eci_superexp_pos_hi",
+    "eci_proj_basis", "eci_milestones", "eci_labels",
+    "_eci_proj_as_of", "eci_end_year",
+]
+
 def render_eci():
+    if st.session_state.pop("_reset_eci", False):
+        for k in _ECI_RESET_KEYS:
+            st.session_state.pop(k, None)
+        st.rerun()
+
     # ── ECI Sidebar controls ─────────────────────────────────────────────
     with st.sidebar:
         st.header("ECI Projection")
@@ -1273,16 +1296,8 @@ def render_eci():
 
         if _eci_is_linear:
             with st.expander("Advanced options"):
-                def _reset_eci_linear():
-                    for k in ["eci_custom_ppy_lo", "eci_custom_ppy_hi",
-                              "eci_custom_pos_lo", "eci_custom_pos_hi",
-                              "eci_piecewise_n_seg", "eci_bp1_select",
-                              "eci_bp2_select", "eci_custom_dpp_dist",
-                              "eci_custom_pos_dist",
-                              "eci_proj_basis", "eci_milestones", "eci_labels",
-                              "_eci_proj_as_of", "eci_end_year"]:
-                        st.session_state.pop(k, None)
-                st.button("Reset to defaults", key="reset_eci_linear", on_click=_reset_eci_linear)
+                st.button("Reset to defaults", key="reset_eci_linear",
+                          on_click=lambda: st.session_state.update(_reset_eci=True))
                 _eci_ppy_lo_col, _eci_ppy_hi_col = st.columns(2)
                 eci_custom_ppy_lo = _eci_ppy_lo_col.number_input(
                     "+Pts/Yr CI low", value=_eci_default_ppy_lo,
@@ -1375,15 +1390,8 @@ def render_eci():
             _eci_default_se_ppy_hi = round(_eci_pre_se_ppy * 2, 1)
 
             with st.expander("Advanced options"):
-                def _reset_eci_superexp():
-                    for k in ["eci_superexp_ppy_init", "eci_superexp_halflife",
-                              "eci_superexp_ppy_ceiling", "eci_superexp_ppy_ci_lo",
-                              "eci_superexp_ppy_ci_hi", "eci_superexp_pos_lo",
-                              "eci_superexp_pos_hi",
-                              "eci_proj_basis", "eci_milestones", "eci_labels",
-                              "_eci_proj_as_of", "eci_end_year"]:
-                        st.session_state.pop(k, None)
-                st.button("Reset to defaults", key="reset_eci_superexp", on_click=_reset_eci_superexp)
+                st.button("Reset to defaults", key="reset_eci_superexp",
+                          on_click=lambda: st.session_state.update(_reset_eci=True))
                 _eci_se_col1, _eci_se_col2 = st.columns(2)
                 eci_superexp_ppy_initial = _eci_se_col1.number_input(
                     "Initial +Pts/Yr", value=_eci_default_ppy_init,
@@ -1956,7 +1964,26 @@ def render_eci():
 
 # ── Remote Labor Index ───────────────────────────────────────────────────
 
+_RLI_RESET_KEYS = [
+    "rli_custom_dt_lo", "rli_custom_dt_hi",
+    "rli_custom_pos_lo", "rli_custom_pos_hi",
+    "rli_piecewise_n_seg", "rli_bp1_select",
+    "rli_bp2_select", "rli_custom_dt_dist",
+    "rli_custom_pos_dist",
+    "rli_superexp_dt_init", "rli_superexp_halflife",
+    "rli_superexp_dt_floor", "rli_superexp_dt_ci_lo",
+    "rli_superexp_dt_ci_hi", "rli_superexp_pos_lo",
+    "rli_superexp_pos_hi",
+    "rli_proj_basis", "rli_milestones", "rli_labels",
+    "rli_log_scale", "_rli_proj_as_of", "rli_end_year",
+]
+
 def render_rli():
+    if st.session_state.pop("_reset_rli", False):
+        for k in _RLI_RESET_KEYS:
+            st.session_state.pop(k, None)
+        st.rerun()
+
     # ── RLI Sidebar controls ─────────────────────────────────────────────
     with st.sidebar:
         st.header("RLI Projection")
@@ -2008,16 +2035,8 @@ def render_rli():
 
         if _rli_is_linear:
             with st.expander("Advanced options"):
-                def _reset_rli_linear():
-                    for k in ["rli_custom_dt_lo", "rli_custom_dt_hi",
-                              "rli_custom_pos_lo", "rli_custom_pos_hi",
-                              "rli_piecewise_n_seg", "rli_bp1_select",
-                              "rli_bp2_select", "rli_custom_dt_dist",
-                              "rli_custom_pos_dist",
-                              "rli_proj_basis", "rli_milestones", "rli_labels",
-                              "rli_log_scale", "_rli_proj_as_of", "rli_end_year"]:
-                        st.session_state.pop(k, None)
-                st.button("Reset to defaults", key="reset_rli_linear", on_click=_reset_rli_linear)
+                st.button("Reset to defaults", key="reset_rli_linear",
+                          on_click=lambda: st.session_state.update(_reset_rli=True))
                 # Doubling time CI (days for odds to double)
                 _rli_dt_lo_col, _rli_dt_hi_col = st.columns(2)
                 rli_custom_dt_lo = _rli_dt_lo_col.number_input(
@@ -2107,15 +2126,8 @@ def render_rli():
             _rli_default_se_dt_hi = float(round(_rli_pre_se_dt * 2, 0))
 
             with st.expander("Advanced options"):
-                def _reset_rli_superexp():
-                    for k in ["rli_superexp_dt_init", "rli_superexp_halflife",
-                              "rli_superexp_dt_floor", "rli_superexp_dt_ci_lo",
-                              "rli_superexp_dt_ci_hi", "rli_superexp_pos_lo",
-                              "rli_superexp_pos_hi",
-                              "rli_proj_basis", "rli_milestones", "rli_labels",
-                              "rli_log_scale", "_rli_proj_as_of", "rli_end_year"]:
-                        st.session_state.pop(k, None)
-                st.button("Reset to defaults", key="reset_rli_superexp", on_click=_reset_rli_superexp)
+                st.button("Reset to defaults", key="reset_rli_superexp",
+                          on_click=lambda: st.session_state.update(_reset_rli=True))
                 _rli_se_col1, _rli_se_col2 = st.columns(2)
                 rli_superexp_dt_initial = _rli_se_col1.number_input(
                     "Initial odds 2x time (days)", value=_rli_default_dt_init,
