@@ -154,6 +154,18 @@ def _log_lognormal_from_ci(lo, hi, n):
     return np.exp(log_x)
 
 
+def _ss_number_input(parent, label, key, default, **kwargs):
+    """number_input with session_state-driven default.
+
+    Avoids Streamlit's conflict between value= and Session State API on reset:
+    the widget has no explicit value= so there's never a clash, and session_state
+    is initialised to *default* on first render (or after a reset pops the key).
+    """
+    if key not in st.session_state:
+        st.session_state[key] = default
+    return parent.number_input(label, key=key, **kwargs)
+
+
 def superexp_trajectory(days, dt_0, halflife, dt_floor):
     """Deterministic superexponential trajectory starting at 0.
 
@@ -568,12 +580,12 @@ def render_metr():
                     st.session_state.pop("custom_dt_hi", None)
 
                 custom_dt_lo, custom_dt_hi = st.columns(2)
-                custom_dt_lo = custom_dt_lo.number_input(
-                    "DT CI low (days)", value=_default_dt_lo,
-                    min_value=10, max_value=2000, step=5, key="custom_dt_lo")
-                custom_dt_hi = custom_dt_hi.number_input(
-                    "DT CI high (days)", value=_default_dt_hi,
-                    min_value=10, max_value=2000, step=5, key="custom_dt_hi")
+                custom_dt_lo = _ss_number_input(custom_dt_lo,
+                    "DT CI low (days)", "custom_dt_lo", _default_dt_lo,
+                    min_value=10, max_value=2000, step=5)
+                custom_dt_hi = _ss_number_input(custom_dt_hi,
+                    "DT CI high (days)", "custom_dt_hi", _default_dt_hi,
+                    min_value=10, max_value=2000, step=5)
                 if custom_dt_lo > custom_dt_hi:
                     st.error("DT CI low must be ≤ DT CI high.")
                     st.stop()
@@ -583,12 +595,12 @@ def render_metr():
                 _def_hi_hrs = (_cur.get(_sb_hi_key) or _cur[_sb_val_key]) / 60
                 _pos_lo_col, _pos_hi_col = st.columns(2)
                 _p_suffix = "_p80" if _sidebar_p80 else "_p50"
-                custom_pos_lo = _pos_lo_col.number_input(
-                    "Pos CI low (h)", value=round(_def_lo_hrs, 1),
-                    min_value=0.01, step=0.5, key="custom_pos_lo" + _p_suffix)
-                custom_pos_hi = _pos_hi_col.number_input(
-                    "Pos CI high (h)", value=round(_def_hi_hrs, 1),
-                    min_value=0.01, step=0.5, key="custom_pos_hi" + _p_suffix)
+                custom_pos_lo = _ss_number_input(_pos_lo_col,
+                    "Pos CI low (h)", "custom_pos_lo" + _p_suffix, round(_def_lo_hrs, 1),
+                    min_value=0.01, step=0.5)
+                custom_pos_hi = _ss_number_input(_pos_hi_col,
+                    "Pos CI high (h)", "custom_pos_hi" + _p_suffix, round(_def_hi_hrs, 1),
+                    min_value=0.01, step=0.5)
 
                 custom_dt_dist = st.radio(
                     "Trend distribution", ["Normal", "Lognormal", "Log-log"],
@@ -636,24 +648,24 @@ def render_metr():
                 st.button("Reset to defaults", key="reset_superexp",
                           on_click=lambda: st.session_state.update(_reset_metr=True))
                 _se_col1, _se_col2 = st.columns(2)
-                superexp_dt_initial = _se_col1.number_input(
-                    "Initial DT (days)", value=_default_dt_init,
-                    min_value=10, max_value=2000, step=5, key="superexp_dt_init")
-                superexp_halflife = _se_col2.number_input(
-                    "DT half-life (days)", value=365,
-                    min_value=30, max_value=5000, step=30, key="superexp_halflife",
+                superexp_dt_initial = _ss_number_input(_se_col1,
+                    "Initial DT (days)", "superexp_dt_init", _default_dt_init,
+                    min_value=10, max_value=2000, step=5)
+                superexp_halflife = _ss_number_input(_se_col2,
+                    "DT half-life (days)", "superexp_halflife", 365,
+                    min_value=30, max_value=5000, step=30,
                     help="How quickly DT shrinks. Lower = faster.")
-                superexp_dt_floor = st.number_input(
-                    "Min DT floor (days)", value=30,
-                    min_value=1, max_value=500, step=5, key="superexp_dt_floor",
+                superexp_dt_floor = _ss_number_input(st,
+                    "Min DT floor (days)", "superexp_dt_floor", 30,
+                    min_value=1, max_value=500, step=5,
                     help="DT can't shrink below this. Prevents runaway projections.")
                 _se_ci1, _se_ci2 = st.columns(2)
-                superexp_dt_ci_lo = _se_ci1.number_input(
-                    "DT CI low (days)", value=_default_se_dt_lo,
-                    min_value=10, max_value=2000, step=5, key="superexp_dt_ci_lo")
-                superexp_dt_ci_hi = _se_ci2.number_input(
-                    "DT CI high (days)", value=_default_se_dt_hi,
-                    min_value=10, max_value=2000, step=5, key="superexp_dt_ci_hi")
+                superexp_dt_ci_lo = _ss_number_input(_se_ci1,
+                    "DT CI low (days)", "superexp_dt_ci_lo", _default_se_dt_lo,
+                    min_value=10, max_value=2000, step=5)
+                superexp_dt_ci_hi = _ss_number_input(_se_ci2,
+                    "DT CI high (days)", "superexp_dt_ci_hi", _default_se_dt_hi,
+                    min_value=10, max_value=2000, step=5)
                 if superexp_dt_ci_lo > superexp_dt_ci_hi:
                     st.error("DT CI low must be ≤ DT CI high.")
                     st.stop()
@@ -662,12 +674,12 @@ def render_metr():
                 _def_hi_hrs = (_cur.get(_sb_hi_key) or _cur[_sb_val_key]) / 60
                 _se_pos1, _se_pos2 = st.columns(2)
                 _p_suffix_se = "_p80" if _sidebar_p80 else "_p50"
-                superexp_pos_lo = _se_pos1.number_input(
-                    "Pos CI low (h)", value=round(_def_lo_hrs, 1),
-                    min_value=0.01, step=0.5, key="superexp_pos_lo" + _p_suffix_se)
-                superexp_pos_hi = _se_pos2.number_input(
-                    "Pos CI high (h)", value=round(_def_hi_hrs, 1),
-                    min_value=0.01, step=0.5, key="superexp_pos_hi" + _p_suffix_se)
+                superexp_pos_lo = _ss_number_input(_se_pos1,
+                    "Pos CI low (h)", "superexp_pos_lo" + _p_suffix_se, round(_def_lo_hrs, 1),
+                    min_value=0.01, step=0.5)
+                superexp_pos_hi = _ss_number_input(_se_pos2,
+                    "Pos CI high (h)", "superexp_pos_hi" + _p_suffix_se, round(_def_hi_hrs, 1),
+                    min_value=0.01, step=0.5)
 
         st.markdown("---")
         show_milestones = st.toggle("Milestones", key="milestones")
@@ -1374,12 +1386,12 @@ def render_eci():
                     st.session_state.pop("eci_custom_ppy_hi", None)
 
                 _eci_ppy_lo_col, _eci_ppy_hi_col = st.columns(2)
-                eci_custom_ppy_lo = _eci_ppy_lo_col.number_input(
-                    "+Pts/Yr CI low", value=_eci_default_ppy_lo,
-                    min_value=0.5, max_value=365.0, step=0.5, key="eci_custom_ppy_lo")
-                eci_custom_ppy_hi = _eci_ppy_hi_col.number_input(
-                    "+Pts/Yr CI high", value=_eci_default_ppy_hi,
-                    min_value=0.5, max_value=365.0, step=0.5, key="eci_custom_ppy_hi")
+                eci_custom_ppy_lo = _ss_number_input(_eci_ppy_lo_col,
+                    "+Pts/Yr CI low", "eci_custom_ppy_lo", _eci_default_ppy_lo,
+                    min_value=0.5, max_value=365.0, step=0.5)
+                eci_custom_ppy_hi = _ss_number_input(_eci_ppy_hi_col,
+                    "+Pts/Yr CI high", "eci_custom_ppy_hi", _eci_default_ppy_hi,
+                    min_value=0.5, max_value=365.0, step=0.5)
                 if eci_custom_ppy_lo > eci_custom_ppy_hi:
                     st.error("+Pts/Yr CI low must be ≤ +Pts/Yr CI high.")
                     st.stop()
@@ -1390,12 +1402,12 @@ def render_eci():
                 _eci_cur = eci_frontier_all[eci_proj_as_of_idx]
                 _eci_def_score = _eci_cur['eci_score']
                 _eci_pos_lo_col, _eci_pos_hi_col = st.columns(2)
-                eci_custom_pos_lo = _eci_pos_lo_col.number_input(
-                    "Pos CI low (ECI)", value=round(_eci_def_score - 2, 1),
-                    step=0.5, key="eci_custom_pos_lo")
-                eci_custom_pos_hi = _eci_pos_hi_col.number_input(
-                    "Pos CI high (ECI)", value=round(_eci_def_score + 2, 1),
-                    step=0.5, key="eci_custom_pos_hi")
+                eci_custom_pos_lo = _ss_number_input(_eci_pos_lo_col,
+                    "Pos CI low (ECI)", "eci_custom_pos_lo", round(_eci_def_score - 2, 1),
+                    step=0.5)
+                eci_custom_pos_hi = _ss_number_input(_eci_pos_hi_col,
+                    "Pos CI high (ECI)", "eci_custom_pos_hi", round(_eci_def_score + 2, 1),
+                    step=0.5)
 
                 eci_custom_dpp_dist = st.radio(
                     "Trend distribution", ["Normal", "Lognormal", "Log-log"],
@@ -1444,26 +1456,26 @@ def render_eci():
                 st.button("Reset to defaults", key="reset_eci_superexp",
                           on_click=lambda: st.session_state.update(_reset_eci=True))
                 _eci_se_col1, _eci_se_col2 = st.columns(2)
-                eci_superexp_ppy_initial = _eci_se_col1.number_input(
-                    "Initial +Pts/Yr", value=_eci_default_ppy_init,
-                    min_value=0.5, max_value=365.0, step=0.5, key="eci_superexp_ppy_init")
+                eci_superexp_ppy_initial = _ss_number_input(_eci_se_col1,
+                    "Initial +Pts/Yr", "eci_superexp_ppy_init", _eci_default_ppy_init,
+                    min_value=0.5, max_value=365.0, step=0.5)
                 eci_superexp_dpp_initial = 365.25 / eci_superexp_ppy_initial
-                eci_superexp_halflife = _eci_se_col2.number_input(
-                    "Rate half-life (days)", value=365,
-                    min_value=30, max_value=5000, step=30, key="eci_superexp_halflife",
+                eci_superexp_halflife = _ss_number_input(_eci_se_col2,
+                    "Rate half-life (days)", "eci_superexp_halflife", 365,
+                    min_value=30, max_value=5000, step=30,
                     help="How quickly rate grows. Lower = faster.")
-                eci_superexp_ppy_ceiling = st.number_input(
-                    "Max +Pts/Yr ceiling", value=37.0,
-                    min_value=1.0, max_value=365.0, step=1.0, key="eci_superexp_ppy_ceiling",
+                eci_superexp_ppy_ceiling = _ss_number_input(st,
+                    "Max +Pts/Yr ceiling", "eci_superexp_ppy_ceiling", 37.0,
+                    min_value=1.0, max_value=365.0, step=1.0,
                     help="Rate can't exceed this. Prevents runaway projections.")
                 eci_superexp_dpp_floor = 365.25 / eci_superexp_ppy_ceiling
                 _eci_se_ci1, _eci_se_ci2 = st.columns(2)
-                eci_superexp_ppy_ci_lo = _eci_se_ci1.number_input(
-                    "+Pts/Yr CI low", value=_eci_default_se_ppy_lo,
-                    min_value=0.5, max_value=365.0, step=0.5, key="eci_superexp_ppy_ci_lo")
-                eci_superexp_ppy_ci_hi = _eci_se_ci2.number_input(
-                    "+Pts/Yr CI high", value=_eci_default_se_ppy_hi,
-                    min_value=0.5, max_value=365.0, step=0.5, key="eci_superexp_ppy_ci_hi")
+                eci_superexp_ppy_ci_lo = _ss_number_input(_eci_se_ci1,
+                    "+Pts/Yr CI low", "eci_superexp_ppy_ci_lo", _eci_default_se_ppy_lo,
+                    min_value=0.5, max_value=365.0, step=0.5)
+                eci_superexp_ppy_ci_hi = _ss_number_input(_eci_se_ci2,
+                    "+Pts/Yr CI high", "eci_superexp_ppy_ci_hi", _eci_default_se_ppy_hi,
+                    min_value=0.5, max_value=365.0, step=0.5)
                 if eci_superexp_ppy_ci_lo > eci_superexp_ppy_ci_hi:
                     st.error("+Pts/Yr CI low must be ≤ +Pts/Yr CI high.")
                     st.stop()
@@ -1472,12 +1484,12 @@ def render_eci():
                 _eci_cur = eci_frontier_all[eci_proj_as_of_idx]
                 _eci_def_score = _eci_cur['eci_score']
                 _eci_se_pos1, _eci_se_pos2 = st.columns(2)
-                eci_superexp_pos_lo = _eci_se_pos1.number_input(
-                    "Pos CI low (ECI)", value=round(_eci_def_score - 2, 1),
-                    step=0.5, key="eci_superexp_pos_lo")
-                eci_superexp_pos_hi = _eci_se_pos2.number_input(
-                    "Pos CI high (ECI)", value=round(_eci_def_score + 2, 1),
-                    step=0.5, key="eci_superexp_pos_hi")
+                eci_superexp_pos_lo = _ss_number_input(_eci_se_pos1,
+                    "Pos CI low (ECI)", "eci_superexp_pos_lo", round(_eci_def_score - 2, 1),
+                    step=0.5)
+                eci_superexp_pos_hi = _ss_number_input(_eci_se_pos2,
+                    "Pos CI high (ECI)", "eci_superexp_pos_hi", round(_eci_def_score + 2, 1),
+                    step=0.5)
 
         st.markdown("---")
         eci_show_milestones = st.toggle("Milestones", key="eci_milestones")
@@ -2138,13 +2150,13 @@ def render_rli():
 
                 # Doubling time CI (days for odds to double)
                 _rli_dt_lo_col, _rli_dt_hi_col = st.columns(2)
-                rli_custom_dt_lo = _rli_dt_lo_col.number_input(
-                    "Odds 2x time CI low (days)", value=_rli_default_dt_lo,
-                    min_value=5.0, max_value=2000.0, step=5.0, key="rli_custom_dt_lo",
+                rli_custom_dt_lo = _ss_number_input(_rli_dt_lo_col,
+                    "Odds 2x time CI low (days)", "rli_custom_dt_lo", _rli_default_dt_lo,
+                    min_value=5.0, max_value=2000.0, step=5.0,
                     help="Fast scenario: days for odds p/(1-p) to double.")
-                rli_custom_dt_hi = _rli_dt_hi_col.number_input(
-                    "Odds 2x time CI high (days)", value=_rli_default_dt_hi,
-                    min_value=5.0, max_value=5000.0, step=5.0, key="rli_custom_dt_hi",
+                rli_custom_dt_hi = _ss_number_input(_rli_dt_hi_col,
+                    "Odds 2x time CI high (days)", "rli_custom_dt_hi", _rli_default_dt_hi,
+                    min_value=5.0, max_value=5000.0, step=5.0,
                     help="Slow scenario: days for odds to double.")
                 if rli_custom_dt_lo > rli_custom_dt_hi:
                     st.error("DT CI low must be ≤ DT CI high.")
@@ -2154,12 +2166,12 @@ def render_rli():
                 _rli_cur = rli_frontier_all[rli_proj_as_of_idx]
                 _rli_def_score = _rli_cur['rli_score']
                 _rli_pos_lo_col, _rli_pos_hi_col = st.columns(2)
-                rli_custom_pos_lo = _rli_pos_lo_col.number_input(
-                    "Pos CI low (%)", value=round(max(_rli_def_score - 1.0, 0.1), 2),
-                    min_value=0.01, step=0.1, key="rli_custom_pos_lo")
-                rli_custom_pos_hi = _rli_pos_hi_col.number_input(
-                    "Pos CI high (%)", value=round(_rli_def_score + 1.0, 2),
-                    step=0.1, key="rli_custom_pos_hi")
+                rli_custom_pos_lo = _ss_number_input(_rli_pos_lo_col,
+                    "Pos CI low (%)", "rli_custom_pos_lo", round(max(_rli_def_score - 1.0, 0.1), 2),
+                    min_value=0.01, step=0.1)
+                rli_custom_pos_hi = _ss_number_input(_rli_pos_hi_col,
+                    "Pos CI high (%)", "rli_custom_pos_hi", round(_rli_def_score + 1.0, 2),
+                    step=0.1)
 
                 rli_custom_dt_dist = st.radio(
                     "Trend distribution", ["Normal", "Lognormal", "Log-log"],
@@ -2204,37 +2216,37 @@ def render_rli():
                 st.button("Reset to defaults", key="reset_rli_superexp",
                           on_click=lambda: st.session_state.update(_reset_rli=True))
                 _rli_se_col1, _rli_se_col2 = st.columns(2)
-                rli_superexp_dt_initial = _rli_se_col1.number_input(
-                    "Initial odds 2x time (days)", value=_rli_default_dt_init,
-                    min_value=5.0, max_value=2000.0, step=5.0, key="rli_superexp_dt_init")
-                rli_superexp_halflife = _rli_se_col2.number_input(
-                    "Rate half-life (days)", value=365,
-                    min_value=30, max_value=5000, step=30, key="rli_superexp_halflife",
+                rli_superexp_dt_initial = _ss_number_input(_rli_se_col1,
+                    "Initial odds 2x time (days)", "rli_superexp_dt_init", _rli_default_dt_init,
+                    min_value=5.0, max_value=2000.0, step=5.0)
+                rli_superexp_halflife = _ss_number_input(_rli_se_col2,
+                    "Rate half-life (days)", "rli_superexp_halflife", 365,
+                    min_value=30, max_value=5000, step=30,
                     help="How quickly rate grows. Lower = faster.")
-                rli_superexp_dt_floor_input = st.number_input(
-                    "Min odds 2x time (days)", value=15.0,
-                    min_value=1.0, max_value=500.0, step=1.0, key="rli_superexp_dt_floor",
+                rli_superexp_dt_floor_input = _ss_number_input(st,
+                    "Min odds 2x time (days)", "rli_superexp_dt_floor", 15.0,
+                    min_value=1.0, max_value=500.0, step=1.0,
                     help="Rate can't exceed this. Prevents runaway projections.")
                 rli_superexp_dt_floor = rli_superexp_dt_floor_input
                 _rli_se_ci1, _rli_se_ci2 = st.columns(2)
-                rli_superexp_dt_ci_lo = _rli_se_ci1.number_input(
-                    "Odds 2x CI low (days)", value=_rli_default_se_dt_lo,
-                    min_value=5.0, max_value=2000.0, step=5.0, key="rli_superexp_dt_ci_lo")
-                rli_superexp_dt_ci_hi = _rli_se_ci2.number_input(
-                    "Odds 2x CI high (days)", value=_rli_default_se_dt_hi,
-                    min_value=5.0, max_value=5000.0, step=5.0, key="rli_superexp_dt_ci_hi")
+                rli_superexp_dt_ci_lo = _ss_number_input(_rli_se_ci1,
+                    "Odds 2x CI low (days)", "rli_superexp_dt_ci_lo", _rli_default_se_dt_lo,
+                    min_value=5.0, max_value=2000.0, step=5.0)
+                rli_superexp_dt_ci_hi = _ss_number_input(_rli_se_ci2,
+                    "Odds 2x CI high (days)", "rli_superexp_dt_ci_hi", _rli_default_se_dt_hi,
+                    min_value=5.0, max_value=5000.0, step=5.0)
                 if rli_superexp_dt_ci_lo > rli_superexp_dt_ci_hi:
                     st.error("DT CI low must be ≤ DT CI high.")
                     st.stop()
                 _rli_cur = rli_frontier_all[rli_proj_as_of_idx]
                 _rli_def_score = _rli_cur['rli_score']
                 _rli_se_pos1, _rli_se_pos2 = st.columns(2)
-                rli_superexp_pos_lo = _rli_se_pos1.number_input(
-                    "Pos CI low (%)", value=round(max(_rli_def_score - 1.0, 0.1), 2),
-                    min_value=0.01, step=0.1, key="rli_superexp_pos_lo")
-                rli_superexp_pos_hi = _rli_se_pos2.number_input(
-                    "Pos CI high (%)", value=round(_rli_def_score + 1.0, 2),
-                    step=0.1, key="rli_superexp_pos_hi")
+                rli_superexp_pos_lo = _ss_number_input(_rli_se_pos1,
+                    "Pos CI low (%)", "rli_superexp_pos_lo", round(max(_rli_def_score - 1.0, 0.1), 2),
+                    min_value=0.01, step=0.1)
+                rli_superexp_pos_hi = _ss_number_input(_rli_se_pos2,
+                    "Pos CI high (%)", "rli_superexp_pos_hi", round(_rli_def_score + 1.0, 2),
+                    step=0.1)
 
         st.markdown("---")
         rli_show_milestones = st.toggle("Milestones", key="rli_milestones")
