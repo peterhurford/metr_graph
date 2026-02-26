@@ -471,9 +471,13 @@ def render_metr():
     if st.session_state.pop("_reset_metr", False):
         for k in _METR_RESET_KEYS:
             st.session_state.pop(k, None)
-        # Explicitly set known defaults to override Streamlit's widget state cache
         st.session_state.update(_METR_DEFAULTS)
         st.rerun()
+
+    # Initialize widget defaults on first run (no explicit index=/value= on widgets)
+    for k, v in _METR_DEFAULTS.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
     # ── METR Sidebar controls ─────────────────────────────────────────────
     with st.sidebar:
@@ -487,7 +491,7 @@ def render_metr():
 
         # --- Projection basis ---
         basis_options = ["Linear", "Piecewise linear", "Superexponential"]
-        proj_basis = st.radio("Projection basis", basis_options, index=1, key="metr_proj_basis")
+        proj_basis = st.radio("Projection basis", basis_options, key="metr_proj_basis")
 
         # Read p80 toggle from session state (widget rendered below, but state persists)
         _sidebar_p80 = st.session_state.get('p80', False)
@@ -524,7 +528,6 @@ def render_metr():
                     piecewise_n_segments = _seg_options[-1]
                 piecewise_n_segments = st.radio(
                     "Segments", _seg_options,
-                    index=_seg_options.index(piecewise_n_segments),
                     horizontal=True, key="piecewise_n_seg")
                 if piecewise_n_segments >= 2:
                     _default_bp1 = pretty(frontier_all[gpt4o_idx]['name']) if gpt4o_idx <= proj_as_of_idx else _bp_names[len(_bp_names) // 2]
@@ -588,12 +591,12 @@ def render_metr():
                     min_value=0.01, step=0.5, key="custom_pos_hi" + _p_suffix)
 
                 custom_dt_dist = st.radio(
-                    "Trend distribution", ["Normal", "Lognormal", "Log-log"], index=1,
+                    "Trend distribution", ["Normal", "Lognormal", "Log-log"],
                     horizontal=True, key="custom_dt_dist",
                     help="Normal: symmetric. Lognormal: symmetric in log-space. "
                          "Log-log: fat right tail.")
                 custom_pos_dist = st.radio(
-                    "Position distribution", ["Normal", "Lognormal", "Log-log"], index=1,
+                    "Position distribution", ["Normal", "Lognormal", "Log-log"],
                     horizontal=True, key="custom_pos_dist",
                     help="Normal: symmetric. Lognormal: symmetric in log-space. "
                          "Log-log: fat right tail.")
@@ -667,11 +670,11 @@ def render_metr():
                     min_value=0.01, step=0.5, key="superexp_pos_hi" + _p_suffix_se)
 
         st.markdown("---")
-        show_milestones = st.toggle("Milestones", value=True, key="milestones")
-        show_labels = st.toggle("Labels", value=True, key="labels")
-        only_post_gpt4o = st.toggle("GPT-4o+ only", value=False, key="post_gpt4o")
-        use_p80 = st.toggle("Use p80", value=False, key="p80")
-        use_log_scale = st.toggle("Log scale", value=True, key="log_scale")
+        show_milestones = st.toggle("Milestones", key="milestones")
+        show_labels = st.toggle("Labels", key="labels")
+        only_post_gpt4o = st.toggle("GPT-4o+ only", key="post_gpt4o")
+        use_p80 = st.toggle("Use p80", key="p80")
+        use_log_scale = st.toggle("Log scale", key="log_scale")
 
         st.markdown("---")
         with st.expander("Projection range"):
@@ -684,7 +687,7 @@ def render_metr():
             )
             _metr_end_year = st.radio(
                 "Project through", [2026, 2027, 2028, 2029],
-                index=0, horizontal=True, key="metr_end_year")
+                horizontal=True, key="metr_end_year")
 
     # ── Reliability metric keys ──────────────────────────────────────────────
     _val_key = 'p80_min' if use_p80 else 'p50_min'
@@ -1270,7 +1273,7 @@ _ECI_DEFAULTS = {
     "eci_proj_basis": "Linear",
     "eci_piecewise_n_seg": 1,
     "eci_custom_dpp_dist": "Lognormal",
-    "eci_custom_pos_dist": "Lognormal",
+    "eci_custom_pos_dist": "Normal",
     "eci_milestones": True,
     "eci_labels": True,
     "eci_end_year": 2026,
@@ -1282,6 +1285,10 @@ def render_eci():
             st.session_state.pop(k, None)
         st.session_state.update(_ECI_DEFAULTS)
         st.rerun()
+
+    for k, v in _ECI_DEFAULTS.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
     # ── ECI Sidebar controls ─────────────────────────────────────────────
     with st.sidebar:
@@ -1295,7 +1302,7 @@ def render_eci():
 
         # --- Projection basis ---
         eci_basis_options = ["Linear", "Piecewise linear", "Superexponential"]
-        eci_proj_basis = st.radio("Projection basis", eci_basis_options, index=0, key="eci_proj_basis")
+        eci_proj_basis = st.radio("Projection basis", eci_basis_options, key="eci_proj_basis")
 
         eci_custom_dpp_lo = eci_custom_dpp_hi = None
         eci_custom_pos_lo = eci_custom_pos_hi = None
@@ -1327,7 +1334,6 @@ def render_eci():
                     eci_piecewise_n_segments = _eci_seg_options[-1]
                 eci_piecewise_n_segments = st.radio(
                     "Segments", _eci_seg_options,
-                    index=_eci_seg_options.index(eci_piecewise_n_segments),
                     horizontal=True, key="eci_piecewise_n_seg")
                 if eci_piecewise_n_segments >= 2:
                     _eci_default_bp1 = _eci_bp_names[len(_eci_bp_names) // 2]
@@ -1392,12 +1398,12 @@ def render_eci():
                     step=0.5, key="eci_custom_pos_hi")
 
                 eci_custom_dpp_dist = st.radio(
-                    "Trend distribution", ["Normal", "Lognormal", "Log-log"], index=1,
+                    "Trend distribution", ["Normal", "Lognormal", "Log-log"],
                     horizontal=True, key="eci_custom_dpp_dist",
                     help="Normal: symmetric. Lognormal: symmetric in log-space. "
                          "Log-log: fat right tail.")
                 eci_custom_pos_dist = st.radio(
-                    "Position distribution", ["Normal", "Lognormal"], index=0,
+                    "Position distribution", ["Normal", "Lognormal"],
                     horizontal=True, key="eci_custom_pos_dist",
                     help="Normal: symmetric. Lognormal: symmetric in log-space.")
 
@@ -1474,8 +1480,8 @@ def render_eci():
                     step=0.5, key="eci_superexp_pos_hi")
 
         st.markdown("---")
-        eci_show_milestones = st.toggle("Milestones", value=True, key="eci_milestones")
-        eci_show_labels = st.toggle("Labels", value=True, key="eci_labels")
+        eci_show_milestones = st.toggle("Milestones", key="eci_milestones")
+        eci_show_labels = st.toggle("Labels", key="eci_labels")
 
         st.markdown("---")
         with st.expander("Projection range"):
@@ -1488,7 +1494,7 @@ def render_eci():
             )
             _eci_end_year = st.radio(
                 "Project through", [2026, 2027, 2028, 2029],
-                index=0, horizontal=True, key="eci_end_year")
+                horizontal=True, key="eci_end_year")
 
     # ── Build data arrays ────────────────────────────────────────────────────
     eci_frontier_used = eci_frontier_all[:eci_proj_as_of_idx + 1]
@@ -2042,6 +2048,10 @@ def render_rli():
         st.session_state.update(_RLI_DEFAULTS)
         st.rerun()
 
+    for k, v in _RLI_DEFAULTS.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
     # ── RLI Sidebar controls ─────────────────────────────────────────────
     with st.sidebar:
         st.header("RLI Projection")
@@ -2054,7 +2064,7 @@ def render_rli():
 
         # --- Projection basis ---
         rli_basis_options = ["Linear (logit)", "Piecewise linear (logit)", "Superexponential (logit)"]
-        rli_proj_basis = st.radio("Projection basis", rli_basis_options, index=0, key="rli_proj_basis",
+        rli_proj_basis = st.radio("Projection basis", rli_basis_options, key="rli_proj_basis",
                                   help="All projections use logit-space fitting to keep scores bounded 0–100%.")
 
         rli_custom_dt_lo = rli_custom_dt_hi = None
@@ -2087,7 +2097,6 @@ def render_rli():
                     rli_piecewise_n_segments = _rli_seg_options[-1]
                 rli_piecewise_n_segments = st.radio(
                     "Segments", _rli_seg_options,
-                    index=_rli_seg_options.index(rli_piecewise_n_segments),
                     horizontal=True, key="rli_piecewise_n_seg")
                 if rli_piecewise_n_segments >= 2:
                     _rli_default_bp1 = _rli_bp_names[len(_rli_bp_names) // 2]
@@ -2153,10 +2162,10 @@ def render_rli():
                     step=0.1, key="rli_custom_pos_hi")
 
                 rli_custom_dt_dist = st.radio(
-                    "Trend distribution", ["Normal", "Lognormal", "Log-log"], index=1,
+                    "Trend distribution", ["Normal", "Lognormal", "Log-log"],
                     horizontal=True, key="rli_custom_dt_dist")
                 rli_custom_pos_dist = st.radio(
-                    "Position distribution", ["Normal", "Lognormal"], index=0,
+                    "Position distribution", ["Normal", "Lognormal"],
                     horizontal=True, key="rli_custom_pos_dist")
 
         # --- Superexponential controls ---
@@ -2228,9 +2237,9 @@ def render_rli():
                     step=0.1, key="rli_superexp_pos_hi")
 
         st.markdown("---")
-        rli_show_milestones = st.toggle("Milestones", value=True, key="rli_milestones")
-        rli_show_labels = st.toggle("Labels", value=True, key="rli_labels")
-        rli_use_log_scale = st.toggle("Log scale", value=False, key="rli_log_scale")
+        rli_show_milestones = st.toggle("Milestones", key="rli_milestones")
+        rli_show_labels = st.toggle("Labels", key="rli_labels")
+        rli_use_log_scale = st.toggle("Log scale", key="rli_log_scale")
 
         st.markdown("---")
         with st.expander("Projection range"):
@@ -2243,7 +2252,7 @@ def render_rli():
             )
             _rli_end_year = st.radio(
                 "Project through", [2026, 2027, 2028, 2029],
-                index=0, horizontal=True, key="rli_end_year")
+                horizontal=True, key="rli_end_year")
 
     # ── Build data arrays ────────────────────────────────────────────────────
     rli_frontier_used = rli_frontier_all[:rli_proj_as_of_idx + 1]
