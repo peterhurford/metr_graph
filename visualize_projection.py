@@ -1261,7 +1261,7 @@ def render_metr():
                 })
             st.table(arrival_rows)
 
-    st.caption("Time units are human work-time: 1d = 8h, 1w = 40h, 1mo = 176h, 1y = 2000h.")
+    st.caption("Fine print: Time units are human work-time: 1d = 8h, 1w = 40h, 1mo = 176h, 1y = 2000h. These are projections assuming current progress continues, they are not forecasts - forecasts would involve some chance of larger-scale trend changes.")
 
 
 # ── Epoch ECI ────────────────────────────────────────────────────────────
