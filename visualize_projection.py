@@ -15,6 +15,8 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="AI Capability Projections", layout="wide")
 
+PROJ_DISCLAIMER = " These are projections assuming current progress continues, they are not forecasts - forecasts would involve some chance of larger-scale trend changes."
+
 # Tighten default Streamlit padding
 st.markdown("""<style>
     .block-container { padding-top: 2rem !important; }
@@ -1261,7 +1263,7 @@ def render_metr():
                 })
             st.table(arrival_rows)
 
-    st.caption("Fine print: Time units are human work-time: 1d = 8h, 1w = 40h, 1mo = 176h, 1y = 2000h. These are projections assuming current progress continues, they are not forecasts - forecasts would involve some chance of larger-scale trend changes.")
+    st.caption("Fine print: Time units are human work-time: 1d = 8h, 1w = 40h, 1mo = 176h, 1y = 2000h." + PROJ_DISCLAIMER)
 
 
 # ── Epoch ECI ────────────────────────────────────────────────────────────
@@ -2022,7 +2024,7 @@ def render_eci():
                 })
             st.table(arrival_rows)
 
-    st.caption("ECI = Epoch Capabilities Index. +Pts/Yr = ECI points gained per year.")
+    st.caption("Fine print: ECI = Epoch Capabilities Index. +Pts/Yr = ECI points gained per year." + PROJ_DISCLAIMER)
 
 
 # ── Remote Labor Index ───────────────────────────────────────────────────
@@ -2808,7 +2810,7 @@ def render_rli():
                 })
             st.table(arrival_rows)
 
-    st.caption("RLI = Remote Labor Index (remotelabor.ai). Projections use logit-space fitting to keep scores bounded 0\u2013100%.")
+    st.caption("Fine print: RLI = Remote Labor Index (remotelabor.ai). Projections use logit-space fitting to keep scores bounded 0\u2013100%." + PROJ_DISCLAIMER)
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
