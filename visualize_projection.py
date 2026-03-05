@@ -432,8 +432,8 @@ rli_frontier_names = [m['name'] for m in rli_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "Remote Labor Index"]
-_TAB_SLUG = {"metr": 0, "eci": 1, "rli": 2}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "Revenue"]
+_TAB_SLUG = {"metr": 0, "eci": 1, "rli": 2, "revenue": 3}
 
 # Read ?tab= from URL for deep-linking
 _url_tab = st.query_params.get("tab", "").lower()
@@ -444,7 +444,7 @@ with st.sidebar:
     st.markdown("---")
 
 # Keep URL in sync with selected tab
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli"}
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Revenue": "revenue"}
 st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
 
 
@@ -2813,6 +2813,365 @@ def render_rli():
     st.caption("Fine print: RLI = Remote Labor Index (remotelabor.ai). Projections use logit-space fitting to keep scores bounded 0\u2013100%." + PROJ_DISCLAIMER)
 
 
+# ── Revenue ──────────────────────────────────────────────────────────────
+
+_OPENAI_REVENUE = [
+    ("2022-12-31", 0.028),
+    ("2023-03-01", 0.2),
+    ("2023-12-31", 2.0),
+    ("2024-08-01", 3.7),
+    ("2024-12-31", 5.5),
+    ("2025-03-01", 8.0),
+    ("2025-06-01", 10.0),
+    ("2025-07-01", 12.0),
+    ("2025-08-01", 13.0),
+    ("2025-12-31", 21.4),
+    ("2026-02-01", 25.0),
+]
+
+_ANTHROPIC_REVENUE = [
+    ("2022-12-31", 0.01),
+    ("2023-12-31", 0.1),
+    ("2024-12-31", 1.0),
+    ("2025-01-01", 1.0),
+    ("2025-05-01", 3.0),
+    ("2025-06-01", 4.0),
+    ("2025-08-01", 5.0),
+    ("2025-10-01", 7.0),
+    ("2025-12-31", 9.0),
+    ("2026-02-01", 14.0),
+    ("2026-03-01", 19.0),
+]
+
+
+def _parse_revenue(data):
+    dates = [datetime.strptime(d, "%Y-%m-%d") for d, _ in data]
+    values = [v for _, v in data]
+    return dates, values
+
+
+def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=20000,
+                          dt_lo_override=None, dt_hi_override=None):
+    """Fit exponential (OLS in log-space) to last n_recent points,
+    sample doubling-time fan chart, return (proj_dates, percentiles_dict, ols_dt, ols_dates, ols_vals)."""
+    log_vals = np.log2(np.array(vals))
+    base = dates[0]
+    days = np.array([(d - base).days for d in dates], dtype=float)
+
+    # Fit on last n_recent points
+    fit_days = days[-n_recent:]
+    fit_log = log_vals[-n_recent:]
+    params = fit_line(fit_days, fit_log)
+    # slope = log2(revenue) per day → doubling time = 1/slope days
+    ols_dt = 1.0 / params[1] if params[1] > 0 else 365
+
+    # OLS trend line through all data (fit is on last N, but draw through full range)
+    d0, d1 = int(days[0]), int(days[-1])
+    ols_d = np.arange(d0, d1 + 1)
+    ols_log = params[0] + params[1] * ols_d
+    ols_dates_out = [base + timedelta(days=int(d)) for d in ols_d]
+    ols_vals_out = 2.0 ** ols_log
+
+    # Projection from last data point
+    last_date = dates[-1]
+    last_log = params[0] + params[1] * days[-1]  # fitted value at last point
+    proj_n_days = (proj_end - last_date).days + 1
+    proj_days_arr = np.arange(0, proj_n_days, 1)
+    proj_dates_out = [last_date + timedelta(days=int(d)) for d in proj_days_arr]
+
+    # Doubling time CI
+    dt_lo = dt_lo_override if dt_lo_override is not None else max(10, ols_dt / 2)
+    dt_hi = dt_hi_override if dt_hi_override is not None else ols_dt * 2
+    sampled_dt = _lognormal_from_ci(dt_lo, dt_hi, n_samples)
+
+    # Position noise in log-space (±0.3 log2 units ≈ ±23% revenue)
+    pos_sigma = 0.3
+    start_log = np.random.normal(last_log, pos_sigma, n_samples)
+
+    # Build trajectories in log2-space, convert to linear
+    trajectories = np.zeros((n_samples, len(proj_days_arr)))
+    for i in range(n_samples):
+        trajectories[i] = 2.0 ** (start_log[i] + proj_days_arr / sampled_dt[i])
+
+    pcts = {}
+    for p in [5, 10, 25, 50, 75, 90, 95]:
+        pcts[p] = np.percentile(trajectories, p, axis=0)
+
+    return proj_dates_out, pcts, ols_dt, dt_lo, dt_hi, ols_dates_out, ols_vals_out, trajectories
+
+
+def _fmt_revenue(val):
+    """Format revenue value in $B to human-readable string."""
+    if val >= 1000:
+        return f"${val/1000:.1f}T"
+    if val >= 1:
+        return f"${val:.1f}B"
+    return f"${val*1000:.0f}M"
+
+
+_REV_MILESTONES = [
+    (50, "$50B"),
+    (100, "$100B"),
+    (200, "$200B"),
+    (500, "$500B"),
+    (1000, "$1T"),
+]
+
+
+def render_revenue():
+    st.header("AI Lab Revenue Projections (ARR)")
+
+    openai_dates, openai_vals = _parse_revenue(_OPENAI_REVENUE)
+    anthropic_dates, anthropic_vals = _parse_revenue(_ANTHROPIC_REVENUE)
+
+    with st.sidebar:
+        st.header("Revenue Projection")
+        rev_end_year = st.radio(
+            "Project through", [2026, 2027, 2028, 2029],
+            horizontal=True, key="rev_end_year", index=0)
+        log_scale = st.checkbox("Log scale", value=True, key="rev_log_scale")
+        rev_2025_only = st.checkbox("2025+ only", value=False, key="rev_2025_only")
+        show_milestones = st.toggle("Milestones", value=True, key="rev_milestones")
+        show_labels = st.toggle("Labels", value=True, key="rev_labels")
+
+        with st.expander("OpenAI projection"):
+            oai_n_recent = st.slider("Fit to last N points", 3, len(openai_vals),
+                                      value=min(6, len(openai_vals)), key="oai_n_recent")
+            # Pre-compute OLS DT for defaults
+            _oai_log = np.log2(np.array(openai_vals))
+            _oai_days = np.array([(d - openai_dates[0]).days for d in openai_dates], dtype=float)
+            _oai_p = fit_line(_oai_days[-oai_n_recent:], _oai_log[-oai_n_recent:])
+            _oai_ols_dt = 1.0 / _oai_p[1] if _oai_p[1] > 0 else 200
+            _oai_dt_lo_def = float(round(max(10, _oai_ols_dt / 2)))
+            _oai_dt_hi_def = float(round(_oai_ols_dt * 2))
+            oai_dt_lo = _ss_number_input(st, "DT CI low (days)", "oai_dt_lo",
+                                          _oai_dt_lo_def, min_value=5.0, step=5.0)
+            oai_dt_hi = _ss_number_input(st, "DT CI high (days)", "oai_dt_hi",
+                                          _oai_dt_hi_def, min_value=10.0, step=5.0)
+
+        with st.expander("Anthropic projection"):
+            ant_n_recent = st.slider("Fit to last N points", 3, len(anthropic_vals),
+                                      value=min(6, len(anthropic_vals)), key="ant_n_recent")
+            _ant_log = np.log2(np.array(anthropic_vals))
+            _ant_days = np.array([(d - anthropic_dates[0]).days for d in anthropic_dates], dtype=float)
+            _ant_p = fit_line(_ant_days[-ant_n_recent:], _ant_log[-ant_n_recent:])
+            _ant_ols_dt = 1.0 / _ant_p[1] if _ant_p[1] > 0 else 100
+            _ant_dt_lo_def = float(round(max(10, _ant_ols_dt / 2)))
+            _ant_dt_hi_def = float(round(_ant_ols_dt * 2))
+            ant_dt_lo = _ss_number_input(st, "DT CI low (days)", "ant_dt_lo",
+                                          _ant_dt_lo_def, min_value=5.0, step=5.0)
+            ant_dt_hi = _ss_number_input(st, "DT CI high (days)", "ant_dt_hi",
+                                          _ant_dt_hi_def, min_value=10.0, step=5.0)
+
+    proj_end = datetime(rev_end_year, 12, 31)
+
+    # Filter display data for 2025+ if toggled (projections still use all data for fitting)
+    _rev_cutoff = datetime(2025, 1, 1) if rev_2025_only else datetime(2000, 1, 1)
+    _oai_display = [(d, v) for d, v in zip(openai_dates, openai_vals) if d >= _rev_cutoff]
+    _ant_display = [(d, v) for d, v in zip(anthropic_dates, anthropic_vals) if d >= _rev_cutoff]
+    oai_display_dates = [d for d, _ in _oai_display]
+    oai_display_vals = [v for _, v in _oai_display]
+    ant_display_dates = [d for d, _ in _ant_display]
+    ant_display_vals = [v for _, v in _ant_display]
+    x_start = min(oai_display_dates[0], ant_display_dates[0]) - timedelta(days=30)
+
+    oai_proj_dates, oai_pcts, oai_dt, oai_dt_lo_eff, oai_dt_hi_eff, oai_ols_dates, oai_ols_vals, oai_traj = \
+        _rev_fit_and_project(openai_dates, openai_vals, oai_n_recent, proj_end,
+                              dt_lo_override=oai_dt_lo, dt_hi_override=oai_dt_hi)
+
+    ant_proj_dates, ant_pcts, ant_dt, ant_dt_lo_eff, ant_dt_hi_eff, ant_ols_dates, ant_ols_vals, ant_traj = \
+        _rev_fit_and_project(anthropic_dates, anthropic_vals, ant_n_recent, proj_end,
+                              dt_lo_override=ant_dt_lo, dt_hi_override=ant_dt_hi)
+
+    fig = go.Figure()
+
+    # --- Fan bands ---
+    # Filter OLS trend lines for display
+    _oai_ols_disp = [(d, v) for d, v in zip(oai_ols_dates, oai_ols_vals) if d >= _rev_cutoff]
+    _ant_ols_disp = [(d, v) for d, v in zip(ant_ols_dates, ant_ols_vals) if d >= _rev_cutoff]
+    oai_ols_disp_dates = [d for d, _ in _oai_ols_disp]
+    oai_ols_disp_vals = [v for _, v in _oai_ols_disp]
+    ant_ols_disp_dates = [d for d, _ in _ant_ols_disp]
+    ant_ols_disp_vals = [v for _, v in _ant_ols_disp]
+
+    _rev_companies = [
+        ("OpenAI", oai_proj_dates, oai_pcts, '#10a37f', oai_display_dates, oai_display_vals,
+         oai_ols_disp_dates, oai_ols_disp_vals, oai_dt, oai_dt_lo_eff, oai_dt_hi_eff),
+        ("Anthropic", ant_proj_dates, ant_pcts, '#d4a574', ant_display_dates, ant_display_vals,
+         ant_ols_disp_dates, ant_ols_disp_vals, ant_dt, ant_dt_lo_eff, ant_dt_hi_eff),
+    ]
+
+    for name, p_dates, pcts, base_color, data_dates, data_vals, \
+            ols_dates, ols_vals, dt, dt_lo_eff, dt_hi_eff in _rev_companies:
+        # Parse base color to rgba
+        r, g, b = int(base_color[1:3], 16), int(base_color[3:5], 16), int(base_color[5:7], 16)
+
+        bands = [
+            (pcts[5], pcts[95], f'rgba({r},{g},{b},0.08)', f'{name} 90% CI'),
+            (pcts[10], pcts[90], f'rgba({r},{g},{b},0.15)', f'{name} 80% CI'),
+            (pcts[25], pcts[75], f'rgba({r},{g},{b},0.25)', f'{name} 50% CI'),
+        ]
+        for lo, hi, color, label in bands:
+            x_poly = p_dates + p_dates[::-1]
+            y_poly = list(hi) + list(lo[::-1])
+            fig.add_trace(go.Scatter(
+                x=x_poly, y=y_poly,
+                fill='toself', fillcolor=color,
+                line=dict(width=0),
+                name=label, hoverinfo='skip', showlegend=False,
+            ))
+
+        # Median projection line
+        fig.add_trace(go.Scatter(
+            x=p_dates, y=list(pcts[50]),
+            mode='lines',
+            line=dict(color=base_color, width=2, dash='dash'),
+            name=f'{name} median projection',
+            hovertemplate='%{{x|%b %Y}}<br>{name}: %{{y:.1f}}B<extra></extra>'.format(name=name),
+        ))
+
+        # OLS trend line
+        fig.add_trace(go.Scatter(
+            x=ols_dates, y=list(ols_vals),
+            mode='lines',
+            line=dict(color=base_color, width=2),
+            name=f'{name} trend (DT={dt:.0f}d)',
+            hoverinfo='skip', showlegend=True,
+        ))
+
+        # Data points
+        hover_texts = [f"{name}<br>{d.strftime('%b %Y')}<br>{_fmt_revenue(v)}" for d, v in zip(data_dates, data_vals)]
+        fig.add_trace(go.Scatter(
+            x=data_dates, y=data_vals,
+            mode='markers' + ('+text' if show_labels else ''),
+            marker=dict(color=base_color, size=9, line=dict(color='white', width=1)),
+            text=[_fmt_revenue(v) for v in data_vals] if show_labels else None,
+            textposition='top right',
+            textfont=dict(size=8, color=base_color),
+            hovertext=hover_texts, hoverinfo='text',
+            name=name, showlegend=True,
+        ))
+
+    # --- Milestone hlines ---
+    if show_milestones:
+        x_lo = x_start
+        x_hi = proj_end
+        _ms_colors = ['#888888', '#666666', '#c0392b', '#8e44ad', '#2c3e50']
+        for (val, label), color in zip(_REV_MILESTONES, _ms_colors):
+            fig.add_trace(go.Scatter(
+                x=[x_lo, x_hi], y=[val, val],
+                mode='lines', line=dict(color=color, width=1.2, dash='dot'),
+                hoverinfo='skip', showlegend=False,
+            ))
+            fig.add_annotation(
+                x=1.0, xref='paper', y=val, text=f"  {label}",
+                showarrow=False, xanchor='left', yanchor='middle',
+                font=dict(size=10, color=color))
+
+    # --- Today vline ---
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
+    fig.add_annotation(
+        x=today, y=1.0, yref='paper', text='Today', showarrow=False,
+        font=dict(size=10, color='gray'), yanchor='top')
+
+    # --- Layout ---
+    yaxis_type = "log" if log_scale else "linear"
+    all_display_vals = oai_display_vals + ant_display_vals
+    y_min_data = min(all_display_vals)
+    # Use 90th pctile (not 95th) to set range — 95th can be absurdly large
+    y_max_proj = max(oai_pcts[90][-1], ant_pcts[90][-1])
+    y_max = max(max(all_display_vals), y_max_proj) * 1.5
+
+    fig.update_layout(
+        yaxis_title="ARR ($ Billions)",
+        yaxis_type=yaxis_type,
+        xaxis_title="",
+        xaxis_range=[x_start, proj_end + timedelta(days=30)],
+        height=600,
+        template="plotly_white",
+        legend=dict(x=0.02, y=0.98, bgcolor='rgba(255,255,255,0.8)'),
+        hovermode='x unified',
+    )
+    if log_scale:
+        tickvals = [0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000, 3000]
+        ticktext = ["$10M", "$30M", "$100M", "$300M", "$1B", "$3B", "$10B", "$30B",
+                     "$100B", "$300B", "$1T", "$3T"]
+        fig.update_yaxes(
+            tickvals=tickvals, ticktext=ticktext,
+            range=[np.log10(y_min_data * 0.5), np.log10(y_max)],
+        )
+    else:
+        fig.update_yaxes(range=[0, y_max])
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # --- Milestone arrival estimates ---
+    if show_milestones:
+        st.subheader("Projected Milestone Arrival")
+        for name, p_dates, traj in [("OpenAI", oai_proj_dates, oai_traj),
+                                      ("Anthropic", ant_proj_dates, ant_traj)]:
+            arrival_rows = []
+            for val, label in _REV_MILESTONES:
+                if val <= max(all_display_vals):
+                    continue
+                # For each trajectory, find first day it crosses val
+                crossed = np.argmax(traj >= val, axis=1)
+                # argmax returns 0 if never crossed — check if actually crossed
+                actually_crossed = traj[np.arange(len(traj)), crossed] >= val
+                if actually_crossed.sum() < len(traj) * 0.05:
+                    arrival_rows.append({"Milestone": label, "Median": "Beyond range", "50% CI": "—", "80% CI": "—"})
+                    continue
+                # Among those that crossed, get dates
+                crossed_days = crossed[actually_crossed]
+                p50_day = int(np.percentile(crossed_days, 50))
+                p25_day = int(np.percentile(crossed_days, 25))
+                p75_day = int(np.percentile(crossed_days, 75))
+                p10_day = int(np.percentile(crossed_days, 10))
+                p90_day = int(np.percentile(crossed_days, 90))
+                base = p_dates[0]
+                p50_date = base + timedelta(days=p50_day)
+                p25_date = base + timedelta(days=p25_day)
+                p75_date = base + timedelta(days=p75_day)
+                p10_date = base + timedelta(days=p10_day)
+                p90_date = base + timedelta(days=p90_day)
+                arrival_rows.append({
+                    "Milestone": label,
+                    "Median": p50_date.strftime('%b %Y'),
+                    "50% CI": f"{p25_date.strftime('%b %Y')} – {p75_date.strftime('%b %Y')}",
+                    "80% CI": f"{p10_date.strftime('%b %Y')} – {p90_date.strftime('%b %Y')}",
+                })
+            if arrival_rows:
+                st.markdown(f"**{name}**")
+                st.table(arrival_rows)
+
+    # --- Doubling times ---
+    st.subheader("Historical Doubling Times")
+    col1, col2 = st.columns(2)
+    for col, name, dates, vals in [
+        (col1, "OpenAI", openai_dates, openai_vals),
+        (col2, "Anthropic", anthropic_dates, anthropic_vals),
+    ]:
+        with col:
+            st.markdown(f"**{name}**")
+            rows = []
+            for i in range(1, len(vals)):
+                if vals[i] > 0 and vals[i - 1] > 0 and vals[i] > vals[i - 1]:
+                    days = (dates[i] - dates[i - 1]).days
+                    growth = vals[i] / vals[i - 1]
+                    if growth > 1 and days > 0:
+                        doubling_days = days * np.log(2) / np.log(growth)
+                        rows.append({
+                            "Period": f"{dates[i-1].strftime('%b %Y')} → {dates[i].strftime('%b %Y')}",
+                            "Growth": f"{growth:.1f}x",
+                            "Doubling Time": f"{doubling_days:.0f} days",
+                        })
+            if rows:
+                st.table(rows)
+
+    st.caption("Fine print: Revenue figures are approximate ARR (annualized run rate) compiled from public reports and media sources. Anthropic Dec 2025 figure averaged from $8-10B range reported." + PROJ_DISCLAIMER)
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
 if not os.environ.get("_VP_TESTING"):
@@ -2822,3 +3181,5 @@ if not os.environ.get("_VP_TESTING"):
         render_eci()
     elif active_tab == "Remote Labor Index":
         render_rli()
+    elif active_tab == "Revenue":
+        render_revenue()
