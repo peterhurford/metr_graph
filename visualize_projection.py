@@ -535,14 +535,19 @@ def render_metr():
                 st.button("Reset to defaults", key="reset_linear",
                           on_click=lambda: st.session_state.update(_reset_metr=True))
 
-                # Segments & breakpoints first, so DT defaults use the actual last segment
+                # Segments & breakpoints only for Piecewise linear
                 _bp_names = [pretty(m['name']) for m in frontier_all[:proj_as_of_idx + 1]]
-                _seg_options = [1, 2, 3] if len(_bp_names) >= 5 else [1, 2]
-                if piecewise_n_segments not in _seg_options:
-                    piecewise_n_segments = _seg_options[-1]
-                piecewise_n_segments = st.radio(
-                    "Segments", _seg_options,
-                    horizontal=True, key="piecewise_n_seg")
+                if proj_basis == "Piecewise linear":
+                    _seg_options = [1, 2, 3] if len(_bp_names) >= 5 else [1, 2]
+                    if piecewise_n_segments not in _seg_options:
+                        piecewise_n_segments = _seg_options[-1]
+                    piecewise_n_segments = st.radio(
+                        "Segments", _seg_options,
+                        horizontal=True, key="piecewise_n_seg")
+                else:
+                    # Plain Linear: force 1 segment, clear stale session state
+                    piecewise_n_segments = 1
+                    st.session_state.pop("piecewise_n_seg", None)
                 if piecewise_n_segments >= 2:
                     _default_bp1 = pretty(frontier_all[gpt4o_idx]['name']) if gpt4o_idx <= proj_as_of_idx else _bp_names[len(_bp_names) // 2]
                     _bp1_idx = _bp_names.index(_default_bp1) if _default_bp1 in _bp_names else len(_bp_names) // 2
@@ -1341,14 +1346,22 @@ def render_eci():
                 st.button("Reset to defaults", key="reset_eci_linear",
                           on_click=lambda: st.session_state.update(_reset_eci=True))
 
-                # Segments & breakpoints first, so PPY defaults use the actual last segment
+                # Segments & breakpoints only for Piecewise linear
                 _eci_bp_names = [m['display_name'] for m in eci_frontier_all[:eci_proj_as_of_idx + 1]]
-                _eci_seg_options = [1, 2, 3] if len(_eci_bp_names) >= 5 else [1, 2]
-                if eci_piecewise_n_segments not in _eci_seg_options:
-                    eci_piecewise_n_segments = _eci_seg_options[-1]
-                eci_piecewise_n_segments = st.radio(
-                    "Segments", _eci_seg_options,
-                    horizontal=True, key="eci_piecewise_n_seg")
+                if eci_proj_basis == "Piecewise linear":
+                    _eci_seg_options = [1, 2, 3] if len(_eci_bp_names) >= 5 else [1, 2]
+                    if eci_piecewise_n_segments not in _eci_seg_options:
+                        eci_piecewise_n_segments = _eci_seg_options[-1]
+                    # Ensure session state defaults to 2 for Piecewise
+                    if st.session_state.get("eci_piecewise_n_seg", 1) < 2:
+                        st.session_state["eci_piecewise_n_seg"] = 2
+                    eci_piecewise_n_segments = st.radio(
+                        "Segments", _eci_seg_options,
+                        horizontal=True, key="eci_piecewise_n_seg")
+                else:
+                    # Plain Linear: force 1 segment, clear stale session state
+                    eci_piecewise_n_segments = 1
+                    st.session_state.pop("eci_piecewise_n_seg", None)
                 if eci_piecewise_n_segments >= 2:
                     _eci_default_bp1 = _eci_bp_names[len(_eci_bp_names) // 2]
                     _eci_bp1_idx = _eci_bp_names.index(_eci_default_bp1) if _eci_default_bp1 in _eci_bp_names else len(_eci_bp_names) // 2
@@ -2104,14 +2117,22 @@ def render_rli():
                 st.button("Reset to defaults", key="reset_rli_linear",
                           on_click=lambda: st.session_state.update(_reset_rli=True))
 
-                # Segments & breakpoints first, so DT defaults use the actual last segment
+                # Segments & breakpoints only for Piecewise linear (logit)
                 _rli_bp_names = [m['name'] for m in rli_frontier_all[:rli_proj_as_of_idx + 1]]
-                _rli_seg_options = [1, 2, 3] if len(_rli_bp_names) >= 5 else [1, 2]
-                if rli_piecewise_n_segments not in _rli_seg_options:
-                    rli_piecewise_n_segments = _rli_seg_options[-1]
-                rli_piecewise_n_segments = st.radio(
-                    "Segments", _rli_seg_options,
-                    horizontal=True, key="rli_piecewise_n_seg")
+                if rli_proj_basis == "Piecewise linear (logit)":
+                    _rli_seg_options = [1, 2, 3] if len(_rli_bp_names) >= 5 else [1, 2]
+                    if rli_piecewise_n_segments not in _rli_seg_options:
+                        rli_piecewise_n_segments = _rli_seg_options[-1]
+                    # Ensure session state defaults to 2 for Piecewise
+                    if st.session_state.get("rli_piecewise_n_seg", 1) < 2:
+                        st.session_state["rli_piecewise_n_seg"] = 2
+                    rli_piecewise_n_segments = st.radio(
+                        "Segments", _rli_seg_options,
+                        horizontal=True, key="rli_piecewise_n_seg")
+                else:
+                    # Plain Linear: force 1 segment, clear stale session state
+                    rli_piecewise_n_segments = 1
+                    st.session_state.pop("rli_piecewise_n_seg", None)
                 if rli_piecewise_n_segments >= 2:
                     _rli_default_bp1 = _rli_bp_names[len(_rli_bp_names) // 2]
                     _rli_bp1_idx = _rli_bp_names.index(_rli_default_bp1) if _rli_default_bp1 in _rli_bp_names else len(_rli_bp_names) // 2

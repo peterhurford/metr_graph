@@ -26,6 +26,15 @@ def _assert_no_error(at, context):
     assert not excs, f"{context}: {excs[0]}"
 
 
+def _has_widget(at, widget_type, key):
+    """Check if a widget with the given key exists (rendered on the page)."""
+    try:
+        getattr(at, widget_type)(key=key)
+        return True
+    except (KeyError, IndexError):
+        return False
+
+
 def _switch_tab(at, tab_name):
     """Switch to a tab and run."""
     [r for r in at.radio if r.label == "Tab"][0].set_value(tab_name).run()
@@ -85,6 +94,162 @@ class TestNonDefaultProjectionBases:
 
 
 # ===========================================================================
+# Mode switching: Linear vs Piecewise produce different widgets and output
+# ===========================================================================
+
+class TestModeSwitchingBehavior:
+    """Verify that switching projection basis actually changes the UI —
+    not just that it doesn't crash."""
+
+    # -- METR --
+
+    def test_metr_linear_has_no_segments_radio(self):
+        """Linear mode should not render the Segments radio."""
+        at = _fresh_app()
+        at.run()
+        at.radio(key="metr_proj_basis").set_value("Linear").run()
+        _assert_no_error(at, "METR / Linear")
+        assert not _has_widget(at, "radio", "piecewise_n_seg"), \
+            "Linear mode should not have Segments radio"
+        assert "piecewise_n_seg" not in at.session_state, \
+            "Linear mode should not have piecewise_n_seg in session state"
+
+    def test_metr_piecewise_has_segments_radio(self):
+        """Piecewise mode should render the Segments radio with value 2."""
+        at = _fresh_app()
+        at.run()  # Default is Piecewise
+        assert _has_widget(at, "radio", "piecewise_n_seg"), \
+            "Piecewise mode should have Segments radio"
+        assert at.radio(key="piecewise_n_seg").value == 2
+
+    def test_metr_piecewise_to_linear_clears_segments(self):
+        """Switching Piecewise → Linear should clear the segments state."""
+        at = _fresh_app()
+        at.run()
+        # Starts in Piecewise with 2 segments
+        assert at.radio(key="piecewise_n_seg").value == 2
+        # Switch to Linear
+        at.radio(key="metr_proj_basis").set_value("Linear").run()
+        _assert_no_error(at, "METR Piecewise→Linear")
+        assert not _has_widget(at, "radio", "piecewise_n_seg"), \
+            "Segments radio should disappear after switching to Linear"
+        assert "piecewise_n_seg" not in at.session_state
+
+    def test_metr_linear_to_piecewise_gets_segments(self):
+        """Switching Linear → Piecewise should create the segments radio."""
+        at = _fresh_app()
+        at.run()
+        # Switch to Linear first
+        at.radio(key="metr_proj_basis").set_value("Linear").run()
+        assert not _has_widget(at, "radio", "piecewise_n_seg")
+        # Switch back to Piecewise
+        at.radio(key="metr_proj_basis").set_value("Piecewise linear").run()
+        _assert_no_error(at, "METR Linear→Piecewise")
+        assert _has_widget(at, "radio", "piecewise_n_seg"), \
+            "Segments radio should appear after switching to Piecewise"
+        assert at.radio(key="piecewise_n_seg").value == 2
+
+    def test_metr_linear_ci_differs_from_piecewise_ci(self):
+        """Linear (full OLS) should have different CI defaults than
+        Piecewise (last-segment OLS)."""
+        at = _fresh_app()
+        at.run()
+        # Default is Piecewise — record its CI
+        pw_dt_lo = at.number_input(key="custom_dt_lo").value
+        # Switch to Linear
+        at.radio(key="metr_proj_basis").set_value("Linear").run()
+        _assert_no_error(at, "METR / Linear CI check")
+        lin_dt_lo = at.number_input(key="custom_dt_lo").value
+        assert lin_dt_lo != pw_dt_lo, \
+            f"Linear and Piecewise should have different DT defaults: both={pw_dt_lo}"
+
+    def test_metr_superexp_has_no_segments_or_dt_keys(self):
+        """Superexponential should not have linear/piecewise widgets."""
+        at = _fresh_app()
+        at.run()
+        at.radio(key="metr_proj_basis").set_value("Superexponential").run()
+        _assert_no_error(at, "METR / Superexponential")
+        assert not _has_widget(at, "radio", "piecewise_n_seg")
+        assert not _has_widget(at, "number_input", "custom_dt_lo"), \
+            "Superexp should not have linear DT CI widget"
+        assert _has_widget(at, "number_input", "superexp_dt_ci_lo"), \
+            "Superexp should have its own DT CI widget"
+
+    # -- ECI --
+
+    def test_eci_linear_has_no_segments_radio(self):
+        """ECI Linear mode should not render the Segments radio."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Epoch ECI")  # Defaults to Linear
+        assert not _has_widget(at, "radio", "eci_piecewise_n_seg"), \
+            "ECI Linear mode should not have Segments radio"
+        assert "eci_piecewise_n_seg" not in at.session_state
+
+    def test_eci_piecewise_has_segments_radio(self):
+        """ECI Piecewise mode should render the Segments radio."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Epoch ECI")
+        at.radio(key="eci_proj_basis").set_value("Piecewise linear").run()
+        _assert_no_error(at, "ECI / Piecewise")
+        assert _has_widget(at, "radio", "eci_piecewise_n_seg"), \
+            "ECI Piecewise should have Segments radio"
+        assert at.radio(key="eci_piecewise_n_seg").value == 2
+
+    def test_eci_piecewise_to_linear_clears_segments(self):
+        """ECI: switching Piecewise → Linear should clear segments state."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Epoch ECI")
+        # Switch to Piecewise first
+        at.radio(key="eci_proj_basis").set_value("Piecewise linear").run()
+        assert at.radio(key="eci_piecewise_n_seg").value == 2
+        # Switch back to Linear
+        at.radio(key="eci_proj_basis").set_value("Linear").run()
+        _assert_no_error(at, "ECI Piecewise→Linear")
+        assert not _has_widget(at, "radio", "eci_piecewise_n_seg"), \
+            "ECI Segments radio should disappear after switching to Linear"
+        assert "eci_piecewise_n_seg" not in at.session_state
+
+    # -- RLI --
+
+    def test_rli_linear_has_no_segments_radio(self):
+        """RLI Linear mode should not render the Segments radio."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Remote Labor Index")  # Defaults to Linear (logit)
+        assert not _has_widget(at, "radio", "rli_piecewise_n_seg"), \
+            "RLI Linear mode should not have Segments radio"
+        assert "rli_piecewise_n_seg" not in at.session_state
+
+    def test_rli_piecewise_has_segments_radio(self):
+        """RLI Piecewise mode should render the Segments radio."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Remote Labor Index")
+        at.radio(key="rli_proj_basis").set_value("Piecewise linear (logit)").run()
+        _assert_no_error(at, "RLI / Piecewise")
+        assert _has_widget(at, "radio", "rli_piecewise_n_seg"), \
+            "RLI Piecewise should have Segments radio"
+
+    def test_rli_piecewise_to_linear_clears_segments(self):
+        """RLI: switching Piecewise → Linear should clear segments state."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Remote Labor Index")
+        # Switch to Piecewise first
+        at.radio(key="rli_proj_basis").set_value("Piecewise linear (logit)").run()
+        assert _has_widget(at, "radio", "rli_piecewise_n_seg")
+        # Switch back to Linear
+        at.radio(key="rli_proj_basis").set_value("Linear (logit)").run()
+        _assert_no_error(at, "RLI Piecewise→Linear")
+        assert not _has_widget(at, "radio", "rli_piecewise_n_seg"), \
+            "RLI Segments radio should disappear after switching to Linear"
+        assert "rli_piecewise_n_seg" not in at.session_state
+
+
+# ===========================================================================
 # (a) Default widget values are data-driven, not hardcoded
 # ===========================================================================
 
@@ -92,7 +257,7 @@ class TestDefaultValues:
     """Verify that widget defaults are computed from data (not hardcoded)
     and that toggle/radio defaults are correct."""
 
-    def test_metr_linear_defaults(self):
+    def test_metr_piecewise_defaults(self):
         """METR piecewise-linear CI defaults + toggles + segment count."""
         at = _fresh_app()
         at.run()
@@ -128,17 +293,18 @@ class TestDefaultValues:
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Epoch ECI")
-        # ECI default basis is "Linear" (index=0), so segment default is 1
+        # ECI default basis is "Linear", so no segments radio
         ppy_lo = at.number_input(key="eci_custom_ppy_lo").value
         ppy_hi = at.number_input(key="eci_custom_ppy_hi").value
         assert ppy_lo > 0 and ppy_hi > ppy_lo
         assert 3.0 <= ppy_hi / ppy_lo <= 5.0
         assert at.toggle(key="eci_milestones").value is True
         assert at.toggle(key="eci_labels").value is True
-        assert at.radio(key="eci_piecewise_n_seg").value == 1
+        assert not _has_widget(at, "radio", "eci_piecewise_n_seg"), \
+            "ECI Linear default should not have Segments radio"
 
     def test_rli_linear_defaults(self):
-        """RLI piecewise-linear DT CI defaults + toggles."""
+        """RLI linear DT CI defaults + toggles."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Remote Labor Index")
@@ -148,6 +314,8 @@ class TestDefaultValues:
         assert 3.0 <= dt_hi / dt_lo <= 5.0
         assert at.toggle(key="rli_milestones").value is True
         assert at.toggle(key="rli_labels").value is True
+        assert not _has_widget(at, "radio", "rli_piecewise_n_seg"), \
+            "RLI Linear default should not have Segments radio"
 
 
 # ===========================================================================
@@ -178,6 +346,8 @@ class TestWidgetPropagation:
         at.run()
         _switch_tab(at, "Epoch ECI")
         ppy_lo_1seg = at.number_input(key="eci_custom_ppy_lo").value
+        # Switch to Piecewise first, then change segments
+        at.radio(key="eci_proj_basis").set_value("Piecewise linear").run()
         at.radio(key="eci_piecewise_n_seg").set_value(2).run()
         _assert_no_error(at, "ECI 2-segment")
         ppy_lo_2seg = at.number_input(key="eci_custom_ppy_lo").value
