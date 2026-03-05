@@ -1165,7 +1165,7 @@ def render_metr():
     )
 
     # ── Render chart + metrics ──────────────────────────────────────────────
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     if is_backtesting and backtest_results:
         _backtest_summary(backtest_results)
 
@@ -1926,7 +1926,7 @@ def render_eci():
     )
 
     # ── Render chart + metrics ──────────────────────────────────────────────
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     if eci_is_backtesting and eci_backtest_results:
         _backtest_summary(eci_backtest_results)
 
@@ -2723,7 +2723,7 @@ def render_rli():
     )
 
     # ── Render chart + metrics ──────────────────────────────────────────────
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     if rli_is_backtesting and rli_backtest_results:
         _backtest_summary(rli_backtest_results)
 
@@ -3125,7 +3125,7 @@ def render_revenue():
     else:
         fig.update_yaxes(range=[0, y_max])
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # --- Milestone arrival estimates ---
     if show_milestones:
