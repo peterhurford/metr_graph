@@ -383,13 +383,15 @@ def load_eci_frontier(_mtime=None):
 
 _RLI_RAW = [
     {"name": "Gemini 2.5 Pro", "date": "2025-03-25", "rli_score": 0.83},
-    {"name": "Grok 4",         "date": "2025-07-01", "rli_score": 2.10},
+    {"name": "Grok 4",         "date": "2025-07-01", "rli_score": 2.08},
     {"name": "GPT-5",          "date": "2025-08-07", "rli_score": 1.67},
     {"name": "Sonnet 4.5",     "date": "2025-09-20", "rli_score": 2.08},
     {"name": "Manus 1.5",      "date": "2025-10-20", "rli_score": 2.50},
     {"name": "Opus 4.5",       "date": "2025-11-15", "rli_score": 3.75},
     {"name": "Gemini 3 Pro",   "date": "2025-12-10", "rli_score": 1.25},
+    {"name": "Manus 1.6",      "date": "2025-12-15", "rli_score": 2.92},
     {"name": "GPT-5.2",        "date": "2025-12-20", "rli_score": 2.50},
+    {"name": "Opus 4.6",       "date": "2026-02-05", "rli_score": 4.17},
 ]
 
 
