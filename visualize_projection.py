@@ -3131,42 +3131,42 @@ def render_revenue():
 
     # --- Milestone arrival estimates ---
     if show_milestones:
-        st.subheader("Projected Milestone Arrival")
-        for name, p_dates, traj in [("OpenAI", oai_proj_dates, oai_traj),
-                                      ("Anthropic", ant_proj_dates, ant_traj)]:
-            arrival_rows = []
-            for val, label in _REV_MILESTONES:
-                if val <= max(all_display_vals):
-                    continue
-                # For each trajectory, find first day it crosses val
-                crossed = np.argmax(traj >= val, axis=1)
-                # argmax returns 0 if never crossed — check if actually crossed
-                actually_crossed = traj[np.arange(len(traj)), crossed] >= val
-                if actually_crossed.sum() < len(traj) * 0.05:
-                    arrival_rows.append({"Milestone": label, "Median": "Beyond range", "50% CI": "—", "80% CI": "—"})
-                    continue
-                # Among those that crossed, get dates
-                crossed_days = crossed[actually_crossed]
-                p50_day = int(np.percentile(crossed_days, 50))
-                p25_day = int(np.percentile(crossed_days, 25))
-                p75_day = int(np.percentile(crossed_days, 75))
-                p10_day = int(np.percentile(crossed_days, 10))
-                p90_day = int(np.percentile(crossed_days, 90))
-                base = p_dates[0]
-                p50_date = base + timedelta(days=p50_day)
-                p25_date = base + timedelta(days=p25_day)
-                p75_date = base + timedelta(days=p75_day)
-                p10_date = base + timedelta(days=p10_day)
-                p90_date = base + timedelta(days=p90_day)
-                arrival_rows.append({
-                    "Milestone": label,
-                    "Median": p50_date.strftime('%b %Y'),
-                    "50% CI": f"{p25_date.strftime('%b %Y')} – {p75_date.strftime('%b %Y')}",
-                    "80% CI": f"{p10_date.strftime('%b %Y')} – {p90_date.strftime('%b %Y')}",
-                })
-            if arrival_rows:
-                st.markdown(f"**{name}**")
-                st.table(arrival_rows)
+        with st.expander("Milestone details"):
+            for name, p_dates, traj in [("OpenAI", oai_proj_dates, oai_traj),
+                                          ("Anthropic", ant_proj_dates, ant_traj)]:
+                arrival_rows = []
+                for val, label in _REV_MILESTONES:
+                    if val <= max(all_display_vals):
+                        continue
+                    # For each trajectory, find first day it crosses val
+                    crossed = np.argmax(traj >= val, axis=1)
+                    # argmax returns 0 if never crossed — check if actually crossed
+                    actually_crossed = traj[np.arange(len(traj)), crossed] >= val
+                    if actually_crossed.sum() < len(traj) * 0.05:
+                        arrival_rows.append({"Milestone": label, "Median": "Beyond range", "50% CI": "—", "80% CI": "—"})
+                        continue
+                    # Among those that crossed, get dates
+                    crossed_days = crossed[actually_crossed]
+                    p50_day = int(np.percentile(crossed_days, 50))
+                    p25_day = int(np.percentile(crossed_days, 25))
+                    p75_day = int(np.percentile(crossed_days, 75))
+                    p10_day = int(np.percentile(crossed_days, 10))
+                    p90_day = int(np.percentile(crossed_days, 90))
+                    base = p_dates[0]
+                    p50_date = base + timedelta(days=p50_day)
+                    p25_date = base + timedelta(days=p25_day)
+                    p75_date = base + timedelta(days=p75_day)
+                    p10_date = base + timedelta(days=p10_day)
+                    p90_date = base + timedelta(days=p90_day)
+                    arrival_rows.append({
+                        "Milestone": label,
+                        "Median": p50_date.strftime('%b %Y'),
+                        "50% CI": f"{p25_date.strftime('%b %Y')} – {p75_date.strftime('%b %Y')}",
+                        "80% CI": f"{p10_date.strftime('%b %Y')} – {p90_date.strftime('%b %Y')}",
+                    })
+                if arrival_rows:
+                    st.markdown(f"**{name}**")
+                    st.table(arrival_rows)
 
     # --- Doubling times ---
     st.subheader("Historical Doubling Times")
