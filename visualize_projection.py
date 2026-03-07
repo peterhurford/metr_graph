@@ -3324,28 +3324,28 @@ def render_revenue():
                     st.table(arrival_rows)
 
     # --- Doubling times ---
-    st.subheader("Historical Doubling Times")
-    col1, col2 = st.columns(2)
-    for col, name, dates, vals in [
-        (col1, "OpenAI", openai_dates, openai_vals),
-        (col2, "Anthropic", anthropic_dates, anthropic_vals),
-    ]:
-        with col:
-            st.markdown(f"**{name}**")
-            rows = []
-            for i in range(1, len(vals)):
-                if vals[i] > 0 and vals[i - 1] > 0 and vals[i] > vals[i - 1]:
-                    days = (dates[i] - dates[i - 1]).days
-                    growth = vals[i] / vals[i - 1]
-                    if growth > 1 and days > 0:
-                        doubling_days = days * np.log(2) / np.log(growth)
-                        rows.append({
-                            "Period": f"{dates[i-1].strftime('%b %Y')} → {dates[i].strftime('%b %Y')}",
-                            "Growth": f"{growth:.1f}x",
-                            "Doubling Time": f"{doubling_days:.0f} days",
-                        })
-            if rows:
-                st.table(rows)
+    with st.expander("Historical doubling times"):
+        col1, col2 = st.columns(2)
+        for col, name, dates, vals in [
+            (col1, "OpenAI", openai_dates, openai_vals),
+            (col2, "Anthropic", anthropic_dates, anthropic_vals),
+        ]:
+            with col:
+                st.markdown(f"**{name}**")
+                rows = []
+                for i in range(1, len(vals)):
+                    if vals[i] > 0 and vals[i - 1] > 0 and vals[i] > vals[i - 1]:
+                        days = (dates[i] - dates[i - 1]).days
+                        growth = vals[i] / vals[i - 1]
+                        if growth > 1 and days > 0:
+                            doubling_days = days * np.log(2) / np.log(growth)
+                            rows.append({
+                                "Period": f"{dates[i-1].strftime('%b %Y')} → {dates[i].strftime('%b %Y')}",
+                                "Growth": f"{growth:.1f}x",
+                                "Doubling Time": f"{doubling_days:.0f} days",
+                            })
+                if rows:
+                    st.table(rows)
 
     st.caption("Fine print: Revenue figures are approximate ARR (annualized run rate) compiled from public reports and media sources. Anthropic Dec 2025 figure averaged from $8-10B range reported." + PROJ_DISCLAIMER)
 
