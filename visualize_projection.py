@@ -2947,6 +2947,41 @@ def render_revenue():
     openai_dates, openai_vals = _parse_revenue(_OPENAI_REVENUE)
     anthropic_dates, anthropic_vals = _parse_revenue(_ANTHROPIC_REVENUE)
 
+    # Build "project as of" options from combined dates
+    _all_rev_dates = sorted(set(openai_dates + anthropic_dates))
+    _rev_date_labels = []
+    for _d in _all_rev_dates:
+        _lbl = _d.strftime('%b %Y')
+        _parts = []
+        _oai_v = next((v for dd, v in zip(openai_dates, openai_vals) if dd == _d), None)
+        _ant_v = next((v for dd, v in zip(anthropic_dates, anthropic_vals) if dd == _d), None)
+        if _oai_v is not None:
+            _parts.append(f"OAI {_fmt_revenue(_oai_v)}")
+        if _ant_v is not None:
+            _parts.append(f"Ant {_fmt_revenue(_ant_v)}")
+        _rev_date_labels.append(f"{_lbl} ({', '.join(_parts)})")
+
+    _rev_as_of_label = st.session_state.get('rev_proj_as_of', _rev_date_labels[-1])
+    if _rev_as_of_label not in _rev_date_labels:
+        _rev_as_of_label = _rev_date_labels[-1]
+    _rev_as_of_idx = _rev_date_labels.index(_rev_as_of_label)
+    _rev_as_of_date = _all_rev_dates[_rev_as_of_idx]
+
+    # Filter data to "as of" cutoff for fitting
+    oai_dates_fit = [d for d in openai_dates if d <= _rev_as_of_date]
+    oai_vals_fit = [v for d, v in zip(openai_dates, openai_vals) if d <= _rev_as_of_date]
+    ant_dates_fit = [d for d in anthropic_dates if d <= _rev_as_of_date]
+    ant_vals_fit = [v for d, v in zip(anthropic_dates, anthropic_vals) if d <= _rev_as_of_date]
+    _rev_backtesting = _rev_as_of_idx < len(_all_rev_dates) - 1
+    oai_can_project = len(oai_vals_fit) >= 3
+    ant_can_project = len(ant_vals_fit) >= 3
+
+    # Clamp slider session state values if they exceed filtered data length
+    if st.session_state.get('oai_n_recent', 0) > len(oai_vals_fit):
+        st.session_state.pop('oai_n_recent', None)
+    if st.session_state.get('ant_n_recent', 0) > len(ant_vals_fit):
+        st.session_state.pop('ant_n_recent', None)
+
     with st.sidebar:
         st.header("Revenue Projection")
         rev_end_year = st.radio(
@@ -2957,34 +2992,49 @@ def render_revenue():
         show_milestones = st.toggle("Milestones", value=True, key="rev_milestones")
         show_labels = st.toggle("Labels", value=True, key="rev_labels")
 
+        with st.expander("Projection range"):
+            st.selectbox(
+                "Project as of",
+                _rev_date_labels,
+                index=_rev_date_labels.index(_rev_as_of_label),
+                key='rev_proj_as_of',
+                help="Backtest: project from an earlier date's vantage point.",
+            )
+
         with st.expander("OpenAI projection"):
-            oai_n_recent = st.slider("Fit to last N points", 3, len(openai_vals),
-                                      value=min(6, len(openai_vals)), key="oai_n_recent")
-            # Pre-compute OLS DT for defaults
-            _oai_log = np.log2(np.array(openai_vals))
-            _oai_days = np.array([(d - openai_dates[0]).days for d in openai_dates], dtype=float)
-            _oai_p = fit_line(_oai_days[-oai_n_recent:], _oai_log[-oai_n_recent:])
-            _oai_ols_dt = 1.0 / _oai_p[1] if _oai_p[1] > 0 else 200
-            _oai_dt_lo_def = float(round(max(10, _oai_ols_dt / 2)))
-            _oai_dt_hi_def = float(round(_oai_ols_dt * 2))
-            oai_dt_lo = _ss_number_input(st, "DT CI low (days)", "oai_dt_lo",
-                                          _oai_dt_lo_def, min_value=5.0, step=5.0)
-            oai_dt_hi = _ss_number_input(st, "DT CI high (days)", "oai_dt_hi",
-                                          _oai_dt_hi_def, min_value=10.0, step=5.0)
+            if oai_can_project:
+                oai_n_recent = st.slider("Fit to last N points", 3, len(oai_vals_fit),
+                                          value=min(6, len(oai_vals_fit)), key="oai_n_recent")
+                # Pre-compute OLS DT for defaults
+                _oai_log = np.log2(np.array(oai_vals_fit))
+                _oai_days = np.array([(d - oai_dates_fit[0]).days for d in oai_dates_fit], dtype=float)
+                _oai_p = fit_line(_oai_days[-oai_n_recent:], _oai_log[-oai_n_recent:])
+                _oai_ols_dt = 1.0 / _oai_p[1] if _oai_p[1] > 0 else 200
+                _oai_dt_lo_def = float(round(max(10, _oai_ols_dt / 2)))
+                _oai_dt_hi_def = float(round(_oai_ols_dt * 2))
+                oai_dt_lo = _ss_number_input(st, "DT CI low (days)", "oai_dt_lo",
+                                              _oai_dt_lo_def, min_value=5.0, step=5.0)
+                oai_dt_hi = _ss_number_input(st, "DT CI high (days)", "oai_dt_hi",
+                                              _oai_dt_hi_def, min_value=10.0, step=5.0)
+            else:
+                st.caption("Need ≥3 data points to project")
 
         with st.expander("Anthropic projection"):
-            ant_n_recent = st.slider("Fit to last N points", 3, len(anthropic_vals),
-                                      value=min(6, len(anthropic_vals)), key="ant_n_recent")
-            _ant_log = np.log2(np.array(anthropic_vals))
-            _ant_days = np.array([(d - anthropic_dates[0]).days for d in anthropic_dates], dtype=float)
-            _ant_p = fit_line(_ant_days[-ant_n_recent:], _ant_log[-ant_n_recent:])
-            _ant_ols_dt = 1.0 / _ant_p[1] if _ant_p[1] > 0 else 100
-            _ant_dt_lo_def = float(round(max(10, _ant_ols_dt / 2)))
-            _ant_dt_hi_def = float(round(_ant_ols_dt * 2))
-            ant_dt_lo = _ss_number_input(st, "DT CI low (days)", "ant_dt_lo",
-                                          _ant_dt_lo_def, min_value=5.0, step=5.0)
-            ant_dt_hi = _ss_number_input(st, "DT CI high (days)", "ant_dt_hi",
-                                          _ant_dt_hi_def, min_value=10.0, step=5.0)
+            if ant_can_project:
+                ant_n_recent = st.slider("Fit to last N points", 3, len(ant_vals_fit),
+                                          value=min(6, len(ant_vals_fit)), key="ant_n_recent")
+                _ant_log = np.log2(np.array(ant_vals_fit))
+                _ant_days = np.array([(d - ant_dates_fit[0]).days for d in ant_dates_fit], dtype=float)
+                _ant_p = fit_line(_ant_days[-ant_n_recent:], _ant_log[-ant_n_recent:])
+                _ant_ols_dt = 1.0 / _ant_p[1] if _ant_p[1] > 0 else 100
+                _ant_dt_lo_def = float(round(max(10, _ant_ols_dt / 2)))
+                _ant_dt_hi_def = float(round(_ant_ols_dt * 2))
+                ant_dt_lo = _ss_number_input(st, "DT CI low (days)", "ant_dt_lo",
+                                              _ant_dt_lo_def, min_value=5.0, step=5.0)
+                ant_dt_hi = _ss_number_input(st, "DT CI high (days)", "ant_dt_hi",
+                                              _ant_dt_hi_def, min_value=10.0, step=5.0)
+            else:
+                st.caption("Need ≥3 data points to project")
 
     proj_end = datetime(rev_end_year, 12, 31)
 
@@ -2998,82 +3048,156 @@ def render_revenue():
     ant_display_vals = [v for _, v in _ant_display]
     x_start = min(oai_display_dates[0], ant_display_dates[0]) - timedelta(days=30)
 
-    oai_proj_dates, oai_pcts, oai_dt, oai_dt_lo_eff, oai_dt_hi_eff, oai_ols_dates, oai_ols_vals, oai_traj = \
-        _rev_fit_and_project(openai_dates, openai_vals, oai_n_recent, proj_end,
-                              dt_lo_override=oai_dt_lo, dt_hi_override=oai_dt_hi)
+    oai_proj_dates = oai_pcts = oai_dt = oai_ols_dates = oai_ols_vals = oai_traj = None
+    ant_proj_dates = ant_pcts = ant_dt = ant_ols_dates = ant_ols_vals = ant_traj = None
 
-    ant_proj_dates, ant_pcts, ant_dt, ant_dt_lo_eff, ant_dt_hi_eff, ant_ols_dates, ant_ols_vals, ant_traj = \
-        _rev_fit_and_project(anthropic_dates, anthropic_vals, ant_n_recent, proj_end,
-                              dt_lo_override=ant_dt_lo, dt_hi_override=ant_dt_hi)
+    if oai_can_project:
+        oai_proj_dates, oai_pcts, oai_dt, oai_dt_lo_eff, oai_dt_hi_eff, oai_ols_dates, oai_ols_vals, oai_traj = \
+            _rev_fit_and_project(oai_dates_fit, oai_vals_fit, oai_n_recent, proj_end,
+                                  dt_lo_override=oai_dt_lo, dt_hi_override=oai_dt_hi)
+
+    if ant_can_project:
+        ant_proj_dates, ant_pcts, ant_dt, ant_dt_lo_eff, ant_dt_hi_eff, ant_ols_dates, ant_ols_vals, ant_traj = \
+            _rev_fit_and_project(ant_dates_fit, ant_vals_fit, ant_n_recent, proj_end,
+                                  dt_lo_override=ant_dt_lo, dt_hi_override=ant_dt_hi)
+
+    # Backtest stats
+    oai_bt_results = []
+    ant_bt_results = []
+    if _rev_backtesting:
+        if oai_can_project:
+            oai_future = [{'date': d, 'value': v}
+                          for d, v in zip(openai_dates, openai_vals) if d > _rev_as_of_date]
+            oai_bt_results = _backtest_stats(
+                oai_future, oai_traj, oai_dates_fit[-1], proj_end,
+                lambda m: m['value'], lambda m: f"OAI {m['date'].strftime('%b %Y')}",
+            )
+        if ant_can_project:
+            ant_future = [{'date': d, 'value': v}
+                          for d, v in zip(anthropic_dates, anthropic_vals) if d > _rev_as_of_date]
+            ant_bt_results = _backtest_stats(
+                ant_future, ant_traj, ant_dates_fit[-1], proj_end,
+                lambda m: m['value'], lambda m: f"Ant {m['date'].strftime('%b %Y')}",
+            )
 
     fig = go.Figure()
 
     # --- Fan bands ---
-    # Filter OLS trend lines for display
-    _oai_ols_disp = [(d, v) for d, v in zip(oai_ols_dates, oai_ols_vals) if d >= _rev_cutoff]
-    _ant_ols_disp = [(d, v) for d, v in zip(ant_ols_dates, ant_ols_vals) if d >= _rev_cutoff]
-    oai_ols_disp_dates = [d for d, _ in _oai_ols_disp]
-    oai_ols_disp_vals = [v for _, v in _oai_ols_disp]
-    ant_ols_disp_dates = [d for d, _ in _ant_ols_disp]
-    ant_ols_disp_vals = [v for _, v in _ant_ols_disp]
+    _bt_results_map = {"OpenAI": oai_bt_results, "Anthropic": ant_bt_results}
+    _can_project_map = {"OpenAI": oai_can_project, "Anthropic": ant_can_project}
 
-    _rev_companies = [
+    _rev_companies = []
+    for _name, _proj_dates, _pcts, _color, _disp_dates, _disp_vals, \
+            _ols_dates_raw, _ols_vals_raw, _dt in [
         ("OpenAI", oai_proj_dates, oai_pcts, '#10a37f', oai_display_dates, oai_display_vals,
-         oai_ols_disp_dates, oai_ols_disp_vals, oai_dt, oai_dt_lo_eff, oai_dt_hi_eff),
+         oai_ols_dates, oai_ols_vals, oai_dt),
         ("Anthropic", ant_proj_dates, ant_pcts, '#d4a574', ant_display_dates, ant_display_vals,
-         ant_ols_disp_dates, ant_ols_disp_vals, ant_dt, ant_dt_lo_eff, ant_dt_hi_eff),
-    ]
+         ant_ols_dates, ant_ols_vals, ant_dt),
+    ]:
+        if not _can_project_map[_name]:
+            # No projection — just show data points
+            _rev_companies.append((_name, None, None, _color, _disp_dates, _disp_vals,
+                                   None, None, None))
+            continue
+        _ols_disp = [(d, v) for d, v in zip(_ols_dates_raw, _ols_vals_raw) if d >= _rev_cutoff]
+        _rev_companies.append((_name, _proj_dates, _pcts, _color, _disp_dates, _disp_vals,
+                               [d for d, _ in _ols_disp], [v for _, v in _ols_disp], _dt))
 
     for name, p_dates, pcts, base_color, data_dates, data_vals, \
-            ols_dates, ols_vals, dt, dt_lo_eff, dt_hi_eff in _rev_companies:
+            ols_dates, ols_vals, dt in _rev_companies:
         # Parse base color to rgba
         r, g, b = int(base_color[1:3], 16), int(base_color[3:5], 16), int(base_color[5:7], 16)
 
-        bands = [
-            (pcts[5], pcts[95], f'rgba({r},{g},{b},0.08)', f'{name} 90% CI'),
-            (pcts[10], pcts[90], f'rgba({r},{g},{b},0.15)', f'{name} 80% CI'),
-            (pcts[25], pcts[75], f'rgba({r},{g},{b},0.25)', f'{name} 50% CI'),
-        ]
-        for lo, hi, color, label in bands:
-            x_poly = p_dates + p_dates[::-1]
-            y_poly = list(hi) + list(lo[::-1])
+        if pcts is not None:
+            bands = [
+                (pcts[5], pcts[95], f'rgba({r},{g},{b},0.08)', f'{name} 90% CI'),
+                (pcts[10], pcts[90], f'rgba({r},{g},{b},0.15)', f'{name} 80% CI'),
+                (pcts[25], pcts[75], f'rgba({r},{g},{b},0.25)', f'{name} 50% CI'),
+            ]
+            for lo, hi, color, label in bands:
+                x_poly = p_dates + p_dates[::-1]
+                y_poly = list(hi) + list(lo[::-1])
+                fig.add_trace(go.Scatter(
+                    x=x_poly, y=y_poly,
+                    fill='toself', fillcolor=color,
+                    line=dict(width=0),
+                    name=label, hoverinfo='skip', showlegend=False,
+                ))
+
+            # Median projection line
             fig.add_trace(go.Scatter(
-                x=x_poly, y=y_poly,
-                fill='toself', fillcolor=color,
-                line=dict(width=0),
-                name=label, hoverinfo='skip', showlegend=False,
+                x=p_dates, y=list(pcts[50]),
+                mode='lines',
+                line=dict(color=base_color, width=2, dash='dash'),
+                name=f'{name} median projection',
+                hovertemplate='%{{x|%b %Y}}<br>{name}: %{{y:.1f}}B<extra></extra>'.format(name=name),
             ))
 
-        # Median projection line
-        fig.add_trace(go.Scatter(
-            x=p_dates, y=list(pcts[50]),
-            mode='lines',
-            line=dict(color=base_color, width=2, dash='dash'),
-            name=f'{name} median projection',
-            hovertemplate='%{{x|%b %Y}}<br>{name}: %{{y:.1f}}B<extra></extra>'.format(name=name),
-        ))
+            # OLS trend line
+            fig.add_trace(go.Scatter(
+                x=ols_dates, y=list(ols_vals),
+                mode='lines',
+                line=dict(color=base_color, width=2),
+                name=f'{name} trend (DT={dt:.0f}d)',
+                hoverinfo='skip', showlegend=True,
+            ))
 
-        # OLS trend line
-        fig.add_trace(go.Scatter(
-            x=ols_dates, y=list(ols_vals),
-            mode='lines',
-            line=dict(color=base_color, width=2),
-            name=f'{name} trend (DT={dt:.0f}d)',
-            hoverinfo='skip', showlegend=True,
-        ))
+        # Data points — split into used vs future when backtesting
+        bt_results = _bt_results_map[name]
+        if _rev_backtesting:
+            used_dates = [d for d in data_dates if d <= _rev_as_of_date]
+            used_vals = [v for d, v in zip(data_dates, data_vals) if d <= _rev_as_of_date]
+            future_dates = [d for d in data_dates if d > _rev_as_of_date]
+            future_vals = [v for d, v in zip(data_dates, data_vals) if d > _rev_as_of_date]
 
-        # Data points
-        hover_texts = [f"{name}<br>{d.strftime('%b %Y')}<br>{_fmt_revenue(v)}" for d, v in zip(data_dates, data_vals)]
-        fig.add_trace(go.Scatter(
-            x=data_dates, y=data_vals,
-            mode='markers' + ('+text' if show_labels else ''),
-            marker=dict(color=base_color, size=9, line=dict(color='white', width=1)),
-            text=[_fmt_revenue(v) for v in data_vals] if show_labels else None,
-            textposition='top right',
-            textfont=dict(size=8, color=base_color),
-            hovertext=hover_texts, hoverinfo='text',
-            name=name, showlegend=True,
-        ))
+            # Used points — normal style
+            if used_dates:
+                hover_texts = [f"{name}<br>{d.strftime('%b %Y')}<br>{_fmt_revenue(v)}"
+                               for d, v in zip(used_dates, used_vals)]
+                fig.add_trace(go.Scatter(
+                    x=used_dates, y=used_vals,
+                    mode='markers' + ('+text' if show_labels else ''),
+                    marker=dict(color=base_color, size=9, line=dict(color='white', width=1)),
+                    text=[_fmt_revenue(v) for v in used_vals] if show_labels else None,
+                    textposition='top right',
+                    textfont=dict(size=8, color=base_color),
+                    hovertext=hover_texts, hoverinfo='text',
+                    name=name, showlegend=True,
+                ))
+
+            # Future points — backtest colored diamonds
+            bt_lookup = {r['date']: r for r in bt_results}
+            for d, v in zip(future_dates, future_vals):
+                bt_r = bt_lookup.get(d)
+                pt_color = _bt_color_for(bt_r) if bt_r else '#aaaaaa'
+                pct_label = f"P{bt_r['percentile']:.0f}" if bt_r else ""
+                hover = f"{name}<br>{d.strftime('%b %Y')}<br>{_fmt_revenue(v)}"
+                if bt_r:
+                    hover += f"<br>{pct_label}"
+                fig.add_trace(go.Scatter(
+                    x=[d], y=[v],
+                    mode='markers+text',
+                    marker=dict(color=pt_color, size=11, symbol='diamond',
+                                line=dict(color='white', width=1)),
+                    text=pct_label,
+                    textposition='top right',
+                    textfont=dict(size=8, color=pt_color),
+                    hovertext=hover, hoverinfo='text',
+                    showlegend=False,
+                ))
+        else:
+            hover_texts = [f"{name}<br>{d.strftime('%b %Y')}<br>{_fmt_revenue(v)}"
+                           for d, v in zip(data_dates, data_vals)]
+            fig.add_trace(go.Scatter(
+                x=data_dates, y=data_vals,
+                mode='markers' + ('+text' if show_labels else ''),
+                marker=dict(color=base_color, size=9, line=dict(color='white', width=1)),
+                text=[_fmt_revenue(v) for v in data_vals] if show_labels else None,
+                textposition='top right',
+                textfont=dict(size=8, color=base_color),
+                hovertext=hover_texts, hoverinfo='text',
+                name=name, showlegend=True,
+            ))
 
     # --- Milestone hlines ---
     if show_milestones:
@@ -3091,6 +3215,24 @@ def render_revenue():
                 showarrow=False, xanchor='left', yanchor='middle',
                 font=dict(size=10, color=color))
 
+    # --- Backtest traces ---
+    if _rev_backtesting:
+        fig.add_vline(x=_rev_as_of_date, line=dict(color='#e67e22', width=2, dash='dash'), opacity=0.8)
+        fig.add_annotation(
+            x=_rev_as_of_date, y=1.0, yref='paper',
+            text='  Projection start', showarrow=False, textangle=-90,
+            font=dict(size=10, color='#e67e22'), xanchor='right', yanchor='top',
+        )
+        for bt_results, bt_color in [(oai_bt_results, '#10a37f'), (ant_bt_results, '#d4a574')]:
+            if len(bt_results) >= 2:
+                fig.add_trace(go.Scatter(
+                    x=[r['date'] for r in bt_results],
+                    y=[r['value'] for r in bt_results],
+                    mode='lines',
+                    line=dict(color=bt_color, width=2, dash='dash'),
+                    hoverinfo='skip', showlegend=False,
+                ))
+
     # --- Today vline ---
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
@@ -3103,7 +3245,12 @@ def render_revenue():
     all_display_vals = oai_display_vals + ant_display_vals
     y_min_data = min(all_display_vals)
     # Use 90th pctile (not 95th) to set range — 95th can be absurdly large
-    y_max_proj = max(oai_pcts[90][-1], ant_pcts[90][-1])
+    _y_max_parts = []
+    if oai_pcts is not None:
+        _y_max_parts.append(oai_pcts[90][-1])
+    if ant_pcts is not None:
+        _y_max_parts.append(ant_pcts[90][-1])
+    y_max_proj = max(_y_max_parts) if _y_max_parts else max(all_display_vals)
     y_max = max(max(all_display_vals), y_max_proj) * 1.5
 
     fig.update_layout(
@@ -3129,11 +3276,19 @@ def render_revenue():
 
     st.plotly_chart(fig, width="stretch")
 
+    # --- Backtest summary ---
+    if _rev_backtesting:
+        all_bt = oai_bt_results + ant_bt_results
+        if all_bt:
+            _backtest_summary(all_bt)
+
     # --- Milestone arrival estimates ---
     if show_milestones:
         with st.expander("Milestone details"):
             for name, p_dates, traj in [("OpenAI", oai_proj_dates, oai_traj),
                                           ("Anthropic", ant_proj_dates, ant_traj)]:
+                if p_dates is None or traj is None:
+                    continue
                 arrival_rows = []
                 for val, label in _REV_MILESTONES:
                     if val <= max(all_display_vals):
