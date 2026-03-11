@@ -3757,10 +3757,27 @@ def render_employment():
 
     # ── Apply adoption lag ───────────────────────────────────────────────
     # Sample lag per trajectory: at time t, effective RLI = RLI(t - lag).
-    # For t < lag, use RLI at day 0 (the starting value).
+    # For t < lag, look up historical RLI score from frontier data.
     _lag_sigma = (emp_lag_hi - emp_lag_lo) / (2 * 1.282)
     lag_samples = np.clip(
         np.random.normal(emp_lag_days, max(_lag_sigma, 0), n_samples), 0, None).astype(int)
+    max_lag = int(np.max(lag_samples)) if len(lag_samples) > 0 else 0
+
+    # Build daily historical RLI (fraction) for up to max_lag days before projection start.
+    # At proj day t with lag L, effective date = emp_current['date'] + t - L.
+    # For t < L, that date is before the projection start, so we need history.
+    # _hist_rli_daily[d] = RLI fraction at (emp_current['date'] - max_lag + d).
+    _hist_rli_daily = np.full(max_lag, 0.004)  # floor: 0.4% before first indexed model
+    if max_lag > 0:
+        for _hm in rli_frontier_all:
+            _hm_offset = (emp_current['date'] - _hm['date']).days  # days before projection start
+            if _hm_offset < 0:
+                break  # model is after projection start
+            # This model covers days from (max_lag - _hm_offset) onward in the history array
+            _hist_start = max_lag - _hm_offset
+            if _hist_start < max_lag:
+                _hist_rli_daily[max(0, _hist_start):] = _hm['rli_score'] / 100
+
     n_timesteps = rli_traj_frac.shape[1]
     rli_traj_lagged = np.empty_like(rli_traj_frac)
     for i in range(n_samples):
@@ -3768,8 +3785,14 @@ def render_employment():
         if lag_i <= 0:
             rli_traj_lagged[i] = rli_traj_frac[i]
         else:
-            # Pad the front with the starting value, then take the first n_timesteps
-            rli_traj_lagged[i, :lag_i] = rli_traj_frac[i, 0]
+            # For t < lag_i: effective date is before projection start, use historical RLI
+            for t in range(min(lag_i, n_timesteps)):
+                hist_idx = max_lag - lag_i + t
+                if 0 <= hist_idx < max_lag:
+                    rli_traj_lagged[i, t] = _hist_rli_daily[hist_idx]
+                else:
+                    rli_traj_lagged[i, t] = 0.004  # floor
+            # For t >= lag_i: effective date is within projection, use shifted projection
             if lag_i < n_timesteps:
                 rli_traj_lagged[i, lag_i:] = rli_traj_frac[i, :n_timesteps - lag_i]
 
