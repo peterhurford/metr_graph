@@ -434,8 +434,8 @@ rli_frontier_names = [m['name'] for m in rli_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "Revenue"]
-_TAB_SLUG = {"metr": 0, "eci": 1, "rli": 2, "revenue": 3}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "Revenue", "Employment"]
+_TAB_SLUG = {"metr": 0, "eci": 1, "rli": 2, "revenue": 3, "employment": 4}
 
 # Read ?tab= from URL for deep-linking
 _url_tab = st.query_params.get("tab", "").lower()
@@ -446,7 +446,7 @@ with st.sidebar:
     st.markdown("---")
 
 # Keep URL in sync with selected tab
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Revenue": "revenue"}
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Revenue": "revenue", "Employment": "employment"}
 st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
 
 
@@ -3350,6 +3350,681 @@ def render_revenue():
     st.caption("Fine print: Revenue figures are approximate ARR (annualized run rate) compiled from public reports and media sources. Anthropic Dec 2025 figure averaged from $8-10B range reported." + PROJ_DISCLAIMER)
 
 
+# ── Employment ────────────────────────────────────────────────────────────
+
+_EMP_RESET_KEYS = [
+    "emp_custom_dt_lo", "emp_custom_dt_hi",
+    "emp_custom_pos_lo", "emp_custom_pos_hi",
+    "emp_piecewise_n_seg", "emp_bp1_select", "emp_bp2_select",
+    "emp_custom_dt_dist", "emp_custom_pos_dist",
+    "emp_superexp_dt_init", "emp_superexp_halflife",
+    "emp_superexp_dt_floor", "emp_superexp_dt_ci_lo",
+    "emp_superexp_dt_ci_hi", "emp_superexp_pos_lo",
+    "emp_superexp_pos_hi",
+    "emp_proj_basis",
+    "_emp_proj_as_of", "emp_end_year",
+    "_emp_seg_config",
+    "emp_rli_coverage", "emp_supervision_overhead",
+    "emp_remote_digital_share", "emp_base_unemployment",
+    "emp_jevons_recovery",
+    "emp_base_unemp_lo", "emp_base_unemp_hi",
+    "emp_jevons_lo", "emp_jevons_hi",
+    "emp_adoption_lag", "emp_lag_lo", "emp_lag_hi",
+]
+
+_EMP_DEFAULTS = {
+    "emp_proj_basis": "Linear (logit)",
+    "emp_piecewise_n_seg": 1,
+    "emp_custom_dt_dist": "Lognormal",
+    "emp_custom_pos_dist": "Normal",
+    "emp_end_year": 2028,
+    "emp_rli_coverage": 70.0,
+    "emp_supervision_overhead": 10.0,
+    "emp_remote_digital_share": 38.0,
+    "emp_base_unemployment": 4.0,
+    "emp_jevons_recovery": 30.0,
+    "emp_base_unemp_lo": 2.5,
+    "emp_base_unemp_hi": 5.5,
+    "emp_jevons_lo": 15.0,
+    "emp_jevons_hi": 45.0,
+    "emp_adoption_lag": 365.0,
+    "emp_lag_lo": 180.0,
+    "emp_lag_hi": 730.0,
+}
+
+
+def render_employment():
+    if st.session_state.pop("_reset_emp", False):
+        for k in _EMP_RESET_KEYS:
+            st.session_state.pop(k, None)
+        st.session_state.update(_EMP_DEFAULTS)
+        st.rerun()
+
+    for k, v in _EMP_DEFAULTS.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+    # ── Sidebar ──────────────────────────────────────────────────────────
+    with st.sidebar:
+        st.header("Employment Model")
+
+        emp_proj_as_of_name = st.session_state.get('_emp_proj_as_of', rli_frontier_names[-1])
+        if emp_proj_as_of_name not in rli_frontier_names:
+            emp_proj_as_of_name = rli_frontier_names[-1]
+        emp_proj_as_of_idx = rli_frontier_names.index(emp_proj_as_of_name)
+
+        # --- RLI Projection basis ---
+        st.subheader("RLI Projection")
+        emp_basis_options = ["Linear (logit)", "Piecewise linear (logit)", "Superexponential (logit)"]
+        emp_proj_basis = st.radio("Projection basis", emp_basis_options, key="emp_proj_basis",
+                                  help="Controls how the RLI score is projected forward.")
+
+        emp_custom_dt_lo = emp_custom_dt_hi = None
+        emp_custom_pos_lo = emp_custom_pos_hi = None
+        emp_custom_dt_dist = "Lognormal"
+        emp_custom_pos_dist = "Normal"
+        emp_piecewise_n_segments = 1
+        emp_piecewise_breakpoints = []
+        _emp_is_linear = emp_proj_basis in ("Linear (logit)", "Piecewise linear (logit)")
+        if emp_proj_basis == "Piecewise linear (logit)":
+            emp_piecewise_n_segments = 2
+
+        # Pre-compute OLS DT for defaults
+        _emp_pre_fr = rli_frontier_all[:emp_proj_as_of_idx + 1]
+        _emp_pre_base = rli_frontier_all[0]['date']
+        _emp_pre_days = np.array([(m['date'] - _emp_pre_base).days for m in _emp_pre_fr], dtype=float)
+        _emp_pre_logit = _logit(np.array([m['rli_score'] / 100 for m in _emp_pre_fr]))
+        _emp_pre_params = fit_line(_emp_pre_days, _emp_pre_logit) if len(_emp_pre_fr) >= 2 else np.array([0, 0.007])
+        _emp_pre_dt = round(np.log(2) / _emp_pre_params[1]) if _emp_pre_params[1] > 0 else 100
+
+        if _emp_is_linear:
+            with st.expander("RLI advanced options"):
+                st.button("Reset to defaults", key="reset_emp_linear",
+                          on_click=lambda: st.session_state.update(_reset_emp=True))
+
+                _emp_bp_names = [m['name'] for m in rli_frontier_all[:emp_proj_as_of_idx + 1]]
+                if emp_proj_basis == "Piecewise linear (logit)":
+                    _emp_seg_options = [1, 2, 3] if len(_emp_bp_names) >= 5 else [1, 2]
+                    if st.session_state.get("emp_piecewise_n_seg", 1) < 2:
+                        st.session_state["emp_piecewise_n_seg"] = 2
+                    emp_piecewise_n_segments = st.radio(
+                        "Segments", _emp_seg_options,
+                        horizontal=True, key="emp_piecewise_n_seg")
+                else:
+                    emp_piecewise_n_segments = 1
+                    st.session_state.pop("emp_piecewise_n_seg", None)
+                if emp_piecewise_n_segments >= 2:
+                    _emp_default_bp1 = _emp_bp_names[len(_emp_bp_names) // 2]
+                    _emp_bp1_idx = _emp_bp_names.index(_emp_default_bp1) if _emp_default_bp1 in _emp_bp_names else len(_emp_bp_names) // 2
+                    emp_bp1_name = st.selectbox(
+                        "Breakpoint", _emp_bp_names[1:],
+                        index=max(0, _emp_bp1_idx - 1), key="emp_bp1_select")
+                    emp_piecewise_breakpoints.append(emp_bp1_name)
+                if emp_piecewise_n_segments >= 3:
+                    _emp_bp1_pos = _emp_bp_names.index(emp_bp1_name)
+                    _emp_remaining = _emp_bp_names[_emp_bp1_pos + 1:]
+                    emp_bp2_name = st.selectbox(
+                        "Breakpoint 2", _emp_remaining[:-1],
+                        index=len(_emp_remaining[:-1]) // 2, key="emp_bp2_select")
+                    emp_piecewise_breakpoints.append(emp_bp2_name)
+
+                # DT defaults from last segment
+                if emp_piecewise_n_segments >= 2 and emp_piecewise_breakpoints:
+                    _emp_last_bp_idx = _emp_bp_names.index(emp_piecewise_breakpoints[-1]) if emp_piecewise_breakpoints[-1] in _emp_bp_names else 0
+                    _emp_pw_seg_days = _emp_pre_days[_emp_last_bp_idx:]
+                    _emp_pw_seg_logit = _emp_pre_logit[_emp_last_bp_idx:]
+                    if len(_emp_pw_seg_days) >= 2:
+                        _emp_pw_seg_params = fit_line(_emp_pw_seg_days, _emp_pw_seg_logit)
+                        _emp_pw_seg_dt = round(np.log(2) / _emp_pw_seg_params[1]) if _emp_pw_seg_params[1] > 0 else _emp_pre_dt
+                    else:
+                        _emp_pw_seg_dt = _emp_pre_dt
+                    _emp_default_dt_lo = float(round(max(5.0, _emp_pw_seg_dt / 2), 0))
+                    _emp_default_dt_hi = float(round(_emp_pw_seg_dt * 2, 0))
+                else:
+                    _emp_default_dt_lo = float(round(max(5.0, _emp_pre_dt / 2), 0))
+                    _emp_default_dt_hi = float(round(_emp_pre_dt * 2, 0))
+
+                # Auto-update DT CIs when segment config changes
+                _emp_seg_config = (emp_piecewise_n_segments, tuple(emp_piecewise_breakpoints))
+                if st.session_state.get("_emp_seg_config") != _emp_seg_config:
+                    st.session_state["_emp_seg_config"] = _emp_seg_config
+                    st.session_state.pop("emp_custom_dt_lo", None)
+                    st.session_state.pop("emp_custom_dt_hi", None)
+
+                _emp_dt_lo_col, _emp_dt_hi_col = st.columns(2)
+                emp_custom_dt_lo = _ss_number_input(_emp_dt_lo_col,
+                    "Odds 2x time CI low (days)", "emp_custom_dt_lo", _emp_default_dt_lo,
+                    min_value=5.0, max_value=2000.0, step=5.0)
+                emp_custom_dt_hi = _ss_number_input(_emp_dt_hi_col,
+                    "Odds 2x time CI high (days)", "emp_custom_dt_hi", _emp_default_dt_hi,
+                    min_value=5.0, max_value=5000.0, step=5.0)
+                if emp_custom_dt_lo > emp_custom_dt_hi:
+                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.stop()
+
+                _emp_cur = rli_frontier_all[emp_proj_as_of_idx]
+                _emp_def_score = _emp_cur['rli_score']
+                _emp_pos_lo_col, _emp_pos_hi_col = st.columns(2)
+                emp_custom_pos_lo = _ss_number_input(_emp_pos_lo_col,
+                    "Pos CI low (%)", "emp_custom_pos_lo", round(max(_emp_def_score - 1.0, 0.1), 2),
+                    min_value=0.01, step=0.1)
+                emp_custom_pos_hi = _ss_number_input(_emp_pos_hi_col,
+                    "Pos CI high (%)", "emp_custom_pos_hi", round(_emp_def_score + 1.0, 2),
+                    step=0.1)
+
+                emp_custom_dt_dist = st.radio(
+                    "Trend distribution", ["Normal", "Lognormal", "Log-log"],
+                    horizontal=True, key="emp_custom_dt_dist")
+                emp_custom_pos_dist = st.radio(
+                    "Position distribution", ["Normal", "Lognormal"],
+                    horizontal=True, key="emp_custom_pos_dist")
+
+        # --- Superexponential controls ---
+        emp_superexp_dt_initial = emp_superexp_halflife = None
+        emp_superexp_dt_ci_lo = emp_superexp_dt_ci_hi = None
+        emp_superexp_pos_lo = emp_superexp_pos_hi = None
+        emp_superexp_dt_floor = 10
+        emp_is_superexp = False
+        if emp_proj_basis == "Superexponential (logit)":
+            emp_is_superexp = True
+            _emp_default_dt_init = 100.0
+            if len(rli_frontier_all[:emp_proj_as_of_idx + 1]) >= 2:
+                _emp_base = rli_frontier_all[0]['date']
+                _emp_fr = rli_frontier_all[:emp_proj_as_of_idx + 1]
+                _emp_fd = np.array([(m['date'] - _emp_base).days for m in _emp_fr], dtype=float)
+                _emp_flogit = _logit(np.array([m['rli_score'] / 100 for m in _emp_fr]))
+                _emp_fp = fit_line(_emp_fd, _emp_flogit)
+                if _emp_fp[1] > 0:
+                    _emp_default_dt_init = round(np.log(2) / _emp_fp[1], 0)
+
+            _emp_pre_se_halflife = 365
+            _emp_pre_se_z = 2 ** (_emp_pre_days / _emp_pre_se_halflife)
+            _emp_pre_se_X = np.column_stack([np.ones_like(_emp_pre_se_z), _emp_pre_se_z])
+            (_emp_pre_se_A, _emp_pre_se_K), *_ = np.linalg.lstsq(_emp_pre_se_X, _emp_pre_logit, rcond=None)
+            _emp_pre_se_d_last = _emp_pre_days[-1]
+            if _emp_pre_se_K > 0:
+                _emp_pre_se_logit_slope = _emp_pre_se_K * np.log(2) * 2 ** (_emp_pre_se_d_last / _emp_pre_se_halflife) / _emp_pre_se_halflife
+                _emp_pre_se_dt = round(np.log(2) / _emp_pre_se_logit_slope, 0)
+            else:
+                _emp_pre_se_dt = _emp_pre_dt
+            _emp_default_se_dt_lo = float(round(max(5.0, _emp_pre_se_dt / 2), 0))
+            _emp_default_se_dt_hi = float(round(_emp_pre_se_dt * 2, 0))
+
+            with st.expander("RLI advanced options"):
+                st.button("Reset to defaults", key="reset_emp_superexp",
+                          on_click=lambda: st.session_state.update(_reset_emp=True))
+                _emp_se_col1, _emp_se_col2 = st.columns(2)
+                emp_superexp_dt_initial = _ss_number_input(_emp_se_col1,
+                    "Initial odds 2x time (days)", "emp_superexp_dt_init", _emp_default_dt_init,
+                    min_value=5.0, max_value=2000.0, step=5.0)
+                emp_superexp_halflife = _ss_number_input(_emp_se_col2,
+                    "Rate half-life (days)", "emp_superexp_halflife", 365,
+                    min_value=30, max_value=5000, step=30)
+                emp_superexp_dt_floor = _ss_number_input(st,
+                    "Min odds 2x time (days)", "emp_superexp_dt_floor", 15.0,
+                    min_value=1.0, max_value=500.0, step=1.0)
+                _emp_se_ci1, _emp_se_ci2 = st.columns(2)
+                emp_superexp_dt_ci_lo = _ss_number_input(_emp_se_ci1,
+                    "Odds 2x CI low (days)", "emp_superexp_dt_ci_lo", _emp_default_se_dt_lo,
+                    min_value=5.0, max_value=2000.0, step=5.0)
+                emp_superexp_dt_ci_hi = _ss_number_input(_emp_se_ci2,
+                    "Odds 2x CI high (days)", "emp_superexp_dt_ci_hi", _emp_default_se_dt_hi,
+                    min_value=5.0, max_value=5000.0, step=5.0)
+                if emp_superexp_dt_ci_lo > emp_superexp_dt_ci_hi:
+                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.stop()
+                _emp_cur = rli_frontier_all[emp_proj_as_of_idx]
+                _emp_def_score = _emp_cur['rli_score']
+                _emp_se_pos1, _emp_se_pos2 = st.columns(2)
+                emp_superexp_pos_lo = _ss_number_input(_emp_se_pos1,
+                    "Pos CI low (%)", "emp_superexp_pos_lo", round(max(_emp_def_score - 1.0, 0.1), 2),
+                    min_value=0.01, step=0.1)
+                emp_superexp_pos_hi = _ss_number_input(_emp_se_pos2,
+                    "Pos CI high (%)", "emp_superexp_pos_hi", round(_emp_def_score + 1.0, 2),
+                    step=0.1)
+
+        # --- Economic model parameters ---
+        st.markdown("---")
+        st.subheader("Economic Model")
+        st.button("Reset to defaults", key="reset_emp_all",
+                  on_click=lambda: st.session_state.update(_reset_emp=True))
+        emp_rli_coverage = st.slider("RLI Coverage of Remote/Digital Work (%)",
+                                      0.0, 100.0, key="emp_rli_coverage",
+                                      help="Fraction of remote/digital task-hours the RLI benchmark represents.")
+        emp_supervision = st.slider("AI Supervision Overhead (%)",
+                                     0.0, 50.0, key="emp_supervision_overhead",
+                                     help="New overhead for human QA/supervision of AI outputs.")
+        emp_remote_share = st.slider("Remote/Digital Share of US Jobs (%)",
+                                      0.0, 100.0, key="emp_remote_digital_share",
+                                      help="Fraction of all US jobs that are remote/digital.")
+        emp_base_unemp = st.slider("Base Unemployment Rate (%)",
+                                    0.0, 15.0, key="emp_base_unemployment",
+                                    help="Baseline unemployment rate before AI displacement.")
+        emp_jevons = st.slider("Jevons/Reallocation Recovery (%)",
+                                0.0, 100.0, key="emp_jevons_recovery",
+                                help="How much displacement gets absorbed by Jevons paradox & reallocation.")
+        emp_lag_days = st.slider("Adoption Lag (days)",
+                                  0.0, 1460.0, key="emp_adoption_lag", step=30.0,
+                                  help="Delay between AI capability and labor market impact. Default ~1 year.")
+
+        with st.expander("Uncertainty parameters"):
+            _emp_bu_c1, _emp_bu_c2 = st.columns(2)
+            emp_base_unemp_lo = _ss_number_input(_emp_bu_c1,
+                "Base unemp CI low (%)", "emp_base_unemp_lo", 2.5,
+                min_value=0.0, max_value=15.0, step=0.5,
+                help="80% CI at 1 year. Uncertainty starts at 0 and grows with √time.")
+            emp_base_unemp_hi = _ss_number_input(_emp_bu_c2,
+                "Base unemp CI high (%)", "emp_base_unemp_hi", 5.5,
+                min_value=0.0, max_value=15.0, step=0.5,
+                help="80% CI at 1 year. Uncertainty starts at 0 and grows with √time.")
+            _emp_jv_c1, _emp_jv_c2 = st.columns(2)
+            emp_jevons_lo = _ss_number_input(_emp_jv_c1,
+                "Jevons CI low (%)", "emp_jevons_lo", 15.0,
+                min_value=0.0, max_value=100.0, step=5.0)
+            emp_jevons_hi = _ss_number_input(_emp_jv_c2,
+                "Jevons CI high (%)", "emp_jevons_hi", 45.0,
+                min_value=0.0, max_value=100.0, step=5.0)
+            _emp_lag_c1, _emp_lag_c2 = st.columns(2)
+            emp_lag_lo = _ss_number_input(_emp_lag_c1,
+                "Lag CI low (days)", "emp_lag_lo", 180.0,
+                min_value=0.0, max_value=1460.0, step=30.0)
+            emp_lag_hi = _ss_number_input(_emp_lag_c2,
+                "Lag CI high (days)", "emp_lag_hi", 730.0,
+                min_value=0.0, max_value=1460.0, step=30.0)
+
+        st.markdown("---")
+        with st.expander("Projection range"):
+            st.selectbox(
+                "Project as of",
+                rli_frontier_names,
+                index=rli_frontier_names.index(emp_proj_as_of_name),
+                key='_emp_proj_as_of',
+                help="Project from an earlier model's vantage point.",
+            )
+            _emp_end_year = st.radio(
+                "Project through", [2026, 2027, 2028, 2029],
+                horizontal=True, key="emp_end_year")
+
+    # ── Build RLI data arrays ────────────────────────────────────────────
+    emp_frontier_used = rli_frontier_all[:emp_proj_as_of_idx + 1]
+    base_date = rli_frontier_all[0]['date']
+    days_all = np.array([(m['date'] - base_date).days for m in rli_frontier_all], dtype=float)
+    logit_all = _logit(np.array([m['rli_score'] / 100 for m in rli_frontier_all]))
+
+    _emp_fit_end = emp_proj_as_of_idx + 1
+    days_used = days_all[:_emp_fit_end]
+    logit_used = logit_all[:_emp_fit_end]
+    n_used = len(emp_frontier_used)
+
+    n_emp = 20000
+    if emp_proj_basis in ("Linear (logit)", "Piecewise linear (logit)"):
+        if emp_piecewise_n_segments >= 2:
+            _emp_bp_names_used = [m['name'] for m in emp_frontier_used]
+            _emp_seg_break_idxs = []
+            for bp_name in emp_piecewise_breakpoints:
+                if bp_name in _emp_bp_names_used:
+                    _emp_seg_break_idxs.append(_emp_bp_names_used.index(bp_name))
+            _emp_last_seg_start = _emp_seg_break_idxs[-1] if _emp_seg_break_idxs else 0
+            _emp_last_seg_range = list(range(_emp_last_seg_start, n_used))
+            _emp_params = fit_line(days_used[_emp_last_seg_range], logit_used[_emp_last_seg_range])
+        else:
+            _emp_params = fit_line(days_used, logit_used)
+
+        _emp_current_day = (emp_frontier_used[-1]['date'] - base_date).days
+        if emp_piecewise_n_segments >= 2:
+            _emp_seg_d = days_used[_emp_last_seg_range]
+            _emp_seg_y = logit_used[_emp_last_seg_range]
+        else:
+            _emp_seg_d = days_used
+            _emp_seg_y = logit_used
+        _emp_intercept = np.mean(_emp_seg_y - _emp_params[1] * _emp_seg_d)
+        _emp_fitted_logit = _emp_intercept + _emp_params[1] * _emp_current_day
+
+        if emp_custom_dt_dist == "Log-log":
+            emp_proj_dt = _log_lognormal_from_ci(emp_custom_dt_lo, emp_custom_dt_hi, n_emp)
+        elif emp_custom_dt_dist == "Lognormal":
+            emp_proj_dt = _lognormal_from_ci(emp_custom_dt_lo, emp_custom_dt_hi, n_emp)
+        else:
+            emp_proj_dt = _normal_from_ci(emp_custom_dt_lo, emp_custom_dt_hi, n_emp)
+
+        emp_proj_logit_slope = np.log(2) / emp_proj_dt
+
+        if emp_custom_pos_dist == "Lognormal":
+            _emp_pos_logit_lo = _logit(emp_custom_pos_lo / 100)
+            _emp_pos_logit_hi = _logit(emp_custom_pos_hi / 100)
+            _emp_pos_offset = 10
+            _emp_pos_sigma = (np.log(_emp_pos_logit_hi + _emp_pos_offset) - np.log(_emp_pos_logit_lo + _emp_pos_offset)) / (2 * 1.282)
+            _emp_pos_mu = np.log(_emp_fitted_logit + _emp_pos_offset)
+            emp_proj_start_logit = np.random.lognormal(_emp_pos_mu, max(_emp_pos_sigma, 0), n_emp) - _emp_pos_offset
+        else:
+            _emp_pos_logit_lo = _logit(emp_custom_pos_lo / 100)
+            _emp_pos_logit_hi = _logit(emp_custom_pos_hi / 100)
+            _emp_pos_sigma = (_emp_pos_logit_hi - _emp_pos_logit_lo) / (2 * 1.282)
+            emp_proj_start_logit = np.random.normal(_emp_fitted_logit, max(_emp_pos_sigma, 0), n_emp)
+
+    elif emp_proj_basis == "Superexponential (logit)":
+        _emp_se_days = np.array([(m['date'] - base_date).days for m in emp_frontier_used], dtype=float)
+        _emp_se_logit = _logit(np.array([m['rli_score'] / 100 for m in emp_frontier_used]))
+        _emp_se_z = 2 ** (_emp_se_days / emp_superexp_halflife)
+        _emp_se_X = np.column_stack([np.ones_like(_emp_se_z), _emp_se_z])
+        (_emp_se_A, _emp_se_K), *_ = np.linalg.lstsq(_emp_se_X, _emp_se_logit, rcond=None)
+        _emp_se_current_day = (emp_frontier_used[-1]['date'] - base_date).days
+        _emp_se_fitted_logit = _emp_se_A + _emp_se_K * 2 ** (_emp_se_current_day / emp_superexp_halflife)
+
+        emp_proj_dt = _lognormal_from_ci(emp_superexp_dt_ci_lo, emp_superexp_dt_ci_hi, n_emp)
+        emp_proj_logit_slope = np.log(2) / emp_proj_dt
+
+        _emp_se_pos_logit_lo = _logit(emp_superexp_pos_lo / 100)
+        _emp_se_pos_logit_hi = _logit(emp_superexp_pos_hi / 100)
+        _emp_se_pos_sigma = (_emp_se_pos_logit_hi - _emp_se_pos_logit_lo) / (2 * 1.282)
+        emp_proj_start_logit = np.random.normal(_emp_se_fitted_logit, max(_emp_se_pos_sigma, 0), n_emp)
+
+    # ── Build RLI trajectories ───────────────────────────────────────────
+    emp_current = emp_frontier_used[-1]
+    proj_end_date = datetime(_emp_end_year, 12, 31)
+    proj_n_days = (proj_end_date - emp_current['date']).days + 1
+    proj_days_arr = np.arange(0, proj_n_days, 1)
+    proj_dates = [emp_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
+
+    n_samples = len(emp_proj_dt)
+    all_logit_traj = np.zeros((n_samples, len(proj_days_arr)))
+    if emp_is_superexp:
+        for i in range(n_samples):
+            all_logit_traj[i] = emp_proj_start_logit[i] + np.log(2) * superexp_trajectory(
+                proj_days_arr, emp_proj_dt[i], emp_superexp_halflife, emp_superexp_dt_floor)
+    else:
+        for i in range(n_samples):
+            all_logit_traj[i] = emp_proj_start_logit[i] + proj_days_arr * emp_proj_logit_slope[i]
+
+    # RLI scores as fraction (0-1) for each sample at each timestep
+    rli_traj_frac = _inv_logit(all_logit_traj)
+
+    # ── Apply adoption lag ───────────────────────────────────────────────
+    # Sample lag per trajectory: at time t, effective RLI = RLI(t - lag).
+    # For t < lag, use RLI at day 0 (the starting value).
+    _lag_sigma = (emp_lag_hi - emp_lag_lo) / (2 * 1.282)
+    lag_samples = np.clip(
+        np.random.normal(emp_lag_days, max(_lag_sigma, 0), n_samples), 0, None).astype(int)
+    n_timesteps = rli_traj_frac.shape[1]
+    rli_traj_lagged = np.empty_like(rli_traj_frac)
+    for i in range(n_samples):
+        lag_i = lag_samples[i]
+        if lag_i <= 0:
+            rli_traj_lagged[i] = rli_traj_frac[i]
+        else:
+            # Pad the front with the starting value, then take the first n_timesteps
+            rli_traj_lagged[i, :lag_i] = rli_traj_frac[i, 0]
+            if lag_i < n_timesteps:
+                rli_traj_lagged[i, lag_i:] = rli_traj_frac[i, :n_timesteps - lag_i]
+
+    # ── Apply economic displacement model ────────────────────────────────
+    # Base unemployment: known today, uncertainty grows with sqrt(time).
+    # CI bounds define 80% CI at 1 year out; sigma scales as sqrt(days/365).
+    _bu_sigma_1yr = (emp_base_unemp_hi - emp_base_unemp_lo) / (2 * 1.282)
+    _bu_z = np.random.normal(0, 1, n_samples)                 # (n_samples,)
+    _bu_time_scale = np.sqrt(proj_days_arr / 365.0)            # (n_timesteps,)
+    base_unemp_arr = np.clip(
+        emp_base_unemp + _bu_z[:, None] * _bu_sigma_1yr * _bu_time_scale[None, :],
+        0, 15) / 100                                           # (n_samples, n_timesteps)
+
+    _jv_sigma = (emp_jevons_hi - emp_jevons_lo) / (2 * 1.282)
+    jevons_samples = np.clip(
+        np.random.normal(emp_jevons, _jv_sigma, n_samples), 0, 100) / 100
+
+    rli_cov = emp_rli_coverage / 100
+    supervision = emp_supervision / 100
+    remote_share = emp_remote_share / 100
+
+    # Step 1: disrupted_fraction = rli_score (lagged) * rli_coverage
+    disrupted = rli_traj_lagged * rli_cov
+    # Step 2: overhead_hours = disrupted_fraction * supervision_overhead
+    overhead = disrupted * supervision
+    # Step 3: worker_occupied_fraction = (1 - disrupted) + overhead
+    worker_occupied = (1 - disrupted) + overhead
+    # Step 4: headcount_needed = min(worker_occupied, 1.0)
+    headcount_needed = np.minimum(worker_occupied, 1.0)
+    # Step 5: remote_displacement_rate = 1 - headcount_needed
+    remote_displacement = 1 - headcount_needed
+    # Step 6: overall_displacement = remote_displacement * remote_digital_share
+    overall_displacement = remote_displacement * remote_share
+    # Step 7: raw_unemployment = base_unemployment(t) + overall_displacement
+    raw_unemp = base_unemp_arr + overall_displacement
+    # Step 8: adjusted_unemployment = raw - (displacement * jevons_recovery)
+    adjusted_unemp = raw_unemp - overall_displacement * jevons_samples[:, None]
+    adjusted_unemp_pct = adjusted_unemp * 100
+
+    # Percentiles
+    pct5 = np.percentile(adjusted_unemp_pct, 5, axis=0)
+    pct10 = np.percentile(adjusted_unemp_pct, 10, axis=0)
+    pct25 = np.percentile(adjusted_unemp_pct, 25, axis=0)
+    pct50 = np.percentile(adjusted_unemp_pct, 50, axis=0)
+    pct75 = np.percentile(adjusted_unemp_pct, 75, axis=0)
+    pct90 = np.percentile(adjusted_unemp_pct, 90, axis=0)
+    pct95 = np.percentile(adjusted_unemp_pct, 95, axis=0)
+
+    # Also compute RLI percentiles for display
+    rli_pct_pct = _inv_logit(all_logit_traj) * 100
+    rli_p50 = np.percentile(rli_pct_pct, 50, axis=0)
+
+    # ── Main content ─────────────────────────────────────────────────────
+    st.header("AI Employment Displacement Model")
+
+    # ── Unemployment fan chart ───────────────────────────────────────────
+    fig = go.Figure()
+
+    # Fan bands
+    bands_spec = [
+        (pct5, pct95, 'rgba(231,76,60,0.10)', '90% CI'),
+        (pct10, pct90, 'rgba(231,76,60,0.18)', '80% CI'),
+        (pct25, pct75, 'rgba(231,76,60,0.28)', '50% CI'),
+    ]
+    for lo, hi, color, label in bands_spec:
+        x_poly = proj_dates + proj_dates[::-1]
+        y_poly = list(hi) + list(lo[::-1])
+        fig.add_trace(go.Scatter(
+            x=x_poly, y=y_poly,
+            fill='toself', fillcolor=color,
+            line=dict(width=0),
+            name=label, hoverinfo='skip', showlegend=True,
+        ))
+
+    # Median line
+    hover_med = [f"{dt.strftime('%b %d, %Y')}<br>Unemployment: {y:.1f}%<br>RLI: {r:.1f}%"
+                 for dt, y, r in zip(proj_dates, pct50, rli_p50)]
+    fig.add_trace(go.Scatter(
+        x=proj_dates, y=pct50.tolist(),
+        mode='lines', line=dict(color='#e74c3c', width=2.5),
+        name='Median unemployment',
+        hovertext=hover_med, hoverinfo='text',
+    ))
+
+    # Base unemployment reference line
+    fig.add_trace(go.Scatter(
+        x=[proj_dates[0], proj_dates[-1]],
+        y=[emp_base_unemp, emp_base_unemp],
+        mode='lines', line=dict(color='#7f8c8d', width=1.5, dash='dot'),
+        name=f'Base unemployment ({emp_base_unemp:.1f}%)',
+        hoverinfo='skip',
+    ))
+
+    # Milestone lines
+    for unemp_val, label, color in [
+        (5,  "5%",  '#888888'),
+        (10, "10%", '#e67e22'),
+        (15, "15%", '#c0392b'),
+        (20, "20%", '#8e44ad'),
+        (25, "25%", '#2c3e50'),
+    ]:
+        if unemp_val <= max(pct95[-1], 10):
+            fig.add_trace(go.Scatter(
+                x=[proj_dates[0], proj_dates[-1]], y=[unemp_val, unemp_val],
+                mode='lines', line=dict(color=color, width=1, dash='dot'),
+                hoverinfo='skip', showlegend=False,
+            ))
+            fig.add_annotation(
+                x=1.0, xref='paper', y=unemp_val, text=f"  {label}",
+                showarrow=False, xanchor='left', yanchor='middle',
+                font=dict(size=10, color=color))
+
+    # Today vline
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
+    fig.add_annotation(
+        x=today, y=1.0, yref='paper', text='Today', showarrow=False,
+        font=dict(size=10, color='gray'), yanchor='top')
+
+    y_max = max(pct95[-1], 10) + 2
+    fig.update_layout(
+        height=650,
+        margin=dict(l=50, r=140, t=50, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(
+            range=[proj_dates[0] - timedelta(days=10),
+                   proj_end_date + timedelta(days=30)],
+            gridcolor='rgba(0,0,0,0.1)',
+            tickfont=dict(color='#1a1a2e'),
+            zeroline=False,
+        ),
+        yaxis=dict(
+            title="Adjusted Unemployment Rate (%)",
+            range=[0, y_max],
+            gridcolor='rgba(0,0,0,0.1)',
+            zeroline=False,
+            ticksuffix='%',
+            tickfont=dict(color='#1a1a2e'),
+            title_font=dict(color='#1a1a2e'),
+        ),
+        hovermode='x unified',
+        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
+                    bgcolor='rgba(255,255,255,0.95)',
+                    font=dict(color='#1a1a2e')),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+    )
+
+    st.plotly_chart(fig, width="stretch")
+
+    # ── Projections row ──────────────────────────────────────────────────
+    eoy_targets = [
+        ("Today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
+        ("2026 Jun", datetime(2026, 6, 30)),
+        ("2026EOY", datetime(2026, 12, 31)),
+        ("2027EOY", datetime(2027, 12, 31)),
+        ("2028EOY", datetime(2028, 12, 31)),
+        ("2029EOY", datetime(2029, 12, 31)),
+    ]
+
+    def _emp_at_date(target_date):
+        elapsed = (target_date - emp_current['date']).days
+        if elapsed < 0:
+            elapsed = 0
+        idx = min(elapsed, len(proj_days_arr) - 1)
+        return adjusted_unemp_pct[:, idx], rli_pct_pct[:, idx]
+
+    valid_targets = [(label, d) for label, d in eoy_targets if d <= proj_end_date]
+    if valid_targets:
+        cols = st.columns(len(valid_targets))
+        for col, (label, target_date) in zip(cols, valid_targets):
+            unemp_samples, rli_samples = _emp_at_date(target_date)
+            p10_u, p50_u, p90_u = np.percentile(unemp_samples, [10, 50, 90])
+            p50_r = np.percentile(rli_samples, 50)
+            with col:
+                st.metric(label=label, value=f"{p50_u:.1f}%")
+                st.caption(f"80% CI: {p10_u:.1f}% – {p90_u:.1f}%\nRLI: {p50_r:.1f}%")
+
+    # ── Model breakdown at a reference date ──────────────────────────────
+    with st.expander("Model breakdown"):
+        _ref_date = datetime(min(_emp_end_year, 2027), 12, 31)
+        _ref_elapsed = max((_ref_date - emp_current['date']).days, 0)
+        _ref_idx = min(_ref_elapsed, len(proj_days_arr) - 1)
+        _ref_rli_raw = np.median(rli_traj_frac[:, _ref_idx]) * 100
+        _ref_lag_days = int(emp_lag_days)
+        _ref_lagged_idx = min(max(_ref_elapsed - _ref_lag_days, 0), len(proj_days_arr) - 1)
+        _ref_rli = np.median(rli_traj_frac[:, _ref_lagged_idx]) * 100
+
+        _ref_bu_sigma = _bu_sigma_1yr * np.sqrt(_ref_elapsed / 365.0)
+        _ref_base_unemp = emp_base_unemp  # median stays at slider value
+
+        _ref_disrupted = _ref_rli / 100 * rli_cov
+        _ref_overhead = _ref_disrupted * supervision
+        _ref_worker_occ = (1 - _ref_disrupted) + _ref_overhead
+        _ref_headcount = min(_ref_worker_occ, 1.0)
+        _ref_remote_disp = 1 - _ref_headcount
+        _ref_overall_disp = _ref_remote_disp * remote_share
+        _ref_raw_unemp = _ref_base_unemp / 100 + _ref_overall_disp
+        _ref_adj_unemp = _ref_raw_unemp - _ref_overall_disp * (emp_jevons / 100)
+
+        _lag_months = _ref_lag_days / 30.4
+        st.markdown(f"**Breakdown at {_ref_date.strftime('%b %Y')} (raw RLI = {_ref_rli_raw:.1f}%, lagged RLI = {_ref_rli:.1f}%, lag = {_lag_months:.0f}mo)**")
+        breakdown_rows = [
+            {"Step": "0. Raw RLI Score (before lag)", "Value": f"{_ref_rli_raw:.1f}%"},
+            {"Step": f"1. Lagged RLI Score (−{_ref_lag_days}d)", "Value": f"{_ref_rli:.1f}%"},
+            {"Step": "2. Disrupted fraction (RLI × coverage)", "Value": f"{_ref_disrupted*100:.1f}%"},
+            {"Step": "3. Overhead hours (disrupted × supervision)", "Value": f"{_ref_overhead*100:.1f}%"},
+            {"Step": "4. Worker occupied fraction", "Value": f"{_ref_worker_occ*100:.1f}%"},
+            {"Step": "5. Headcount needed (capped at 100%)", "Value": f"{_ref_headcount*100:.1f}%"},
+            {"Step": "6. Remote displacement rate", "Value": f"{_ref_remote_disp*100:.1f}%"},
+            {"Step": "7. Overall displacement (× remote share)", "Value": f"{_ref_overall_disp*100:.1f}%"},
+            {"Step": f"8. Raw unemployment (base {_ref_base_unemp:.1f}%±{_ref_bu_sigma:.1f}% + disp.)", "Value": f"{_ref_raw_unemp*100:.1f}%"},
+            {"Step": "9. Adjusted unemployment (− Jevons recovery)", "Value": f"{_ref_adj_unemp*100:.1f}%"},
+        ]
+        st.table(breakdown_rows)
+
+    # ── Milestone table ──────────────────────────────────────────────────
+    unemp_milestones = [
+        (5,  "5% unemployment"),
+        (8,  "8% unemployment"),
+        (10, "10% unemployment"),
+        (15, "15% unemployment"),
+        (20, "20% unemployment"),
+    ]
+
+    with st.expander("Milestone details"):
+        tcol1, tcol2 = st.columns(2)
+        with tcol1:
+            st.markdown("**Probabilities**")
+            rows = []
+            for threshold, ms_label in unemp_milestones:
+                row = {"Milestone": ms_label}
+                for eoy_label, target_date in valid_targets:
+                    unemp_samples, _ = _emp_at_date(target_date)
+                    prob = np.mean(unemp_samples >= threshold) * 100
+                    row[eoy_label] = f"{prob:.0f}%"
+                rows.append(row)
+            st.table(rows)
+
+        with tcol2:
+            st.markdown("**Estimated arrival**")
+            arrival_rows = []
+            for threshold, ms_label in unemp_milestones:
+                # For each trajectory, find first day unemployment crosses threshold
+                crossed = np.argmax(adjusted_unemp_pct >= threshold, axis=1)
+                actually_crossed = adjusted_unemp_pct[np.arange(n_samples), crossed] >= threshold
+                if actually_crossed.sum() < n_samples * 0.05:
+                    arrival_rows.append({"Milestone": ms_label, "Median": "Beyond range", "80% CI": "—"})
+                    continue
+                crossed_days = crossed[actually_crossed]
+                p10_d = int(np.percentile(crossed_days, 10))
+                p50_d = int(np.percentile(crossed_days, 50))
+                p90_d = int(np.percentile(crossed_days, 90))
+                med_date = emp_current['date'] + timedelta(days=p50_d)
+                early_date = emp_current['date'] + timedelta(days=p10_d)
+                late_date = emp_current['date'] + timedelta(days=p90_d)
+                arrival_rows.append({
+                    "Milestone": ms_label,
+                    "Median": med_date.strftime('%b %Y'),
+                    "80% CI": f"{early_date.strftime('%b %Y')} – {late_date.strftime('%b %Y')}",
+                })
+            st.table(arrival_rows)
+
+    st.caption("Fine print: This is a simple economic displacement model. "
+               "RLI data from remotelabor.ai. "
+               "The model assumes AI automation directly displaces remote/digital work proportional to a lagged RLI score, "
+               "with partial recovery from Jevons paradox and worker reallocation. "
+               "It does not model labor market dynamics, wage effects, new job creation, or policy responses."
+               + PROJ_DISCLAIMER)
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
 if not os.environ.get("_VP_TESTING"):
@@ -3361,3 +4036,5 @@ if not os.environ.get("_VP_TESTING"):
         render_rli()
     elif active_tab == "Revenue":
         render_revenue()
+    elif active_tab == "Employment":
+        render_employment()
