@@ -165,7 +165,7 @@ def _ss_number_input(parent, label, key, default, **kwargs):
     """
     if key not in st.session_state:
         st.session_state[key] = default
-    return parent.number_input(label, key=key, **kwargs)
+    return parent.number_input(label, key=key, value=st.session_state[key], **kwargs)
 
 
 def superexp_trajectory(days, dt_0, halflife, dt_floor):
@@ -3370,6 +3370,8 @@ _EMP_RESET_KEYS = [
     "emp_base_unemp_lo", "emp_base_unemp_hi",
     "emp_jevons_lo", "emp_jevons_hi",
     "emp_adoption_lag", "emp_lag_lo", "emp_lag_hi",
+    "emp_display_mode", "emp_labor_force",
+    "emp_breakdown_date",
 ]
 
 _EMP_DEFAULTS = {
@@ -3390,6 +3392,8 @@ _EMP_DEFAULTS = {
     "emp_adoption_lag": 365.0,
     "emp_lag_lo": 180.0,
     "emp_lag_hi": 730.0,
+    "emp_display_mode": "Unemployment Rate (%)",
+    "emp_labor_force": 167.0,
 }
 
 
@@ -3607,6 +3611,18 @@ def render_employment():
                                   0.0, 1460.0, key="emp_adoption_lag", step=30.0,
                                   help="Delay between AI capability and labor market impact. Default ~1 year.")
 
+        st.markdown("---")
+        st.subheader("Display")
+        emp_display_mode = st.radio("Show as", ["Unemployment Rate (%)", "Jobs Lost Above Baseline"],
+                                     horizontal=True, key="emp_display_mode")
+        if emp_display_mode == "Jobs Lost Above Baseline":
+            emp_labor_force = _ss_number_input(st,
+                "US Labor Force (millions)", "emp_labor_force", 167.0,
+                min_value=50.0, max_value=500.0, step=1.0,
+                help="US civilian labor force size in millions.")
+        else:
+            emp_labor_force = st.session_state.get("emp_labor_force", 167.0)
+
         with st.expander("Uncertainty parameters"):
             _emp_bu_c1, _emp_bu_c2 = st.columns(2)
             emp_base_unemp_lo = _ss_number_input(_emp_bu_c1,
@@ -3806,17 +3822,41 @@ def render_employment():
     rli_pct_pct = _inv_logit(all_logit_traj) * 100
     rli_p50 = np.percentile(rli_pct_pct, 50, axis=0)
 
+    # ── Jobs lost above baseline ────────────────────────────────────────
+    _is_jobs_mode = emp_display_mode == "Jobs Lost Above Baseline"
+    if _is_jobs_mode:
+        # Jobs above baseline = (adjusted_unemp - base_unemp) * labor_force
+        jobs_above_baseline = (adjusted_unemp - base_unemp_arr) * emp_labor_force  # millions
+        jobs_pct5  = np.percentile(jobs_above_baseline, 5, axis=0)
+        jobs_pct10 = np.percentile(jobs_above_baseline, 10, axis=0)
+        jobs_pct25 = np.percentile(jobs_above_baseline, 25, axis=0)
+        jobs_pct50 = np.percentile(jobs_above_baseline, 50, axis=0)
+        jobs_pct75 = np.percentile(jobs_above_baseline, 75, axis=0)
+        jobs_pct90 = np.percentile(jobs_above_baseline, 90, axis=0)
+        jobs_pct95 = np.percentile(jobs_above_baseline, 95, axis=0)
+
     # ── Main content ─────────────────────────────────────────────────────
     st.header("AI Employment Displacement Model")
 
-    # ── Unemployment fan chart ───────────────────────────────────────────
+    # ── Fan chart ──────────────────────────────────────────────────────────
     fig = go.Figure()
+
+    if _is_jobs_mode:
+        _chart_lo5, _chart_hi95 = jobs_pct5, jobs_pct95
+        _chart_lo10, _chart_hi90 = jobs_pct10, jobs_pct90
+        _chart_lo25, _chart_hi75 = jobs_pct25, jobs_pct75
+        _chart_med = jobs_pct50
+    else:
+        _chart_lo5, _chart_hi95 = pct5, pct95
+        _chart_lo10, _chart_hi90 = pct10, pct90
+        _chart_lo25, _chart_hi75 = pct25, pct75
+        _chart_med = pct50
 
     # Fan bands
     bands_spec = [
-        (pct5, pct95, 'rgba(231,76,60,0.10)', '90% CI'),
-        (pct10, pct90, 'rgba(231,76,60,0.18)', '80% CI'),
-        (pct25, pct75, 'rgba(231,76,60,0.28)', '50% CI'),
+        (_chart_lo5, _chart_hi95, 'rgba(231,76,60,0.10)', '90% CI'),
+        (_chart_lo10, _chart_hi90, 'rgba(231,76,60,0.18)', '80% CI'),
+        (_chart_lo25, _chart_hi75, 'rgba(231,76,60,0.28)', '50% CI'),
     ]
     for lo, hi, color, label in bands_spec:
         x_poly = proj_dates + proj_dates[::-1]
@@ -3829,42 +3869,74 @@ def render_employment():
         ))
 
     # Median line
-    hover_med = [f"{dt.strftime('%b %d, %Y')}<br>Unemployment: {y:.1f}%<br>RLI: {r:.1f}%"
-                 for dt, y, r in zip(proj_dates, pct50, rli_p50)]
-    fig.add_trace(go.Scatter(
-        x=proj_dates, y=pct50.tolist(),
-        mode='lines', line=dict(color='#e74c3c', width=2.5),
-        name='Median unemployment',
-        hovertext=hover_med, hoverinfo='text',
-    ))
+    if _is_jobs_mode:
+        hover_med = [f"{dt.strftime('%b %d, %Y')}<br>Jobs lost: {y:.2f}M<br>RLI: {r:.1f}%"
+                     for dt, y, r in zip(proj_dates, _chart_med, rli_p50)]
+        fig.add_trace(go.Scatter(
+            x=proj_dates, y=_chart_med.tolist(),
+            mode='lines', line=dict(color='#e74c3c', width=2.5),
+            name='Median jobs lost',
+            hovertext=hover_med, hoverinfo='text',
+        ))
+    else:
+        hover_med = [f"{dt.strftime('%b %d, %Y')}<br>Unemployment: {y:.1f}%<br>RLI: {r:.1f}%"
+                     for dt, y, r in zip(proj_dates, _chart_med, rli_p50)]
+        fig.add_trace(go.Scatter(
+            x=proj_dates, y=_chart_med.tolist(),
+            mode='lines', line=dict(color='#e74c3c', width=2.5),
+            name='Median unemployment',
+            hovertext=hover_med, hoverinfo='text',
+        ))
 
-    # Base unemployment reference line
-    fig.add_trace(go.Scatter(
-        x=[proj_dates[0], proj_dates[-1]],
-        y=[emp_base_unemp, emp_base_unemp],
-        mode='lines', line=dict(color='#7f8c8d', width=1.5, dash='dot'),
-        name=f'Base unemployment ({emp_base_unemp:.1f}%)',
-        hoverinfo='skip',
-    ))
+    if not _is_jobs_mode:
+        # Base unemployment reference line
+        fig.add_trace(go.Scatter(
+            x=[proj_dates[0], proj_dates[-1]],
+            y=[emp_base_unemp, emp_base_unemp],
+            mode='lines', line=dict(color='#7f8c8d', width=1.5, dash='dot'),
+            name=f'Base unemployment ({emp_base_unemp:.1f}%)',
+            hoverinfo='skip',
+        ))
 
     # Milestone lines
-    for unemp_val, label, color in [
-        (5,  "5%",  '#888888'),
-        (10, "10%", '#e67e22'),
-        (15, "15%", '#c0392b'),
-        (20, "20%", '#8e44ad'),
-        (25, "25%", '#2c3e50'),
-    ]:
-        if unemp_val <= max(pct95[-1], 10):
-            fig.add_trace(go.Scatter(
-                x=[proj_dates[0], proj_dates[-1]], y=[unemp_val, unemp_val],
-                mode='lines', line=dict(color=color, width=1, dash='dot'),
-                hoverinfo='skip', showlegend=False,
-            ))
-            fig.add_annotation(
-                x=1.0, xref='paper', y=unemp_val, text=f"  {label}",
-                showarrow=False, xanchor='left', yanchor='middle',
-                font=dict(size=10, color=color))
+    if _is_jobs_mode:
+        _jobs_ms = [
+            (1,  "1M",  '#888888'),
+            (5,  "5M",  '#e67e22'),
+            (10, "10M", '#c0392b'),
+            (20, "20M", '#8e44ad'),
+            (30, "30M", '#2c3e50'),
+        ]
+        _ms_max = max(_chart_hi95[-1], 1) + 1
+        for ms_val, ms_label, ms_color in _jobs_ms:
+            if ms_val <= _ms_max:
+                fig.add_trace(go.Scatter(
+                    x=[proj_dates[0], proj_dates[-1]], y=[ms_val, ms_val],
+                    mode='lines', line=dict(color=ms_color, width=1, dash='dot'),
+                    hoverinfo='skip', showlegend=False,
+                ))
+                fig.add_annotation(
+                    x=1.0, xref='paper', y=ms_val, text=f"  {ms_label}",
+                    showarrow=False, xanchor='left', yanchor='middle',
+                    font=dict(size=10, color=ms_color))
+    else:
+        for unemp_val, label, color in [
+            (5,  "5%",  '#888888'),
+            (10, "10%", '#e67e22'),
+            (15, "15%", '#c0392b'),
+            (20, "20%", '#8e44ad'),
+            (25, "25%", '#2c3e50'),
+        ]:
+            if unemp_val <= max(_chart_hi95[-1], 10):
+                fig.add_trace(go.Scatter(
+                    x=[proj_dates[0], proj_dates[-1]], y=[unemp_val, unemp_val],
+                    mode='lines', line=dict(color=color, width=1, dash='dot'),
+                    hoverinfo='skip', showlegend=False,
+                ))
+                fig.add_annotation(
+                    x=1.0, xref='paper', y=unemp_val, text=f"  {label}",
+                    showarrow=False, xanchor='left', yanchor='middle',
+                    font=dict(size=10, color=color))
 
     # Today vline
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -3873,7 +3945,15 @@ def render_employment():
         x=today, y=1.0, yref='paper', text='Today', showarrow=False,
         font=dict(size=10, color='gray'), yanchor='top')
 
-    y_max = max(pct95[-1], 10) + 2
+    if _is_jobs_mode:
+        y_max = max(_chart_hi95[-1], 1) + 1
+        _y_title = "Jobs Lost Above Baseline (millions)"
+        _y_suffix = 'M'
+    else:
+        y_max = max(_chart_hi95[-1], 10) + 2
+        _y_title = "Adjusted Unemployment Rate (%)"
+        _y_suffix = '%'
+
     fig.update_layout(
         height=650,
         margin=dict(l=50, r=140, t=50, b=40),
@@ -3886,11 +3966,11 @@ def render_employment():
             zeroline=False,
         ),
         yaxis=dict(
-            title="Adjusted Unemployment Rate (%)",
+            title=_y_title,
             range=[0, y_max],
             gridcolor='rgba(0,0,0,0.1)',
             zeroline=False,
-            ticksuffix='%',
+            ticksuffix=_y_suffix,
             tickfont=dict(color='#1a1a2e'),
             title_font=dict(color='#1a1a2e'),
         ),
@@ -3919,28 +3999,50 @@ def render_employment():
         if elapsed < 0:
             elapsed = 0
         idx = min(elapsed, len(proj_days_arr) - 1)
-        return adjusted_unemp_pct[:, idx], rli_pct_pct[:, idx]
+        return adjusted_unemp_pct[:, idx], rli_pct_pct[:, idx], idx
 
     valid_targets = [(label, d) for label, d in eoy_targets if d <= proj_end_date]
     if valid_targets:
         cols = st.columns(len(valid_targets))
         for col, (label, target_date) in zip(cols, valid_targets):
-            unemp_samples, rli_samples = _emp_at_date(target_date)
-            p10_u, p50_u, p90_u = np.percentile(unemp_samples, [10, 50, 90])
+            unemp_samples, rli_samples, _t_idx = _emp_at_date(target_date)
             p50_r = np.percentile(rli_samples, 50)
             with col:
-                st.metric(label=label, value=f"{p50_u:.1f}%")
-                st.caption(f"80% CI: {p10_u:.1f}% – {p90_u:.1f}%\nRLI: {p50_r:.1f}%")
+                if _is_jobs_mode:
+                    _jobs_samples = jobs_above_baseline[:, _t_idx]
+                    p10_j, p50_j, p90_j = np.percentile(_jobs_samples, [10, 50, 90])
+                    st.metric(label=label, value=f"{p50_j:.1f}M")
+                    st.caption(f"80% CI: {p10_j:.1f}M – {p90_j:.1f}M\nRLI: {p50_r:.1f}%")
+                else:
+                    p10_u, p50_u, p90_u = np.percentile(unemp_samples, [10, 50, 90])
+                    st.metric(label=label, value=f"{p50_u:.1f}%")
+                    st.caption(f"80% CI: {p10_u:.1f}% – {p90_u:.1f}%\nRLI: {p50_r:.1f}%")
 
     # ── Model breakdown at a reference date ──────────────────────────────
     with st.expander("Model breakdown"):
-        _ref_date = datetime(min(_emp_end_year, 2027), 12, 31)
+        _bd_options = {label: d for label, d in valid_targets}
+        _bd_default_label = "2027EOY" if "2027EOY" in _bd_options else list(_bd_options.keys())[-1]
+        _bd_selected = st.selectbox("Reference date", list(_bd_options.keys()),
+                                     index=list(_bd_options.keys()).index(_bd_default_label),
+                                     key="emp_breakdown_date")
+        _ref_date = _bd_options[_bd_selected]
         _ref_elapsed = max((_ref_date - emp_current['date']).days, 0)
         _ref_idx = min(_ref_elapsed, len(proj_days_arr) - 1)
         _ref_rli_raw = np.median(rli_traj_frac[:, _ref_idx]) * 100
         _ref_lag_days = int(emp_lag_days)
-        _ref_lagged_idx = min(max(_ref_elapsed - _ref_lag_days, 0), len(proj_days_arr) - 1)
-        _ref_rli = np.median(rli_traj_frac[:, _ref_lagged_idx]) * 100
+        _ref_lag_target_date = _ref_date - timedelta(days=_ref_lag_days)
+        if _ref_lag_target_date >= emp_current['date']:
+            # Lagged date is within projection range
+            _ref_lagged_idx = min((_ref_lag_target_date - emp_current['date']).days, len(proj_days_arr) - 1)
+            _ref_rli = np.median(rli_traj_frac[:, _ref_lagged_idx]) * 100
+        else:
+            # Lagged date falls before projection start — look up historical RLI
+            _ref_rli = 0.4  # floor: assume ~0.4% RLI before first indexed model
+            for _hist_m in rli_frontier_all:
+                if _hist_m['date'] <= _ref_lag_target_date:
+                    _ref_rli = _hist_m['rli_score']
+                else:
+                    break
 
         _ref_bu_sigma = _bu_sigma_1yr * np.sqrt(_ref_elapsed / 365.0)
         _ref_base_unemp = emp_base_unemp  # median stays at slider value
@@ -3956,39 +4058,79 @@ def render_employment():
 
         _lag_months = _ref_lag_days / 30.4
         st.markdown(f"**Breakdown at {_ref_date.strftime('%b %Y')} (raw RLI = {_ref_rli_raw:.1f}%, lagged RLI = {_ref_rli:.1f}%, lag = {_lag_months:.0f}mo)**")
-        breakdown_rows = [
-            {"Step": "0. Raw RLI Score (before lag)", "Value": f"{_ref_rli_raw:.1f}%"},
-            {"Step": f"1. Lagged RLI Score (−{_ref_lag_days}d)", "Value": f"{_ref_rli:.1f}%"},
-            {"Step": "2. Disrupted fraction (RLI × coverage)", "Value": f"{_ref_disrupted*100:.1f}%"},
-            {"Step": "3. Overhead hours (disrupted × supervision)", "Value": f"{_ref_overhead*100:.1f}%"},
-            {"Step": "4. Worker occupied fraction", "Value": f"{_ref_worker_occ*100:.1f}%"},
-            {"Step": "5. Headcount needed (capped at 100%)", "Value": f"{_ref_headcount*100:.1f}%"},
-            {"Step": "6. Remote displacement rate", "Value": f"{_ref_remote_disp*100:.1f}%"},
-            {"Step": "7. Overall displacement (× remote share)", "Value": f"{_ref_overall_disp*100:.1f}%"},
-            {"Step": f"8. Raw unemployment (base {_ref_base_unemp:.1f}%±{_ref_bu_sigma:.1f}% + disp.)", "Value": f"{_ref_raw_unemp*100:.1f}%"},
-            {"Step": "9. Adjusted unemployment (− Jevons recovery)", "Value": f"{_ref_adj_unemp*100:.1f}%"},
-        ]
+
+        if _is_jobs_mode:
+            _ref_lf = emp_labor_force  # millions
+            _ref_remote_jobs = _ref_lf * remote_share
+            _ref_displaced_remote = _ref_remote_jobs * _ref_remote_disp
+            _ref_overall_jobs = _ref_lf * _ref_overall_disp
+            _ref_jevons_recovery = _ref_overall_jobs * (emp_jevons / 100)
+            _ref_net_jobs_lost = _ref_overall_jobs - _ref_jevons_recovery
+            breakdown_rows = [
+                {"Step": "0. Raw RLI Score (before lag)", "Value": f"{_ref_rli_raw:.1f}%"},
+                {"Step": f"1. Lagged RLI Score (−{_ref_lag_days}d)", "Value": f"{_ref_rli:.1f}%"},
+                {"Step": f"2. Disrupted fraction ({_ref_rli:.1f}% × {rli_cov*100:.0f}% coverage)", "Value": f"{_ref_disrupted*100:.1f}%"},
+                {"Step": f"3. Overhead hours ({_ref_disrupted*100:.1f}% × {supervision*100:.0f}% supervision)", "Value": f"{_ref_overhead*100:.1f}%"},
+                {"Step": f"4. Worker occupied fraction (1 − {_ref_disrupted*100:.1f}% + {_ref_overhead*100:.1f}%)", "Value": f"{_ref_worker_occ*100:.1f}%"},
+                {"Step": "5. Headcount needed (capped at 100%)", "Value": f"{_ref_headcount*100:.1f}%"},
+                {"Step": f"6. Remote displacement rate (1 − {_ref_headcount*100:.1f}%)", "Value": f"{_ref_remote_disp*100:.1f}%"},
+                {"Step": f"7. Remote/digital jobs ({_ref_lf:.0f}M × {remote_share*100:.0f}% remote share)", "Value": f"{_ref_remote_jobs:.1f}M"},
+                {"Step": f"8. Remote jobs displaced ({_ref_remote_jobs:.1f}M × {_ref_remote_disp*100:.1f}%)", "Value": f"{_ref_displaced_remote:.2f}M ({_ref_displaced_remote*1e6:.0f})"},
+                {"Step": f"9. Overall jobs displaced (= remote displaced)", "Value": f"{_ref_overall_jobs:.2f}M ({_ref_overall_jobs*1e6:.0f})"},
+                {"Step": f"10. Jevons/reallocation recovery ({_ref_overall_jobs:.2f}M × {emp_jevons:.0f}%)", "Value": f"−{_ref_jevons_recovery:.2f}M"},
+                {"Step": f"11. Net jobs lost above baseline ({_ref_overall_jobs:.2f}M − {_ref_jevons_recovery:.2f}M)", "Value": f"{_ref_net_jobs_lost:.2f}M ({_ref_net_jobs_lost*1e6:.0f})"},
+            ]
+        else:
+            breakdown_rows = [
+                {"Step": "0. Raw RLI Score (before lag)", "Value": f"{_ref_rli_raw:.1f}%"},
+                {"Step": f"1. Lagged RLI Score (−{_ref_lag_days}d)", "Value": f"{_ref_rli:.1f}%"},
+                {"Step": f"2. Disrupted fraction ({_ref_rli:.1f}% × {rli_cov*100:.0f}% coverage)", "Value": f"{_ref_disrupted*100:.1f}%"},
+                {"Step": f"3. Overhead hours ({_ref_disrupted*100:.1f}% × {supervision*100:.0f}% supervision)", "Value": f"{_ref_overhead*100:.1f}%"},
+                {"Step": f"4. Worker occupied fraction (1 − {_ref_disrupted*100:.1f}% + {_ref_overhead*100:.1f}%)", "Value": f"{_ref_worker_occ*100:.1f}%"},
+                {"Step": "5. Headcount needed (capped at 100%)", "Value": f"{_ref_headcount*100:.1f}%"},
+                {"Step": f"6. Remote displacement rate (1 − {_ref_headcount*100:.1f}%)", "Value": f"{_ref_remote_disp*100:.1f}%"},
+                {"Step": f"7. Overall displacement ({_ref_remote_disp*100:.1f}% × {remote_share*100:.0f}% remote share)", "Value": f"{_ref_overall_disp*100:.1f}%"},
+                {"Step": f"8. Raw unemployment ({_ref_base_unemp:.1f}%±{_ref_bu_sigma:.1f}% base + {_ref_overall_disp*100:.1f}% displacement)", "Value": f"{_ref_raw_unemp*100:.1f}%"},
+                {"Step": f"9. Adjusted unemployment ({_ref_raw_unemp*100:.1f}% − {_ref_overall_disp*100:.1f}% × {emp_jevons:.0f}% Jevons)", "Value": f"{_ref_adj_unemp*100:.1f}%"},
+            ]
         st.table(breakdown_rows)
 
     # ── Milestone table ──────────────────────────────────────────────────
-    unemp_milestones = [
-        (5,  "5% unemployment"),
-        (8,  "8% unemployment"),
-        (10, "10% unemployment"),
-        (15, "15% unemployment"),
-        (20, "20% unemployment"),
-    ]
+    if _is_jobs_mode:
+        _emp_milestones = [
+            (1,  "1M jobs lost"),
+            (5,  "5M jobs lost"),
+            (10, "10M jobs lost"),
+            (20, "20M jobs lost"),
+            (30, "30M jobs lost"),
+        ]
+        _ms_data = jobs_above_baseline  # (n_samples, n_timesteps)
+        _ms_unit = "M"
+    else:
+        _emp_milestones = [
+            (5,  "5% unemployment"),
+            (8,  "8% unemployment"),
+            (10, "10% unemployment"),
+            (15, "15% unemployment"),
+            (20, "20% unemployment"),
+        ]
+        _ms_data = adjusted_unemp_pct
+        _ms_unit = "%"
 
     with st.expander("Milestone details"):
         tcol1, tcol2 = st.columns(2)
         with tcol1:
             st.markdown("**Probabilities**")
             rows = []
-            for threshold, ms_label in unemp_milestones:
+            for threshold, ms_label in _emp_milestones:
                 row = {"Milestone": ms_label}
                 for eoy_label, target_date in valid_targets:
-                    unemp_samples, _ = _emp_at_date(target_date)
-                    prob = np.mean(unemp_samples >= threshold) * 100
+                    _, _, _t_idx = _emp_at_date(target_date)
+                    if _is_jobs_mode:
+                        _ms_samples = jobs_above_baseline[:, _t_idx]
+                    else:
+                        _ms_samples, _, _ = _emp_at_date(target_date)
+                    prob = np.mean(_ms_samples >= threshold) * 100
                     row[eoy_label] = f"{prob:.0f}%"
                 rows.append(row)
             st.table(rows)
@@ -3996,10 +4138,9 @@ def render_employment():
         with tcol2:
             st.markdown("**Estimated arrival**")
             arrival_rows = []
-            for threshold, ms_label in unemp_milestones:
-                # For each trajectory, find first day unemployment crosses threshold
-                crossed = np.argmax(adjusted_unemp_pct >= threshold, axis=1)
-                actually_crossed = adjusted_unemp_pct[np.arange(n_samples), crossed] >= threshold
+            for threshold, ms_label in _emp_milestones:
+                crossed = np.argmax(_ms_data >= threshold, axis=1)
+                actually_crossed = _ms_data[np.arange(n_samples), crossed] >= threshold
                 if actually_crossed.sum() < n_samples * 0.05:
                     arrival_rows.append({"Milestone": ms_label, "Median": "Beyond range", "80% CI": "—"})
                     continue
