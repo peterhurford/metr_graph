@@ -476,3 +476,166 @@ class TestReset:
         assert at.number_input(key="rli_custom_dt_lo").value == dt_lo_default, \
             f"RLI DT lo not reset: {at.number_input(key='rli_custom_dt_lo').value} != {dt_lo_default}"
         assert at.number_input(key="rli_custom_dt_hi").value == dt_hi_default
+
+
+# ===========================================================================
+# Employment tab tests
+# ===========================================================================
+
+def _emp_app():
+    """Create a fresh app switched to the Employment tab."""
+    at = _fresh_app()
+    at.run()
+    _switch_tab(at, "Employment")
+    return at
+
+
+class TestEmploymentRenders:
+    """Employment tab renders without error across projection bases."""
+
+    def test_emp_default_linear_renders(self):
+        """Employment tab renders with default Linear (logit) basis."""
+        at = _emp_app()
+        assert at.radio(key="emp_proj_basis").value == "Linear (logit)"
+        assert _has_widget(at, "slider", "emp_rli_coverage")
+        assert _has_widget(at, "slider", "emp_base_unemployment")
+
+    def test_emp_piecewise_renders(self):
+        at = _emp_app()
+        at.radio(key="emp_proj_basis").set_value("Piecewise linear (logit)").run()
+        _assert_no_error(at, "Employment / Piecewise")
+
+    def test_emp_superexp_renders(self):
+        at = _emp_app()
+        at.radio(key="emp_proj_basis").set_value("Superexponential (logit)").run()
+        _assert_no_error(at, "Employment / Superexponential")
+
+
+class TestEmploymentDefaults:
+    """Employment default values are reasonable and data-driven."""
+
+    def test_emp_slider_defaults(self):
+        at = _emp_app()
+        assert at.slider(key="emp_rli_coverage").value == 70.0
+        assert at.slider(key="emp_supervision_overhead").value == 10.0
+        assert at.slider(key="emp_remote_digital_share").value == 38.0
+        assert at.slider(key="emp_base_unemployment").value == 4.0
+        assert at.slider(key="emp_jevons_recovery").value == 30.0
+        assert at.slider(key="emp_adoption_lag").value == 365.0
+
+    def test_emp_ci_defaults_are_data_driven(self):
+        at = _emp_app()
+        dt_lo = at.number_input(key="emp_custom_dt_lo").value
+        dt_hi = at.number_input(key="emp_custom_dt_hi").value
+        assert dt_lo > 0 and dt_hi > dt_lo, \
+            f"DT CI should be positive with lo < hi: lo={dt_lo}, hi={dt_hi}"
+        assert 3.0 <= dt_hi / dt_lo <= 5.0, \
+            f"Unexpected CI spread: lo={dt_lo}, hi={dt_hi}"
+
+    def test_emp_display_mode_default(self):
+        at = _emp_app()
+        assert at.radio(key="emp_display_mode").value == "Unemployment Rate (%)"
+
+    def test_emp_end_year_default(self):
+        at = _emp_app()
+        assert at.radio(key="emp_end_year").value == 2028
+
+
+class TestEmploymentSliderChanges:
+    """Changing economic model sliders renders without error."""
+
+    def test_emp_low_rli_coverage(self):
+        """Low RLI coverage (10%) should not crash."""
+        at = _emp_app()
+        at.slider(key="emp_rli_coverage").set_value(10.0).run()
+        _assert_no_error(at, "emp_rli_coverage=10")
+
+    def test_emp_zero_rli_coverage(self):
+        """Zero RLI coverage should not crash."""
+        at = _emp_app()
+        at.slider(key="emp_rli_coverage").set_value(0.0).run()
+        _assert_no_error(at, "emp_rli_coverage=0")
+
+    def test_emp_max_rli_coverage(self):
+        """Max RLI coverage (100%) should not crash."""
+        at = _emp_app()
+        at.slider(key="emp_rli_coverage").set_value(100.0).run()
+        _assert_no_error(at, "emp_rli_coverage=100")
+
+    def test_emp_zero_jevons(self):
+        """Zero Jevons recovery should not crash."""
+        at = _emp_app()
+        at.slider(key="emp_jevons_recovery").set_value(0.0).run()
+        _assert_no_error(at, "emp_jevons=0")
+
+    def test_emp_zero_lag(self):
+        """Zero adoption lag should not crash."""
+        at = _emp_app()
+        at.slider(key="emp_adoption_lag").set_value(0.0).run()
+        _assert_no_error(at, "emp_lag=0")
+
+    def test_emp_max_lag(self):
+        """Max adoption lag (1460 days) should not crash."""
+        at = _emp_app()
+        at.slider(key="emp_adoption_lag").set_value(1460.0).run()
+        _assert_no_error(at, "emp_lag=1460")
+
+    def test_emp_high_base_unemployment(self):
+        """High base unemployment should not crash."""
+        at = _emp_app()
+        at.slider(key="emp_base_unemployment").set_value(12.0).run()
+        _assert_no_error(at, "emp_base_unemp=12")
+
+
+class TestEmploymentDisplayModes:
+    """Jobs Lost mode renders and toggles correctly."""
+
+    def test_emp_jobs_lost_mode_renders(self):
+        at = _emp_app()
+        at.radio(key="emp_display_mode").set_value("Jobs Lost Above Baseline").run()
+        _assert_no_error(at, "Jobs Lost mode")
+        # Labor force input should appear in Jobs Lost mode
+        assert _has_widget(at, "number_input", "emp_labor_force"), \
+            "Labor force input should appear in Jobs Lost mode"
+
+    def test_emp_unemployment_mode_no_labor_force(self):
+        at = _emp_app()
+        assert not _has_widget(at, "number_input", "emp_labor_force"), \
+            "Labor force input should not appear in Unemployment Rate mode"
+
+    def test_emp_jobs_lost_low_coverage(self):
+        """Jobs Lost mode with low RLI coverage should not crash."""
+        at = _emp_app()
+        at.radio(key="emp_display_mode").set_value("Jobs Lost Above Baseline").run()
+        at.slider(key="emp_rli_coverage").set_value(10.0).run()
+        _assert_no_error(at, "Jobs Lost + low coverage")
+
+
+class TestEmploymentReset:
+    """Reset button restores employment defaults."""
+
+    def test_emp_reset_restores_sliders(self):
+        at = _emp_app()
+        # Modify sliders
+        at.slider(key="emp_rli_coverage").set_value(20.0).run()
+        at.slider(key="emp_jevons_recovery").set_value(80.0).run()
+        assert at.slider(key="emp_rli_coverage").value == 20.0
+        # Reset
+        at.button(key="reset_emp_all").click().run()
+        _assert_no_error(at, "after emp reset")
+        assert at.slider(key="emp_rli_coverage").value == 70.0, \
+            "RLI coverage not reset"
+        assert at.slider(key="emp_jevons_recovery").value == 30.0, \
+            "Jevons not reset"
+
+    def test_emp_reset_restores_ci(self):
+        at = _emp_app()
+        dt_lo_default = at.number_input(key="emp_custom_dt_lo").value
+        # Modify
+        at.number_input(key="emp_custom_dt_lo").set_value(10.0).run()
+        assert at.number_input(key="emp_custom_dt_lo").value == 10.0
+        # Reset
+        at.button(key="reset_emp_linear").click().run()
+        _assert_no_error(at, "after emp CI reset")
+        assert at.number_input(key="emp_custom_dt_lo").value == dt_lo_default, \
+            "emp DT lo not reset"
