@@ -3792,12 +3792,9 @@ def render_employment():
             rli_traj_lagged[i] = rli_traj_frac[i]
         else:
             # For t < lag_i: effective date is before projection start, use historical RLI
-            for t in range(min(lag_i, n_timesteps)):
-                hist_idx = max_lag - lag_i + t
-                if 0 <= hist_idx < max_lag:
-                    rli_traj_lagged[i, t] = _hist_rli_daily[hist_idx]
-                else:
-                    rli_traj_lagged[i, t] = 0.004  # floor
+            _fill_n = min(lag_i, n_timesteps)
+            _start = max_lag - lag_i
+            rli_traj_lagged[i, :_fill_n] = _hist_rli_daily[_start:_start + _fill_n]
             # For t >= lag_i: effective date is within projection, use shifted projection
             if lag_i < n_timesteps:
                 rli_traj_lagged[i, lag_i:] = rli_traj_frac[i, :n_timesteps - lag_i]
