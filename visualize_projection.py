@@ -25,6 +25,12 @@ st.markdown("""<style>
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
+def _fmt_jobs(m):
+    """Format a jobs number (in millions) readably: <1M shows as K, ≥1M shows as M."""
+    if abs(m) < 1.0:
+        return f"{m * 1000:.0f}K"
+    return f"{m:.1f}M"
+
 _NAMES = {
     'gpt2': 'GPT-2', 'davinci_002': 'davinci-002',
     'gpt_3_5_turbo_instruct': 'GPT-3.5T', 'gpt_4': 'GPT-4',
@@ -3893,7 +3899,7 @@ def render_employment():
 
     # Median line
     if _is_jobs_mode:
-        hover_med = [f"{dt.strftime('%b %d, %Y')}<br>Jobs lost: {y:.2f}M<br>RLI: {r:.1f}%"
+        hover_med = [f"{dt.strftime('%b %d, %Y')}<br>Jobs lost: {_fmt_jobs(y)}<br>RLI: {r:.1f}%"
                      for dt, y, r in zip(proj_dates, _chart_med, rli_p50)]
         fig.add_trace(go.Scatter(
             x=proj_dates, y=_chart_med.tolist(),
@@ -4034,8 +4040,8 @@ def render_employment():
                 if _is_jobs_mode:
                     _jobs_samples = jobs_above_baseline[:, _t_idx]
                     p10_j, p50_j, p90_j = np.percentile(_jobs_samples, [10, 50, 90])
-                    st.metric(label=label, value=f"{p50_j:.1f}M")
-                    st.caption(f"80% CI: {p10_j:.1f}M – {p90_j:.1f}M\nRLI: {p50_r:.1f}%")
+                    st.metric(label=label, value=_fmt_jobs(p50_j))
+                    st.caption(f"80% CI: {_fmt_jobs(p10_j)} – {_fmt_jobs(p90_j)}\nRLI: {p50_r:.1f}%")
                 else:
                     p10_u, p50_u, p90_u = np.percentile(unemp_samples, [10, 50, 90])
                     st.metric(label=label, value=f"{p50_u:.1f}%")
@@ -4097,11 +4103,11 @@ def render_employment():
                 {"Step": f"4. Worker occupied fraction (1 − {_ref_disrupted*100:.1f}% + {_ref_overhead*100:.1f}%)", "Value": f"{_ref_worker_occ*100:.1f}%"},
                 {"Step": "5. Headcount needed (capped at 100%)", "Value": f"{_ref_headcount*100:.1f}%"},
                 {"Step": f"6. Remote displacement rate (1 − {_ref_headcount*100:.1f}%)", "Value": f"{_ref_remote_disp*100:.1f}%"},
-                {"Step": f"7. Remote/digital jobs ({_ref_lf:.0f}M × {remote_share*100:.0f}% remote share)", "Value": f"{_ref_remote_jobs:.1f}M"},
-                {"Step": f"8. Remote jobs displaced ({_ref_remote_jobs:.1f}M × {_ref_remote_disp*100:.1f}%)", "Value": f"{_ref_displaced_remote:.2f}M ({_ref_displaced_remote*1e6:.0f})"},
-                {"Step": f"9. Overall jobs displaced (= remote displaced)", "Value": f"{_ref_overall_jobs:.2f}M ({_ref_overall_jobs*1e6:.0f})"},
-                {"Step": f"10. Jevons/reallocation recovery ({_ref_overall_jobs:.2f}M × {emp_jevons:.0f}%)", "Value": f"−{_ref_jevons_recovery:.2f}M"},
-                {"Step": f"11. Net jobs lost above baseline ({_ref_overall_jobs:.2f}M − {_ref_jevons_recovery:.2f}M)", "Value": f"{_ref_net_jobs_lost:.2f}M ({_ref_net_jobs_lost*1e6:.0f})"},
+                {"Step": f"7. Remote/digital jobs ({_ref_lf:.0f}M × {remote_share*100:.0f}% remote share)", "Value": f"{_fmt_jobs(_ref_remote_jobs)}"},
+                {"Step": f"8. Remote jobs displaced ({_fmt_jobs(_ref_remote_jobs)} × {_ref_remote_disp*100:.1f}%)", "Value": f"{_fmt_jobs(_ref_displaced_remote)} ({_ref_displaced_remote*1e6:.0f})"},
+                {"Step": f"9. Overall jobs displaced (= remote displaced)", "Value": f"{_fmt_jobs(_ref_overall_jobs)} ({_ref_overall_jobs*1e6:.0f})"},
+                {"Step": f"10. Jevons/reallocation recovery ({_fmt_jobs(_ref_overall_jobs)} × {emp_jevons:.0f}%)", "Value": f"−{_fmt_jobs(_ref_jevons_recovery)}"},
+                {"Step": f"11. Net jobs lost above baseline ({_fmt_jobs(_ref_overall_jobs)} − {_fmt_jobs(_ref_jevons_recovery)})", "Value": f"{_fmt_jobs(_ref_net_jobs_lost)} ({_ref_net_jobs_lost*1e6:.0f})"},
             ]
         else:
             breakdown_rows = [
