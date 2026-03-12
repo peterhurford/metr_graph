@@ -182,16 +182,29 @@ def superexp_trajectory(days, dt_0, halflife, dt_floor):
     Growth = integral of 1/dt(t) dt, so:
       - Before floor hit: (H / (dt_0 * ln2)) * (2^(t/H) - 1)
       - After floor hit:  linear at rate 1/dt_floor
+
+    dt_0 can be a 1-D array of shape (n_samples,); in that case days should be
+    1-D (n_days,) and the result is (n_samples, n_days).
     """
-    if dt_0 > dt_floor:
-        t_cap = halflife * np.log2(dt_0 / dt_floor)
-    else:
-        t_cap = 0.0
-    se_phase = np.minimum(days, t_cap)
+    dt_0 = np.asarray(dt_0)
+    if dt_0.ndim == 0:
+        # scalar path (unchanged)
+        t_cap = halflife * np.log2(dt_0 / dt_floor) if dt_0 > dt_floor else 0.0
+        se_phase = np.minimum(days, t_cap)
+        y_se = (halflife / (dt_0 * np.log(2))) * (2 ** (se_phase / halflife) - 1)
+        linear_phase = np.maximum(days - t_cap, 0)
+        y_lin = linear_phase / dt_floor
+        return y_se + y_lin
+    # vectorised path: dt_0 is (n_samples,), days is (n_days,)
+    dt_0 = dt_0[:, None]                                 # (n, 1)
+    days = np.asarray(days)[None, :]                      # (1, d)
+    t_cap = np.where(dt_0 > dt_floor,
+                     halflife * np.log2(dt_0 / dt_floor), 0.0)  # (n, 1)
+    se_phase = np.minimum(days, t_cap)                    # (n, d)
     y_se = (halflife / (dt_0 * np.log(2))) * (2 ** (se_phase / halflife) - 1)
-    linear_phase = np.maximum(days - t_cap, 0)
+    linear_phase = np.maximum(days - t_cap, 0)            # (n, d)
     y_lin = linear_phase / dt_floor
-    return y_se + y_lin
+    return y_se + y_lin                                   # (n, d)
 
 
 def _logit(p):
@@ -774,7 +787,7 @@ def render_metr():
         _cu_fitted_hrs = 2**_cu_fitted_pos / 60
         _eff_dt_lo = custom_dt_lo
         _eff_dt_hi = custom_dt_hi
-        n_custom = 20000
+        n_custom = 5000
         # Trend: sample doubling times from chosen distribution, centered on OLS slope
         if custom_dt_dist == "Log-log":
             proj_dt = _log_lognormal_from_ci(_eff_dt_lo, _eff_dt_hi, n_custom)
@@ -816,7 +829,7 @@ def render_metr():
             superexp_dt_fitted = superexp_halflife / (_se_K * np.log(2) * 2 ** (_se_current_day / superexp_halflife))
         else:
             superexp_dt_fitted = float('inf')
-        n_superexp = 20000
+        n_superexp = 5000
         proj_dt = _lognormal_from_ci(superexp_dt_ci_lo, superexp_dt_ci_hi, n_superexp)
         # Position: lognormal noise centered on fitted trend position
         _se_fitted_hrs = 2**_se_fitted_pos / 60
@@ -839,14 +852,11 @@ def render_metr():
 
     # Build all trajectories with correlated (dt, start) pairs
     n_samples = len(proj_dt)
-    all_trajectories = np.zeros((n_samples, len(proj_days_arr)))
     if is_superexp:
-        for i in range(n_samples):
-            all_trajectories[i] = proj_start[i] + superexp_trajectory(
-                proj_days_arr, proj_dt[i], superexp_halflife, superexp_dt_floor)
+        all_trajectories = proj_start[:, None] + superexp_trajectory(
+            proj_days_arr, proj_dt, superexp_halflife, superexp_dt_floor)
     else:
-        for i in range(n_samples):
-            all_trajectories[i] = proj_start[i] + proj_days_arr / proj_dt[i]
+        all_trajectories = proj_start[:, None] + proj_days_arr[None, :] / proj_dt[:, None]
 
     # y-axis conversion: log2(minutes) -> display value
     def _yconv(log2min):
@@ -1575,7 +1585,7 @@ def render_eci():
         _eci_eff_dpp_lo = eci_custom_dpp_lo
         _eci_eff_dpp_hi = eci_custom_dpp_hi
 
-        n_eci = 20000
+        n_eci = 5000
         if eci_custom_dpp_dist == "Log-log":
             eci_proj_dpp = _log_lognormal_from_ci(_eci_eff_dpp_lo, _eci_eff_dpp_hi, n_eci)
         elif eci_custom_dpp_dist == "Lognormal":
@@ -1610,7 +1620,7 @@ def render_eci():
         else:
             eci_superexp_dpp_fitted = float('inf')
 
-        n_eci = 20000
+        n_eci = 5000
         eci_proj_dpp = _lognormal_from_ci(eci_superexp_dpp_ci_lo, eci_superexp_dpp_ci_hi, n_eci)
 
         # Position: normal noise centered on fitted trend position
@@ -1628,15 +1638,11 @@ def render_eci():
     proj_dates = [eci_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
 
     n_samples = len(eci_proj_dpp)
-    all_trajectories = np.zeros((n_samples, len(proj_days_arr)))
     if eci_is_superexp:
-        for i in range(n_samples):
-            # DPP is "days per point" which is analogous to DT
-            all_trajectories[i] = eci_proj_start[i] + superexp_trajectory(
-                proj_days_arr, eci_proj_dpp[i], eci_superexp_halflife, eci_superexp_dpp_floor)
+        all_trajectories = eci_proj_start[:, None] + superexp_trajectory(
+            proj_days_arr, eci_proj_dpp, eci_superexp_halflife, eci_superexp_dpp_floor)
     else:
-        for i in range(n_samples):
-            all_trajectories[i] = eci_proj_start[i] + proj_days_arr / eci_proj_dpp[i]
+        all_trajectories = eci_proj_start[:, None] + proj_days_arr[None, :] / eci_proj_dpp[:, None]
 
     pct5 = np.percentile(all_trajectories, 5, axis=0)
     pct10 = np.percentile(all_trajectories, 10, axis=0)
@@ -2338,7 +2344,7 @@ def render_rli():
         _rli_intercept = np.mean(_rli_seg_y - _rli_params[1] * _rli_seg_d)
         _rli_fitted_logit = _rli_intercept + _rli_params[1] * _rli_current_day
 
-        n_rli = 20000
+        n_rli = 5000
         if rli_custom_dt_dist == "Log-log":
             rli_proj_dt = _log_lognormal_from_ci(rli_custom_dt_lo, rli_custom_dt_hi, n_rli)
         elif rli_custom_dt_dist == "Lognormal":
@@ -2381,7 +2387,7 @@ def render_rli():
         else:
             rli_superexp_dt_fitted = float('inf')
 
-        n_rli = 20000
+        n_rli = 5000
         rli_proj_dt = _lognormal_from_ci(rli_superexp_dt_ci_lo, rli_superexp_dt_ci_hi, n_rli)
         rli_proj_logit_slope = np.log(2) / rli_proj_dt
 
@@ -2402,16 +2408,11 @@ def render_rli():
     proj_dates = [rli_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
 
     n_samples = len(rli_proj_dt)
-    all_logit_traj = np.zeros((n_samples, len(proj_days_arr)))
     if rli_is_superexp:
-        for i in range(n_samples):
-            # In logit space, DT = "days for odds to double" = days per +ln(2) in logit
-            # So logit growth = ln(2) * superexp_trajectory(days, dt, H, dt_floor)
-            all_logit_traj[i] = rli_proj_start_logit[i] + np.log(2) * superexp_trajectory(
-                proj_days_arr, rli_proj_dt[i], rli_superexp_halflife, rli_superexp_dt_floor)
+        all_logit_traj = rli_proj_start_logit[:, None] + np.log(2) * superexp_trajectory(
+            proj_days_arr, rli_proj_dt, rli_superexp_halflife, rli_superexp_dt_floor)
     else:
-        for i in range(n_samples):
-            all_logit_traj[i] = rli_proj_start_logit[i] + proj_days_arr * rli_proj_logit_slope[i]
+        all_logit_traj = rli_proj_start_logit[:, None] + proj_days_arr[None, :] * rli_proj_logit_slope[:, None]
 
     # Convert to percentage space
     all_trajectories = _inv_logit(all_logit_traj) * 100
@@ -2879,7 +2880,7 @@ def _parse_revenue(data):
     return dates, values
 
 
-def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=20000,
+def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=5000,
                           dt_lo_override=None, dt_hi_override=None):
     """Fit exponential (OLS in log-space) to last n_recent points,
     sample doubling-time fan chart, return (proj_dates, percentiles_dict, ols_dt, ols_dates, ols_vals)."""
@@ -2918,9 +2919,7 @@ def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=20000,
     start_log = np.random.normal(last_log, pos_sigma, n_samples)
 
     # Build trajectories in log2-space, convert to linear
-    trajectories = np.zeros((n_samples, len(proj_days_arr)))
-    for i in range(n_samples):
-        trajectories[i] = 2.0 ** (start_log[i] + proj_days_arr / sampled_dt[i])
+    trajectories = 2.0 ** (start_log[:, None] + proj_days_arr[None, :] / sampled_dt[:, None])
 
     pcts = {}
     for p in [5, 10, 25, 50, 75, 90, 95]:
@@ -3678,7 +3677,7 @@ def render_employment():
     logit_used = logit_all[:_emp_fit_end]
     n_used = len(emp_frontier_used)
 
-    n_emp = 20000
+    n_emp = 5000
     if emp_proj_basis in ("Linear (logit)", "Piecewise linear (logit)"):
         if emp_piecewise_n_segments >= 2:
             _emp_bp_names_used = [m['name'] for m in emp_frontier_used]
@@ -3749,17 +3748,15 @@ def render_employment():
     proj_dates = [emp_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
 
     n_samples = len(emp_proj_dt)
-    all_logit_traj = np.zeros((n_samples, len(proj_days_arr)))
     if emp_is_superexp:
-        for i in range(n_samples):
-            all_logit_traj[i] = emp_proj_start_logit[i] + np.log(2) * superexp_trajectory(
-                proj_days_arr, emp_proj_dt[i], emp_superexp_halflife, emp_superexp_dt_floor)
+        all_logit_traj = emp_proj_start_logit[:, None] + np.log(2) * superexp_trajectory(
+            proj_days_arr, emp_proj_dt, emp_superexp_halflife, emp_superexp_dt_floor)
     else:
-        for i in range(n_samples):
-            all_logit_traj[i] = emp_proj_start_logit[i] + proj_days_arr * emp_proj_logit_slope[i]
+        all_logit_traj = emp_proj_start_logit[:, None] + proj_days_arr[None, :] * emp_proj_logit_slope[:, None]
 
     # RLI scores as fraction (0-1) for each sample at each timestep
     rli_traj_frac = _inv_logit(all_logit_traj)
+    del all_logit_traj  # free (n_samples, n_days) array
 
     # ── Apply adoption lag ───────────────────────────────────────────────
     # Sample lag per trajectory: at time t, effective RLI = RLI(t - lag).
@@ -3817,23 +3814,19 @@ def render_employment():
     supervision = emp_supervision / 100
     remote_share = emp_remote_share / 100
 
-    # Step 1: disrupted_fraction = rli_score (lagged) * rli_coverage
+    # Collapse displacement cascade into minimal intermediate arrays:
+    #   disrupted = lagged_rli * coverage
+    #   worker_occupied = (1 - disrupted) + disrupted * supervision
+    #   overall_displacement = (1 - min(worker_occupied, 1)) * remote_share
+    #   adjusted_unemp = base + overall_disp - overall_disp * jevons
+    #                   = base + overall_disp * (1 - jevons)
     disrupted = rli_traj_lagged * rli_cov
-    # Step 2: overhead_hours = disrupted_fraction * supervision_overhead
-    overhead = disrupted * supervision
-    # Step 3: worker_occupied_fraction = (1 - disrupted) + overhead
-    worker_occupied = (1 - disrupted) + overhead
-    # Step 4: headcount_needed = min(worker_occupied, 1.0)
-    headcount_needed = np.minimum(worker_occupied, 1.0)
-    # Step 5: remote_displacement_rate = 1 - headcount_needed
-    remote_displacement = 1 - headcount_needed
-    # Step 6: overall_displacement = remote_displacement * remote_digital_share
-    overall_displacement = remote_displacement * remote_share
-    # Step 7: raw_unemployment = base_unemployment(t) + overall_displacement
-    raw_unemp = base_unemp_arr + overall_displacement
-    # Step 8: adjusted_unemployment = raw - (displacement * jevons_recovery)
-    adjusted_unemp = raw_unemp - overall_displacement * jevons_samples[:, None]
+    del rli_traj_lagged  # free (n_samples, n_days) array
+    overall_displacement = np.maximum(disrupted * (1 - supervision), 0) * remote_share
+    del disrupted
+    adjusted_unemp = base_unemp_arr + overall_displacement * (1 - jevons_samples[:, None])
     adjusted_unemp_pct = adjusted_unemp * 100
+    del overall_displacement
 
     # Percentiles
     pct5 = np.percentile(adjusted_unemp_pct, 5, axis=0)
@@ -3845,7 +3838,7 @@ def render_employment():
     pct95 = np.percentile(adjusted_unemp_pct, 95, axis=0)
 
     # Also compute RLI percentiles for display
-    rli_pct_pct = _inv_logit(all_logit_traj) * 100
+    rli_pct_pct = rli_traj_frac * 100
     rli_p50 = np.percentile(rli_pct_pct, 50, axis=0)
 
     # ── Jobs lost above baseline ────────────────────────────────────────
