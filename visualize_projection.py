@@ -436,6 +436,41 @@ def load_rli_data():
     return models
 
 
+# ── Proof QA data (hardcoded – OpenAI model scores) ──────────────────────
+
+_PROOFQA_RAW = [
+    {"name": "o3 No Browsing",    "date": "2025-04-16", "pqa_score": 2.0},
+    {"name": "GPT 5 No Browsing", "date": "2025-08-07", "pqa_score": 2.0},
+    {"name": "GPT 5.1 Codex Max", "date": "2025-11-19", "pqa_score": 8.0},
+    {"name": "GPT 5.2 Thinking",  "date": "2025-12-11", "pqa_score": 4.2},
+    {"name": "GPT 5.2 Codex",     "date": "2025-12-11", "pqa_score": 8.3},
+    {"name": "GPT 5.3 Codex",     "date": "2026-02-05", "pqa_score": 5.8},
+    {"name": "GPT 5.4 Thinking",  "date": "2026-03-05", "pqa_score": 4.2},
+]
+
+
+def load_proofqa_data():
+    models = []
+    for r in _PROOFQA_RAW:
+        models.append({
+            'name': r['name'],
+            'date': datetime.strptime(r['date'], '%Y-%m-%d'),
+            'pqa_score': r['pqa_score'],
+        })
+    models.sort(key=lambda m: m['date'])
+
+    # Frontier detection: running max
+    max_score = -float('inf')
+    for m in models:
+        if m['pqa_score'] > max_score:
+            max_score = m['pqa_score']
+            m['is_frontier'] = True
+        else:
+            m['is_frontier'] = False
+
+    return models
+
+
 # ── Load data (before sidebar, so model names are available) ─────────────
 
 frontier_all = load_frontier(_mtime=_yaml_mtime())
@@ -450,11 +485,16 @@ rli_all = load_rli_data()
 rli_frontier_all = [m for m in rli_all if m['is_frontier']]
 rli_frontier_names = [m['name'] for m in rli_frontier_all]
 
+pqa_all = load_proofqa_data()
+pqa_frontier_all = [m for m in pqa_all if m['is_frontier']]
+pqa_frontier_names = [m['name'] for m in pqa_frontier_all]
+pqa_all_names = [m['name'] for m in pqa_all]
+
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "Revenue", "Employment", "ECI Company Gap"]
-_TAB_SLUG = {"metr": 0, "eci": 1, "rli": 2, "revenue": 3, "employment": 4, "ecigap": 5}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "Proof QA", "Revenue", "Employment", "ECI Company Gap"]
+_TAB_SLUG = {"metr": 0, "eci": 1, "rli": 2, "proofqa": 3, "revenue": 4, "employment": 5, "ecigap": 6}
 
 # Read ?tab= from URL for deep-linking
 _url_tab = st.query_params.get("tab", "").lower()
@@ -465,7 +505,7 @@ with st.sidebar:
     st.markdown("---")
 
 # Keep URL in sync with selected tab
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap"}
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Proof QA": "proofqa", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap"}
 st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
 
 
@@ -4493,6 +4533,756 @@ def render_eci_gap():
                "ECI data from Epoch AI.")
 
 
+# ── Proof QA ──────────────────────────────────────────────────────────────
+
+_PQA_RESET_KEYS = [
+    "pqa_custom_dt_lo", "pqa_custom_dt_hi",
+    "pqa_custom_pos_lo", "pqa_custom_pos_hi",
+    "pqa_piecewise_n_seg", "pqa_bp1_select",
+    "pqa_bp2_select", "pqa_custom_dt_dist",
+    "pqa_custom_pos_dist",
+    "pqa_superexp_dt_init", "pqa_superexp_halflife",
+    "pqa_superexp_dt_floor", "pqa_superexp_dt_ci_lo",
+    "pqa_superexp_dt_ci_hi", "pqa_superexp_pos_lo",
+    "pqa_superexp_pos_hi",
+    "pqa_proj_basis", "pqa_milestones", "pqa_labels",
+    "pqa_log_scale", "_pqa_proj_as_of", "pqa_end_year",
+    "_pqa_seg_config",
+]
+
+_PQA_DEFAULTS = {
+    "pqa_proj_basis": "Linear (logit)",
+    "pqa_piecewise_n_seg": 1,
+    "pqa_custom_dt_dist": "Lognormal",
+    "pqa_custom_pos_dist": "Normal",
+    "pqa_milestones": True,
+    "pqa_labels": True,
+    "pqa_log_scale": False,
+    "pqa_end_year": 2027,
+}
+
+def render_proofqa():
+    if st.session_state.pop("_reset_pqa", False):
+        for k in _PQA_RESET_KEYS:
+            st.session_state.pop(k, None)
+        st.session_state.update(_PQA_DEFAULTS)
+        st.rerun()
+
+    for k, v in _PQA_DEFAULTS.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+    # ── Sidebar controls ─────────────────────────────────────────────
+    with st.sidebar:
+        st.header("Proof QA Projection")
+
+        pqa_proj_as_of_name = st.session_state.get('_pqa_proj_as_of', pqa_all_names[-1])
+        if pqa_proj_as_of_name not in pqa_all_names:
+            pqa_proj_as_of_name = pqa_all_names[-1]
+        pqa_proj_as_of_idx = pqa_all_names.index(pqa_proj_as_of_name)
+
+        pqa_basis_options = ["Linear (logit)", "Piecewise linear (logit)", "Superexponential (logit)"]
+        pqa_proj_basis = st.radio("Projection basis", pqa_basis_options, key="pqa_proj_basis",
+                                  help="All projections use logit-space fitting to keep scores bounded 0–100%.")
+
+        pqa_custom_dt_lo = pqa_custom_dt_hi = None
+        pqa_custom_pos_lo = pqa_custom_pos_hi = None
+        pqa_custom_dt_dist = "Lognormal"
+        pqa_custom_pos_dist = "Normal"
+        pqa_piecewise_n_segments = 1
+        pqa_piecewise_breakpoints = []
+        _pqa_is_linear = pqa_proj_basis in ("Linear (logit)", "Piecewise linear (logit)")
+        if pqa_proj_basis == "Piecewise linear (logit)":
+            pqa_piecewise_n_segments = 2
+
+        # Pre-compute OLS DT for data-driven defaults (uses ALL points, not just frontier)
+        _pqa_pre_fr = pqa_all[:pqa_proj_as_of_idx + 1]
+        _pqa_pre_base = pqa_all[0]['date']
+        _pqa_pre_days = np.array([(m['date'] - _pqa_pre_base).days for m in _pqa_pre_fr], dtype=float)
+        _pqa_pre_logit = _logit(np.array([m['pqa_score'] / 100 for m in _pqa_pre_fr]))
+        _pqa_pre_params = fit_line(_pqa_pre_days, _pqa_pre_logit) if len(_pqa_pre_fr) >= 2 else np.array([0, 0.007])
+        _pqa_pre_dt = round(np.log(2) / _pqa_pre_params[1]) if _pqa_pre_params[1] > 0 else 100
+
+        if _pqa_is_linear:
+            with st.expander("Advanced options"):
+                st.button("Reset to defaults", key="reset_pqa_linear",
+                          on_click=lambda: st.session_state.update(_reset_pqa=True))
+
+                _pqa_bp_names = [m['name'] for m in pqa_all[:pqa_proj_as_of_idx + 1]]
+                if pqa_proj_basis == "Piecewise linear (logit)":
+                    _pqa_seg_options = [1, 2, 3] if len(_pqa_bp_names) >= 5 else [1, 2]
+                    if pqa_piecewise_n_segments not in _pqa_seg_options:
+                        pqa_piecewise_n_segments = _pqa_seg_options[-1]
+                    if st.session_state.get("pqa_piecewise_n_seg", 1) < 2:
+                        st.session_state["pqa_piecewise_n_seg"] = 2
+                    pqa_piecewise_n_segments = st.radio(
+                        "Segments", _pqa_seg_options,
+                        horizontal=True, key="pqa_piecewise_n_seg")
+                else:
+                    pqa_piecewise_n_segments = 1
+                    st.session_state.pop("pqa_piecewise_n_seg", None)
+                if pqa_piecewise_n_segments >= 2:
+                    _pqa_default_bp1 = _pqa_bp_names[len(_pqa_bp_names) // 2]
+                    _pqa_bp1_idx = _pqa_bp_names.index(_pqa_default_bp1) if _pqa_default_bp1 in _pqa_bp_names else len(_pqa_bp_names) // 2
+                    pqa_bp1_name = st.selectbox(
+                        "Breakpoint", _pqa_bp_names[1:],
+                        index=max(0, _pqa_bp1_idx - 1), key="pqa_bp1_select")
+                    pqa_piecewise_breakpoints.append(pqa_bp1_name)
+                if pqa_piecewise_n_segments >= 3:
+                    _pqa_bp1_pos = _pqa_bp_names.index(pqa_bp1_name)
+                    _pqa_remaining = _pqa_bp_names[_pqa_bp1_pos + 1:]
+                    pqa_bp2_name = st.selectbox(
+                        "Breakpoint 2", _pqa_remaining[:-1],
+                        index=len(_pqa_remaining[:-1]) // 2, key="pqa_bp2_select")
+                    pqa_piecewise_breakpoints.append(pqa_bp2_name)
+
+                # Compute DT defaults from the actual last segment
+                if pqa_piecewise_n_segments >= 2 and pqa_piecewise_breakpoints:
+                    _pqa_last_bp_idx = _pqa_bp_names.index(pqa_piecewise_breakpoints[-1]) if pqa_piecewise_breakpoints[-1] in _pqa_bp_names else 0
+                    _pqa_pw_seg_days = _pqa_pre_days[_pqa_last_bp_idx:]
+                    _pqa_pw_seg_logit = _pqa_pre_logit[_pqa_last_bp_idx:]
+                    if len(_pqa_pw_seg_days) >= 2:
+                        _pqa_pw_seg_params = fit_line(_pqa_pw_seg_days, _pqa_pw_seg_logit)
+                        _pqa_pw_seg_dt = round(np.log(2) / _pqa_pw_seg_params[1]) if _pqa_pw_seg_params[1] > 0 else _pqa_pre_dt
+                    else:
+                        _pqa_pw_seg_dt = _pqa_pre_dt
+                    _pqa_default_dt_lo = float(round(max(5.0, _pqa_pw_seg_dt / 2), 0))
+                    _pqa_default_dt_hi = float(round(_pqa_pw_seg_dt * 2, 0))
+                else:
+                    _pqa_default_dt_lo = float(round(max(5.0, _pqa_pre_dt / 2), 0))
+                    _pqa_default_dt_hi = float(round(_pqa_pre_dt * 2, 0))
+
+                # Auto-update DT CIs when segment config changes
+                _pqa_seg_config = (pqa_piecewise_n_segments, tuple(pqa_piecewise_breakpoints))
+                if st.session_state.get("_pqa_seg_config") != _pqa_seg_config:
+                    st.session_state["_pqa_seg_config"] = _pqa_seg_config
+                    st.session_state.pop("pqa_custom_dt_lo", None)
+                    st.session_state.pop("pqa_custom_dt_hi", None)
+
+                _pqa_dt_lo_col, _pqa_dt_hi_col = st.columns(2)
+                pqa_custom_dt_lo = _ss_number_input(_pqa_dt_lo_col,
+                    "Odds 2x time CI low (days)", "pqa_custom_dt_lo", _pqa_default_dt_lo,
+                    min_value=5.0, max_value=2000.0, step=5.0,
+                    help="Fast scenario: days for odds p/(1-p) to double.")
+                pqa_custom_dt_hi = _ss_number_input(_pqa_dt_hi_col,
+                    "Odds 2x time CI high (days)", "pqa_custom_dt_hi", _pqa_default_dt_hi,
+                    min_value=5.0, max_value=5000.0, step=5.0,
+                    help="Slow scenario: days for odds to double.")
+                if pqa_custom_dt_lo > pqa_custom_dt_hi:
+                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.stop()
+
+                _pqa_cur = pqa_all[pqa_proj_as_of_idx]
+                _pqa_def_score = _pqa_cur['pqa_score']
+                _pqa_pos_lo_col, _pqa_pos_hi_col = st.columns(2)
+                pqa_custom_pos_lo = _ss_number_input(_pqa_pos_lo_col,
+                    "Pos CI low (%)", "pqa_custom_pos_lo", round(max(_pqa_def_score - 1.0, 0.1), 2),
+                    min_value=0.01, step=0.1)
+                pqa_custom_pos_hi = _ss_number_input(_pqa_pos_hi_col,
+                    "Pos CI high (%)", "pqa_custom_pos_hi", round(_pqa_def_score + 1.0, 2),
+                    step=0.1)
+
+                pqa_custom_dt_dist = st.radio(
+                    "Trend distribution", ["Normal", "Lognormal", "Log-log"],
+                    horizontal=True, key="pqa_custom_dt_dist")
+                pqa_custom_pos_dist = st.radio(
+                    "Position distribution", ["Normal", "Lognormal"],
+                    horizontal=True, key="pqa_custom_pos_dist")
+
+        # --- Superexponential controls ---
+        pqa_superexp_dt_initial = pqa_superexp_halflife = None
+        pqa_superexp_dt_ci_lo = pqa_superexp_dt_ci_hi = None
+        pqa_superexp_pos_lo = pqa_superexp_pos_hi = None
+        pqa_superexp_dt_floor = 10
+        pqa_is_superexp = False
+        if pqa_proj_basis == "Superexponential (logit)":
+            pqa_is_superexp = True
+            _pqa_default_dt_init = 100.0
+            if len(pqa_all[:pqa_proj_as_of_idx + 1]) >= 2:
+                _pqa_base = pqa_all[0]['date']
+                _pqa_fr = pqa_all[:pqa_proj_as_of_idx + 1]
+                _pqa_fd = np.array([(m['date'] - _pqa_base).days for m in _pqa_fr], dtype=float)
+                _pqa_flogit = _logit(np.array([m['pqa_score'] / 100 for m in _pqa_fr]))
+                _pqa_fp = fit_line(_pqa_fd, _pqa_flogit)
+                if _pqa_fp[1] > 0:
+                    _pqa_default_dt_init = round(np.log(2) / _pqa_fp[1], 0)
+
+            _pqa_pre_se_halflife = 365
+            _pqa_pre_se_z = 2 ** (_pqa_pre_days / _pqa_pre_se_halflife)
+            _pqa_pre_se_X = np.column_stack([np.ones_like(_pqa_pre_se_z), _pqa_pre_se_z])
+            (_pqa_pre_se_A, _pqa_pre_se_K), *_ = np.linalg.lstsq(_pqa_pre_se_X, _pqa_pre_logit, rcond=None)
+            _pqa_pre_se_d_last = _pqa_pre_days[-1]
+            if _pqa_pre_se_K > 0:
+                _pqa_pre_se_logit_slope = _pqa_pre_se_K * np.log(2) * 2 ** (_pqa_pre_se_d_last / _pqa_pre_se_halflife) / _pqa_pre_se_halflife
+                _pqa_pre_se_dt = round(np.log(2) / _pqa_pre_se_logit_slope, 0)
+            else:
+                _pqa_pre_se_dt = _pqa_pre_dt
+            _pqa_default_se_dt_lo = float(round(max(5.0, _pqa_pre_se_dt / 2), 0))
+            _pqa_default_se_dt_hi = float(round(_pqa_pre_se_dt * 2, 0))
+
+            with st.expander("Advanced options"):
+                st.button("Reset to defaults", key="reset_pqa_superexp",
+                          on_click=lambda: st.session_state.update(_reset_pqa=True))
+                _pqa_se_col1, _pqa_se_col2 = st.columns(2)
+                pqa_superexp_dt_initial = _ss_number_input(_pqa_se_col1,
+                    "Initial odds 2x time (days)", "pqa_superexp_dt_init", _pqa_default_dt_init,
+                    min_value=5.0, max_value=2000.0, step=5.0)
+                pqa_superexp_halflife = _ss_number_input(_pqa_se_col2,
+                    "Rate half-life (days)", "pqa_superexp_halflife", 365,
+                    min_value=30, max_value=5000, step=30,
+                    help="How quickly rate grows. Lower = faster.")
+                pqa_superexp_dt_floor_input = _ss_number_input(st,
+                    "Min odds 2x time (days)", "pqa_superexp_dt_floor", 15.0,
+                    min_value=1.0, max_value=500.0, step=1.0,
+                    help="Rate can't exceed this. Prevents runaway projections.")
+                pqa_superexp_dt_floor = pqa_superexp_dt_floor_input
+                _pqa_se_ci1, _pqa_se_ci2 = st.columns(2)
+                pqa_superexp_dt_ci_lo = _ss_number_input(_pqa_se_ci1,
+                    "Odds 2x CI low (days)", "pqa_superexp_dt_ci_lo", _pqa_default_se_dt_lo,
+                    min_value=5.0, max_value=2000.0, step=5.0)
+                pqa_superexp_dt_ci_hi = _ss_number_input(_pqa_se_ci2,
+                    "Odds 2x CI high (days)", "pqa_superexp_dt_ci_hi", _pqa_default_se_dt_hi,
+                    min_value=5.0, max_value=5000.0, step=5.0)
+                if pqa_superexp_dt_ci_lo > pqa_superexp_dt_ci_hi:
+                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.stop()
+                _pqa_cur = pqa_all[pqa_proj_as_of_idx]
+                _pqa_def_score = _pqa_cur['pqa_score']
+                _pqa_se_pos1, _pqa_se_pos2 = st.columns(2)
+                pqa_superexp_pos_lo = _ss_number_input(_pqa_se_pos1,
+                    "Pos CI low (%)", "pqa_superexp_pos_lo", round(max(_pqa_def_score - 1.0, 0.1), 2),
+                    min_value=0.01, step=0.1)
+                pqa_superexp_pos_hi = _ss_number_input(_pqa_se_pos2,
+                    "Pos CI high (%)", "pqa_superexp_pos_hi", round(_pqa_def_score + 1.0, 2),
+                    step=0.1)
+
+        st.markdown("---")
+        pqa_show_milestones = st.toggle("Milestones", key="pqa_milestones")
+        pqa_show_labels = st.toggle("Labels", key="pqa_labels")
+        pqa_use_log_scale = st.toggle("Log scale", key="pqa_log_scale")
+
+        st.markdown("---")
+        with st.expander("Projection range"):
+            st.selectbox(
+                "Project as of",
+                pqa_all_names,
+                index=pqa_all_names.index(pqa_proj_as_of_name),
+                key='_pqa_proj_as_of',
+                help="Backtest: project from an earlier model's vantage point.",
+            )
+            _pqa_end_year = st.radio(
+                "Project through", [2027, 2028, 2029, 2030],
+                horizontal=True, key="pqa_end_year")
+
+    # ── Build data arrays (uses ALL points, not just frontier) ───────────────
+    pqa_used = pqa_all[:pqa_proj_as_of_idx + 1]
+
+    base_date = pqa_all[0]['date']
+    days_all_pqa = np.array([(m['date'] - base_date).days for m in pqa_all], dtype=float)
+    scores_all_pqa = np.array([m['pqa_score'] for m in pqa_all])
+    logit_all_pqa = _logit(scores_all_pqa / 100)
+
+    _pqa_fit_start = 0
+    _pqa_fit_end = pqa_proj_as_of_idx + 1
+    pqa_used = pqa_all[_pqa_fit_start:_pqa_fit_end]
+    days_used = days_all_pqa[_pqa_fit_start:_pqa_fit_end]
+    logit_used = logit_all_pqa[_pqa_fit_start:_pqa_fit_end]
+    n_used = len(pqa_used)
+
+    if pqa_proj_basis in ("Linear (logit)", "Piecewise linear (logit)"):
+        if pqa_piecewise_n_segments >= 2:
+            _pqa_bp_names_used = [m['name'] for m in pqa_used]
+            _pqa_seg_break_idxs = []
+            for bp_name in pqa_piecewise_breakpoints:
+                if bp_name in _pqa_bp_names_used:
+                    _pqa_seg_break_idxs.append(_pqa_bp_names_used.index(bp_name))
+            _pqa_last_seg_start = _pqa_seg_break_idxs[-1] if _pqa_seg_break_idxs else 0
+            _pqa_last_seg_range = list(range(_pqa_last_seg_start, n_used))
+            _pqa_params = fit_line(days_used[_pqa_last_seg_range], logit_used[_pqa_last_seg_range])
+        else:
+            _pqa_params = fit_line(days_used, logit_used)
+
+        _pqa_current_day = (pqa_used[-1]['date'] - base_date).days
+        if pqa_piecewise_n_segments >= 2:
+            _pqa_seg_d = days_used[_pqa_last_seg_range]
+            _pqa_seg_y = logit_used[_pqa_last_seg_range]
+        else:
+            _pqa_seg_d = days_used
+            _pqa_seg_y = logit_used
+        _pqa_intercept = np.mean(_pqa_seg_y - _pqa_params[1] * _pqa_seg_d)
+        _pqa_fitted_logit = _pqa_intercept + _pqa_params[1] * _pqa_current_day
+
+        n_pqa = 5000
+        if pqa_custom_dt_dist == "Log-log":
+            pqa_proj_dt = _log_lognormal_from_ci(pqa_custom_dt_lo, pqa_custom_dt_hi, n_pqa)
+        elif pqa_custom_dt_dist == "Lognormal":
+            pqa_proj_dt = _lognormal_from_ci(pqa_custom_dt_lo, pqa_custom_dt_hi, n_pqa)
+        else:
+            pqa_proj_dt = _normal_from_ci(pqa_custom_dt_lo, pqa_custom_dt_hi, n_pqa)
+
+        pqa_proj_logit_slope = np.log(2) / pqa_proj_dt
+
+        if pqa_custom_pos_dist == "Lognormal":
+            _pqa_pos_logit_lo = _logit(pqa_custom_pos_lo / 100)
+            _pqa_pos_logit_hi = _logit(pqa_custom_pos_hi / 100)
+            _pqa_pos_offset = 10
+            _pqa_pos_sigma = (np.log(_pqa_pos_logit_hi + _pqa_pos_offset) - np.log(_pqa_pos_logit_lo + _pqa_pos_offset)) / (2 * 1.282)
+            _pqa_pos_mu = np.log(_pqa_fitted_logit + _pqa_pos_offset)
+            pqa_proj_start_logit = np.random.lognormal(_pqa_pos_mu, max(_pqa_pos_sigma, 0), n_pqa) - _pqa_pos_offset
+        else:
+            _pqa_pos_logit_lo = _logit(pqa_custom_pos_lo / 100)
+            _pqa_pos_logit_hi = _logit(pqa_custom_pos_hi / 100)
+            _pqa_pos_sigma = (_pqa_pos_logit_hi - _pqa_pos_logit_lo) / (2 * 1.282)
+            pqa_proj_start_logit = np.random.normal(_pqa_fitted_logit, max(_pqa_pos_sigma, 0), n_pqa)
+
+    elif pqa_proj_basis == "Superexponential (logit)":
+        _pqa_se_days = np.array([(m['date'] - base_date).days for m in pqa_used], dtype=float)
+        _pqa_se_logit = _logit(np.array([m['pqa_score'] / 100 for m in pqa_used]))
+        _pqa_se_z = 2 ** (_pqa_se_days / pqa_superexp_halflife)
+        _pqa_se_X = np.column_stack([np.ones_like(_pqa_se_z), _pqa_se_z])
+        (_pqa_se_A, _pqa_se_K), *_ = np.linalg.lstsq(_pqa_se_X, _pqa_se_logit, rcond=None)
+
+        _pqa_se_current_day = (pqa_used[-1]['date'] - base_date).days
+        _pqa_se_fitted_logit = _pqa_se_A + _pqa_se_K * 2 ** (_pqa_se_current_day / pqa_superexp_halflife)
+
+        if _pqa_se_K > 0:
+            _pqa_se_logit_slope = _pqa_se_K * np.log(2) * 2 ** (_pqa_se_current_day / pqa_superexp_halflife) / pqa_superexp_halflife
+            pqa_superexp_dt_fitted = np.log(2) / _pqa_se_logit_slope
+        else:
+            pqa_superexp_dt_fitted = float('inf')
+
+        n_pqa = 5000
+        pqa_proj_dt = _lognormal_from_ci(pqa_superexp_dt_ci_lo, pqa_superexp_dt_ci_hi, n_pqa)
+        pqa_proj_logit_slope = np.log(2) / pqa_proj_dt
+
+        _pqa_se_pos_logit_lo = _logit(pqa_superexp_pos_lo / 100)
+        _pqa_se_pos_logit_hi = _logit(pqa_superexp_pos_hi / 100)
+        _pqa_se_pos_sigma = (_pqa_se_pos_logit_hi - _pqa_se_pos_logit_lo) / (2 * 1.282)
+        pqa_proj_start_logit = np.random.normal(_pqa_se_fitted_logit, max(_pqa_se_pos_sigma, 0), n_pqa)
+
+    # ── Current model (last in "as of" window) ───────────────────────────
+    pqa_current = pqa_used[-1]
+    pqa_current_score = pqa_current['pqa_score']
+
+    # ── Build trajectories ────────────────────────────────────────────────
+    proj_end_date = datetime(_pqa_end_year, 12, 31)
+    proj_n_days = (proj_end_date - pqa_current['date']).days + 1
+    proj_days_arr = np.arange(0, proj_n_days, 1)
+    proj_dates = [pqa_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
+
+    n_samples = len(pqa_proj_dt)
+    if pqa_is_superexp:
+        all_logit_traj = pqa_proj_start_logit[:, None] + np.log(2) * superexp_trajectory(
+            proj_days_arr, pqa_proj_dt, pqa_superexp_halflife, pqa_superexp_dt_floor)
+    else:
+        all_logit_traj = pqa_proj_start_logit[:, None] + proj_days_arr[None, :] * pqa_proj_logit_slope[:, None]
+
+    all_trajectories = _inv_logit(all_logit_traj) * 100
+
+    pct5 = np.percentile(all_trajectories, 5, axis=0)
+    pct10 = np.percentile(all_trajectories, 10, axis=0)
+    pct25 = np.percentile(all_trajectories, 25, axis=0)
+    pct50 = np.percentile(all_trajectories, 50, axis=0)
+    pct75 = np.percentile(all_trajectories, 75, axis=0)
+    pct90 = np.percentile(all_trajectories, 90, axis=0)
+    pct95 = np.percentile(all_trajectories, 95, axis=0)
+
+    fig = go.Figure()
+
+    # --- Fan bands ---
+    bands_spec = [
+        (pct5, pct95, 'rgba(52,152,219,0.10)', '90% CI'),
+        (pct10, pct90, 'rgba(52,152,219,0.18)', '80% CI'),
+        (pct25, pct75, 'rgba(52,152,219,0.28)', '50% CI'),
+    ]
+    for lo, hi, color, label in bands_spec:
+        x_poly = proj_dates + proj_dates[::-1]
+        y_poly = list(hi) + list(lo[::-1])
+        fig.add_trace(go.Scatter(
+            x=x_poly, y=y_poly,
+            fill='toself', fillcolor=color,
+            line=dict(width=0),
+            name=label, hoverinfo='skip', showlegend=True,
+        ))
+
+    # --- Trend line (in logit space, converted back) ---
+    if pqa_proj_basis in ("Linear (logit)", "Piecewise linear (logit)"):
+        _seg_colors = ['#e74c3c', '#f39c12', '#27ae60']
+        if pqa_piecewise_n_segments >= 2:
+            _pqa_bp_names_used = [m['name'] for m in pqa_used]
+            _pqa_break_idxs = []
+            for bp_name in pqa_piecewise_breakpoints:
+                if bp_name in _pqa_bp_names_used:
+                    _pqa_break_idxs.append(_pqa_bp_names_used.index(bp_name))
+            _pqa_seg_bounds = [0] + _pqa_break_idxs + [n_used]
+            _pqa_segments = []
+            for si in range(len(_pqa_seg_bounds) - 1):
+                end = _pqa_seg_bounds[si + 1] + 1 if si < len(_pqa_seg_bounds) - 2 else _pqa_seg_bounds[si + 1]
+                _pqa_segments.append(list(range(_pqa_seg_bounds[si], min(end, n_used))))
+            for si, seg_idx in enumerate(_pqa_segments):
+                if len(seg_idx) < 2:
+                    continue
+                seg_params = fit_line(days_used[seg_idx], logit_used[seg_idx])
+                seg_dt = np.log(2) / seg_params[1] if seg_params[1] > 0 else float('inf')
+                is_last = (si == len(_pqa_segments) - 1)
+                if is_last:
+                    d0 = int(days_used[seg_idx[0]])
+                    d_last = int(days_used[seg_idx[-1]])
+                    days_range = np.arange(d0, d_last + 1, 1)
+                    logit_trend = seg_params[0] + seg_params[1] * days_range
+                    y_trend = _inv_logit(logit_trend) * 100
+                    dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
+                    hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_seg, y_trend)]
+                    fig.add_trace(go.Scatter(
+                        x=dates_seg, y=y_trend.tolist(),
+                        mode='lines', line=dict(color='#2c3e50', width=2.5),
+                        name=f'Segment {si+1} (2x odds: {seg_dt:.0f}d)',
+                        hovertext=hover_seg, hoverinfo='text',
+                    ))
+                    _user_dt_center = np.sqrt(pqa_custom_dt_lo * pqa_custom_dt_hi)
+                    _user_logit_slope = np.log(2) / _user_dt_center
+                    _ols_logit_at_last = seg_params[0] + seg_params[1] * d_last
+                    _proj_intercept = _ols_logit_at_last - _user_logit_slope * d_last
+                    d1 = (proj_end_date - base_date).days
+                    days_proj = np.arange(d_last, d1 + 1, 1)
+                    logit_proj = _proj_intercept + _user_logit_slope * days_proj
+                    y_proj = _inv_logit(logit_proj) * 100
+                    dates_proj = [base_date + timedelta(days=int(d)) for d in days_proj]
+                    hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
+                    fig.add_trace(go.Scatter(
+                        x=dates_proj, y=y_proj.tolist(),
+                        mode='lines', line=dict(color='#2980b9', width=2.5),
+                        name=f'Projection (2x odds: {_user_dt_center:.0f}d, CI {pqa_custom_dt_lo}\u2013{pqa_custom_dt_hi}d)',
+                        hovertext=hover_proj, hoverinfo='text',
+                    ))
+                else:
+                    d0 = int(days_used[seg_idx[0]])
+                    d1 = int(days_used[seg_idx[-1]])
+                    days_range = np.arange(d0, d1 + 1, 1)
+                    logit_trend = seg_params[0] + seg_params[1] * days_range
+                    y_trend = _inv_logit(logit_trend) * 100
+                    dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
+                    hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_seg, y_trend)]
+                    fig.add_trace(go.Scatter(
+                        x=dates_seg, y=y_trend.tolist(),
+                        mode='lines', line=dict(color=_seg_colors[si % len(_seg_colors)], width=2, dash='dash'),
+                        name=f'Segment {si+1} (2x odds: {seg_dt:.0f}d)',
+                        hovertext=hover_seg, hoverinfo='text',
+                    ))
+        else:
+            pqa_ols_params = fit_line(days_used, logit_used)
+            pqa_ols_dt = np.log(2) / pqa_ols_params[1] if pqa_ols_params[1] > 0 else float('inf')
+            d0 = int(days_used[0])
+            d_last = int(days_used[-1])
+            days_range = np.arange(d0, d_last + 1, 1)
+            logit_trend = pqa_ols_params[0] + pqa_ols_params[1] * days_range
+            y_trend = _inv_logit(logit_trend) * 100
+            dates_seg = [base_date + timedelta(days=int(d)) for d in days_range]
+            hover_seg = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_seg, y_trend)]
+            fig.add_trace(go.Scatter(
+                x=dates_seg, y=y_trend.tolist(),
+                mode='lines', line=dict(color='#2c3e50', width=2.5),
+                name=f'OLS trend (2x odds: {pqa_ols_dt:.0f}d)',
+                hovertext=hover_seg, hoverinfo='text',
+            ))
+            _user_dt_center = np.sqrt(pqa_custom_dt_lo * pqa_custom_dt_hi)
+            _user_logit_slope = np.log(2) / _user_dt_center
+            _ols_logit_at_last = pqa_ols_params[0] + pqa_ols_params[1] * d_last
+            _proj_intercept = _ols_logit_at_last - _user_logit_slope * d_last
+            d1 = (proj_end_date - base_date).days
+            days_proj = np.arange(d_last, d1 + 1, 1)
+            logit_proj = _proj_intercept + _user_logit_slope * days_proj
+            y_proj = _inv_logit(logit_proj) * 100
+            dates_proj = [base_date + timedelta(days=int(d)) for d in days_proj]
+            hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
+            fig.add_trace(go.Scatter(
+                x=dates_proj, y=y_proj.tolist(),
+                mode='lines', line=dict(color='#2980b9', width=2.5),
+                name=f'Projection (2x odds: {_user_dt_center:.0f}d, CI {pqa_custom_dt_lo}\u2013{pqa_custom_dt_hi}d)',
+                hovertext=hover_proj, hoverinfo='text',
+            ))
+    elif pqa_proj_basis == "Superexponential (logit)":
+        d_start = int(days_used[0])
+        d_last = int(days_used[-1])
+        days_hist = np.arange(d_start, d_last + 1, 1)
+        logit_hist = _pqa_se_A + _pqa_se_K * 2 ** (days_hist / pqa_superexp_halflife)
+        y_hist = _inv_logit(logit_hist) * 100
+        dates_hist = [base_date + timedelta(days=int(d)) for d in days_hist]
+        hover_hist = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_hist, y_hist)]
+        fig.add_trace(go.Scatter(
+            x=dates_hist, y=y_hist.tolist(),
+            mode='lines', line=dict(color='#2c3e50', width=2.5),
+            name=f'Superexp fit (2x odds: {pqa_superexp_dt_fitted:.0f}d, HL={pqa_superexp_halflife}d)',
+            hovertext=hover_hist, hoverinfo='text',
+        ))
+        _pqa_user_dt = np.sqrt(pqa_superexp_dt_ci_lo * pqa_superexp_dt_ci_hi)
+        d_end = (proj_end_date - base_date).days
+        days_proj = np.arange(0, d_end - d_last + 1, 1)
+        logit_proj_growth = np.log(2) * superexp_trajectory(
+            days_proj, _pqa_user_dt, pqa_superexp_halflife, pqa_superexp_dt_floor)
+        logit_proj = _pqa_se_fitted_logit + logit_proj_growth
+        y_proj = _inv_logit(logit_proj) * 100
+        dates_proj = [pqa_current['date'] + timedelta(days=int(d)) for d in days_proj]
+        hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
+        fig.add_trace(go.Scatter(
+            x=dates_proj, y=y_proj.tolist(),
+            mode='lines', line=dict(color='#2980b9', width=2.5),
+            name=f'Projection (2x odds: {_pqa_user_dt:.0f}d, CI {pqa_superexp_dt_ci_lo}\u2013{pqa_superexp_dt_ci_hi}d)',
+            hovertext=hover_proj, hoverinfo='text',
+        ))
+
+    # --- Milestone hlines ---
+    if pqa_show_milestones:
+        x_lo = pqa_all[0]['date'] - timedelta(days=30)
+        x_hi = proj_end_date
+        for score_val, label, color in [
+            (10,  "10%",  '#888888'),
+            (25, "25%", '#666666'),
+            (50, "50%", '#c0392b'),
+        ]:
+            fig.add_trace(go.Scatter(
+                x=[x_lo, x_hi], y=[score_val, score_val],
+                mode='lines', line=dict(color=color, width=1.2, dash='dot'),
+                hoverinfo='skip', showlegend=False,
+            ))
+            fig.add_annotation(
+                x=1.0, xref='paper', y=score_val, text=f"  {label}",
+                showarrow=False, xanchor='left', yanchor='middle',
+                font=dict(size=10, color=color))
+
+    # --- Today vline ---
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
+    fig.add_annotation(
+        x=today, y=1.0, yref='paper', text='Today', showarrow=False,
+        font=dict(size=10, color='gray'), yanchor='top')
+
+    # --- Backtesting ---
+    pqa_is_backtesting = pqa_proj_as_of_idx < len(pqa_all) - 1
+    pqa_backtest_results = []
+    _pqa_bt_lookup = {}
+    if pqa_is_backtesting:
+        _pqa_bt_future = pqa_all[pqa_proj_as_of_idx + 1:]
+        pqa_backtest_results = _backtest_stats(
+            _pqa_bt_future, all_trajectories, pqa_current['date'], proj_end_date,
+            lambda m: m['pqa_score'],
+            lambda m: m['name'],
+        )
+        _pqa_bt_lookup = {r['name']: r for r in pqa_backtest_results}
+
+    # --- Data points (all models, since fit uses all points) ---
+    for idx_m, m in enumerate(pqa_all):
+        is_used = idx_m <= pqa_proj_as_of_idx
+        is_selected = idx_m == pqa_proj_as_of_idx
+        is_frontier = m['is_frontier']
+        hover = f"{m['name']}<br>{m['date'].strftime('%b %d, %Y')}<br>Score: {m['pqa_score']:.2f}%"
+        if is_frontier:
+            hover += " (frontier)"
+
+        if is_used:
+            color = '#e74c3c' if is_selected else ('#4F8DFD' if is_frontier else '#7BAAF7')
+            sym = 'star' if is_selected else ('circle' if is_frontier else 'diamond')
+            sz = 14 if is_selected else (10 if is_frontier else 8)
+            fig.add_trace(go.Scatter(
+                x=[m['date']], y=[m['pqa_score']],
+                mode='markers' + ('+text' if pqa_show_labels else ''),
+                marker=dict(color=color, size=sz, symbol=sym,
+                            line=dict(color='white', width=1)),
+                text=[m['name']] if pqa_show_labels else None,
+                textposition='top right',
+                textfont=dict(size=9, color='#c0392b' if is_selected else '#1a1a2e'),
+                hovertext=hover, hoverinfo='text', showlegend=False,
+            ))
+        else:
+            _pqa_bt_name = m['name']
+            if pqa_is_backtesting and _pqa_bt_name in _pqa_bt_lookup:
+                r = _pqa_bt_lookup[_pqa_bt_name]
+                _btc = _bt_color_for(r)
+                _bt_label = f"{_pqa_bt_name} (p{r['percentile']:.0f})"
+                fig.add_trace(go.Scatter(
+                    x=[m['date']], y=[m['pqa_score']],
+                    mode='markers+text',
+                    marker=dict(color=_btc, size=12, symbol='diamond',
+                                line=dict(color='white', width=1)),
+                    text=[_bt_label],
+                    textposition='top right',
+                    textfont=dict(size=9, color=_btc),
+                    hovertext=hover + f"<br>Percentile: {r['percentile']:.0f}%",
+                    hoverinfo='text', showlegend=False,
+                ))
+            else:
+                fig.add_trace(go.Scatter(
+                    x=[m['date']], y=[m['pqa_score']],
+                    mode='markers' + ('+text' if pqa_show_labels else ''),
+                    marker=dict(color='#aaaaaa', size=10, symbol='circle-open',
+                                line=dict(color='#777777', width=2)),
+                    text=[m['name']] if pqa_show_labels else None,
+                    textposition='top right',
+                    textfont=dict(size=9, color='#999999'),
+                    hovertext=hover, hoverinfo='text', showlegend=False,
+                ))
+
+    # --- Backtest overlay ---
+    if pqa_is_backtesting and pqa_backtest_results:
+        _add_backtest_traces(fig, pqa_backtest_results, pqa_current['date'])
+
+    # --- Layout ---
+    if pqa_use_log_scale:
+        _pqa_y_min_data = min(m['pqa_score'] for m in pqa_all)
+        y_min = _pqa_y_min_data * 0.5
+        y_max = min(max(pct95[-1], max(m['pqa_score'] for m in pqa_all) + 2, 55) + 5, 105)
+        yaxis_cfg = dict(
+            title="Proof QA Score (%, log scale)",
+            type='log',
+            range=[np.log10(y_min), np.log10(y_max)],
+            gridcolor='rgba(0,0,0,0.1)',
+            zeroline=False,
+            ticksuffix='%',
+            tickfont=dict(color='#1a1a2e'),
+            title_font=dict(color='#1a1a2e'),
+        )
+    else:
+        y_max = min(max(pct95[-1], max(m['pqa_score'] for m in pqa_all) + 2, 55) + 5, 105)
+        yaxis_cfg = dict(
+            title="Proof QA Score (%)",
+            range=[0, y_max],
+            gridcolor='rgba(0,0,0,0.1)',
+            zeroline=False,
+            ticksuffix='%',
+            tickfont=dict(color='#1a1a2e'),
+            title_font=dict(color='#1a1a2e'),
+        )
+
+    fig.update_layout(
+        height=650,
+        margin=dict(l=50, r=140, t=50, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(
+            range=[pqa_all[0]['date'] - timedelta(days=30),
+                   proj_end_date + timedelta(days=30)],
+            gridcolor='rgba(0,0,0,0.1)',
+            tickfont=dict(color='#1a1a2e'),
+            zeroline=False,
+        ),
+        yaxis=yaxis_cfg,
+        hovermode='x unified',
+        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
+                    bgcolor='rgba(255,255,255,0.95)',
+                    font=dict(color='#1a1a2e')),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+    )
+
+    # ── Render chart + metrics ──────────────────────────────────────────────
+    st.plotly_chart(fig, width="stretch")
+    if pqa_is_backtesting and pqa_backtest_results:
+        _backtest_summary(pqa_backtest_results)
+
+    # ── Projections row ───────────────────────────────────────────────────
+    pqa_start_logit = pqa_proj_start_logit
+    pqa_current_label = pqa_current['name']
+
+    eoy_targets = [
+        ("Projected today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
+        ("2026 Jun EOM", datetime(2026, 6, 30)),
+        ("2026EOY", datetime(2026, 12, 31)),
+        ("2027EOY", datetime(2027, 12, 31)),
+        ("2028EOY", datetime(2028, 12, 31)),
+        ("2029EOY", datetime(2029, 12, 31)),
+    ]
+
+    def _proj_pqa_at(elapsed_days, start_logit, logit_slopes, superexp=False, hl=None, slope_floor_val=None):
+        """Project Proof QA score forward by elapsed_days. Returns percentage (0-100)."""
+        if superexp and hl is not None:
+            if slope_floor_val is not None and slope_floor_val > 0:
+                t_cap = np.where(logit_slopes < slope_floor_val, hl * np.log2(slope_floor_val / logit_slopes), 0.0)
+                se_phase = np.minimum(elapsed_days, t_cap)
+                logit_se = (hl / np.log(2)) * logit_slopes * (2**(se_phase / hl) - 1)
+                logit_lin = np.maximum(elapsed_days - t_cap, 0) * slope_floor_val
+                logit_total = logit_se + logit_lin
+            else:
+                logit_total = (hl / np.log(2)) * logit_slopes * (2**(elapsed_days / hl) - 1)
+        else:
+            logit_total = elapsed_days * logit_slopes
+        return _inv_logit(start_logit + logit_total) * 100
+
+    _pqa_slope_floor = np.log(2) / pqa_superexp_dt_floor if pqa_is_superexp else None
+
+    all_targets = [
+        (f"{pqa_current_label} ({pqa_current['date'].strftime('%b %Y')})", pqa_current['date']),
+    ] + eoy_targets
+    n_all_cols = len(all_targets)
+    cols = st.columns([1.2] + [1] * (n_all_cols - 1))
+    for col, (label, target_date) in zip(cols, all_targets):
+        elapsed = (target_date - pqa_current['date']).days
+        proj_scores = _proj_pqa_at(
+            elapsed, pqa_start_logit, pqa_proj_logit_slope,
+            pqa_is_superexp, pqa_superexp_halflife, _pqa_slope_floor)
+        p10_s, p50_s, p90_s = np.percentile(proj_scores, [10, 50, 90])
+        display_s = pqa_current_score if elapsed == 0 else p50_s
+        with col:
+            st.metric(label=label, value=f"{display_s:.1f}%")
+            st.caption(f"80% CI: {p10_s:.1f}% \u2013 {p90_s:.1f}%")
+
+    # Milestone tables
+    pqa_milestone_thresholds = [
+        (10,  "10%"),
+        (25, "25%"),
+        (50, "50%"),
+    ]
+
+    with st.expander("Milestone details"):
+        tcol1, tcol2 = st.columns(2)
+
+        with tcol1:
+            st.markdown("**Probabilities**")
+            rows = []
+            for score_threshold, ms_label in pqa_milestone_thresholds:
+                row = {"Milestone": ms_label}
+                for eoy_label, target_date in eoy_targets:
+                    elapsed = (target_date - pqa_current['date']).days
+                    proj_scores = _proj_pqa_at(
+                        elapsed, pqa_start_logit, pqa_proj_logit_slope,
+                        pqa_is_superexp, pqa_superexp_halflife, _pqa_slope_floor)
+                    prob = np.mean(proj_scores >= score_threshold) * 100
+                    row[eoy_label] = f"{prob:.0f}%"
+                rows.append(row)
+            st.table(rows)
+
+        with tcol2:
+            st.markdown("**Estimated arrival**")
+            arrival_rows = []
+            for score_threshold, ms_label in pqa_milestone_thresholds:
+                logit_threshold = _logit(score_threshold / 100)
+                logit_needed = logit_threshold - pqa_start_logit
+                if pqa_is_superexp and pqa_superexp_halflife is not None:
+                    slope_fl = np.log(2) / pqa_superexp_dt_floor
+                    t_cap = np.where(pqa_proj_logit_slope < slope_fl,
+                                     pqa_superexp_halflife * np.log2(slope_fl / pqa_proj_logit_slope), 0.0)
+                    logit_at_cap = (pqa_superexp_halflife / np.log(2)) * pqa_proj_logit_slope * (2**(t_cap / pqa_superexp_halflife) - 1)
+                    arg = 1 + logit_needed * np.log(2) / (pqa_proj_logit_slope * pqa_superexp_halflife)
+                    arg = np.maximum(arg, 1e-10)
+                    days_se_only = pqa_superexp_halflife * np.log2(arg)
+                    leftover = np.maximum(logit_needed - logit_at_cap, 0)
+                    days_with_floor = t_cap + leftover / slope_fl
+                    days_to = np.where(logit_needed <= logit_at_cap, days_se_only, days_with_floor)
+                else:
+                    days_to = logit_needed / pqa_proj_logit_slope
+                days_to = np.maximum(days_to, 0)
+                p10_d, p50_d, p90_d = np.percentile(days_to, [10, 50, 90])
+                med_date = pqa_current['date'] + timedelta(days=max(p50_d, 0))
+                early_date = pqa_current['date'] + timedelta(days=max(p10_d, 0))
+                late_date = pqa_current['date'] + timedelta(days=max(p90_d, 0))
+                arrival_rows.append({
+                    "Milestone": ms_label,
+                    "Median": med_date.strftime('%b %Y'),
+                    "80% CI": f"{early_date.strftime('%b %Y')} \u2013 {late_date.strftime('%b %Y')}",
+                })
+            st.table(arrival_rows)
+
+    st.caption("Fine print: OpenAI Proof QA scores from OpenAI. Projections use logit-space fitting to keep scores bounded 0\u2013100%." + PROJ_DISCLAIMER)
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
 if not os.environ.get("_VP_TESTING"):
@@ -4508,3 +5298,5 @@ if not os.environ.get("_VP_TESTING"):
         render_employment()
     elif active_tab == "ECI Company Gap":
         render_eci_gap()
+    elif active_tab == "Proof QA":
+        render_proofqa()
