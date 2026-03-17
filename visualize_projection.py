@@ -5138,9 +5138,8 @@ def render_proofqa():
 
         if is_used:
             if is_inferred:
-                # Dashed outline for inferred points
                 color = '#e67e22'
-                sym = 'diamond-open'
+                sym = 'square'
                 sz = 12
             elif is_selected:
                 color = '#e74c3c'
@@ -5158,17 +5157,43 @@ def render_proofqa():
                 x=[m['date']], y=[m['pqa_score']],
                 mode='markers' + ('+text' if pqa_show_labels else ''),
                 marker=dict(color=color, size=sz, symbol=sym,
-                            line=dict(color=color if is_inferred else 'white',
-                                      width=2.5 if is_inferred else 1)),
+                            line=dict(color='white', width=1)),
                 text=[m['name']] if pqa_show_labels else None,
                 textposition='top right',
                 textfont=dict(size=9, color='#e67e22' if is_inferred else
                               ('#c0392b' if is_selected else '#1a1a2e')),
                 hovertext=hover, hoverinfo='text', showlegend=False,
             ))
+            if is_inferred:
+                fig.add_annotation(
+                    x=m['date'], y=m['pqa_score'],
+                    text="inferred", showarrow=True, arrowhead=2,
+                    ax=0, ay=-30,
+                    font=dict(size=9, color='#e67e22'),
+                    arrowcolor='#e67e22',
+                )
         else:
             _pqa_bt_name = m['name']
-            if pqa_is_backtesting and _pqa_bt_name in _pqa_bt_lookup:
+            if is_inferred:
+                # Always show inferred points distinctly, even in future section
+                fig.add_trace(go.Scatter(
+                    x=[m['date']], y=[m['pqa_score']],
+                    mode='markers+text',
+                    marker=dict(color='#e67e22', size=12, symbol='square',
+                                line=dict(color='white', width=1)),
+                    text=[m['name']],
+                    textposition='top right',
+                    textfont=dict(size=9, color='#e67e22'),
+                    hovertext=hover, hoverinfo='text', showlegend=False,
+                ))
+                fig.add_annotation(
+                    x=m['date'], y=m['pqa_score'],
+                    text="inferred", showarrow=True, arrowhead=2,
+                    ax=0, ay=-30,
+                    font=dict(size=9, color='#e67e22'),
+                    arrowcolor='#e67e22',
+                )
+            elif pqa_is_backtesting and _pqa_bt_name in _pqa_bt_lookup:
                 r = _pqa_bt_lookup[_pqa_bt_name]
                 _btc = _bt_color_for(r)
                 _bt_label = f"{_pqa_bt_name} (p{r['percentile']:.0f})"
