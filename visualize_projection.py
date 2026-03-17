@@ -449,13 +449,67 @@ _PROOFQA_RAW = [
 ]
 
 
+def _infer_proofqa_codex(raw):
+    """Infer missing Codex scores from Codex/Thinking pairs.
+
+    For each generation with a Thinking score but no Codex score, estimate the
+    Codex score using the average Codex/Thinking ratio from complete pairs.
+    """
+    # Parse generation prefix: "GPT 5.2 Thinking" → "GPT 5.2"
+    def _gen(name):
+        for suffix in (" Thinking", " Codex", " Codex Max", " No Browsing"):
+            if name.endswith(suffix):
+                return name[:-len(suffix)]
+        return None
+
+    # Collect Codex/Thinking ratios from complete pairs
+    by_gen = {}
+    for r in raw:
+        gen = _gen(r['name'])
+        if gen is None:
+            continue
+        by_gen.setdefault(gen, {})
+        if 'Codex' in r['name']:
+            by_gen[gen]['codex'] = r['pqa_score']
+        elif 'Thinking' in r['name']:
+            by_gen[gen]['thinking'] = r['pqa_score']
+
+    ratios = []
+    for gen, scores in by_gen.items():
+        if 'codex' in scores and 'thinking' in scores and scores['thinking'] > 0:
+            ratios.append(scores['codex'] / scores['thinking'])
+
+    if not ratios:
+        return []
+
+    avg_ratio = sum(ratios) / len(ratios)
+
+    # Infer missing Codex variants
+    inferred = []
+    for gen, scores in by_gen.items():
+        if 'thinking' in scores and 'codex' not in scores:
+            # Find the Thinking entry to copy date from
+            for r in raw:
+                if _gen(r['name']) == gen and 'Thinking' in r['name']:
+                    inferred.append({
+                        "name": f"{gen} Codex (inferred)",
+                        "date": r['date'],
+                        "pqa_score": round(scores['thinking'] * avg_ratio, 1),
+                    })
+                    break
+
+    return inferred
+
+
 def load_proofqa_data():
+    inferred = _infer_proofqa_codex(_PROOFQA_RAW)
     models = []
-    for r in _PROOFQA_RAW:
+    for r in _PROOFQA_RAW + inferred:
         models.append({
             'name': r['name'],
-            'date': datetime.strptime(r['date'], '%Y-%m-%d'),
+            'date': datetime.strptime(r['date'], '%Y-%m-%d') if isinstance(r['date'], str) else r['date'],
             'pqa_score': r['pqa_score'],
+            'inferred': '(inferred)' in r['name'],
         })
     models.sort(key=lambda m: m['date'])
 
@@ -5075,22 +5129,41 @@ def render_proofqa():
         is_used = idx_m <= pqa_proj_as_of_idx
         is_selected = idx_m == pqa_proj_as_of_idx
         is_frontier = m['is_frontier']
+        is_inferred = m.get('inferred', False)
         hover = f"{m['name']}<br>{m['date'].strftime('%b %d, %Y')}<br>Score: {m['pqa_score']:.2f}%"
         if is_frontier:
             hover += " (frontier)"
+        if is_inferred:
+            hover += "<br>Inferred from Codex/Thinking ratio"
 
         if is_used:
-            color = '#e74c3c' if is_selected else ('#4F8DFD' if is_frontier else '#7BAAF7')
-            sym = 'star' if is_selected else ('circle' if is_frontier else 'diamond')
-            sz = 14 if is_selected else (10 if is_frontier else 8)
+            if is_inferred:
+                # Dashed outline for inferred points
+                color = '#e67e22'
+                sym = 'diamond-open'
+                sz = 12
+            elif is_selected:
+                color = '#e74c3c'
+                sym = 'star'
+                sz = 14
+            elif is_frontier:
+                color = '#4F8DFD'
+                sym = 'circle'
+                sz = 10
+            else:
+                color = '#7BAAF7'
+                sym = 'diamond'
+                sz = 8
             fig.add_trace(go.Scatter(
                 x=[m['date']], y=[m['pqa_score']],
                 mode='markers' + ('+text' if pqa_show_labels else ''),
                 marker=dict(color=color, size=sz, symbol=sym,
-                            line=dict(color='white', width=1)),
+                            line=dict(color=color if is_inferred else 'white',
+                                      width=2.5 if is_inferred else 1)),
                 text=[m['name']] if pqa_show_labels else None,
                 textposition='top right',
-                textfont=dict(size=9, color='#c0392b' if is_selected else '#1a1a2e'),
+                textfont=dict(size=9, color='#e67e22' if is_inferred else
+                              ('#c0392b' if is_selected else '#1a1a2e')),
                 hovertext=hover, hoverinfo='text', showlegend=False,
             ))
         else:
