@@ -3042,7 +3042,7 @@ _REV_MILESTONES = [
 
 
 def render_revenue():
-    st.header("AI Lab Revenue Projections (ARR)")
+    st.header("Revenue Projections (ARR)")
 
     openai_dates, openai_vals = _parse_revenue(_OPENAI_REVENUE)
     anthropic_dates, anthropic_vals = _parse_revenue(_ANTHROPIC_REVENUE)
