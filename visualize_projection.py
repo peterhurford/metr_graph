@@ -2035,6 +2035,7 @@ def render_eci():
 
     # ── Render chart + metrics ──────────────────────────────────────────────
     st.plotly_chart(fig, width="stretch")
+    st.caption("* Claude Mythos (Apr 7) ECI score is an Anthropic internal estimate, not an official Epoch AI score.")
     if eci_is_backtesting and eci_backtest_results:
         _backtest_summary(eci_backtest_results)
 

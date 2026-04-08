@@ -1,4 +1,5 @@
 Model version,ECI Score,Release date,Organization,Country,Model accessibility,Training compute (FLOP),Confidence,Model name,Description,Display name
+claude-mythos-2026-04-07,60,2026-04-07,Anthropic,United States of America,,,Unverified,Claude Mythos,,Claude Mythos (Apr 7)*
 gpt-5.4-2026-03-05_high,155.973919568783,2026-03-05,OpenAI,United States of America,,,Unverified,GPT-5.4,,GPT-5.4 (high)
 gpt-5.4-2026-03-05_xhigh,155.973919568783,2026-03-05,OpenAI,United States of America,,,Unverified,GPT-5.4,,GPT-5.4 (xhigh)
 gpt-5.4-pro-2026-03-05-web-app,158.24337972795823,2026-03-05,OpenAI,United States of America,,,Unverified,GPT-5.4 Pro,,GPT-5.4 Pro (web)
