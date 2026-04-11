@@ -215,6 +215,19 @@ results:
     - re_bench_common/init_solver,use_tools,triframe_inspect/triframe_agent
     - metr_tasks_swaa/init_solver,generate
     - triframe_inspect/triframe_agent
+  gpt_5_4_xhigh:
+    benchmark_name: METR-Horizon-v1.1
+    metrics:
+      is_sota: false
+      p50_horizon_length:
+        ci_high: 769
+        ci_low: 187
+        estimate: 342
+      p80_horizon_length:
+        ci_high: 109
+        ci_low: 24
+        estimate: 54
+    release_date: 2026-03-05
   gemini_3_pro:
     benchmark_name: METR-Horizon-v1.1
     metrics:

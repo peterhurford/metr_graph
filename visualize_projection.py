@@ -46,6 +46,7 @@ _NAMES = {
     'claude_4_opus_inspect': 'Claude 4 Opus',
     'claude_opus_4_6_inspect': 'Claude 4.6 Opus',
     'gpt_5_3_codex': 'GPT-5.3 Codex',
+    'gpt_5_4_xhigh': 'GPT-5.4 (xhigh)',
 }
 
 
