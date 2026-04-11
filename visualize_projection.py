@@ -4382,6 +4382,24 @@ def _ecg_frontier_date_at_score(frontier_pts, target_score):
     return None
 
 
+def _ecg_frontier_score_at_date(frontier_pts, target_date):
+    """Step function: what was the frontier score at target_date?
+    frontier_pts: list of (datetime, score) sorted by date, scores monotonically increasing.
+    Returns the score of the most recent frontier-setter on or before target_date.
+    """
+    if not frontier_pts:
+        return None
+    score = None
+    for d, s in frontier_pts:
+        if d <= target_date:
+            score = s
+        else:
+            break
+    if score is None:
+        return frontier_pts[0][1]
+    return score
+
+
 def render_eci_gap():
     # ── Build overall frontier from eci_all ──
     all_models = sorted(eci_all, key=lambda m: m['date'])
@@ -4413,11 +4431,14 @@ def render_eci_gap():
                     gap_months = (m['date'] - fdate).total_seconds() / (30.44 * 86400)
                 else:
                     gap_months = 0.0
+                frontier_score_at_release = _ecg_frontier_score_at_date(
+                    overall_frontier, m['date'])
                 frontier_pts.append({
                     'date': m['date'],
                     'score': m['eci_score'],
                     'name': m.get('display_name', m.get('name', '')),
                     'gap_months': max(0.0, gap_months),
+                    'frontier_score': frontier_score_at_release,
                 })
         org_frontiers[org] = frontier_pts
 
@@ -4518,10 +4539,22 @@ def render_eci_gap():
         h_dates = [p['date'] for p in h_pts]
         h_gaps = [p['gap_months'] for p in h_pts]
         h_names = [p['name'] for p in h_pts]
-        h_hover = [f"{n}<br>{d.strftime('%b %Y')}<br>"
-                   f"ECI: {s:.1f}<br>"
-                   f"Gap: {g:.1f}mo behind"
-                   for n, d, s, g in zip(h_names, h_dates, [p['score'] for p in h_pts], h_gaps)]
+        h_hover = []
+        for p in h_pts:
+            fscore = p.get('frontier_score')
+            if fscore is not None:
+                eci_gap = fscore - p['score']
+                h_hover.append(
+                    f"{p['name']}<br>{p['date'].strftime('%b %Y')}<br>"
+                    f"Model ECI: {p['score']:.1f}<br>"
+                    f"Frontier ECI: {fscore:.1f}<br>"
+                    f"ECI gap: {eci_gap:+.1f}<br>"
+                    f"Time behind: {p['gap_months']:.1f}mo")
+            else:
+                h_hover.append(
+                    f"{p['name']}<br>{p['date'].strftime('%b %Y')}<br>"
+                    f"Model ECI: {p['score']:.1f}<br>"
+                    f"Time behind: {p['gap_months']:.1f}mo")
 
         fig_h.add_trace(go.Scatter(
             x=h_dates, y=h_gaps,
@@ -4543,6 +4576,20 @@ def render_eci_gap():
                 line=dict(color=h_color, width=2, dash='dash'),
                 hoverinfo='skip', showlegend=False,
             ))
+            _today_frontier = _ecg_frontier_score_at_date(overall_frontier, _today)
+            if _today_frontier is not None:
+                _today_eci_gap = _today_frontier - h_info['score']
+                _today_hover = (
+                    f"Today<br>"
+                    f"Model ECI: {h_info['score']:.1f}<br>"
+                    f"Frontier ECI: {_today_frontier:.1f}<br>"
+                    f"ECI gap: {_today_eci_gap:+.1f}<br>"
+                    f"Time behind: {h_info['effective_gap']:.1f}mo<br>"
+                    f"(no new model in {h_info['model_age_months']:.0f}mo)")
+            else:
+                _today_hover = (
+                    f"Today<br>Effective gap: {h_info['effective_gap']:.1f}mo<br>"
+                    f"(no new model in {h_info['model_age_months']:.0f}mo)")
             fig_h.add_trace(go.Scatter(
                 x=[_today], y=[h_info['effective_gap']],
                 mode='markers+text',
@@ -4551,8 +4598,7 @@ def render_eci_gap():
                 text=[f"Today: {h_info['effective_gap']:.0f}mo"],
                 textposition='top center',
                 textfont=dict(size=10, color=h_color),
-                hovertext=(f"Today<br>Effective gap: {h_info['effective_gap']:.1f}mo<br>"
-                           f"(no new model in {h_info['model_age_months']:.0f}mo)"),
+                hovertext=_today_hover,
                 hoverinfo='text', showlegend=False,
             ))
 
