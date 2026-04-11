@@ -4442,11 +4442,24 @@ def render_eci_gap():
                 })
         org_frontiers[org] = frontier_pts
 
+    # Current frontier score (used to determine who actually owns the frontier)
+    _current_frontier_score = overall_frontier[-1][1] if overall_frontier else None
+
     # ── Gap formatting helper ──
-    def _fmt_gap(months):
-        """Format a gap in months, treating <2mo as indistinguishable from frontier."""
-        if months < 2.0:
+    def _fmt_gap(months, at_frontier=False):
+        """Format a gap. 'At frontier' is strict: the org owns the current frontier."""
+        if at_frontier:
             return "At frontier"
+        if months < 0.5:
+            return "<1mo"
+        return f"{months:.0f}mo"
+
+    def _fmt_release_gap(months):
+        """Gap-at-release formatter. Models that set the frontier show 'At frontier'."""
+        if months < 0.1:
+            return "At frontier"
+        if months < 0.5:
+            return "<1mo"
         return f"{months:.0f}mo"
 
     # ── Compute current effective gap (staleness-adjusted) ──
@@ -4456,26 +4469,35 @@ def render_eci_gap():
         if not pts:
             continue
         latest = pts[-1]
-        fdate = _ecg_frontier_date_at_score(overall_frontier, latest['score'])
-        if fdate is not None:
-            effective_gap = (_today - fdate).total_seconds() / (30.44 * 86400)
-        else:
+        # Strict "at frontier" = currently owns (or ties) the max frontier score
+        is_at_frontier = (
+            _current_frontier_score is not None
+            and latest['score'] >= _current_frontier_score
+        )
+        if is_at_frontier:
             effective_gap = 0.0
+        else:
+            fdate = _ecg_frontier_date_at_score(overall_frontier, latest['score'])
+            if fdate is not None:
+                effective_gap = max(
+                    0.0, (_today - fdate).total_seconds() / (30.44 * 86400))
+            else:
+                effective_gap = 0.0
         model_age_months = (_today - latest['date']).total_seconds() / (30.44 * 86400)
+        current_eci_gap = (_current_frontier_score - latest['score']) if _current_frontier_score is not None else 0.0
         org_current[org] = {
             'name': latest['name'],
             'date': latest['date'],
             'score': latest['score'],
             'gap_at_release': latest['gap_months'],
-            'effective_gap': max(0.0, effective_gap),
+            'effective_gap': effective_gap,
             'model_age_months': max(0.0, model_age_months),
+            'at_frontier': is_at_frontier,
+            'current_eci_gap': max(0.0, current_eci_gap),
         }
 
-    # Sort orgs: frontier first, then by effective gap
-    # Gaps under ~2 months are within ECI measurement noise (~3 ECI points)
-    _FRONTIER_THRESHOLD_MO = 2.0
-    _frontier_orgs = {o for o, info in org_current.items()
-                      if info['effective_gap'] < _FRONTIER_THRESHOLD_MO}
+    # Sort orgs: current frontier holders first, then chasers by effective gap
+    _frontier_orgs = {o for o, info in org_current.items() if info['at_frontier']}
     _chaser_orgs = [o for o in org_current if o not in _frontier_orgs]
     _chaser_orgs.sort(key=lambda o: org_current[o]['effective_gap'])
     all_orgs = sorted(_frontier_orgs) + _chaser_orgs
@@ -4509,32 +4531,26 @@ def render_eci_gap():
         st.subheader(f"{h_flag} {highlight_org}: Months Behind Frontier Over Time")
         gap_release = h_info['gap_at_release']
         gap_now = h_info['effective_gap']
-        if gap_now < 2.0:
+        eci_gap_now = h_info['current_eci_gap']
+        if h_info['at_frontier']:
             gap_desc = "Currently **at frontier**."
-        elif gap_release < 2.0:
-            gap_desc = f"Was at frontier at release, now **{gap_now:.0f}mo behind** (model is stale)."
+        elif gap_release < 0.5:
+            gap_desc = (
+                f"Was at frontier at release, now **{gap_now:.1f}mo behind** "
+                f"(frontier moved to {_current_frontier_score:.1f}, +{eci_gap_now:.1f} ECI).")
         else:
-            gap_desc = f"Was **{gap_release:.0f}mo behind** at release, now **{gap_now:.0f}mo behind**."
+            gap_desc = (
+                f"Was **{gap_release:.1f}mo behind** at release, "
+                f"now **{gap_now:.1f}mo behind** "
+                f"(+{eci_gap_now:.1f} ECI from current frontier).")
         st.markdown(
             f"Best model: **{h_info['name']}** (ECI {h_info['score']:.1f}, "
             f"{h_info['date'].strftime('%b %Y')}). {gap_desc}")
 
         fig_h = go.Figure()
 
-        # Uncertainty band
         x_start = h_pts[0]['date'] - timedelta(days=30)
         x_end = _today + timedelta(days=30)
-        fig_h.add_trace(go.Scatter(
-            x=[x_start, x_end, x_end, x_start],
-            y=[0, 0, _FRONTIER_THRESHOLD_MO, _FRONTIER_THRESHOLD_MO],
-            fill='toself', fillcolor='rgba(0,180,0,0.1)',
-            line=dict(width=0), showlegend=False, hoverinfo='skip',
-        ))
-        fig_h.add_annotation(
-            x=x_start, y=_FRONTIER_THRESHOLD_MO / 2,
-            text="  Within measurement noise (~2mo)",
-            showarrow=False, xanchor='left',
-            font=dict(size=10, color='#228B22'))
 
         h_dates = [p['date'] for p in h_pts]
         h_gaps = [p['gap_months'] for p in h_pts]
@@ -4567,8 +4583,10 @@ def render_eci_gap():
             showlegend=False,
         ))
 
-        # Extend to today if stale
-        if h_info['model_age_months'] > 2:
+        # Extend line to today whenever the org is not currently at frontier,
+        # OR its best model is stale enough that staleness is meaningful.
+        _show_today_marker = (not h_info['at_frontier']) or h_info['model_age_months'] > 2
+        if _show_today_marker:
             fig_h.add_trace(go.Scatter(
                 x=[h_pts[-1]['date'], _today],
                 y=[h_gaps[-1], h_info['effective_gap']],
@@ -4585,17 +4603,20 @@ def render_eci_gap():
                     f"Frontier ECI: {_today_frontier:.1f}<br>"
                     f"ECI gap: {_today_eci_gap:+.1f}<br>"
                     f"Time behind: {h_info['effective_gap']:.1f}mo<br>"
-                    f"(no new model in {h_info['model_age_months']:.0f}mo)")
+                    f"(no new model in {h_info['model_age_months']:.1f}mo)")
             else:
                 _today_hover = (
                     f"Today<br>Effective gap: {h_info['effective_gap']:.1f}mo<br>"
-                    f"(no new model in {h_info['model_age_months']:.0f}mo)")
+                    f"(no new model in {h_info['model_age_months']:.1f}mo)")
+            _today_label = (f"Today: {h_info['effective_gap']:.1f}mo"
+                            if h_info['effective_gap'] >= 0.05
+                            else "Today: 0mo")
             fig_h.add_trace(go.Scatter(
                 x=[_today], y=[h_info['effective_gap']],
                 mode='markers+text',
                 marker=dict(color=h_color, size=12, symbol='diamond',
                             line=dict(color='white', width=1.5)),
-                text=[f"Today: {h_info['effective_gap']:.0f}mo"],
+                text=[_today_label],
                 textposition='top center',
                 textfont=dict(size=10, color=h_color),
                 hovertext=_today_hover,
@@ -4604,8 +4625,8 @@ def render_eci_gap():
 
         fig_h.add_hline(y=0, line=dict(color='black', width=1.5, dash='dot'))
 
-        _y_max = max(h_gaps + [_FRONTIER_THRESHOLD_MO + 1])
-        if h_info['model_age_months'] > 2:
+        _y_max = max(h_gaps + [1.0])
+        if _show_today_marker:
             _y_max = max(_y_max, h_info['effective_gap'] + 1)
 
         fig_h.update_layout(
@@ -4644,26 +4665,30 @@ def render_eci_gap():
             "Best Model": f"{marker}{info['name']}{marker_end}",
             "ECI": f"{marker}{info['score']:.1f}{marker_end}",
             "Released": f"{marker}{info['date'].strftime('%b %Y')}{marker_end}",
-            "Age": f"{marker}{info['model_age_months']:.0f}mo{marker_end}",
-            "Gap at Release": marker + _fmt_gap(info['gap_at_release']) + marker_end,
-            "Gap Now": marker + _fmt_gap(info['effective_gap']) + marker_end,
+            "Age": f"{marker}{info['model_age_months']:.1f}mo{marker_end}",
+            "Gap at Release": marker + _fmt_release_gap(info['gap_at_release']) + marker_end,
+            "ECI Gap Now": f"{marker}+{info['current_eci_gap']:.1f}{marker_end}",
+            "Gap Now": marker + _fmt_gap(info['effective_gap'], info['at_frontier']) + marker_end,
         })
 
     # Use markdown table for highlighting support
-    header = "| Company | Best Model | ECI | Released | Age | Gap at Release | Gap Now |"
-    separator = "|---|---|---|---|---|---|---|"
+    header = "| Company | Best Model | ECI | Released | Age | Gap at Release | ECI Gap Now | Gap Now |"
+    separator = "|---|---|---|---|---|---|---|---|"
     md_rows = [header, separator]
     for r in rows:
-        md_rows.append(f"| {r['Company']} | {r['Best Model']} | {r['ECI']} | {r['Released']} | {r['Age']} | {r['Gap at Release']} | {r['Gap Now']} |")
+        md_rows.append(
+            f"| {r['Company']} | {r['Best Model']} | {r['ECI']} | {r['Released']} | "
+            f"{r['Age']} | {r['Gap at Release']} | {r['ECI Gap Now']} | {r['Gap Now']} |")
     st.markdown("\n".join(md_rows))
 
 
 
-    st.caption("Fine print: Gap is computed by interpolating when the overall ECI frontier "
-               "first reached each model's score level. Only each org's running-max (best) models are shown. "
-               "'Gap Now' accounts for frontier movement since the model's release. "
-               "Gaps under ~2 months (~3 ECI points) are treated as 'At frontier' since they are within "
-               "ECI measurement noise. "
+    st.caption("Fine print: 'Gap at Release' interpolates when the overall ECI frontier "
+               "first reached each model's score level at the time of release. "
+               "'Gap Now' is how many months ago frontier first reached the org's current best score — "
+               "zero iff they still tie or exceed the current frontier. "
+               "'ECI Gap Now' is the ECI-point gap to the current frontier. "
+               "Only each org's running-max (best) models are shown. "
                "ECI data from Epoch AI.")
 
 
