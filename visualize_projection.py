@@ -310,7 +310,7 @@ def _yaml_mtime():
 
 
 @st.cache_data
-def load_frontier(_mtime=None):
+def load_metr_all(_mtime=None):
     yaml_path = os.path.join(os.path.dirname(__file__), 'benchmark_results_1_1.yaml')
     with open(yaml_path, 'r') as f:
         raw = yaml.safe_load(f)
@@ -339,8 +339,12 @@ def load_frontier(_mtime=None):
             })
 
     models.sort(key=lambda m: m['date'])
-    frontier = [m for m in models if m['is_sota']]
-    return frontier
+    return models
+
+
+@st.cache_data
+def load_frontier(_mtime=None):
+    return [m for m in load_metr_all(_mtime=_mtime) if m['is_sota']]
 
 
 def _eci_mtime():
@@ -528,7 +532,8 @@ def load_proofqa_data():
 
 # ── Load data (before sidebar, so model names are available) ─────────────
 
-frontier_all = load_frontier(_mtime=_yaml_mtime())
+metr_all = load_metr_all(_mtime=_yaml_mtime())
+frontier_all = [m for m in metr_all if m['is_sota']]
 gpt4o_idx = next(i for i, m in enumerate(frontier_all) if m['name'] == 'gpt_4o_inspect')
 frontier_names = [pretty(m['name']) for m in frontier_all]
 
@@ -1157,6 +1162,32 @@ def render_metr():
             lambda m: pretty(m['name']),
         )
         _bt_lookup = {r['name']: r for r in backtest_results}
+
+    # --- Non-SOTA models: only show those within 2 log2 units (4x) of frontier max to reduce clutter ---
+    _metr_frontier_max_log2 = max(np.log2(m[_val_key]) for m in frontier_all)
+    _metr_nf_cutoff = _metr_frontier_max_log2 - 2
+    _gpt4o_date = frontier_all[gpt4o_idx]['date']
+    for m in metr_all:
+        if m['is_sota']:
+            continue
+        m_log2 = np.log2(m[_val_key])
+        if m_log2 < _metr_nf_cutoff:
+            continue
+        if only_post_gpt4o and m['date'] < _gpt4o_date:
+            continue
+        lv = _yconv(m_log2)
+        hrs = m[_val_key] / 60
+        hover = f"{pretty(m['name'])}<br>{m['date'].strftime('%b %d, %Y')}<br>{hrs:.1f}h"
+        fig.add_trace(go.Scatter(
+            x=[m['date']], y=[lv],
+            mode='markers' + ('+text' if show_labels else ''),
+            marker=dict(color='#aaaaaa', size=6, symbol='circle-open',
+                        line=dict(color='#bbbbbb', width=1)),
+            text=[pretty(m['name'])] if show_labels else None,
+            textposition='top right',
+            textfont=dict(size=8, color='#bbbbbb'),
+            hovertext=hover, hoverinfo='text', showlegend=False,
+        ))
 
     # --- Data points: distinguish used vs future ---
     for idx_m, m in enumerate(frontier_plot):
