@@ -590,3 +590,4 @@ Meta-Llama-3-8B,116.92743986404255,2024-04-18,Meta AI,United States of America,O
 Meta-Llama-3-70B,119.58514492937934,2024-04-18,Meta AI,United States of America,Open weights (restricted use),7.861e+24,Confident,Llama 3-70B,Meta's 70 billion-parameter model in the Llama 3 series.,
 gpt-3.5-turbo-instruct,,2023-09-18,OpenAI,United States of America,API access,,Speculative,GPT-3.5 Turbo Instruct,An instruction-tuned version of OpenAI's GPT-3.5 turbo.,
 davinci-002,,,OpenAI,United States of America,API access,3.14e+23,Confident,GPT-3 175B (davinci),,
+gpt-5.5-pro-2026-04-28,159,2026-04-28,OpenAI,United States of America,,,Unverified,GPT-5.5 Pro,,GPT-5.5 Pro
