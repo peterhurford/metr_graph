@@ -3038,8 +3038,8 @@ def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=5000,
     proj_dates_out = [last_date + timedelta(days=int(d)) for d in proj_days_arr]
 
     # Doubling time CI
-    dt_lo = dt_lo_override if dt_lo_override is not None else max(10, ols_dt / 2)
-    dt_hi = dt_hi_override if dt_hi_override is not None else ols_dt * 2
+    dt_lo = dt_lo_override if dt_lo_override is not None else max(10, ols_dt * 0.65)
+    dt_hi = dt_hi_override if dt_hi_override is not None else ols_dt * 1.5
     sampled_dt = _lognormal_from_ci(dt_lo, dt_hi, n_samples)
 
     # Position noise in log-space (±0.3 log2 units ≈ ±23% revenue)
@@ -3143,8 +3143,8 @@ def render_revenue():
                 _oai_days = np.array([(d - oai_dates_fit[0]).days for d in oai_dates_fit], dtype=float)
                 _oai_p = fit_line(_oai_days[-oai_n_recent:], _oai_log[-oai_n_recent:])
                 _oai_ols_dt = 1.0 / _oai_p[1] if _oai_p[1] > 0 else 200
-                _oai_dt_lo_def = float(round(max(10, _oai_ols_dt / 2)))
-                _oai_dt_hi_def = float(round(_oai_ols_dt * 2))
+                _oai_dt_lo_def = float(round(max(10, _oai_ols_dt * 0.65)))
+                _oai_dt_hi_def = float(round(_oai_ols_dt * 1.5))
                 oai_dt_lo = _ss_number_input(st, "DT CI low (days)", "oai_dt_lo",
                                               _oai_dt_lo_def, min_value=5.0, step=5.0)
                 oai_dt_hi = _ss_number_input(st, "DT CI high (days)", "oai_dt_hi",
@@ -3160,8 +3160,8 @@ def render_revenue():
                 _ant_days = np.array([(d - ant_dates_fit[0]).days for d in ant_dates_fit], dtype=float)
                 _ant_p = fit_line(_ant_days[-ant_n_recent:], _ant_log[-ant_n_recent:])
                 _ant_ols_dt = 1.0 / _ant_p[1] if _ant_p[1] > 0 else 100
-                _ant_dt_lo_def = float(round(max(10, _ant_ols_dt / 2)))
-                _ant_dt_hi_def = float(round(_ant_ols_dt * 2))
+                _ant_dt_lo_def = float(round(max(10, _ant_ols_dt * 0.65)))
+                _ant_dt_hi_def = float(round(_ant_ols_dt * 1.5))
                 ant_dt_lo = _ss_number_input(st, "DT CI low (days)", "ant_dt_lo",
                                               _ant_dt_lo_def, min_value=5.0, step=5.0)
                 ant_dt_hi = _ss_number_input(st, "DT CI high (days)", "ant_dt_hi",
