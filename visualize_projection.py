@@ -1438,6 +1438,7 @@ def _eci_tab_reset_keys(p):
         f"{p}_superexp_ppy_ci_hi", f"{p}_superexp_pos_lo",
         f"{p}_superexp_pos_hi",
         f"{p}_proj_basis", f"{p}_milestones", f"{p}_labels",
+        f"{p}_eci_metr_proj",
         f"_{p}_proj_as_of", f"{p}_end_year",
         f"_{p}_seg_config",
     ]
@@ -1450,8 +1451,22 @@ def _eci_tab_defaults(p):
         f"{p}_custom_pos_dist": "Normal",
         f"{p}_milestones": True,
         f"{p}_labels": True,
+        f"{p}_eci_metr_proj": False,
         f"{p}_end_year": 2026,
     }
+
+def _eci_metr_hover(eci_score, organization):
+    """Return hover text lines with METR horizon projections from ECI score."""
+    a = 1 if organization == 'Anthropic' else 0
+    # p50 model
+    p50_min = 2 ** (0.24 * eci_score + 0.76 * a - 28.68)
+    p50_lo, p50_hi = p50_min * 0.66, p50_min * 1.34
+    # p80 model
+    p80_min = 2 ** (0.23 * eci_score + 0.35 * a - 29.95)
+    p80_lo, p80_hi = p80_min * 0.52, p80_min * 1.48
+    return (f"<br>METR p50: {fmt_hrs(p50_lo / 60)}\u2013{fmt_hrs(p50_hi / 60)}"
+            f"<br>METR p80: {fmt_hrs(p80_lo / 60)}\u2013{fmt_hrs(p80_hi / 60)}")
+
 
 def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     sidebar_header, milestone_list, mythos_caption=None):
@@ -1665,6 +1680,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         st.markdown("---")
         eci_show_milestones = st.toggle("Milestones", key=f"{p}_milestones")
         eci_show_labels = st.toggle("Labels", key=f"{p}_labels")
+        eci_metr_proj = st.toggle("ECI→METR projections", key=f"{p}_eci_metr_proj")
 
         st.markdown("---")
         with st.expander("Projection range"):
@@ -1974,6 +1990,8 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         if m['is_frontier'] or m['eci_score'] < _eci_nf_cutoff:
             continue
         hover = f"{m['display_name']}<br>{m['date'].strftime('%b %d, %Y')}<br>ECI: {m['eci_score']:.1f}"
+        if eci_metr_proj:
+            hover += _eci_metr_hover(m['eci_score'], m.get('organization', ''))
         fig.add_trace(go.Scatter(
             x=[m['date']], y=[m['eci_score']],
             mode='markers' + ('+text' if eci_show_labels else ''),
@@ -1990,6 +2008,8 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         is_used = idx_m <= eci_proj_as_of_idx
         is_selected = idx_m == eci_proj_as_of_idx
         hover = f"{m['display_name']}<br>{m['date'].strftime('%b %d, %Y')}<br>ECI: {m['eci_score']:.1f}"
+        if eci_metr_proj:
+            hover += _eci_metr_hover(m['eci_score'], m.get('organization', ''))
 
         if is_used:
             color = '#e74c3c' if is_selected else '#4F8DFD'
