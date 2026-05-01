@@ -2155,6 +2155,12 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     ] + eoy_targets
     n_all_cols = len(all_targets)
     cols = st.columns([1.2] + [1] * (n_all_cols - 1))
+
+    def _metr_median_str(eci_score):
+        p50_min = 2 ** (0.24 * eci_score - 28.68)
+        p80_min = 2 ** (0.23 * eci_score - 29.95)
+        return f"METR p50 {fmt_hrs(p50_min / 60)} \u00b7 p80 {fmt_hrs(p80_min / 60)}"
+
     for col, (label, target_date) in zip(cols, all_targets):
         elapsed = (target_date - eci_current['date']).days
         proj_scores = _proj_score_at(
@@ -2166,6 +2172,12 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         with col:
             st.metric(label=label, value=f"{display_s:.1f}")
             st.caption(f"80% CI: {p10_s:.1f} \u2013 {p90_s:.1f}")
+            if eci_metr_proj:
+                st.markdown(
+                    f"<div style='font-size:0.72em; color:#888; margin-top:-0.4em;'>"
+                    f"{_metr_median_str(display_s)}</div>",
+                    unsafe_allow_html=True,
+                )
 
     # Milestone tables
     eci_milestone_thresholds = [(s, l) for s, l, _c in milestone_list]
