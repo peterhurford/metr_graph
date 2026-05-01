@@ -1469,7 +1469,8 @@ def _eci_metr_hover(eci_score, organization):
 
 
 def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
-                    sidebar_header, milestone_list, mythos_caption=None):
+                    sidebar_header, milestone_list, mythos_caption=None,
+                    overlay_frontier=None, overlay_label=None):
     if st.session_state.pop(f"_reset_{p}", False):
         for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
@@ -1962,6 +1963,25 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                 showarrow=False, xanchor='left', yanchor='middle',
                 font=dict(size=10, color=color))
 
+    # --- Overlay trendline (e.g., US trend on the China chart) ---
+    if overlay_frontier is not None and len(overlay_frontier) >= 2:
+        _ovl_base = overlay_frontier[0]['date']
+        _ovl_days = np.array([(m['date'] - _ovl_base).days for m in overlay_frontier], dtype=float)
+        _ovl_scores = np.array([m['eci_score'] for m in overlay_frontier])
+        _ovl_params = fit_line(_ovl_days, _ovl_scores)
+        _ovl_ppy = _ovl_params[1] * 365.25
+        _ovl_x_start = overlay_frontier[0]['date']
+        _ovl_x_end = proj_end_date
+        _ovl_y_start = _ovl_params[0]
+        _ovl_y_end = _ovl_params[0] + _ovl_params[1] * (_ovl_x_end - _ovl_base).days
+        fig.add_trace(go.Scatter(
+            x=[_ovl_x_start, _ovl_x_end], y=[_ovl_y_start, _ovl_y_end],
+            mode='lines',
+            line=dict(color='rgba(127,127,127,0.55)', width=1.25, dash='dot'),
+            name=f'{overlay_label} ({_ovl_ppy:.1f} pts/yr)' if overlay_label else f'Overlay ({_ovl_ppy:.1f} pts/yr)',
+            hoverinfo='skip',
+        ))
+
     # --- Today vline ---
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
@@ -2222,6 +2242,8 @@ def render_eci_china():
         "ECI China Projection",
         [(140, "ECI 140", '#888888'), (145, "ECI 145", '#666666'),
          (150, "ECI 150", '#c0392b'), (155, "ECI 155", '#8e44ad')],
+        overlay_frontier=eci_frontier_all,
+        overlay_label="US trend",
     )
 
 
