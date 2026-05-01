@@ -1470,7 +1470,8 @@ def _eci_metr_hover(eci_score, organization):
 
 def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     sidebar_header, milestone_list, mythos_caption=None,
-                    overlay_frontier=None, overlay_label=None):
+                    overlay_frontier=None, overlay_label=None,
+                    extra_table_milestones=None):
     if st.session_state.pop(f"_reset_{p}", False):
         for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
@@ -2179,8 +2180,12 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     unsafe_allow_html=True,
                 )
 
-    # Milestone tables
+    # Milestone tables (extra_table_milestones appear only here, not as chart hlines)
     eci_milestone_thresholds = [(s, l) for s, l, _c in milestone_list]
+    if extra_table_milestones:
+        eci_milestone_thresholds = sorted(
+            eci_milestone_thresholds + list(extra_table_milestones),
+            key=lambda x: x[0])
 
     with st.expander("Milestone details"):
         tcol1, tcol2 = st.columns(2)
@@ -2256,6 +2261,7 @@ def render_eci_china():
          (150, "ECI 150", '#c0392b'), (155, "ECI 155", '#8e44ad')],
         overlay_frontier=eci_frontier_all,
         overlay_label="US trend",
+        extra_table_milestones=[(160, "ECI 160")],
     )
 
 
