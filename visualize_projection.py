@@ -353,7 +353,7 @@ def _eci_mtime():
 
 
 @st.cache_data
-def load_eci_frontier(_mtime=None):
+def load_eci_frontier(_mtime=None, country=None):
     csv_path = os.path.join(os.path.dirname(__file__), 'epoch_capabilities_index.csv')
     with open(csv_path, 'r') as f:
         reader = csv.DictReader(f)
@@ -377,6 +377,7 @@ def load_eci_frontier(_mtime=None):
             'date': date,
             'eci_score': score,
             'organization': r.get('Organization', ''),
+            'country': r.get('Country', ''),
         })
 
     # Dedup: keep highest-scoring variant per model name
@@ -390,6 +391,10 @@ def load_eci_frontier(_mtime=None):
     # Filter to Claude 3 Opus era onward (Feb 2024+)
     _cutoff_date = datetime(2024, 2, 29)
     deduped = [m for m in deduped if m['date'] >= _cutoff_date]
+
+    # Optional country filter
+    if country:
+        deduped = [m for m in deduped if m.get('country') == country]
 
     # Frontier detection: running max
     max_score = -float('inf')
@@ -541,6 +546,10 @@ eci_all = load_eci_frontier(_mtime=_eci_mtime())
 eci_frontier_all = [m for m in eci_all if m['is_frontier']]
 eci_frontier_names = [m['display_name'] for m in eci_frontier_all]
 
+ecicn_all = load_eci_frontier(_mtime=_eci_mtime(), country='China')
+ecicn_frontier_all = [m for m in ecicn_all if m['is_frontier']]
+ecicn_frontier_names = [m['display_name'] for m in ecicn_frontier_all]
+
 rli_all = load_rli_data()
 rli_frontier_all = [m for m in rli_all if m['is_frontier']]
 rli_frontier_names = [m['name'] for m in rli_frontier_all]
@@ -553,8 +562,8 @@ pqa_all_names = [m['name'] for m in pqa_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "Proof QA", "Revenue", "Employment", "ECI Company Gap"]
-_TAB_SLUG = {"metr": 0, "eci": 1, "rli": 2, "proofqa": 3, "revenue": 4, "employment": 5, "ecigap": 6}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI China", "Remote Labor Index", "Proof QA", "Revenue", "Employment", "ECI Company Gap"]
+_TAB_SLUG = {"metr": 0, "eci": 1, "ecicn": 2, "rli": 3, "proofqa": 4, "revenue": 5, "employment": 6, "ecigap": 7}
 
 # Read ?tab= from URL for deep-linking
 _url_tab = st.query_params.get("tab", "").lower()
@@ -565,7 +574,7 @@ with st.sidebar:
     st.markdown("---")
 
 # Keep URL in sync with selected tab
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Proof QA": "proofqa", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap"}
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "ECI China": "ecicn", "Remote Labor Index": "rli", "Proof QA": "proofqa", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap"}
 st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
 
 
@@ -1415,57 +1424,60 @@ def render_metr():
     st.caption("Fine print: Time units are human work-time: 1d = 8h, 1w = 40h, 1mo = 176h, 1y = 2000h." + PROJ_DISCLAIMER)
 
 
-# ── Epoch ECI ────────────────────────────────────────────────────────────
+# ── Epoch ECI (generic implementation) ──────────────────────────────────
 
-_ECI_RESET_KEYS = [
-    "eci_custom_ppy_lo", "eci_custom_ppy_hi",
-    "eci_custom_pos_lo", "eci_custom_pos_hi",
-    "eci_piecewise_n_seg", "eci_bp1_select",
-    "eci_bp2_select", "eci_custom_dpp_dist",
-    "eci_custom_pos_dist",
-    "eci_superexp_ppy_init", "eci_superexp_halflife",
-    "eci_superexp_ppy_ceiling", "eci_superexp_ppy_ci_lo",
-    "eci_superexp_ppy_ci_hi", "eci_superexp_pos_lo",
-    "eci_superexp_pos_hi",
-    "eci_proj_basis", "eci_milestones", "eci_labels",
-    "_eci_proj_as_of", "eci_end_year",
-    "_eci_seg_config",
-]
+def _eci_tab_reset_keys(p):
+    return [
+        f"{p}_custom_ppy_lo", f"{p}_custom_ppy_hi",
+        f"{p}_custom_pos_lo", f"{p}_custom_pos_hi",
+        f"{p}_piecewise_n_seg", f"{p}_bp1_select",
+        f"{p}_bp2_select", f"{p}_custom_dpp_dist",
+        f"{p}_custom_pos_dist",
+        f"{p}_superexp_ppy_init", f"{p}_superexp_halflife",
+        f"{p}_superexp_ppy_ceiling", f"{p}_superexp_ppy_ci_lo",
+        f"{p}_superexp_ppy_ci_hi", f"{p}_superexp_pos_lo",
+        f"{p}_superexp_pos_hi",
+        f"{p}_proj_basis", f"{p}_milestones", f"{p}_labels",
+        f"_{p}_proj_as_of", f"{p}_end_year",
+        f"_{p}_seg_config",
+    ]
 
-_ECI_DEFAULTS = {
-    "eci_proj_basis": "Linear",
-    "eci_piecewise_n_seg": 1,
-    "eci_custom_dpp_dist": "Lognormal",
-    "eci_custom_pos_dist": "Normal",
-    "eci_milestones": True,
-    "eci_labels": True,
-    "eci_end_year": 2026,
-}
+def _eci_tab_defaults(p):
+    return {
+        f"{p}_proj_basis": "Linear",
+        f"{p}_piecewise_n_seg": 1,
+        f"{p}_custom_dpp_dist": "Lognormal",
+        f"{p}_custom_pos_dist": "Normal",
+        f"{p}_milestones": True,
+        f"{p}_labels": True,
+        f"{p}_end_year": 2026,
+    }
 
-def render_eci():
-    if st.session_state.pop("_reset_eci", False):
-        for k in _ECI_RESET_KEYS:
+def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
+                    sidebar_header, milestone_list, mythos_caption=None):
+    if st.session_state.pop(f"_reset_{p}", False):
+        for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
-        st.session_state.update(_ECI_DEFAULTS)
+        st.session_state.update(_eci_tab_defaults(p))
         st.rerun()
 
-    for k, v in _ECI_DEFAULTS.items():
+    for k, v in _eci_tab_defaults(p).items():
         if k not in st.session_state:
             st.session_state[k] = v
 
     # ── ECI Sidebar controls ─────────────────────────────────────────────
     with st.sidebar:
-        st.header("ECI Projection")
+        st.header(sidebar_header)
 
         # Read "project as of" from session state
-        eci_proj_as_of_name = st.session_state.get('_eci_proj_as_of', eci_frontier_names[-1])
-        if eci_proj_as_of_name not in eci_frontier_names:
-            eci_proj_as_of_name = eci_frontier_names[-1]
-        eci_proj_as_of_idx = eci_frontier_names.index(eci_proj_as_of_name)
+        eci_proj_as_of_name = st.session_state.get(f"_{p}_proj_as_of", tab_frontier_names[-1])
+        if eci_proj_as_of_name not in tab_frontier_names:
+            eci_proj_as_of_name = tab_frontier_names[-1]
+        eci_proj_as_of_idx = tab_frontier_names.index(eci_proj_as_of_name)
 
         # --- Projection basis ---
         eci_basis_options = ["Linear", "Piecewise linear", "Superexponential"]
-        eci_proj_basis = st.radio("Projection basis", eci_basis_options, key="eci_proj_basis")
+        eci_proj_basis = st.radio("Projection basis", eci_basis_options, key=f"{p}_proj_basis")
 
         eci_custom_dpp_lo = eci_custom_dpp_hi = None
         eci_custom_pos_lo = eci_custom_pos_hi = None
@@ -1478,8 +1490,8 @@ def render_eci():
             eci_piecewise_n_segments = 2
 
         # Pre-compute OLS PPY for data-driven defaults
-        _eci_pre_fr = [m for m in eci_all if m['is_frontier']][:eci_proj_as_of_idx + 1]
-        _eci_pre_base = _eci_pre_fr[0]['date'] if _eci_pre_fr else eci_frontier_all[0]['date']
+        _eci_pre_fr = [m for m in tab_all if m['is_frontier']][:eci_proj_as_of_idx + 1]
+        _eci_pre_base = _eci_pre_fr[0]['date'] if _eci_pre_fr else tab_frontier_all[0]['date']
         _eci_pre_days = np.array([(m['date'] - _eci_pre_base).days for m in _eci_pre_fr], dtype=float)
         _eci_pre_scores = np.array([m['eci_score'] for m in _eci_pre_fr])
         _eci_pre_params = fit_line(_eci_pre_days, _eci_pre_scores) if len(_eci_pre_fr) >= 2 else np.array([0, 0.046])
@@ -1487,38 +1499,38 @@ def render_eci():
 
         if _eci_is_linear:
             with st.expander("Advanced options"):
-                st.button("Reset to defaults", key="reset_eci_linear",
-                          on_click=lambda: st.session_state.update(_reset_eci=True))
+                st.button("Reset to defaults", key=f"reset_{p}_linear",
+                          on_click=lambda: st.session_state.update({f"_reset_{p}": True}))
 
                 # Segments & breakpoints only for Piecewise linear
-                _eci_bp_names = [m['display_name'] for m in eci_frontier_all[:eci_proj_as_of_idx + 1]]
+                _eci_bp_names = [m['display_name'] for m in tab_frontier_all[:eci_proj_as_of_idx + 1]]
                 if eci_proj_basis == "Piecewise linear":
                     _eci_seg_options = [1, 2, 3] if len(_eci_bp_names) >= 5 else [1, 2]
                     if eci_piecewise_n_segments not in _eci_seg_options:
                         eci_piecewise_n_segments = _eci_seg_options[-1]
                     # Ensure session state defaults to 2 for Piecewise
-                    if st.session_state.get("eci_piecewise_n_seg", 1) < 2:
-                        st.session_state["eci_piecewise_n_seg"] = 2
+                    if st.session_state.get(f"{p}_piecewise_n_seg", 1) < 2:
+                        st.session_state[f"{p}_piecewise_n_seg"] = 2
                     eci_piecewise_n_segments = st.radio(
                         "Segments", _eci_seg_options,
-                        horizontal=True, key="eci_piecewise_n_seg")
+                        horizontal=True, key=f"{p}_piecewise_n_seg")
                 else:
                     # Plain Linear: force 1 segment, clear stale session state
                     eci_piecewise_n_segments = 1
-                    st.session_state.pop("eci_piecewise_n_seg", None)
+                    st.session_state.pop(f"{p}_piecewise_n_seg", None)
                 if eci_piecewise_n_segments >= 2:
                     _eci_default_bp1 = _eci_bp_names[len(_eci_bp_names) // 2]
                     _eci_bp1_idx = _eci_bp_names.index(_eci_default_bp1) if _eci_default_bp1 in _eci_bp_names else len(_eci_bp_names) // 2
                     eci_bp1_name = st.selectbox(
                         "Breakpoint", _eci_bp_names[1:],
-                        index=max(0, _eci_bp1_idx - 1), key="eci_bp1_select")
+                        index=max(0, _eci_bp1_idx - 1), key=f"{p}_bp1_select")
                     eci_piecewise_breakpoints.append(eci_bp1_name)
                 if eci_piecewise_n_segments >= 3:
                     _eci_bp1_pos = _eci_bp_names.index(eci_bp1_name)
                     _eci_remaining = _eci_bp_names[_eci_bp1_pos + 1:]
                     eci_bp2_name = st.selectbox(
                         "Breakpoint 2", _eci_remaining[:-1],
-                        index=len(_eci_remaining[:-1]) // 2, key="eci_bp2_select")
+                        index=len(_eci_remaining[:-1]) // 2, key=f"{p}_bp2_select")
                     eci_piecewise_breakpoints.append(eci_bp2_name)
 
                 # Compute PPY defaults from the actual last segment
@@ -1539,17 +1551,17 @@ def render_eci():
 
                 # Auto-update PPY CIs when segment config changes
                 _eci_seg_config = (eci_piecewise_n_segments, tuple(eci_piecewise_breakpoints))
-                if st.session_state.get("_eci_seg_config") != _eci_seg_config:
-                    st.session_state["_eci_seg_config"] = _eci_seg_config
-                    st.session_state.pop("eci_custom_ppy_lo", None)
-                    st.session_state.pop("eci_custom_ppy_hi", None)
+                if st.session_state.get(f"_{p}_seg_config") != _eci_seg_config:
+                    st.session_state[f"_{p}_seg_config"] = _eci_seg_config
+                    st.session_state.pop(f"{p}_custom_ppy_lo", None)
+                    st.session_state.pop(f"{p}_custom_ppy_hi", None)
 
                 _eci_ppy_lo_col, _eci_ppy_hi_col = st.columns(2)
                 eci_custom_ppy_lo = _ss_number_input(_eci_ppy_lo_col,
-                    "+Pts/Yr CI low", "eci_custom_ppy_lo", _eci_default_ppy_lo,
+                    "+Pts/Yr CI low", f"{p}_custom_ppy_lo", _eci_default_ppy_lo,
                     min_value=0.5, max_value=365.0, step=0.5)
                 eci_custom_ppy_hi = _ss_number_input(_eci_ppy_hi_col,
-                    "+Pts/Yr CI high", "eci_custom_ppy_hi", _eci_default_ppy_hi,
+                    "+Pts/Yr CI high", f"{p}_custom_ppy_hi", _eci_default_ppy_hi,
                     min_value=0.5, max_value=365.0, step=0.5)
                 if eci_custom_ppy_lo > eci_custom_ppy_hi:
                     st.error("+Pts/Yr CI low must be ≤ +Pts/Yr CI high.")
@@ -1558,24 +1570,24 @@ def render_eci():
                 eci_custom_dpp_hi = 365.25 / eci_custom_ppy_lo  # low PPY = high DPP (slow)
 
                 # Position CI: fitted score +/- 2
-                _eci_cur = eci_frontier_all[eci_proj_as_of_idx]
+                _eci_cur = tab_frontier_all[eci_proj_as_of_idx]
                 _eci_def_score = _eci_cur['eci_score']
                 _eci_pos_lo_col, _eci_pos_hi_col = st.columns(2)
                 eci_custom_pos_lo = _ss_number_input(_eci_pos_lo_col,
-                    "Pos CI low (ECI)", "eci_custom_pos_lo", round(_eci_def_score - 2, 1),
+                    "Pos CI low (ECI)", f"{p}_custom_pos_lo", round(_eci_def_score - 2, 1),
                     step=0.5)
                 eci_custom_pos_hi = _ss_number_input(_eci_pos_hi_col,
-                    "Pos CI high (ECI)", "eci_custom_pos_hi", round(_eci_def_score + 2, 1),
+                    "Pos CI high (ECI)", f"{p}_custom_pos_hi", round(_eci_def_score + 2, 1),
                     step=0.5)
 
                 eci_custom_dpp_dist = st.radio(
                     "Trend distribution", ["Normal", "Lognormal", "Log-log"],
-                    horizontal=True, key="eci_custom_dpp_dist",
+                    horizontal=True, key=f"{p}_custom_dpp_dist",
                     help="Normal: symmetric. Lognormal: symmetric in log-space. "
                          "Log-log: fat right tail.")
                 eci_custom_pos_dist = st.radio(
                     "Position distribution", ["Normal", "Lognormal"],
-                    horizontal=True, key="eci_custom_pos_dist",
+                    horizontal=True, key=f"{p}_custom_pos_dist",
                     help="Normal: symmetric. Lognormal: symmetric in log-space.")
 
         # --- Superexponential controls ---
@@ -1588,9 +1600,9 @@ def render_eci():
             eci_is_superexp = True
             _eci_default_ppy_init = 10.0
             # Estimate from recent frontier
-            if len(eci_frontier_all[:eci_proj_as_of_idx + 1]) >= 2:
-                _eci_base = eci_frontier_all[0]['date']
-                _eci_fr = eci_frontier_all[:eci_proj_as_of_idx + 1]
+            if len(tab_frontier_all[:eci_proj_as_of_idx + 1]) >= 2:
+                _eci_base = tab_frontier_all[0]['date']
+                _eci_fr = tab_frontier_all[:eci_proj_as_of_idx + 1]
                 _eci_fd = np.array([(m['date'] - _eci_base).days for m in _eci_fr], dtype=float)
                 _eci_fs = np.array([m['eci_score'] for m in _eci_fr])
                 _eci_fp = fit_line(_eci_fd, _eci_fs)
@@ -1612,72 +1624,72 @@ def render_eci():
             _eci_default_se_ppy_hi = round(_eci_pre_se_ppy * 2, 1)
 
             with st.expander("Advanced options"):
-                st.button("Reset to defaults", key="reset_eci_superexp",
-                          on_click=lambda: st.session_state.update(_reset_eci=True))
+                st.button("Reset to defaults", key=f"reset_{p}_superexp",
+                          on_click=lambda: st.session_state.update({f"_reset_{p}": True}))
                 _eci_se_col1, _eci_se_col2 = st.columns(2)
                 eci_superexp_ppy_initial = _ss_number_input(_eci_se_col1,
-                    "Initial +Pts/Yr", "eci_superexp_ppy_init", _eci_default_ppy_init,
+                    "Initial +Pts/Yr", f"{p}_superexp_ppy_init", _eci_default_ppy_init,
                     min_value=0.5, max_value=365.0, step=0.5)
                 eci_superexp_dpp_initial = 365.25 / eci_superexp_ppy_initial
                 eci_superexp_halflife = _ss_number_input(_eci_se_col2,
-                    "Rate half-life (days)", "eci_superexp_halflife", 365,
+                    "Rate half-life (days)", f"{p}_superexp_halflife", 365,
                     min_value=30, max_value=5000, step=30,
                     help="How quickly rate grows. Lower = faster.")
                 eci_superexp_ppy_ceiling = _ss_number_input(st,
-                    "Max +Pts/Yr ceiling", "eci_superexp_ppy_ceiling", 37.0,
+                    "Max +Pts/Yr ceiling", f"{p}_superexp_ppy_ceiling", 37.0,
                     min_value=1.0, max_value=365.0, step=1.0,
                     help="Rate can't exceed this. Prevents runaway projections.")
                 eci_superexp_dpp_floor = 365.25 / eci_superexp_ppy_ceiling
                 _eci_se_ci1, _eci_se_ci2 = st.columns(2)
                 eci_superexp_ppy_ci_lo = _ss_number_input(_eci_se_ci1,
-                    "+Pts/Yr CI low", "eci_superexp_ppy_ci_lo", _eci_default_se_ppy_lo,
+                    "+Pts/Yr CI low", f"{p}_superexp_ppy_ci_lo", _eci_default_se_ppy_lo,
                     min_value=0.5, max_value=365.0, step=0.5)
                 eci_superexp_ppy_ci_hi = _ss_number_input(_eci_se_ci2,
-                    "+Pts/Yr CI high", "eci_superexp_ppy_ci_hi", _eci_default_se_ppy_hi,
+                    "+Pts/Yr CI high", f"{p}_superexp_ppy_ci_hi", _eci_default_se_ppy_hi,
                     min_value=0.5, max_value=365.0, step=0.5)
                 if eci_superexp_ppy_ci_lo > eci_superexp_ppy_ci_hi:
                     st.error("+Pts/Yr CI low must be ≤ +Pts/Yr CI high.")
                     st.stop()
                 eci_superexp_dpp_ci_lo = 365.25 / eci_superexp_ppy_ci_hi  # high PPY = low DPP
                 eci_superexp_dpp_ci_hi = 365.25 / eci_superexp_ppy_ci_lo  # low PPY = high DPP
-                _eci_cur = eci_frontier_all[eci_proj_as_of_idx]
+                _eci_cur = tab_frontier_all[eci_proj_as_of_idx]
                 _eci_def_score = _eci_cur['eci_score']
                 _eci_se_pos1, _eci_se_pos2 = st.columns(2)
                 eci_superexp_pos_lo = _ss_number_input(_eci_se_pos1,
-                    "Pos CI low (ECI)", "eci_superexp_pos_lo", round(_eci_def_score - 2, 1),
+                    "Pos CI low (ECI)", f"{p}_superexp_pos_lo", round(_eci_def_score - 2, 1),
                     step=0.5)
                 eci_superexp_pos_hi = _ss_number_input(_eci_se_pos2,
-                    "Pos CI high (ECI)", "eci_superexp_pos_hi", round(_eci_def_score + 2, 1),
+                    "Pos CI high (ECI)", f"{p}_superexp_pos_hi", round(_eci_def_score + 2, 1),
                     step=0.5)
 
         st.markdown("---")
-        eci_show_milestones = st.toggle("Milestones", key="eci_milestones")
-        eci_show_labels = st.toggle("Labels", key="eci_labels")
+        eci_show_milestones = st.toggle("Milestones", key=f"{p}_milestones")
+        eci_show_labels = st.toggle("Labels", key=f"{p}_labels")
 
         st.markdown("---")
         with st.expander("Projection range"):
             st.selectbox(
                 "Project as of",
-                eci_frontier_names,
-                index=eci_frontier_names.index(eci_proj_as_of_name),
-                key='_eci_proj_as_of',
+                tab_frontier_names,
+                index=tab_frontier_names.index(eci_proj_as_of_name),
+                key=f"_{p}_proj_as_of",
                 help="Backtest: project from an earlier model's vantage point.",
             )
             _eci_end_year = st.radio(
                 "Project through", [2026, 2027, 2028, 2029],
-                horizontal=True, key="eci_end_year")
+                horizontal=True, key=f"{p}_end_year")
 
     # ── Build data arrays ────────────────────────────────────────────────────
-    eci_frontier_used = eci_frontier_all[:eci_proj_as_of_idx + 1]
-    eci_frontier_plot = list(eci_all)  # show all models (frontier + non-frontier)
+    eci_frontier_used = tab_frontier_all[:eci_proj_as_of_idx + 1]
+    eci_frontier_plot = list(tab_all)  # show all models (frontier + non-frontier)
 
-    base_date = eci_frontier_all[0]['date']
-    days_all_eci = np.array([(m['date'] - base_date).days for m in eci_frontier_all], dtype=float)
-    scores_all_eci = np.array([m['eci_score'] for m in eci_frontier_all])
+    base_date = tab_frontier_all[0]['date']
+    days_all_eci = np.array([(m['date'] - base_date).days for m in tab_frontier_all], dtype=float)
+    scores_all_eci = np.array([m['eci_score'] for m in tab_frontier_all])
 
     _eci_fit_start = 0
     _eci_fit_end = eci_proj_as_of_idx + 1
-    eci_frontier_used = eci_frontier_all[_eci_fit_start:_eci_fit_end]
+    eci_frontier_used = tab_frontier_all[_eci_fit_start:_eci_fit_end]
     days_used = days_all_eci[_eci_fit_start:_eci_fit_end]
     scores_used = scores_all_eci[_eci_fit_start:_eci_fit_end]
     n_used = len(eci_frontier_used)
@@ -1921,14 +1933,9 @@ def render_eci():
 
     # --- Milestone hlines ---
     if eci_show_milestones:
-        x_lo = eci_all[0]['date'] - timedelta(days=30)
+        x_lo = tab_all[0]['date'] - timedelta(days=30)
         x_hi = proj_end_date
-        for score_val, label, color in [
-            (155, "ECI 155", '#888888'),
-            (160, "ECI 160", '#666666'),
-            (165, "ECI 165", '#c0392b'),
-            (170, "ECI 170", '#8e44ad'),
-        ]:
+        for score_val, label, color in milestone_list:
             fig.add_trace(go.Scatter(
                 x=[x_lo, x_hi], y=[score_val, score_val],
                 mode='lines', line=dict(color=color, width=1.2, dash='dot'),
@@ -1947,11 +1954,11 @@ def render_eci():
         font=dict(size=10, color='gray'), yanchor='top')
 
     # --- Backtesting ---
-    eci_is_backtesting = eci_proj_as_of_idx < len(eci_frontier_all) - 1
+    eci_is_backtesting = eci_proj_as_of_idx < len(tab_frontier_all) - 1
     eci_backtest_results = []
     _eci_bt_lookup = {}
     if eci_is_backtesting:
-        _eci_bt_future = eci_frontier_all[eci_proj_as_of_idx + 1:]
+        _eci_bt_future = tab_frontier_all[eci_proj_as_of_idx + 1:]
         eci_backtest_results = _backtest_stats(
             _eci_bt_future, all_trajectories, eci_current['date'], proj_end_date,
             lambda m: m['eci_score'],
@@ -1961,9 +1968,9 @@ def render_eci():
 
     # --- Data points ---
     # Non-frontier models: only show those within 10 pts of frontier max to reduce clutter
-    _eci_frontier_max = max(m['eci_score'] for m in eci_all if m['is_frontier'])
+    _eci_frontier_max = max(m['eci_score'] for m in tab_all if m['is_frontier'])
     _eci_nf_cutoff = _eci_frontier_max - 10
-    for m in eci_all:
+    for m in tab_all:
         if m['is_frontier'] or m['eci_score'] < _eci_nf_cutoff:
             continue
         hover = f"{m['display_name']}<br>{m['date'].strftime('%b %d, %Y')}<br>ECI: {m['eci_score']:.1f}"
@@ -1979,7 +1986,7 @@ def render_eci():
         ))
 
     # Then plot frontier models
-    for idx_m, m in enumerate(eci_frontier_all):
+    for idx_m, m in enumerate(tab_frontier_all):
         is_used = idx_m <= eci_proj_as_of_idx
         is_selected = idx_m == eci_proj_as_of_idx
         hover = f"{m['display_name']}<br>{m['date'].strftime('%b %d, %Y')}<br>ECI: {m['eci_score']:.1f}"
@@ -2033,9 +2040,10 @@ def render_eci():
 
     # --- Layout ---
     # Determine y range from data and projections
-    all_scores = [m['eci_score'] for m in eci_all if m['is_frontier'] or m['eci_score'] >= _eci_nf_cutoff]
+    all_scores = [m['eci_score'] for m in tab_all if m['is_frontier'] or m['eci_score'] >= _eci_nf_cutoff]
     y_min = min(all_scores) - 5
-    y_max = max(pct95[-1], max(all_scores) + 5, 170) + 5
+    _milestone_y_max = max(s for s, _, _ in milestone_list) if milestone_list else 170
+    y_max = max(pct95[-1], max(all_scores) + 5, _milestone_y_max) + 5
     yaxis_cfg = dict(
         title="ECI Score",
         range=[y_min, y_max],
@@ -2050,7 +2058,7 @@ def render_eci():
         margin=dict(l=50, r=140, t=50, b=40),
         font=dict(color='#1a1a2e'),
         xaxis=dict(
-            range=[eci_all[0]['date'] - timedelta(days=30),
+            range=[tab_all[0]['date'] - timedelta(days=30),
                    proj_end_date + timedelta(days=30)],
             gridcolor='rgba(0,0,0,0.1)',
             tickfont=dict(color='#1a1a2e'),
@@ -2067,7 +2075,8 @@ def render_eci():
 
     # ── Render chart + metrics ──────────────────────────────────────────────
     st.plotly_chart(fig, width="stretch")
-    st.caption("* Claude Mythos (Apr 7) ECI score is an Anthropic internal estimate, not an official Epoch AI score.")
+    if mythos_caption:
+        st.caption(mythos_caption)
     if eci_is_backtesting and eci_backtest_results:
         _backtest_summary(eci_backtest_results)
 
@@ -2119,12 +2128,7 @@ def render_eci():
             st.caption(f"80% CI: {p10_s:.1f} \u2013 {p90_s:.1f}")
 
     # Milestone tables
-    eci_milestone_thresholds = [
-        (155, "ECI 155"),
-        (160, "ECI 160"),
-        (165, "ECI 165"),
-        (170, "ECI 170"),
-    ]
+    eci_milestone_thresholds = [(s, l) for s, l, _c in milestone_list]
 
     with st.expander("Milestone details"):
         tcol1, tcol2 = st.columns(2)
@@ -2179,6 +2183,26 @@ def render_eci():
             st.table(arrival_rows)
 
     st.caption("Fine print: ECI = Epoch Capabilities Index. +Pts/Yr = ECI points gained per year." + PROJ_DISCLAIMER)
+
+
+
+def render_eci():
+    _render_eci_tab(
+        eci_all, eci_frontier_all, eci_frontier_names, "eci",
+        "ECI Projection",
+        [(155, "ECI 155", '#888888'), (160, "ECI 160", '#666666'),
+         (165, "ECI 165", '#c0392b'), (170, "ECI 170", '#8e44ad')],
+        mythos_caption="* Claude Mythos (Apr 7) ECI score is an Anthropic internal estimate, not an official Epoch AI score.",
+    )
+
+
+def render_eci_china():
+    _render_eci_tab(
+        ecicn_all, ecicn_frontier_all, ecicn_frontier_names, "ecicn",
+        "ECI China Projection",
+        [(140, "ECI 140", '#888888'), (145, "ECI 145", '#666666'),
+         (150, "ECI 150", '#c0392b'), (155, "ECI 155", '#8e44ad')],
+    )
 
 
 # ── Remote Labor Index ───────────────────────────────────────────────────
@@ -5493,6 +5517,8 @@ if not os.environ.get("_VP_TESTING"):
         render_metr()
     elif active_tab == "Epoch ECI":
         render_eci()
+    elif active_tab == "ECI China":
+        render_eci_china()
     elif active_tab == "Remote Labor Index":
         render_rli()
     elif active_tab == "Revenue":
