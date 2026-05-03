@@ -2157,10 +2157,12 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     n_all_cols = len(all_targets)
     cols = st.columns([1.2] + [1] * (n_all_cols - 1))
 
+    _eci_metr_a = 1 if eci_current.get('organization', '') == 'Anthropic' else 0
+
     def _metr_median_str(eci_score):
-        p50_min = 2 ** (0.24 * eci_score - 28.68)
-        p80_min = 2 ** (0.23 * eci_score - 29.95)
-        return f"METR p50 {fmt_hrs(p50_min / 60)} \u00b7 p80 {fmt_hrs(p80_min / 60)}"
+        p50_min = 2 ** (0.24 * eci_score + 0.76 * _eci_metr_a - 28.68)
+        p50_lo, p50_hi = p50_min * 0.66, p50_min * 1.34
+        return f"METR p50 {fmt_hrs(p50_lo / 60)}\u2013{fmt_hrs(p50_hi / 60)}"
 
     for col, (label, target_date) in zip(cols, all_targets):
         elapsed = (target_date - eci_current['date']).days
