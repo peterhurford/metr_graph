@@ -574,9 +574,14 @@ with st.sidebar:
     active_tab = st.radio("Tab", _TAB_OPTIONS, index=_default_tab_idx, horizontal=True, key="_active_tab")
     st.markdown("---")
 
-# Keep URL in sync with selected tab
+# Keep URL in sync with selected tab (omit when at default)
 _SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "ECI China": "ecicn", "Remote Labor Index": "rli", "Proof QA": "proofqa", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap"}
-st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
+_DEFAULT_TAB = _TAB_OPTIONS[0]
+if active_tab == _DEFAULT_TAB:
+    if "tab" in st.query_params:
+        del st.query_params["tab"]
+else:
+    st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
 
 
 
@@ -5649,6 +5654,9 @@ def _coerce_unknown_url_value(raw):
 def _hydrate_session_from_url():
     keys, defaults = _all_tracked()
     qp = st.query_params
+    # Remember which keys came from URL so we don't poison the baseline snapshot with them
+    if "_url_keys_at_load" not in st.session_state:
+        st.session_state["_url_keys_at_load"] = set(qp.keys())
     for k in keys:
         if k in st.session_state:
             continue
@@ -5660,16 +5668,31 @@ def _hydrate_session_from_url():
         else:
             st.session_state[k] = _coerce_unknown_url_value(raw)
 
+_BASELINE_SENTINEL = object()
+
 def _sync_session_to_url():
     keys, defaults = _all_tracked()
     qp = st.query_params
+    if "_url_baseline" not in st.session_state:
+        st.session_state["_url_baseline"] = {}
+    baseline = st.session_state["_url_baseline"]
+    url_keys_at_load = st.session_state.get("_url_keys_at_load", set())
     for k in keys:
         if k not in st.session_state:
             if k in qp:
                 del qp[k]
             continue
         val = st.session_state[k]
-        if k in defaults and val == defaults[k]:
+        # Capture baseline for keys whose initial value wasn't supplied via URL
+        if k not in baseline and k not in url_keys_at_load and k not in defaults:
+            baseline[k] = val
+        if k in defaults:
+            eff_default = defaults[k]
+        elif k in baseline:
+            eff_default = baseline[k]
+        else:
+            eff_default = _BASELINE_SENTINEL
+        if val == eff_default:
             if k in qp:
                 del qp[k]
             continue

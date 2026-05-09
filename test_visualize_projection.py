@@ -1678,21 +1678,44 @@ class TestSyncSessionToUrl:
             vp._sync_session_to_url()
             assert "_metr_seg_config" not in m.query_params
 
-    def test_unknown_default_key_with_value_written(self):
-        ss = {"custom_dt_lo": 80.0}
+    def test_unknown_default_key_changed_from_baseline_written(self):
+        # Baseline (initial widget value) was 50.0; user changed it to 80.0 → should appear in URL
+        ss = {"custom_dt_lo": 80.0, "_url_baseline": {"custom_dt_lo": 50.0}}
         with _MockStreamlit(session_state=ss, query_params={}) as m:
             vp._sync_session_to_url()
             assert m.query_params["custom_dt_lo"] == "80.0"
 
+    def test_url_supplied_key_not_baselined(self):
+        # Key came from URL on initial load → must NOT be captured as baseline,
+        # otherwise an explicit non-default URL value would be silently treated as default.
+        ss = {"custom_dt_lo": 75.5, "_url_keys_at_load": {"custom_dt_lo"}}
+        with _MockStreamlit(session_state=ss, query_params={"custom_dt_lo": "75.5"}) as m:
+            vp._sync_session_to_url()
+            # Value remains in URL since we don't know its true default
+            assert m.query_params["custom_dt_lo"] == "75.5"
+            # And the baseline did NOT capture it
+            assert "custom_dt_lo" not in m.session_state.get("_url_baseline", {})
+
+    def test_unknown_default_key_at_baseline_omitted(self):
+        # First-call behavior: value gets captured as baseline and is treated as the default
+        ss = {"custom_dt_lo": 80.0}
+        with _MockStreamlit(session_state=ss, query_params={"custom_dt_lo": "stale"}) as m:
+            vp._sync_session_to_url()
+            assert "custom_dt_lo" not in m.query_params
+            # And the baseline got captured for future comparisons
+            assert m.session_state["_url_baseline"]["custom_dt_lo"] == 80.0
+
     def test_round_trip_preserves_value(self):
-        # Set values, sync to URL, then hydrate fresh state — values should match
+        # Simulate user-modified values: prime the baseline so they're treated as non-default
         original = {
             "metr_proj_basis": "Superexponential",
             "milestones": False,
             "metr_end_year": 2028,
             "custom_dt_lo": 75.5,
         }
-        with _MockStreamlit(session_state=dict(original), query_params={}) as m:
+        ss = dict(original)
+        ss["_url_baseline"] = {"metr_end_year": 2030, "custom_dt_lo": 50.0}
+        with _MockStreamlit(session_state=ss, query_params={}) as m:
             vp._sync_session_to_url()
             # Now hydrate into a fresh session_state from the URL we just wrote
             qp = dict(m.query_params)
