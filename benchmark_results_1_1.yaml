@@ -1,5 +1,5 @@
 benchmark_name: METR-Horizon-v1.1
-doubling_time_in_days:
+doubling_time_in_days: # excludes points with central estimate p50 > 16 hrs
   all_time_stitched:
     point_estimate: 187.778
   from_2023_on:
@@ -517,4 +517,25 @@ results:
     - re_bench_common/init_solver,use_tools,triframe_inspect/triframe_agent
     - metr_tasks_swaa/init_solver,generate
     - triframe_inspect/triframe_agent
+  claude_mythos_preview_early_inspect:
+    benchmark_name: METR-Horizon-v1.1
+    metrics:
+      average_score:
+        estimate: 0.85205
+      is_sota: true
+      p50_horizon_length:
+        ci_high: 3304.261235
+        ci_low: 508.876789
+        estimate: 1044.780145
+      p80_horizon_length:
+        ci_high: 398.514614
+        ci_low: 97.30292
+        estimate: 185.911829
+    release_date: 2026-04-07
+    scaffolds:
+    - mtb/start_metr_task,metr_agents/react
+    - ai_rd_fix_embedding/init_solver,use_tools,metr_agents/react
+    - re_bench_common/init_solver,use_tools,metr_agents/react
+    - metr_tasks_swaa/init_solver,generate
+    - metr_agents/react
 swaa_version: f6cc84052e2a79dd540766c8a1b15ff399696371
