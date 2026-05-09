@@ -1492,3 +1492,213 @@ class TestNameMapping:
         data = vp.load_frontier()
         missing = [m['name'] for m in data if m['name'] not in vp._NAMES]
         assert missing == [], f"Missing pretty names for: {missing}"
+
+
+# ===========================================================================
+# URL parameter persistence
+# ===========================================================================
+
+class TestCoerceUrlValue:
+    def test_bool_truthy(self):
+        assert vp._coerce_url_value("1", False) is True
+        assert vp._coerce_url_value("true", False) is True
+        assert vp._coerce_url_value("True", False) is True
+
+    def test_bool_falsy(self):
+        assert vp._coerce_url_value("0", True) is False
+        assert vp._coerce_url_value("false", True) is False
+        assert vp._coerce_url_value("", True) is False
+
+    def test_int_default(self):
+        assert vp._coerce_url_value("2027", 2026) == 2027
+        assert isinstance(vp._coerce_url_value("2027", 2026), int)
+
+    def test_int_default_invalid_falls_back(self):
+        assert vp._coerce_url_value("not-an-int", 2026) == 2026
+
+    def test_float_default(self):
+        assert vp._coerce_url_value("12.5", 1.0) == 12.5
+        assert isinstance(vp._coerce_url_value("12.5", 1.0), float)
+
+    def test_float_default_invalid_falls_back(self):
+        assert vp._coerce_url_value("xyz", 1.0) == 1.0
+
+    def test_string_default(self):
+        assert vp._coerce_url_value("Superexponential", "Linear") == "Superexponential"
+
+    def test_bool_takes_priority_over_int(self):
+        # bool is a subclass of int in Python — make sure we treat True/False as bool
+        assert vp._coerce_url_value("1", True) is True
+        assert vp._coerce_url_value("0", True) is False
+
+
+class TestCoerceUnknownUrlValue:
+    def test_pure_digits_become_int(self):
+        v = vp._coerce_unknown_url_value("123")
+        assert v == 123 and isinstance(v, int)
+
+    def test_negative_digits_become_int(self):
+        v = vp._coerce_unknown_url_value("-7")
+        assert v == -7 and isinstance(v, int)
+
+    def test_decimal_becomes_float(self):
+        v = vp._coerce_unknown_url_value("1.5")
+        assert v == 1.5 and isinstance(v, float)
+
+    def test_non_numeric_stays_string(self):
+        assert vp._coerce_unknown_url_value("Claude 4 Opus") == "Claude 4 Opus"
+
+
+class TestAllTracked:
+    def test_includes_metr_keys(self):
+        keys, _ = vp._all_tracked()
+        assert "metr_proj_basis" in keys
+        assert "milestones" in keys
+        assert "log_scale" in keys
+
+    def test_includes_eci_and_ecicn_keys(self):
+        keys, _ = vp._all_tracked()
+        assert "eci_proj_basis" in keys
+        assert "ecicn_proj_basis" in keys
+
+    def test_includes_other_tab_keys(self):
+        keys, _ = vp._all_tracked()
+        for k in ("rli_proj_basis", "pqa_proj_basis", "emp_proj_basis",
+                  "rev_end_year", "ecg_highlight"):
+            assert k in keys, f"missing {k}"
+
+    def test_excludes_seg_config_internal_keys(self):
+        keys, _ = vp._all_tracked()
+        seg_keys = [k for k in keys if k.endswith("_seg_config")]
+        assert seg_keys == []
+
+    def test_keys_are_deduped(self):
+        keys, _ = vp._all_tracked()
+        assert len(keys) == len(set(keys))
+
+    def test_defaults_cover_known_widgets(self):
+        _, defaults = vp._all_tracked()
+        # Spot-check defaults from each tab
+        assert defaults["metr_proj_basis"] == "Piecewise linear"
+        assert defaults["log_scale"] is True
+        assert defaults["rli_proj_basis"] == "Linear (logit)"
+        assert defaults["rev_end_year"] == 2026
+        assert defaults["ecg_highlight"] == "None"
+
+
+class _MockStreamlit:
+    """Context manager that swaps vp.st.session_state and vp.st.query_params
+    with fresh dicts and restores them on exit."""
+    def __init__(self, session_state=None, query_params=None):
+        self.session_state = session_state if session_state is not None else {}
+        self.query_params = query_params if query_params is not None else {}
+
+    def __enter__(self):
+        self._orig_ss = vp.st.session_state
+        self._orig_qp = vp.st.query_params
+        vp.st.session_state = self.session_state
+        vp.st.query_params = self.query_params
+        return self
+
+    def __exit__(self, *a):
+        vp.st.session_state = self._orig_ss
+        vp.st.query_params = self._orig_qp
+
+
+class TestHydrateSessionFromUrl:
+    def test_hydrates_bool_from_url(self):
+        with _MockStreamlit(query_params={"milestones": "0"}) as m:
+            vp._hydrate_session_from_url()
+            assert m.session_state["milestones"] is False
+
+    def test_hydrates_string_from_url(self):
+        with _MockStreamlit(query_params={"metr_proj_basis": "Superexponential"}) as m:
+            vp._hydrate_session_from_url()
+            assert m.session_state["metr_proj_basis"] == "Superexponential"
+
+    def test_hydrates_int_from_url(self):
+        with _MockStreamlit(query_params={"metr_end_year": "2028"}) as m:
+            vp._hydrate_session_from_url()
+            assert m.session_state["metr_end_year"] == 2028
+
+    def test_does_not_overwrite_existing_session_state(self):
+        ss = {"metr_proj_basis": "Linear"}
+        with _MockStreamlit(session_state=ss,
+                            query_params={"metr_proj_basis": "Superexponential"}) as m:
+            vp._hydrate_session_from_url()
+            assert m.session_state["metr_proj_basis"] == "Linear"
+
+    def test_ignores_keys_not_in_url(self):
+        with _MockStreamlit(query_params={}) as m:
+            vp._hydrate_session_from_url()
+            assert "metr_proj_basis" not in m.session_state
+
+    def test_hydrates_unknown_default_keys_via_inference(self):
+        # custom_dt_lo has no entry in _METR_DEFAULTS — fall back to inference
+        with _MockStreamlit(query_params={"custom_dt_lo": "75.5"}) as m:
+            vp._hydrate_session_from_url()
+            assert m.session_state["custom_dt_lo"] == 75.5
+            assert isinstance(m.session_state["custom_dt_lo"], float)
+
+
+class TestSyncSessionToUrl:
+    def test_non_default_values_written(self):
+        ss = {"metr_proj_basis": "Superexponential", "milestones": False}
+        with _MockStreamlit(session_state=ss, query_params={}) as m:
+            vp._sync_session_to_url()
+            assert m.query_params["metr_proj_basis"] == "Superexponential"
+            assert m.query_params["milestones"] == "0"
+
+    def test_default_values_omitted(self):
+        # metr_proj_basis default is "Piecewise linear", milestones default is True
+        ss = {"metr_proj_basis": "Piecewise linear", "milestones": True}
+        with _MockStreamlit(session_state=ss, query_params={"metr_proj_basis": "stale"}) as m:
+            vp._sync_session_to_url()
+            assert "metr_proj_basis" not in m.query_params
+            assert "milestones" not in m.query_params
+
+    def test_bool_serialized_as_zero_or_one(self):
+        ss = {"milestones": False, "labels": True, "log_scale": False}
+        with _MockStreamlit(session_state=ss, query_params={}) as m:
+            vp._sync_session_to_url()
+            assert m.query_params["milestones"] == "0"
+            # labels default True, so omitted
+            assert "labels" not in m.query_params
+            assert m.query_params["log_scale"] == "0"
+
+    def test_keys_not_in_session_state_removed_from_url(self):
+        with _MockStreamlit(session_state={},
+                            query_params={"metr_proj_basis": "Linear"}) as m:
+            vp._sync_session_to_url()
+            assert "metr_proj_basis" not in m.query_params
+
+    def test_seg_config_never_written(self):
+        ss = {"_metr_seg_config": (2, ("Claude 4 Opus",))}
+        with _MockStreamlit(session_state=ss, query_params={}) as m:
+            vp._sync_session_to_url()
+            assert "_metr_seg_config" not in m.query_params
+
+    def test_unknown_default_key_with_value_written(self):
+        ss = {"custom_dt_lo": 80.0}
+        with _MockStreamlit(session_state=ss, query_params={}) as m:
+            vp._sync_session_to_url()
+            assert m.query_params["custom_dt_lo"] == "80.0"
+
+    def test_round_trip_preserves_value(self):
+        # Set values, sync to URL, then hydrate fresh state — values should match
+        original = {
+            "metr_proj_basis": "Superexponential",
+            "milestones": False,
+            "metr_end_year": 2028,
+            "custom_dt_lo": 75.5,
+        }
+        with _MockStreamlit(session_state=dict(original), query_params={}) as m:
+            vp._sync_session_to_url()
+            # Now hydrate into a fresh session_state from the URL we just wrote
+            qp = dict(m.query_params)
+            m.session_state.clear()
+            m.query_params = qp
+            vp.st.query_params = qp
+            vp._hydrate_session_from_url()
+            for k, v in original.items():
+                assert m.session_state[k] == v, f"{k}: {m.session_state[k]!r} != {v!r}"
