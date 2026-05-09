@@ -5573,9 +5573,117 @@ def render_proofqa():
     st.caption("Fine print: OpenAI Proof QA scores from OpenAI. Projections use logit-space fitting to keep scores bounded 0\u2013100%." + PROJ_DISCLAIMER)
 
 
+# ── URL parameter persistence ────────────────────────────────────────────
+
+_REV_DEFAULTS = {
+    "rev_end_year": 2026,
+    "rev_log_scale": True,
+    "rev_2025_only": False,
+    "rev_milestones": True,
+    "rev_labels": True,
+}
+_REV_TRACKED_KEYS = list(_REV_DEFAULTS.keys()) + [
+    "rev_proj_as_of", "oai_n_recent", "ant_n_recent",
+    "oai_dt_lo", "oai_dt_hi", "ant_dt_lo", "ant_dt_hi",
+]
+
+_ECG_DEFAULTS = {"ecg_highlight": "None"}
+_ECG_TRACKED_KEYS = list(_ECG_DEFAULTS.keys())
+
+# Internal cache keys: never round-trip through URL
+_URL_EXCLUDED_SUFFIXES = ("_seg_config",)
+
+def _all_tracked():
+    """Return (ordered keys, combined defaults) across every tab."""
+    keys = []
+    defaults = {}
+    for ks, ds in [
+        (_METR_RESET_KEYS, _METR_DEFAULTS),
+        (_eci_tab_reset_keys("eci"), _eci_tab_defaults("eci")),
+        (_eci_tab_reset_keys("ecicn"), _eci_tab_defaults("ecicn")),
+        (_RLI_RESET_KEYS, _RLI_DEFAULTS),
+        (_PQA_RESET_KEYS, _PQA_DEFAULTS),
+        (_EMP_RESET_KEYS, _EMP_DEFAULTS),
+        (_REV_TRACKED_KEYS, _REV_DEFAULTS),
+        (_ECG_TRACKED_KEYS, _ECG_DEFAULTS),
+    ]:
+        keys.extend(ks)
+        defaults.update(ds)
+    # Dedupe while preserving order
+    seen = set()
+    deduped = []
+    for k in keys:
+        if k in seen or any(k.endswith(s) for s in _URL_EXCLUDED_SUFFIXES):
+            continue
+        seen.add(k)
+        deduped.append(k)
+    return deduped, defaults
+
+def _coerce_url_value(raw, default):
+    if isinstance(default, bool):
+        return raw in ("1", "true", "True")
+    if isinstance(default, int):
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return default
+    if isinstance(default, float):
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return default
+    return str(raw)
+
+def _coerce_unknown_url_value(raw):
+    s = str(raw)
+    if s.lstrip("-").isdigit():
+        try:
+            return int(s)
+        except ValueError:
+            pass
+    try:
+        return float(s)
+    except ValueError:
+        return s
+
+def _hydrate_session_from_url():
+    keys, defaults = _all_tracked()
+    qp = st.query_params
+    for k in keys:
+        if k in st.session_state:
+            continue
+        if k not in qp:
+            continue
+        raw = qp[k]
+        if k in defaults:
+            st.session_state[k] = _coerce_url_value(raw, defaults[k])
+        else:
+            st.session_state[k] = _coerce_unknown_url_value(raw)
+
+def _sync_session_to_url():
+    keys, defaults = _all_tracked()
+    qp = st.query_params
+    for k in keys:
+        if k not in st.session_state:
+            if k in qp:
+                del qp[k]
+            continue
+        val = st.session_state[k]
+        if k in defaults and val == defaults[k]:
+            if k in qp:
+                del qp[k]
+            continue
+        if isinstance(val, bool):
+            qp[k] = "1" if val else "0"
+        else:
+            qp[k] = str(val)
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
 if not os.environ.get("_VP_TESTING"):
+    _hydrate_session_from_url()
+
     if active_tab == "METR Horizon":
         render_metr()
     elif active_tab == "Epoch ECI":
@@ -5592,3 +5700,5 @@ if not os.environ.get("_VP_TESTING"):
         render_eci_gap()
     elif active_tab == "Proof QA":
         render_proofqa()
+
+    _sync_session_to_url()
