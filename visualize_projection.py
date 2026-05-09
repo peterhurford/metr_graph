@@ -55,7 +55,7 @@ def pretty(name):
     return _NAMES.get(name, name)
 
 
-def log2min_to_label(val):
+def log2min_to_label(val, hours_only=False):
     """Convert log2(minutes) to human-readable string."""
     minutes = 2 ** val
     if minutes < 1:
@@ -63,13 +63,18 @@ def log2min_to_label(val):
     if minutes < 60:
         return f"{minutes:.0f}m"
     hrs = minutes / 60
-    return fmt_hrs(hrs)
+    return fmt_hrs(hrs, hours_only=hours_only)
 
 
-def fmt_hrs(h):
+def fmt_hrs(h, hours_only=False):
     """Format hours for display using work-time units (8h/d, 40h/w, 176h/mo, 2000h/y).
-    Shows sub-unit remainder (e.g., 1h20m, 2d3h). No decimals."""
+    Shows sub-unit remainder (e.g., 1h20m, 2d3h). No decimals.
+    When hours_only=True, output is always in hours (or minutes for h<1)."""
     minutes = h * 60
+    if hours_only:
+        if h < 1:
+            return f"{int(round(minutes))}m"
+        return f"{int(round(h)):,}h"
     if h < 1:
         return f"{int(round(minutes))}m"
     if h < 100:
@@ -600,7 +605,7 @@ _METR_RESET_KEYS = [
     "superexp_pos_hi_p80",
     "metr_proj_basis",
     "milestones", "labels", "post_gpt4o", "p80",
-    "log_scale", "_proj_as_of", "metr_end_year",
+    "log_scale", "hours_only", "_proj_as_of", "metr_end_year",
     "_metr_seg_config",
 ]
 
@@ -614,6 +619,7 @@ _METR_DEFAULTS = {
     "post_gpt4o": False,
     "p80": False,
     "log_scale": True,
+    "hours_only": False,
     "metr_end_year": 2026,
 }
 
@@ -830,6 +836,7 @@ def render_metr():
         only_post_gpt4o = st.toggle("GPT-4o+ only", key="post_gpt4o")
         use_p80 = st.toggle("Use p80", key="p80")
         use_log_scale = st.toggle("Log scale", key="log_scale")
+        hours_only = st.toggle("Hours only", key="hours_only")
 
         st.markdown("---")
         with st.expander("Projection range"):
@@ -1017,7 +1024,7 @@ def render_metr():
         texts = []
         for d, y in zip(dates, y_log2):
             h = 2**y / 60
-            texts.append(f"{d.strftime('%b %d, %Y')}<br>Trend: {fmt_hrs(h)}")
+            texts.append(f"{d.strftime('%b %d, %Y')}<br>Trend: {fmt_hrs(h, hours_only=hours_only)}")
         return dates, (y_display.tolist() if hasattr(y_display, 'tolist') else list(y_display)), texts
 
     if proj_basis in ("Linear", "Piecewise linear"):
@@ -1112,7 +1119,7 @@ def render_metr():
         days_hist = np.arange(d_start, d_last + 1, 1)
         y_hist = _se_A_disp + _se_K * 2 ** (days_hist / superexp_halflife)
         dates_hist = [base_date + timedelta(days=int(d)) for d in days_hist]
-        hover_hist = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {fmt_hrs(2**y / 60)}" for dt, y in zip(dates_hist, y_hist)]
+        hover_hist = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {fmt_hrs(2**y / 60, hours_only=hours_only)}" for dt, y in zip(dates_hist, y_hist)]
         y_hist_conv = _yconv(y_hist)
         y_hist_conv = y_hist_conv.tolist() if hasattr(y_hist_conv, 'tolist') else list(y_hist_conv)
         fig.add_trace(go.Scatter(
@@ -1128,7 +1135,7 @@ def render_metr():
         y_proj_growth = superexp_trajectory(days_proj, _se_user_dt, superexp_halflife, superexp_dt_floor)
         y_proj_log2 = _se_fitted_pos + y_proj_growth
         dates_proj = [current['date'] + timedelta(days=int(d)) for d in days_proj]
-        hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {fmt_hrs(2**y / 60)}" for dt, y in zip(dates_proj, y_proj_log2)]
+        hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {fmt_hrs(2**y / 60, hours_only=hours_only)}" for dt, y in zip(dates_proj, y_proj_log2)]
         y_proj_conv = _yconv(y_proj_log2)
         y_proj_conv = y_proj_conv.tolist() if hasattr(y_proj_conv, 'tolist') else list(y_proj_conv)
         fig.add_trace(go.Scatter(
@@ -1281,7 +1288,7 @@ def render_metr():
         y_min = np.log2(frontier_plot[0][_val_key]) - 1
         y_max = max(pct95[-1], np.log2(176 * 60)) + 2
         tick_vals = list(range(int(np.floor(y_min)), int(np.ceil(y_max)) + 1))
-        tick_text = [log2min_to_label(v) for v in tick_vals]
+        tick_text = [log2min_to_label(v, hours_only=hours_only) for v in tick_vals]
         yaxis_cfg = dict(
             title=f"{_reliability_label} Horizon Length (log scale)",
             tickvals=tick_vals, ticktext=tick_text,
@@ -1370,8 +1377,8 @@ def render_metr():
         p10_h, p50_h, p90_h = np.percentile(proj_hrs, [10, 50, 90])
         display_h = current_hrs if elapsed == 0 else p50_h
         with col:
-            st.metric(label=label, value=fmt_hrs(display_h))
-            st.caption(f"80% CI: {fmt_hrs(p10_h)} \u2013 {fmt_hrs(p90_h)}")
+            st.metric(label=label, value=fmt_hrs(display_h, hours_only=hours_only))
+            st.caption(f"80% CI: {fmt_hrs(p10_h, hours_only=hours_only)} \u2013 {fmt_hrs(p90_h, hours_only=hours_only)}")
 
     # Milestone tables in expander
     milestone_thresholds = [
