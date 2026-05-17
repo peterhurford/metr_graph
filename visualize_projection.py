@@ -3083,6 +3083,9 @@ _OPENAI_REVENUE = [
     ("2025-08-01", 13.0),
     ("2025-12-31", 21.4),
     ("2026-02-01", 25.0),
+    ("2026-03-31", 26.0),
+    ("2026-04-30", 28.0),
+    ("2026-05-15", 30.0),
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -3098,7 +3101,7 @@ _ANTHROPIC_REVENUE = [
     ("2026-02-01", 14.0),
     ("2026-03-01", 19.0),
     ("2026-04-01", 30.0),
-    ("2026-04-30", 44.0),
+    ("2026-05-15", 40.0),
 ]
 
 
@@ -3580,7 +3583,7 @@ def render_revenue():
                 if rows:
                     st.table(rows)
 
-    st.caption("Fine print: Revenue figures are approximate ARR (annualized run rate) compiled from public reports and media sources. Anthropic Dec 2025 figure averaged from $8-10B range reported." + PROJ_DISCLAIMER)
+    st.caption("Fine print: Revenue figures are approximate ARR (annualized run rate) compiled from public reports and media sources. Anthropic Dec 2025 figure averaged from $8-10B range reported. May 2026 figures from [The Information](https://www.theinformation.com/articles/anthropic-openais-share-ai-startup-revenues-rises-89)." + PROJ_DISCLAIMER)
 
 
 # ── Employment ────────────────────────────────────────────────────────────
