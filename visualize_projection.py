@@ -3102,6 +3102,7 @@ _ANTHROPIC_REVENUE = [
     ("2026-03-01", 19.0),
     ("2026-04-01", 30.0),
     ("2026-05-15", 40.0),
+    ("2026-05-21", 45.0),
 ]
 
 
@@ -3583,7 +3584,7 @@ def render_revenue():
                 if rows:
                     st.table(rows)
 
-    st.caption("Fine print: Revenue figures are approximate ARR (annualized run rate) compiled from public reports and media sources. Anthropic Dec 2025 figure averaged from $8-10B range reported. May 2026 figures from [The Information](https://www.theinformation.com/articles/anthropic-openais-share-ai-startup-revenues-rises-89)." + PROJ_DISCLAIMER)
+    st.caption("Fine print: Revenue figures are approximate ARR (annualized run rate) compiled from public reports and media sources. Anthropic Dec 2025 figure averaged from $8-10B range reported. May 2026 figures from [The Information](https://www.theinformation.com/articles/anthropic-openais-share-ai-startup-revenues-rises-89) and [The Information](https://www.theinformation.com/articles/openai-held-1-billion-revenue-lead-anthropic-first-quarter)." + PROJ_DISCLAIMER)
 
 
 # ── Employment ────────────────────────────────────────────────────────────
