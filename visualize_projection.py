@@ -2269,14 +2269,16 @@ def render_eci():
 
 
 def render_eci_china():
+    # Single milestone line at the current best US ECI (frontier max).
+    _us_best = max(eci_frontier_all, key=lambda m: m['eci_score'])
+    _us_best_score = _us_best['eci_score']
+    _us_best_label = f"US best {_us_best_score:.1f}"
     _render_eci_tab(
         ecicn_all, ecicn_frontier_all, ecicn_frontier_names, "ecicn",
         "ECI China Projection",
-        [(140, "ECI 140", '#888888'), (145, "ECI 145", '#666666'),
-         (150, "ECI 150", '#c0392b'), (155, "ECI 155", '#8e44ad')],
+        [(_us_best_score, _us_best_label, '#8e44ad')],
         overlay_frontier=eci_frontier_all,
         overlay_label="US trend",
-        extra_table_milestones=[(160, "ECI 160")],
     )
 
 
