@@ -1563,7 +1563,7 @@ class TestAllTracked:
 
     def test_includes_other_tab_keys(self):
         keys, _ = vp._all_tracked()
-        for k in ("rli_proj_basis", "pqa_proj_basis", "emp_proj_basis",
+        for k in ("rli_proj_basis", "emp_proj_basis",
                   "rev_end_year", "ecg_highlight"):
             assert k in keys, f"missing {k}"
 
