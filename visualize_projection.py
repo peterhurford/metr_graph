@@ -1991,7 +1991,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         fig.add_trace(go.Scatter(
             x=[_ovl_x_start, _ovl_x_end], y=[_ovl_y_start, _ovl_y_end],
             mode='lines',
-            line=dict(color='rgba(127,127,127,0.55)', width=1.25, dash='dot'),
+            line=dict(color='#1565c0', width=1.25, dash='dot'),
             name=f'{overlay_label} ({_ovl_ppy:.1f} pts/yr)' if overlay_label else f'Overlay ({_ovl_ppy:.1f} pts/yr)',
             hoverinfo='skip',
         ))
@@ -2177,6 +2177,22 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         p50_lo, p50_hi = p50_min * 0.66, p50_min * 1.34
         return f"METR p50 {fmt_hrs(p50_lo / 60)}\u2013{fmt_hrs(p50_hi / 60)}"
 
+    # When an overlay (US) frontier is supplied, the metric cards show how many
+    # months China lags the US trend at that score rather than the raw ECI.
+    _gap_trend = None
+    if overlay_frontier is not None and len(overlay_frontier) >= 2:
+        _g_base = overlay_frontier[0]['date']
+        _g_days = np.array([(m['date'] - _g_base).days for m in overlay_frontier], dtype=float)
+        _g_scores = np.array([m['eci_score'] for m in overlay_frontier])
+        _g_intercept, _g_slope = fit_line(_g_days, _g_scores)
+
+        def _gap_months(score, at_date):
+            """Months `score` lags the US trend, evaluated at China date `at_date`."""
+            us_days = (score - _g_intercept) / _g_slope
+            us_date = _g_base + timedelta(days=us_days)
+            return (at_date - us_date).days / 30.44
+        _gap_trend = _gap_months
+
     for col, (label, target_date) in zip(cols, all_targets):
         elapsed = (target_date - eci_current['date']).days
         proj_scores = _proj_score_at(
@@ -2186,8 +2202,16 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         p10_s, p50_s, p90_s = np.percentile(proj_scores, [10, 50, 90])
         display_s = eci_current_score if elapsed == 0 else p50_s
         with col:
-            st.metric(label=label, value=f"{display_s:.1f}")
-            st.caption(f"80% CI: {p10_s:.1f} \u2013 {p90_s:.1f}")
+            if _gap_trend is not None:
+                # Lower China score => further behind, so p10 gives the larger gap.
+                g50 = _gap_trend(display_s, target_date)
+                g_lo = _gap_trend(p90_s, target_date)
+                g_hi = _gap_trend(p10_s, target_date)
+                st.metric(label=label, value=f"{g50:.1f} mo")
+                st.caption(f"80% CI: {g_lo:.1f} \u2013 {g_hi:.1f} mo")
+            else:
+                st.metric(label=label, value=f"{display_s:.1f}")
+                st.caption(f"80% CI: {p10_s:.1f} \u2013 {p90_s:.1f}")
             if eci_metr_proj:
                 st.markdown(
                     f"<div style='font-size:0.72em; color:#888; margin-top:-0.4em;'>"
