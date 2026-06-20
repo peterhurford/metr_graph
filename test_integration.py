@@ -639,3 +639,43 @@ class TestEmploymentReset:
         _assert_no_error(at, "after emp CI reset")
         assert at.number_input(key="emp_custom_dt_lo").value == dt_lo_default, \
             "emp DT lo not reset"
+
+
+# ===========================================================================
+# Data Centers tab
+# ===========================================================================
+
+class TestDataCenters:
+    """The Data Centers tab renders and responds to its controls."""
+
+    def _dc_app(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Data Centers")
+        return at
+
+    def test_renders(self):
+        at = self._dc_app()
+        _assert_no_error(at, "Data Centers default")
+        # Headers for both requested views are present.
+        text = " ".join(str(m.value) for m in at.markdown) + \
+            " ".join(str(h.value) for h in at.subheader)
+        assert "Largest single data center" in text
+        assert "Largest data center by company" in text
+
+    def test_metric_switch(self):
+        at = self._dc_app()
+        at.selectbox(key="dc_metric").set_value("Power (MW)").run()
+        _assert_no_error(at, "Data Centers / Power (MW)")
+
+    def test_include_future(self):
+        at = self._dc_app()
+        at.checkbox(key="dc_future").set_value(True).run()
+        _assert_no_error(at, "Data Centers / include future")
+
+    def test_reset(self):
+        at = self._dc_app()
+        at.selectbox(key="dc_metric").set_value("Capital cost ($B)").run()
+        at.button(key="dc_reset").click().run()
+        _assert_no_error(at, "after dc reset")
+        assert at.selectbox(key="dc_metric").value == "Compute (H100-equivalents)"

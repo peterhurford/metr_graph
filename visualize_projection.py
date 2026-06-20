@@ -541,6 +541,234 @@ def load_proofqa_data():
     return models
 
 
+# ── Data center data (Epoch AI Frontier Data Centers) ────────────────────
+
+import bisect
+
+# 3-month training run (3 × 30-day months), used to turn a site's 8-bit OP/s
+# throughput into total operations over a quarter-long run.
+_DAYS_3MO = 3 * 30
+_SECONDS_3MO = _DAYS_3MO * 24 * 3600
+# Fraction of peak throughput actually realized over a real training run.
+_DC_UTILIZATION = 0.3
+
+def _dc_mtime():
+    p = os.path.join(os.path.dirname(__file__), 'data_center_timelines.csv')
+    return os.path.getmtime(p)
+
+
+def _dc_clean_owner(s):
+    """Strip Epoch '#confident'/'#speculative' confidence tags from an owner field."""
+    return (s or '').split('#')[0].strip()
+
+
+@st.cache_data
+def load_data_centers(_mtime=None):
+    """Load Epoch's per-data-center capacity timelines plus an owner→company map.
+
+    Returns a list of dicts: {name, company, points:[{date, status, h100,
+    it_power, power, perf, cost}, ...]} with points sorted by date. Metric values
+    are floats or None when missing.
+    """
+    base = os.path.dirname(__file__)
+
+    # Operator (primary user) and owner maps from the data_centers metadata file.
+    # We attribute each site to the AI lab operating it (its primary listed user),
+    # falling back to the facility owner, then to the site-name token.
+    user_by_dc = {}
+    owner_by_dc = {}
+    dc_meta_path = os.path.join(base, 'data_centers.csv')
+    if os.path.exists(dc_meta_path):
+        with open(dc_meta_path, 'r') as f:
+            for r in csv.DictReader(f):
+                name = (r.get('Name') or '').strip()
+                if not name:
+                    continue
+                owner_by_dc[name] = _dc_clean_owner(r.get('Owner', ''))
+                # Users may be a comma-separated list; take the primary (first).
+                primary_user = (r.get('Users', '') or '').split(',')[0]
+                user_by_dc[name] = _dc_clean_owner(primary_user)
+
+    def company_for(dc_name):
+        return (user_by_dc.get(dc_name, '')
+                or owner_by_dc.get(dc_name, '')
+                # Fallback for colocation sites with no listed user/owner:
+                # use the first token of the site name (QTS, DayOne, EdgeCore…).
+                or (dc_name.split()[0] if dc_name.split() else dc_name))
+
+    def _num(r, key):
+        v = (r.get(key, '') or '').strip().replace(',', '')
+        if not v:
+            return None
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return None
+
+    series = {}
+    with open(os.path.join(base, 'data_center_timelines.csv'), 'r') as f:
+        for r in csv.DictReader(f):
+            dname = (r.get('Data center') or '').strip()
+            ds = (r.get('Date') or '').strip()
+            if not dname or not ds:
+                continue
+            try:
+                d = datetime.strptime(ds, '%Y-%m-%d')
+            except (ValueError, TypeError):
+                continue
+            perf = _num(r, 'Performance (8-bit OP/s)')
+            series.setdefault(dname, []).append({
+                'date': d,
+                'status': r.get('Construction status', ''),
+                'h100': _num(r, 'H100 equivalents'),
+                'it_power': _num(r, 'IT power (MW)'),
+                'power': _num(r, 'Power (MW)'),
+                'perf': perf,
+                # Total 8-bit OPs from a 3-month run at this throughput, derated
+                # by realized utilization.
+                'train_flop': (perf * _SECONDS_3MO * _DC_UTILIZATION
+                               if perf is not None else None),
+                'cost': _num(r, 'Total capital cost (2025 USD billions)'),
+            })
+
+    dcs = []
+    for name, pts in series.items():
+        pts.sort(key=lambda p: p['date'])
+        dcs.append({'name': name, 'company': company_for(name), 'points': pts})
+    dcs.sort(key=lambda dc: dc['name'])
+    return dcs
+
+
+# Metric options for the data-center tab: label → (point key, log-scale default, formatter kind)
+_DC_METRICS = {
+    "Compute (H100-equivalents)": {"key": "h100", "log": True, "kind": "h100"},
+    "Power (MW)": {"key": "power", "log": False, "kind": "mw"},
+    "IT power (MW)": {"key": "it_power", "log": False, "kind": "mw"},
+    "Capital cost ($B)": {"key": "cost", "log": False, "kind": "cost"},
+    "Performance (8-bit OP/s)": {"key": "perf", "log": True, "kind": "sci"},
+    "3mo train FLOP": {"key": "train_flop", "log": True, "kind": "flop"},
+}
+
+# Stable colors for the most common companies; others fall back to a palette.
+_DC_COLORS = {
+    "Google": "#4285F4", "Meta": "#0866FF", "Microsoft": "#7CBB00",
+    "OpenAI": "#10A37F", "Oracle": "#C74634", "Amazon": "#FF9900",
+    "CoreWeave": "#FF4D4D", "SpaceXAI": "#1DA1F2", "Anthropic": "#D97757",
+    "Softbank": "#7A2E8E", "Alibaba": "#FF6A00", "Fluidstack": "#00B5AD",
+    "Nscale": "#5C6BC0", "G42": "#16A085",
+}
+_DC_PALETTE = ["#888888", "#E377C2", "#8C564B", "#BCBD22", "#17BECF",
+               "#9467BD", "#2CA02C", "#D62728", "#1F77B4", "#FF7F0E"]
+
+# Companies excluded from all data-center views (colocation/neutral-host
+# providers plus others not wanted on the chart).
+_DC_EXCLUDE_COMPANIES = {
+    "QTS", "DayOne", "CoreWeave", "STACK", "Stream", "Vantage", "EdgeCore",
+    "Oracle", "Microsoft",
+}
+
+
+def _dc_fmt_value(v, kind):
+    if v is None:
+        return "—"
+    if kind == "h100":
+        if v >= 1e6:
+            return f"{v / 1e6:.2f}M"
+        if v >= 1e3:
+            return f"{v / 1e3:.0f}k"
+        return f"{v:.0f}"
+    if kind == "mw":
+        return f"{v:,.0f} MW"
+    if kind == "cost":
+        return f"${v:.1f}B"
+    if kind == "sci":
+        return f"{v:.2e}"
+    if kind == "flop":
+        return f"{v:.2e} FLOP"
+    return f"{v:g}"
+
+
+def _dc_series_for_metric(dcs, key, cap_date=None):
+    """Per-DC step points for one metric: name → {company, pts:[(date, val)…]}.
+
+    Drops missing values and any points after cap_date (when given).
+    """
+    out = {}
+    for dc in dcs:
+        pts = []
+        for p in dc['points']:
+            v = p.get(key)
+            if v is None:
+                continue
+            if cap_date is not None and p['date'] > cap_date:
+                continue
+            pts.append((p['date'], v))
+        if pts:
+            out[dc['name']] = {'company': dc['company'], 'pts': pts}
+    return out
+
+
+def _dc_val_at(pts, t):
+    """Forward-filled value at time t: the latest point with date <= t (or None)."""
+    dates = [d for d, _ in pts]
+    i = bisect.bisect_right(dates, t) - 1
+    return pts[i][1] if i >= 0 else None
+
+
+def _dc_envelope(series):
+    """Largest single data center at each event date.
+
+    Returns [(date, value, leader_name, leader_company), …] over the union of all
+    event dates, picking the max forward-filled value across every data center.
+    """
+    all_dates = sorted({d for v in series.values() for d, _ in v['pts']})
+    steps = []
+    for d in all_dates:
+        best = None
+        best_name = None
+        best_co = None
+        for name, v in series.items():
+            val = _dc_val_at(v['pts'], d)
+            if val is None:
+                continue
+            if best is None or val > best:
+                best, best_name, best_co = val, name, v['company']
+        if best is not None:
+            steps.append((d, best, best_name, best_co))
+    return steps
+
+
+def _dc_company_series(series):
+    """Per company, the largest of its data centers at each event date.
+
+    Returns company → [(date, value, leader_dc_name), …].
+    """
+    companies = {}
+    for name, v in series.items():
+        companies.setdefault(v['company'], []).append((name, v['pts']))
+    out = {}
+    for co, members in companies.items():
+        all_dates = sorted({d for _, pts in members for d, _ in pts})
+        steps = []
+        for d in all_dates:
+            best = None
+            best_name = None
+            for name, pts in members:
+                val = _dc_val_at(pts, d)
+                if val is None:
+                    continue
+                if best is None or val > best:
+                    best, best_name = val, name
+            if best is not None:
+                steps.append((d, best, best_name))
+        out[co] = steps
+    return out
+
+
+def _dc_color(company, idx):
+    return _DC_COLORS.get(company, _DC_PALETTE[idx % len(_DC_PALETTE)])
+
+
 # ── Load data (before sidebar, so model names are available) ─────────────
 
 metr_all = load_metr_all(_mtime=_yaml_mtime())
@@ -565,11 +793,13 @@ pqa_frontier_all = [m for m in pqa_all if m['is_frontier']]
 pqa_frontier_names = [m['name'] for m in pqa_frontier_all]
 pqa_all_names = [m['name'] for m in pqa_all]
 
+dc_all = load_data_centers(_mtime=_dc_mtime())
+
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI China", "Remote Labor Index", "Proof QA", "Revenue", "Employment", "ECI Company Gap"]
-_TAB_SLUG = {"metr": 0, "eci": 1, "ecicn": 2, "rli": 3, "proofqa": 4, "revenue": 5, "employment": 6, "ecigap": 7}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI China", "Remote Labor Index", "Proof QA", "Revenue", "Employment", "ECI Company Gap", "Data Centers"]
+_TAB_SLUG = {"metr": 0, "eci": 1, "ecicn": 2, "rli": 3, "proofqa": 4, "revenue": 5, "employment": 6, "ecigap": 7, "datacenters": 8}
 
 # Read ?tab= from URL for deep-linking
 _url_tab = st.query_params.get("tab", "").lower()
@@ -580,7 +810,7 @@ with st.sidebar:
     st.markdown("---")
 
 # Keep URL in sync with selected tab (omit when at default)
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "ECI China": "ecicn", "Remote Labor Index": "rli", "Proof QA": "proofqa", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap"}
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "ECI China": "ecicn", "Remote Labor Index": "rli", "Proof QA": "proofqa", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters"}
 _DEFAULT_TAB = _TAB_OPTIONS[0]
 if active_tab == _DEFAULT_TAB:
     if "tab" in st.query_params:
@@ -4884,6 +5114,395 @@ def render_eci_gap():
                "ECI data from Epoch AI.")
 
 
+# ── Data Centers ───────────────────────────────────────────────────────────
+
+_DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future"]
+_DC_DEFAULTS = {
+    "dc_metric": "Compute (H100-equivalents)",
+    "dc_log": True,
+    "dc_future": True,
+}
+
+
+def _dc_visible_vals(step_items, x_start):
+    """Values a step series shows within [x_start, …]: points at/after x_start
+    plus the forward-filled value carried in at the left edge."""
+    out = []
+    prior = None
+    for item in step_items:
+        d, v = item[0], item[1]
+        if d >= x_start:
+            out.append(v)
+        elif v is not None:
+            prior = v
+    if prior is not None:
+        out.append(prior)
+    return out
+
+
+def _dc_split_at(items, today, end_x):
+    """Split a step series into actual (≤today) and projected (>today) polylines.
+
+    `items` are tuples with [0]=date, [1]=value. Returns (actual_xy, proj_xy) as
+    ([x…], [y…]) pairs. The two segments share a boundary point at `today` (the
+    forward-filled value) so the solid and dashed lines meet, and each is flattened
+    out to its right edge. proj_xy is (None, None) when there's nothing past today.
+    """
+    v_today = None
+    fut = []
+    for it in items:
+        d, v = it[0], it[1]
+        if d <= today:
+            v_today = v
+        else:
+            fut.append((d, v))
+    act_x = [it[0] for it in items if it[0] <= today]
+    act_y = [it[1] for it in items if it[0] <= today]
+    if not fut:
+        # No projection; extend actual to the right edge.
+        if act_x:
+            act_x = act_x + [end_x]
+            act_y = act_y + [act_y[-1]]
+        return (act_x, act_y), (None, None)
+    # Cap actual at today, then run the dashed projection from today onward.
+    if v_today is not None:
+        act_x = act_x + [today]
+        act_y = act_y + [v_today]
+        proj_x = [today] + [d for d, _ in fut] + [end_x]
+        proj_y = [v_today] + [v for _, v in fut] + [fut[-1][1]]
+    else:
+        # All points are in the future (rare): dash everything.
+        proj_x = [d for d, _ in fut] + [end_x]
+        proj_y = [v for _, v in fut] + [fut[-1][1]]
+    return (act_x, act_y), (proj_x, proj_y)
+
+
+def _dc_yrange(values, log_scale):
+    """Tight y-axis range from plotted values (log range in log10 units)."""
+    vals = [v for v in values if v is not None and (v > 0 if log_scale else True)]
+    if not vals:
+        return None
+    vmin, vmax = min(vals), max(vals)
+    if log_scale:
+        lo = float(np.floor(np.log10(max(vmin, 1e-9))))
+        hi = float(np.ceil(np.log10(max(vmax, 10.0))))
+        if hi <= lo:
+            hi = lo + 1
+        return [lo, hi]
+    return [0, vmax * 1.1]
+
+
+def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
+               height=440, show_legend=False):
+    return dict(
+        height=height,
+        plot_bgcolor='white', paper_bgcolor='white',
+        margin=dict(l=60, r=30, t=10, b=40),
+        font=dict(color='#222222'),
+        showlegend=show_legend,
+        legend=dict(font=dict(size=11, color='#222222'), groupclick='togglegroup'),
+        xaxis=dict(gridcolor='rgba(0,0,0,0.12)', range=[x_start, x_end],
+                   tickfont=dict(color='#222222'), title_font=dict(color='#222222')),
+        yaxis=dict(title_text=y_title,
+                   type='log' if log_scale else 'linear',
+                   range=y_range,
+                   gridcolor='rgba(0,0,0,0.12)',
+                   tickfont=dict(color='#222222'), title_font=dict(color='#222222')),
+    )
+
+
+def _dc_add_projection_band(fig, today, x_end):
+    """Shade the post-today region and draw a labelled 'Today' divider."""
+    fig.add_vrect(x0=today, x1=x_end, fillcolor='rgba(120,120,120,0.08)',
+                  line_width=0, layer='below')
+    fig.add_vline(x=today, line=dict(color='#999999', width=1.5, dash='dot'))
+    # Position labels in paper coordinates so they sit at the top of the plot.
+    fig.add_annotation(x=today, yref='paper', y=1.0, text='Today',
+                       showarrow=False, xanchor='right', yanchor='bottom',
+                       font=dict(size=10, color='#777777'))
+    fig.add_annotation(x=x_end, yref='paper', y=1.0,
+                       text='planned / under construction →',
+                       showarrow=False, xanchor='right', yanchor='bottom',
+                       font=dict(size=10, color='#999999'))
+
+
+def render_data_centers():
+    _today = datetime.now()
+
+    # ── Sidebar ──
+    with st.sidebar:
+        st.header("Data Centers")
+        metric_label = st.selectbox("Capacity metric", list(_DC_METRICS),
+                                    key="dc_metric")
+        cfg = _DC_METRICS[metric_label]
+        log_scale = st.checkbox("Log scale", value=cfg["log"], key="dc_log")
+        include_future = st.checkbox("Include planned future buildout",
+                                     value=True, key="dc_future")
+        if st.button("Reset", key="dc_reset"):
+            for k in _DC_RESET_KEYS:
+                st.session_state.pop(k, None)
+            # Re-seed defaults so they win over URL re-hydration on the rerun.
+            st.session_state.update(_DC_DEFAULTS)
+            st.rerun()
+
+    key = cfg["key"]
+    kind = cfg["kind"]
+    # Cap projected buildout at end of 2028 when showing the future.
+    cap_date = datetime(2028, 12, 31) if include_future else _today
+    series = _dc_series_for_metric(dc_all, key, cap_date=cap_date)
+    # Drop colocation / neutral-host providers (not AI labs).
+    series = {n: v for n, v in series.items()
+              if v['company'] not in _DC_EXCLUDE_COMPANIES}
+
+    # For 3-month-training-FLOP, a run on a site available at date D only
+    # completes at D + 3mo, so shift every data point forward by that lead time.
+    if key == 'train_flop':
+        shift = timedelta(days=_DAYS_3MO)
+        series = {n: {'company': v['company'],
+                      'pts': [(d + shift, val) for d, val in v['pts']]}
+                  for n, v in series.items()}
+        cap_date = cap_date + shift
+
+    # ── Header ──
+    st.header("Frontier Data Centers Over Time")
+    st.markdown(
+        "How big is the largest AI data center at any point in time, and how does "
+        "each company's largest site compare? Capacity is measured as "
+        f"**{metric_label}**, forward-filled between Epoch AI's reported build "
+        "milestones for each site. "
+        + ("**Solid lines are actual capacity; dashed lines past the shaded "
+           "“Today” divider are planned / under-construction buildout.**"
+           if include_future else ""))
+
+    if key == 'train_flop':
+        st.caption(
+            f"Methodology: *3mo train FLOP* = each site's peak performance "
+            f"(8-bit OP/s) × a {_DAYS_3MO}-day ({_DAYS_3MO // 30}-month) training "
+            f"run × {_DC_UTILIZATION:.0%} realized utilization. Every data point "
+            f"is shifted forward by {_DAYS_3MO // 30} months, since a run started "
+            "on a site's availability date only finishes that much later. Figures "
+            "are order-of-magnitude estimates, not vendor-reported numbers.")
+
+    if not series:
+        st.warning("No data available for this metric.")
+        return
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 1: Largest single data center over time
+    # ══════════════════════════════════════════════════════════════════════
+    env = _dc_envelope(series)
+    st.subheader("Largest single data center")
+
+    if env:
+        cd, cv, cn, cco = env[-1]
+        word = "planned peak" if include_future else "current"
+        st.markdown(f"The **{word}** largest single data center is **{cn}** "
+                    f"({cco}) at **{_dc_fmt_value(cv, kind)}**.")
+
+    env_dates = [e[0] for e in env]
+    env_vals = [e[1] for e in env]
+    end_x = cap_date if cap_date is not None else (
+        env_dates[-1] if env_dates else _today)
+    # Focus the view on the AI buildout era; earlier milestones (land clearing
+    # back to 2018) are off-screen but still carried forward into 2024.
+    x_start = datetime(2024, 1, 1)
+    x_end = end_x + timedelta(days=30)
+
+    fig1 = go.Figure()
+    if include_future:
+        _dc_add_projection_band(fig1, _today, x_end)
+    # The frontier envelope as a step line: solid for actual, dashed past today.
+    (a_x, a_y), (p_x, p_y) = _dc_split_at(env, _today, end_x)
+    fig1.add_trace(go.Scatter(
+        x=a_x, y=a_y, mode='lines',
+        line=dict(color='#1F77B4', width=3, shape='hv'),
+        hoverinfo='skip', showlegend=False,
+    ))
+    if p_x is not None:
+        fig1.add_trace(go.Scatter(
+            x=p_x, y=p_y, mode='lines',
+            line=dict(color='#1F77B4', width=3, shape='hv', dash='dash'),
+            hoverinfo='skip', showlegend=False,
+        ))
+    # Mark each point where the frontier leader changes — filled for actual,
+    # hollow for projected milestones.
+    chg = []
+    prev = None
+    for d, v, name, co in env:
+        if name != prev:
+            chg.append((d, v, name, co))
+            prev = name
+
+    def _marker_trace(pts, projected):
+        if not pts:
+            return
+        fig1.add_trace(go.Scatter(
+            x=[p[0] for p in pts], y=[p[1] for p in pts],
+            mode='markers+text',
+            marker=dict(color='white' if projected else '#1F77B4', size=10,
+                        line=dict(color='#1F77B4', width=1.5)),
+            text=[p[2] for p in pts], textposition='top center',
+            textfont=dict(size=9, color='#1F77B4'),
+            hovertext=[f"{p[2]} ({p[3]}){' — planned' if projected else ''}<br>"
+                       f"{p[0].strftime('%b %Y')}<br>{_dc_fmt_value(p[1], kind)}"
+                       for p in pts],
+            hoverinfo='text', showlegend=False,
+        ))
+
+    _marker_trace([p for p in chg if p[0] <= _today], projected=False)
+    _marker_trace([p for p in chg if p[0] > _today], projected=True)
+    if env:
+        _peak_projected = include_future and cd > _today
+        fig1.add_trace(go.Scatter(
+            x=[end_x], y=[env_vals[-1]], mode='markers',
+            marker=dict(color='white' if _peak_projected else '#1F77B4', size=13,
+                        symbol='diamond', line=dict(color='#1F77B4', width=1.5)),
+            hovertext=[f"{'Planned peak' if _peak_projected else 'Current'}: "
+                       f"{cn} ({cco})<br>{_dc_fmt_value(cv, kind)}"],
+            hoverinfo='text', showlegend=False,
+        ))
+    fig1.update_layout(**_dc_layout(
+        log_scale, metric_label, x_start, x_end,
+        y_range=_dc_yrange(_dc_visible_vals(env, x_start), log_scale)))
+    st.plotly_chart(fig1, use_container_width=True)
+
+    comp = _dc_company_series(series)
+    peaks = {co: max(v for _, v, _ in steps)
+             for co, steps in comp.items() if steps}
+    ranked = sorted(peaks, key=lambda c: peaks[c], reverse=True)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 2: Largest current data center by company (snapshot bar chart)
+    # ══════════════════════════════════════════════════════════════════════
+    st.subheader("Largest current data center by company")
+    st.caption("Each company's single biggest site as of today — not the sum of "
+               "all its sites, and excluding any planned / under-construction "
+               "buildout.")
+
+    # Snapshot strictly as of today: the latest step dated on or before _today,
+    # so planned future buildout never inflates the current bars.
+    def _step_at_today(steps):
+        cur = None
+        for s in steps:
+            if s[0] <= _today:
+                cur = s
+            else:
+                break
+        return cur
+
+    snap = []
+    for co in comp:
+        s = _step_at_today(comp[co])
+        if s is not None:
+            snap.append((co, s[1], s[2]))
+    snap.sort(key=lambda t: t[1], reverse=True)
+    fig_snap = go.Figure()
+    fig_snap.add_trace(go.Bar(
+        x=[s[1] for s in snap],
+        y=[s[0] for s in snap],
+        orientation='h',
+        marker=dict(color=[_dc_color(s[0], i) for i, s in enumerate(snap)]),
+        text=[_dc_fmt_value(s[1], kind) for s in snap],
+        textposition='outside',
+        hovertext=[f"{s[0]} — {s[2]}<br>{_dc_fmt_value(s[1], kind)}" for s in snap],
+        hoverinfo='text',
+    ))
+    fig_snap.update_layout(
+        height=max(300, 38 * len(snap) + 80),
+        plot_bgcolor='white', paper_bgcolor='white',
+        margin=dict(l=120, r=70, t=10, b=40),
+        font=dict(color='#222222'), showlegend=False,
+        xaxis=dict(title_text=f"Current {metric_label}",
+                   type='log' if log_scale else 'linear',
+                   gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222222'),
+                   title_font=dict(color='#222222')),
+        yaxis=dict(autorange='reversed', tickfont=dict(color='#222222')),
+    )
+    st.plotly_chart(fig_snap, use_container_width=True)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 3: Largest data center by company over time
+    # ══════════════════════════════════════════════════════════════════════
+    st.subheader("Largest data center by company over time")
+    st.caption("Each line is a company's biggest single site at that time "
+               "(not the sum of all its sites). Solid = actual; dashed = planned "
+               "/ under construction.")
+
+    fig2 = go.Figure()
+    if include_future:
+        _dc_add_projection_band(fig2, _today, x_end)
+    for i, co in enumerate(ranked):
+        color = _dc_color(co, i)
+        steps = comp[co]
+        (a_x, a_y), (p_x, p_y) = _dc_split_at(steps, _today, end_x)
+        # Solid actual / dashed projected lines (hover handled by the dots).
+        fig2.add_trace(go.Scatter(
+            x=a_x, y=a_y, mode='lines',
+            line=dict(color=color, width=2.5, shape='hv'),
+            name=co, legendgroup=co, hoverinfo='skip',
+        ))
+        if p_x is not None:
+            fig2.add_trace(go.Scatter(
+                x=p_x, y=p_y, mode='lines',
+                line=dict(color=color, width=2.5, shape='hv', dash='dash'),
+                name=co, legendgroup=co, showlegend=False, hoverinfo='skip',
+            ))
+        # Filled dots where a *new* data center becomes the company's largest;
+        # hollow dots where the same leading site scales up to a new capacity.
+        new_dots, scale_dots = [], []
+        prev_name, prev_val = None, None
+        for s in steps:
+            if s[2] != prev_name:
+                new_dots.append(s)
+            elif prev_val is not None and s[1] != prev_val:
+                scale_dots.append(s)
+            prev_name, prev_val = s[2], s[1]
+
+        def _dot_trace(pts, hollow, label):
+            if not pts:
+                return
+            fig2.add_trace(go.Scatter(
+                x=[s[0] for s in pts], y=[s[1] for s in pts],
+                mode='markers',
+                marker=dict(size=6,
+                            color='white' if hollow else color,
+                            line=dict(color=color, width=1.5)),
+                name=co, legendgroup=co, showlegend=False,
+                hovertext=[
+                    f"{co} — {s[2]} ({label})"
+                    f"{' (planned)' if s[0] > _today else ''}<br>"
+                    f"{s[0].strftime('%b %Y')}<br>{_dc_fmt_value(s[1], kind)}"
+                    for s in pts],
+                hoverinfo='text',
+            ))
+
+        _dot_trace(new_dots, hollow=False, label="new leading site")
+        _dot_trace(scale_dots, hollow=True, label="scale-up")
+    comp_vals = [v for steps in comp.values()
+                 for v in _dc_visible_vals(steps, x_start)]
+    fig2.update_layout(**_dc_layout(log_scale, metric_label, x_start, x_end,
+                                    y_range=_dc_yrange(comp_vals, log_scale),
+                                    height=500, show_legend=True))
+    st.plotly_chart(fig2, use_container_width=True)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 4: Current snapshot table
+    # ══════════════════════════════════════════════════════════════════════
+    snap_word = "Planned peak" if include_future else "Current"
+    st.subheader(f"{snap_word} largest data center by company")
+    md = ["| Company | Largest data center | Capacity |", "|---|---|---|"]
+    for co in ranked:
+        last = comp[co][-1]
+        md.append(f"| {co} | {last[2]} | {_dc_fmt_value(last[1], kind)} |")
+    st.markdown("\n".join(md))
+
+    st.caption(
+        "Capacity is forward-filled between Epoch AI's reported milestones, so a "
+        "site holds its last known value until the next update. "
+        f"{'Includes planned/under-construction buildout dated past today.' if include_future else 'Showing capacity as of today; enable “Include planned future buildout” in the sidebar to see announced expansions.'} "
+        "Data: Epoch AI, ‘Frontier Data Centers’ (epoch.ai/data/data-centers), CC-BY 4.0.")
+
+
 # ── Proof QA ──────────────────────────────────────────────────────────────
 
 _PQA_RESET_KEYS = [
@@ -5711,6 +6330,7 @@ def _all_tracked():
         (_EMP_RESET_KEYS, _EMP_DEFAULTS),
         (_REV_TRACKED_KEYS, _REV_DEFAULTS),
         (_ECG_TRACKED_KEYS, _ECG_DEFAULTS),
+        (_DC_RESET_KEYS, _DC_DEFAULTS),
     ]:
         keys.extend(ks)
         defaults.update(ds)
@@ -5823,5 +6443,7 @@ if not os.environ.get("_VP_TESTING"):
         render_eci_gap()
     elif active_tab == "Proof QA":
         render_proofqa()
+    elif active_tab == "Data Centers":
+        render_data_centers()
 
     _sync_session_to_url()
