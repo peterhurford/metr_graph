@@ -1484,7 +1484,7 @@ def _eci_metr_hover(eci_score, organization):
 def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     sidebar_header, milestone_list, mythos_caption=None,
                     overlay_frontier=None, overlay_label=None,
-                    extra_table_milestones=None):
+                    extra_table_milestones=None, us_best_marker=None):
     if st.session_state.pop(f"_reset_{p}", False):
         for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
@@ -1967,8 +1967,13 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         x_lo = tab_all[0]['date'] - timedelta(days=30)
         x_hi = proj_end_date
         for score_val, label, color in milestone_list:
+            # The US-best line emanates rightward from the model's release date
+            # rather than spanning the full chart width.
+            _is_us_best = (us_best_marker is not None
+                           and abs(score_val - us_best_marker['score']) < 1e-6)
+            line_x_start = us_best_marker['date'] if _is_us_best else x_lo
             fig.add_trace(go.Scatter(
-                x=[x_lo, x_hi], y=[score_val, score_val],
+                x=[line_x_start, x_hi], y=[score_val, score_val],
                 mode='lines', line=dict(color=color, width=1.2, dash='dot'),
                 hoverinfo='skip', showlegend=False,
             ))
@@ -1976,6 +1981,19 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                 x=1.0, xref='paper', y=score_val, text=f"  {label}",
                 showarrow=False, xanchor='left', yanchor='middle',
                 font=dict(size=10, color=color))
+            if _is_us_best:
+                fig.add_trace(go.Scatter(
+                    x=[us_best_marker['date']], y=[score_val],
+                    mode='markers+text',
+                    marker=dict(color=color, size=10, symbol='circle',
+                                line=dict(color='white', width=1)),
+                    text=[us_best_marker['name']], textposition='top center',
+                    textfont=dict(size=10, color=color),
+                    hovertext=[f"{us_best_marker['name']}<br>"
+                               f"{us_best_marker['date'].strftime('%b %d, %Y')}<br>"
+                               f"ECI {score_val:.1f}"],
+                    hoverinfo='text', showlegend=False,
+                ))
 
     # --- Overlay trendline (e.g., US trend on the China chart) ---
     if overlay_frontier is not None and len(overlay_frontier) >= 2:
@@ -2293,7 +2311,8 @@ def render_eci():
 
 
 def render_eci_china():
-    # Single milestone line at the current best US ECI (frontier max).
+    # Single milestone line at the current best US ECI (frontier max). The line
+    # emanates rightward from a labeled dot at the model's actual release date.
     _us_best = max(eci_frontier_all, key=lambda m: m['eci_score'])
     _us_best_score = _us_best['eci_score']
     _us_best_label = f"US best {_us_best_score:.1f}"
@@ -2303,6 +2322,11 @@ def render_eci_china():
         [(_us_best_score, _us_best_label, '#8e44ad')],
         overlay_frontier=eci_frontier_all,
         overlay_label="US trend",
+        us_best_marker={
+            'date': _us_best['date'],
+            'score': _us_best_score,
+            'name': _us_best['display_name'],
+        },
     )
 
 
