@@ -1840,6 +1840,30 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             name=label, hoverinfo='skip', showlegend=True,
         ))
 
+    # US-trend gap helpers (months China lags the US trend at a given score).
+    # Only active on tabs that supply an overlay (US) frontier.
+    _eci_gap_fn = None
+    if overlay_frontier is not None and len(overlay_frontier) >= 2:
+        _gp_base = overlay_frontier[0]['date']
+        _gp_days = np.array([(mm['date'] - _gp_base).days for mm in overlay_frontier], dtype=float)
+        _gp_scores = np.array([mm['eci_score'] for mm in overlay_frontier])
+        _gp_intercept, _gp_slope = fit_line(_gp_days, _gp_scores)
+
+        def _eci_gap_fn(score, at_date):
+            """Months `score` lags the US trend, evaluated at China date `at_date`."""
+            us_days = (score - _gp_intercept) / _gp_slope
+            us_date = _gp_base + timedelta(days=us_days)
+            return (at_date - us_date).days / 30.44
+
+    def _eci_gap_hover(score, at_date):
+        """'<br>Gap: X mo behind US' suffix, or '' when there's no overlay frontier."""
+        if _eci_gap_fn is None:
+            return ""
+        g = _eci_gap_fn(score, at_date)
+        if g >= 0:
+            return f"<br>Gap: {g:.1f} mo behind US"
+        return f"<br>Gap: {-g:.1f} mo ahead of US"
+
     # --- Trend lines ---
     def _eci_trend_hover(params, d_start, d_end, base_dt):
         """Build hover texts for an OLS trend line on ECI scores."""
@@ -1848,7 +1872,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         y_scores = params[0] + params[1] * days_range
         texts = []
         for d, y in zip(dates, y_scores):
-            texts.append(f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}")
+            texts.append(f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}{_eci_gap_hover(y, d)}")
         return dates, y_scores.tolist(), texts
 
     if eci_proj_basis in ("Linear", "Piecewise linear"):
@@ -1941,7 +1965,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         days_hist = np.arange(d_start, d_last + 1, 1)
         y_hist = _eci_se_A + _eci_se_K * 2 ** (days_hist / eci_superexp_halflife)
         dates_hist = [base_date + timedelta(days=int(d)) for d in days_hist]
-        hover_hist = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.1f}" for dt, y in zip(dates_hist, y_hist)]
+        hover_hist = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.1f}{_eci_gap_hover(y, dt)}" for dt, y in zip(dates_hist, y_hist)]
         fig.add_trace(go.Scatter(
             x=dates_hist, y=y_hist.tolist(),
             mode='lines', line=dict(color='#2c3e50', width=2.5),
@@ -1955,7 +1979,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         y_proj_growth = superexp_trajectory(days_proj, _eci_user_dpp, eci_superexp_halflife, eci_superexp_dpp_floor)
         y_proj = _eci_se_fitted_score + y_proj_growth
         dates_proj = [eci_current['date'] + timedelta(days=int(d)) for d in days_proj]
-        hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.1f}" for dt, y in zip(dates_proj, y_proj)]
+        hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.1f}{_eci_gap_hover(y, dt)}" for dt, y in zip(dates_proj, y_proj)]
         fig.add_trace(go.Scatter(
             x=dates_proj, y=y_proj.tolist(),
             mode='lines', line=dict(color='#2980b9', width=2.5),
@@ -2056,6 +2080,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         if m['is_frontier'] or m['eci_score'] < _eci_nf_cutoff:
             continue
         hover = f"{m['display_name']}<br>{m['date'].strftime('%b %d, %Y')}<br>ECI: {m['eci_score']:.1f}"
+        hover += _eci_gap_hover(m['eci_score'], m['date'])
         if eci_metr_proj:
             hover += _eci_metr_hover(m['eci_score'], m.get('organization', ''))
         fig.add_trace(go.Scatter(
@@ -2074,6 +2099,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         is_used = idx_m <= eci_proj_as_of_idx
         is_selected = idx_m == eci_proj_as_of_idx
         hover = f"{m['display_name']}<br>{m['date'].strftime('%b %d, %Y')}<br>ECI: {m['eci_score']:.1f}"
+        hover += _eci_gap_hover(m['eci_score'], m['date'])
         if eci_metr_proj:
             hover += _eci_metr_hover(m['eci_score'], m.get('organization', ''))
 
@@ -2211,19 +2237,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
     # When an overlay (US) frontier is supplied, the metric cards show how many
     # months China lags the US trend at that score rather than the raw ECI.
-    _gap_trend = None
-    if overlay_frontier is not None and len(overlay_frontier) >= 2:
-        _g_base = overlay_frontier[0]['date']
-        _g_days = np.array([(m['date'] - _g_base).days for m in overlay_frontier], dtype=float)
-        _g_scores = np.array([m['eci_score'] for m in overlay_frontier])
-        _g_intercept, _g_slope = fit_line(_g_days, _g_scores)
-
-        def _gap_months(score, at_date):
-            """Months `score` lags the US trend, evaluated at China date `at_date`."""
-            us_days = (score - _g_intercept) / _g_slope
-            us_date = _g_base + timedelta(days=us_days)
-            return (at_date - us_date).days / 30.44
-        _gap_trend = _gap_months
+    _gap_trend = _eci_gap_fn
 
     for col, (label, target_date) in zip(cols, all_targets):
         elapsed = (target_date - eci_current['date']).days
