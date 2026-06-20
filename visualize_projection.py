@@ -1484,7 +1484,8 @@ def _eci_metr_hover(eci_score, organization):
 def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     sidebar_header, milestone_list, mythos_caption=None,
                     overlay_frontier=None, overlay_label=None,
-                    extra_table_milestones=None, us_best_marker=None):
+                    extra_table_milestones=None, us_best_marker=None,
+                    us_match_marker=None):
     if st.session_state.pop(f"_reset_{p}", False):
         for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
@@ -1966,34 +1967,47 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     if eci_show_milestones:
         x_lo = tab_all[0]['date'] - timedelta(days=30)
         x_hi = proj_end_date
+
+        def _add_us_dot(marker, color, textpos='top center'):
+            """Draw a labeled dot at a US model, with a dotted line emanating right."""
+            fig.add_trace(go.Scatter(
+                x=[marker['date'], x_hi], y=[marker['score'], marker['score']],
+                mode='lines', line=dict(color=color, width=1.2, dash='dot'),
+                hoverinfo='skip', showlegend=False,
+            ))
+            fig.add_trace(go.Scatter(
+                x=[marker['date']], y=[marker['score']],
+                mode='markers+text',
+                marker=dict(color=color, size=10, symbol='circle',
+                            line=dict(color='white', width=1)),
+                text=[marker['name']], textposition=textpos,
+                textfont=dict(size=10, color=color),
+                hovertext=[f"{marker['name']}<br>"
+                           f"{marker['date'].strftime('%b %d, %Y')}<br>"
+                           f"ECI {marker['score']:.1f}"],
+                hoverinfo='text', showlegend=False,
+            ))
+
         for score_val, label, color in milestone_list:
             # The US-best line emanates rightward from the model's release date
             # rather than spanning the full chart width.
             _is_us_best = (us_best_marker is not None
                            and abs(score_val - us_best_marker['score']) < 1e-6)
-            line_x_start = us_best_marker['date'] if _is_us_best else x_lo
-            fig.add_trace(go.Scatter(
-                x=[line_x_start, x_hi], y=[score_val, score_val],
-                mode='lines', line=dict(color=color, width=1.2, dash='dot'),
-                hoverinfo='skip', showlegend=False,
-            ))
+            if not _is_us_best:
+                fig.add_trace(go.Scatter(
+                    x=[x_lo, x_hi], y=[score_val, score_val],
+                    mode='lines', line=dict(color=color, width=1.2, dash='dot'),
+                    hoverinfo='skip', showlegend=False,
+                ))
             fig.add_annotation(
                 x=1.0, xref='paper', y=score_val, text=f"  {label}",
                 showarrow=False, xanchor='left', yanchor='middle',
                 font=dict(size=10, color=color))
             if _is_us_best:
-                fig.add_trace(go.Scatter(
-                    x=[us_best_marker['date']], y=[score_val],
-                    mode='markers+text',
-                    marker=dict(color=color, size=10, symbol='circle',
-                                line=dict(color='white', width=1)),
-                    text=[us_best_marker['name']], textposition='top center',
-                    textfont=dict(size=10, color=color),
-                    hovertext=[f"{us_best_marker['name']}<br>"
-                               f"{us_best_marker['date'].strftime('%b %d, %Y')}<br>"
-                               f"ECI {score_val:.1f}"],
-                    hoverinfo='text', showlegend=False,
-                ))
+                _add_us_dot(us_best_marker, color)
+
+        if us_match_marker is not None:
+            _add_us_dot(us_match_marker, '#8e44ad', textpos='bottom center')
 
     # --- Overlay trendline (e.g., US trend on the China chart) ---
     if overlay_frontier is not None and len(overlay_frontier) >= 2:
@@ -2316,6 +2330,10 @@ def render_eci_china():
     _us_best = max(eci_frontier_all, key=lambda m: m['eci_score'])
     _us_best_score = _us_best['eci_score']
     _us_best_label = f"US best {_us_best_score:.1f}"
+    # US model closest to China's current best ECI — marks when the US passed
+    # the level China sits at today (the lead time China currently lags).
+    _cn_current = max(ecicn_frontier_all, key=lambda m: m['eci_score'])
+    _us_match = min(eci_frontier_all, key=lambda m: abs(m['eci_score'] - _cn_current['eci_score']))
     _render_eci_tab(
         ecicn_all, ecicn_frontier_all, ecicn_frontier_names, "ecicn",
         "ECI China Projection",
@@ -2326,6 +2344,11 @@ def render_eci_china():
             'date': _us_best['date'],
             'score': _us_best_score,
             'name': _us_best['display_name'],
+        },
+        us_match_marker={
+            'date': _us_match['date'],
+            'score': _us_match['eci_score'],
+            'name': _us_match['display_name'],
         },
     )
 
