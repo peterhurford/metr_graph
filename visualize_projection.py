@@ -5694,6 +5694,17 @@ def _cc_iso_compute(rows):
             'lo': float(min(slopes)), 'hi': float(max(slopes))}
 
 
+def _eci_to_metr_p50_min(eci_score, a=0):
+    """ECI score → estimated METR p50 time-horizon in minutes (central, lo, hi).
+
+    Same Anthropic-calibrated fit the Epoch ECI tab uses for its ECI→METR hover
+    (`a=1` for Anthropic-style models). The frontier forecast isn't tied to one
+    lab, so `a` defaults to 0 (org-neutral). lo/hi are the fit's ±band.
+    """
+    central = 2 ** (0.24 * eci_score + 0.76 * a - 28.68)
+    return central, central * 0.66, central * 1.34
+
+
 def _cc_quarter_ends(start, end):
     """Quarter-end dates strictly after `start` and through `end` (inclusive)."""
     out = []
@@ -5785,7 +5796,9 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
         f"projected compute path (so it slows as the buildout matures), add a "
         f"constant algorithmic component, and sample {N:,} trajectories over the "
         f"contested mix ({s_lo*100:.0f}–{s_hi*100:.0f}% physical), compute "
-        f"delivery, and overall pace.")
+        f"delivery, and overall pace. Each ECI is also translated into an "
+        f"estimated **METR p50 time-horizon** (the org-neutral ECI→METR fit from "
+        f"the Epoch ECI tab).")
 
     base = '#6A3D9A'
     r, g, b = int(base[1:3], 16), int(base[3:5], 16), int(base[5:7], 16)
@@ -5801,11 +5814,13 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
             x=x_dates + x_dates[::-1], y=list(hi) + list(lo[::-1]),
             fill='toself', fillcolor=color, line=dict(width=0),
             name=label, hoverinfo='skip', showlegend=True))
+    metr_med_txt = [fmt_hrs(_eci_to_metr_p50_min(s)[0] / 60) for s in pct[50]]
     fig.add_trace(go.Scatter(
         x=x_dates, y=list(pct[50]), mode='lines',
         line=dict(color=base, width=2.5, dash='dash'),
-        name='Median projection',
-        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra></extra>'))
+        name='Median projection', customdata=metr_med_txt,
+        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                      '<br>METR p50 ≈ %{customdata}<extra></extra>'))
     # Historical frontier ECI points for context (true running-max frontier).
     fr = [m for m in eci_all if m.get('is_frontier')] or \
         [m for m in cc_rows if m.get('is_eci_frontier')]
@@ -5830,24 +5845,36 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     st.plotly_chart(fig, use_container_width=True)
 
-    # Year-end milestone cards.
+    # Year-end milestone cards, each with its estimated METR p50 horizon.
     cols = st.columns(4)
     for col, yr in zip(cols, (2026, 2027, 2028, 2029)):
         target = datetime(yr, 12, 31)
         j = min(range(len(x_dates)), key=lambda i: abs((x_dates[i] - target).days))
         col.metric(f"End {yr}", f"ECI {pct[50][j]:.0f}",
                    f"{pct[10][j]:.0f}–{pct[90][j]:.0f} (80%)")
+        m_c = _eci_to_metr_p50_min(pct[50][j])[0]
+        m_lo = _eci_to_metr_p50_min(pct[10][j])[0]
+        m_hi = _eci_to_metr_p50_min(pct[90][j])[0]
+        col.markdown(
+            f"<div style='font-size:0.72em; color:#888; margin-top:-0.4em;'>"
+            f"METR p50 ≈ {fmt_hrs(m_c / 60)}<br>({fmt_hrs(m_lo / 60)}–"
+            f"{fmt_hrs(m_hi / 60)}, 80%)</div>",
+            unsafe_allow_html=True)
 
     # Quarter-by-quarter table.
     with st.expander("Quarterly ECI projection table"):
-        tmd = ["| Quarter | Median ECI | 50% CI | 80% CI | 90% CI |",
-               "|---|---|---|---|---|"]
+        tmd = ["| Quarter | Median ECI | METR p50 | 50% CI | 80% CI | 90% CI |",
+               "|---|---|---|---|---|---|"]
         for i, d in enumerate(x_dates):
             if i == 0:
                 continue
             q = (d.month - 1) // 3 + 1
+            m_c = fmt_hrs(_eci_to_metr_p50_min(pct[50][i])[0] / 60)
+            m_lo = fmt_hrs(_eci_to_metr_p50_min(pct[10][i])[0] / 60)
+            m_hi = fmt_hrs(_eci_to_metr_p50_min(pct[90][i])[0] / 60)
             tmd.append(
                 f"| {d.year} Q{q} | **{pct[50][i]:.0f}** | "
+                f"{m_c} ({m_lo}–{m_hi}) | "
                 f"{pct[25][i]:.0f}–{pct[75][i]:.0f} | "
                 f"{pct[10][i]:.0f}–{pct[90][i]:.0f} | "
                 f"{pct[5][i]:.0f}–{pct[95][i]:.0f} |")
@@ -5859,10 +5886,12 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
         "compute-frontier path so it decelerates with the buildout) + a constant "
         "algorithmic-efficiency term. Bands sample the contested physical/algo "
         f"mix ({s_lo*100:.0f}–{s_hi*100:.0f}%), compute delivery (×0.5–1.15 of "
-        "plan), and overall pace (±12%). This extrapolates the historical linear "
-        "ECI trend; it assumes no paradigm shift, no hard compute wall, and that "
-        "ECI stays a meaningful scale at these levels — order-of-magnitude, not a "
-        "promise.")
+        "plan), and overall pace (±12%). METR p50 horizons come from the "
+        "org-neutral ECI→METR fit `p50_min = 2^(0.24·ECI − 28.68)` (its METR "
+        "range is driven here by the ECI 80% band, not the fit's own ±band). "
+        "This extrapolates the historical linear ECI trend; it assumes no "
+        "paradigm shift, no hard compute wall, and that ECI stays a meaningful "
+        "scale at these levels — order-of-magnitude, not a promise.")
 
 
 def render_compute_capabilities():
