@@ -5694,6 +5694,177 @@ def _cc_iso_compute(rows):
             'lo': float(min(slopes)), 'hi': float(max(slopes))}
 
 
+def _cc_quarter_ends(start, end):
+    """Quarter-end dates strictly after `start` and through `end` (inclusive)."""
+    out = []
+    for yr in range(start.year, end.year + 1):
+        for mo, dy in ((3, 31), (6, 30), (9, 30), (12, 31)):
+            qd = datetime(yr, mo, dy)
+            if qd > start and qd <= end:
+                out.append(qd)
+    return out
+
+
+def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
+                     share_lo, share_mid, share_hi):
+    """Quarterly frontier-ECI projection to end-2029.
+
+    Decomposes the frontier's ECI growth into a *physical-compute* component that
+    rides the projected compute-frontier path (so it decelerates as the buildout
+    matures) and a constant *algorithmic-efficiency* component, then Monte-Carlos
+    over the contested physical/algo mix, compute-delivery, and pace to produce a
+    fan chart and a quarter-by-quarter table.
+
+    Model (per trajectory, anchored at today's running-max ECI):
+        ECI(t) = ECI_now
+                 + (share·obs_slope·pace / g_recent) · cmult · Δlog₁₀FLOP_proj(t)
+                 + (1 − share)·obs_slope·pace · Δt
+    where Δlog₁₀FLOP_proj(t) is read off the projected compute frontier (extended
+    past its end at the planned-buildout rate). The compute coefficient is
+    calibrated so that, at today's compute slope, the physical term reproduces the
+    `share` fraction of the observed frontier ECI rate.
+    """
+    horizon = datetime(2029, 12, 31)
+    if obs_slope is None or obs_slope <= 0:
+        st.info("Not enough frontier history to project ECI.")
+        return
+    g_recent = g_recent if (g_recent and g_recent > 0) else (g_planned or obs_slope)
+
+    # Current frontier anchor: the true running-max ECI across *all* models, not
+    # just the compute-having subset (the newest frontier models rarely disclose
+    # training FLOP, so cc_rows would anchor on a stale model like GPT-5).
+    eci_all = load_eci_frontier(_mtime=_eci_mtime())
+    anchor = max(eci_all, key=lambda m: m['eci_score']) if eci_all \
+        else max(cc_rows, key=lambda m: m['eci'])
+    anchor_name = anchor.get('display_name') or anchor.get('name', '')
+    eci_now = anchor.get('eci_score', anchor.get('eci'))
+
+    # Projected compute path: interpolate the running-max FLOP frontier in log
+    # space; past its right edge, extend at the planned-buildout OOM/yr.
+    ford = np.array([d.toordinal() for d, _ in frontier], dtype=float)
+    flog = np.array([np.log10(v) for _, v in frontier], dtype=float)
+
+    def _logflop_at(dt_):
+        o = float(dt_.toordinal())
+        if o <= ford[0]:
+            return float(flog[0])
+        if o >= ford[-1]:
+            return float(flog[-1] + g_planned * (o - ford[-1]) / 365.25)
+        return float(np.interp(o, ford, flog))
+
+    logflop_now = _logflop_at(today)
+
+    qdates = _cc_quarter_ends(today, horizon)
+    x_dates = [today] + qdates
+    dt_yrs = np.array([(d - today).days / 365.25 for d in x_dates])
+    dlog = np.array([_logflop_at(d) - logflop_now for d in x_dates])
+
+    # Monte-Carlo over the three uncertainties the section already quantifies.
+    s_lo, s_mid, s_hi = sorted([share_lo, share_mid, share_hi])
+    if s_hi - s_lo < 1e-6:
+        s_lo, s_hi = s_lo - 0.05, s_hi + 0.05
+    s_mid = min(max(s_mid, s_lo), s_hi)
+
+    N = 20000
+    share = np.random.triangular(s_lo, s_mid, s_hi, N)          # physical/algo mix
+    pace = np.clip(np.random.normal(1.0, 0.12, N), 0.65, 1.35)  # overall pace
+    cmult = np.random.triangular(0.5, 1.0, 1.15, N)             # compute delivery
+
+    coef_phys = (share * obs_slope * pace / g_recent * cmult)[:, None]
+    coef_algo = ((1.0 - share) * obs_slope * pace)[:, None]
+    traj = eci_now + coef_phys * dlog[None, :] + coef_algo * dt_yrs[None, :]
+
+    pct = {p: np.percentile(traj, p, axis=0) for p in (5, 10, 25, 50, 75, 90, 95)}
+
+    st.markdown(
+        f"Riding the projected compute frontier and the section's algorithmic-"
+        f"efficiency estimate forward, here is the **frontier ECI score for each "
+        f"quarter to the end of 2029**. We anchor on today's frontier "
+        f"(**{pretty(anchor_name)}**, ECI {eci_now:.0f}), grow the physical-"
+        f"compute share of the **~{obs_slope:.0f} ECI-points/yr** along the "
+        f"projected compute path (so it slows as the buildout matures), add a "
+        f"constant algorithmic component, and sample {N:,} trajectories over the "
+        f"contested mix ({s_lo*100:.0f}–{s_hi*100:.0f}% physical), compute "
+        f"delivery, and overall pace.")
+
+    base = '#6A3D9A'
+    r, g, b = int(base[1:3], 16), int(base[3:5], 16), int(base[5:7], 16)
+    fig = go.Figure()
+    _dc_add_projection_band(fig, today, horizon + timedelta(days=20))
+    bands = [
+        (pct[5], pct[95], f'rgba({r},{g},{b},0.08)', '90% CI'),
+        (pct[10], pct[90], f'rgba({r},{g},{b},0.16)', '80% CI'),
+        (pct[25], pct[75], f'rgba({r},{g},{b},0.26)', '50% CI'),
+    ]
+    for lo, hi, color, label in bands:
+        fig.add_trace(go.Scatter(
+            x=x_dates + x_dates[::-1], y=list(hi) + list(lo[::-1]),
+            fill='toself', fillcolor=color, line=dict(width=0),
+            name=label, hoverinfo='skip', showlegend=True))
+    fig.add_trace(go.Scatter(
+        x=x_dates, y=list(pct[50]), mode='lines',
+        line=dict(color=base, width=2.5, dash='dash'),
+        name='Median projection',
+        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra></extra>'))
+    # Historical frontier ECI points for context (true running-max frontier).
+    fr = [m for m in eci_all if m.get('is_frontier')] or \
+        [m for m in cc_rows if m.get('is_eci_frontier')]
+    fr_get = (lambda m: (m.get('eci_score', m.get('eci')),
+                         m.get('display_name') or m.get('name', '')))
+    fig.add_trace(go.Scatter(
+        x=[m['date'] for m in fr], y=[fr_get(m)[0] for m in fr], mode='lines+markers',
+        line=dict(color='#888', width=1.5),
+        marker=dict(size=6, color=base, line=dict(color='white', width=0.5)),
+        text=[f"{pretty(fr_get(m)[1])}<br>ECI {fr_get(m)[0]:.0f}" for m in fr],
+        hoverinfo='text', name='ECI frontier (actual)'))
+    fig.update_layout(
+        height=460, plot_bgcolor='white', paper_bgcolor='white',
+        margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
+        legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
+                    bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
+                    borderwidth=1),
+        xaxis=dict(gridcolor='rgba(0,0,0,0.12)', range=[datetime(2023, 1, 1),
+                   horizon + timedelta(days=20)], tickfont=dict(color='#222'),
+                   title_font=dict(color='#222')),
+        yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
+                   tickfont=dict(color='#222'), title_font=dict(color='#222')))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Year-end milestone cards.
+    cols = st.columns(4)
+    for col, yr in zip(cols, (2026, 2027, 2028, 2029)):
+        target = datetime(yr, 12, 31)
+        j = min(range(len(x_dates)), key=lambda i: abs((x_dates[i] - target).days))
+        col.metric(f"End {yr}", f"ECI {pct[50][j]:.0f}",
+                   f"{pct[10][j]:.0f}–{pct[90][j]:.0f} (80%)")
+
+    # Quarter-by-quarter table.
+    with st.expander("Quarterly ECI projection table"):
+        tmd = ["| Quarter | Median ECI | 50% CI | 80% CI | 90% CI |",
+               "|---|---|---|---|---|"]
+        for i, d in enumerate(x_dates):
+            if i == 0:
+                continue
+            q = (d.month - 1) // 3 + 1
+            tmd.append(
+                f"| {d.year} Q{q} | **{pct[50][i]:.0f}** | "
+                f"{pct[25][i]:.0f}–{pct[75][i]:.0f} | "
+                f"{pct[10][i]:.0f}–{pct[90][i]:.0f} | "
+                f"{pct[5][i]:.0f}–{pct[95][i]:.0f} |")
+        st.markdown("\n".join(tmd))
+
+    st.caption(
+        "Method: frontier ECI = today's anchor + physical-compute growth (the "
+        f"physical share of ~{obs_slope:.0f} ECI/yr, scaled to the projected "
+        "compute-frontier path so it decelerates with the buildout) + a constant "
+        "algorithmic-efficiency term. Bands sample the contested physical/algo "
+        f"mix ({s_lo*100:.0f}–{s_hi*100:.0f}%), compute delivery (×0.5–1.15 of "
+        "plan), and overall pace (±12%). This extrapolates the historical linear "
+        "ECI trend; it assumes no paradigm shift, no hard compute wall, and that "
+        "ECI stays a meaningful scale at these levels — order-of-magnitude, not a "
+        "promise.")
+
+
 def render_compute_capabilities():
     _today = datetime.now()
 
@@ -6011,6 +6182,13 @@ def render_compute_capabilities():
         "iso-compute fit (ECI on compute+time); these two OLS directions bracket "
         "the true rate, which errors-in-variables dilution puts between them. "
         "Frontier rates use the running-max-ECI subset.")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 3: ECI Forecasts — quarterly frontier projection to end of 2029
+    # ══════════════════════════════════════════════════════════════════════
+    st.subheader("ECI Forecasts")
+    _cc_eci_forecast(cc_rows, frontier, _today, obs_slope, g_recent, g_planned,
+                     share_lo, share_mid, share_hi)
 
 
 # ── URL parameter persistence ────────────────────────────────────────────
