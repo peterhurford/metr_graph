@@ -414,6 +414,52 @@ def load_eci_frontier(_mtime=None, country=None):
     return deduped
 
 
+@st.cache_data
+def load_eci_compute(_mtime=None):
+    """Models that have BOTH an ECI score and a training-compute (FLOP) figure.
+
+    Used by the Compute vs Capabilities tab to regress ECI on log10(training
+    FLOP) and time. Returns a list of dicts sorted by date:
+    {date, eci, log10_flop, name, organization, country, is_eci_frontier}.
+    The frontier flag is the running-max ECI within this compute-having subset.
+    No date cutoff — we want every model with both fields for the fit.
+    """
+    csv_path = os.path.join(os.path.dirname(__file__), 'epoch_capabilities_index.csv')
+    with open(csv_path, 'r') as f:
+        rows = list(csv.DictReader(f))
+
+    out = []
+    for r in rows:
+        score_str = r.get('ECI Score', '').strip()
+        flop_str = (r.get('Training compute (FLOP)', '') or '').strip().replace(',', '')
+        date_str = r.get('Release date', '').strip()
+        if not score_str or not flop_str or not date_str:
+            continue
+        try:
+            score = float(score_str)
+            flop = float(flop_str)
+            date = datetime.strptime(date_str, '%Y-%m-%d')
+        except (ValueError, TypeError):
+            continue
+        if flop <= 0:
+            continue
+        out.append({
+            'date': date,
+            'eci': score,
+            'log10_flop': float(np.log10(flop)),
+            'name': (r.get('Display name', '') or '').strip() or r.get('Model name', ''),
+            'organization': r.get('Organization', ''),
+            'country': r.get('Country', ''),
+        })
+    out.sort(key=lambda m: m['date'])
+    max_score = -float('inf')
+    for m in out:
+        m['is_eci_frontier'] = m['eci'] > max_score
+        if m['eci'] > max_score:
+            max_score = m['eci']
+    return out
+
+
 # ── RLI data (hardcoded – small dataset from remotelabor.ai) ─────────────
 
 _RLI_RAW = [
@@ -704,7 +750,7 @@ dc_all = load_data_centers(_mtime=_dc_mtime())
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI China", "Remote Labor Index", "Revenue", "Employment", "ECI Company Gap", "Data Centers"]
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI China", "Remote Labor Index", "Revenue", "Employment", "ECI Company Gap", "Data Centers", "Compute vs Capabilities"]
 _TAB_SLUG = {"metr": 0, "eci": 1, "ecicn": 2, "rli": 3, "revenue": 4, "employment": 5, "ecigap": 6, "datacenters": 7}
 
 # Read ?tab= from URL for deep-linking
@@ -716,7 +762,7 @@ with st.sidebar:
     st.markdown("---")
 
 # Keep URL in sync with selected tab (omit when at default)
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "ECI China": "ecicn", "Remote Labor Index": "rli", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters"}
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "ECI China": "ecicn", "Remote Labor Index": "rli", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute vs Capabilities": "computecap"}
 _DEFAULT_TAB = _TAB_OPTIONS[0]
 if active_tab == _DEFAULT_TAB:
     if "tab" in st.query_params:
@@ -1618,7 +1664,7 @@ def _eci_metr_hover(eci_score, organization):
 
 
 def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
-                    sidebar_header, milestone_list, mythos_caption=None,
+                    sidebar_header, milestone_list,
                     overlay_frontier=None, overlay_label=None,
                     extra_table_milestones=None, us_best_marker=None,
                     us_match_marker=None):
@@ -2323,8 +2369,6 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
     # ── Render chart + metrics ──────────────────────────────────────────────
     st.plotly_chart(fig, width="stretch")
-    if mythos_caption:
-        st.caption(mythos_caption)
     if eci_is_backtesting and eci_backtest_results:
         _backtest_summary(eci_backtest_results)
 
@@ -2470,7 +2514,6 @@ def render_eci():
         "ECI Projection",
         [(155, "ECI 155", '#888888'), (160, "ECI 160", '#666666'),
          (165, "ECI 165", '#c0392b'), (170, "ECI 170", '#8e44ad')],
-        mythos_caption="* Claude Mythos (Apr 7) ECI score is an Anthropic internal estimate, not an official Epoch AI score.",
     )
 
 
@@ -5029,6 +5072,19 @@ _DC_DEFAULTS = {
     "dc_future": True,
 }
 
+# Compute vs Capabilities tab
+_CC_RESET_KEYS = ["cc_future"]
+_CC_DEFAULTS = {"cc_future": True}
+
+# Fixed segment boundaries for the frontier-compute growth breakdown. Each entry
+# is (label, start, end); the last segment is the planned/under-construction tail.
+_CC_SEGMENTS = [
+    ("2021–2023", datetime(2021, 1, 1), datetime(2023, 7, 1)),
+    ("2023 H2 – 2025 H1", datetime(2023, 7, 1), datetime(2025, 7, 1)),
+    ("2025 H2 – today", datetime(2025, 7, 1), None),       # end filled with _today
+    ("Planned 2026–2028", None, datetime(2029, 1, 1)),      # start filled with _today
+]
+
 
 def _dc_visible_vals(step_items, x_start):
     """Values a step series shows within [x_start, …]: points at/after x_start
@@ -5409,6 +5465,554 @@ def render_data_centers():
         "Data: Epoch AI, ‘Frontier Data Centers’ (epoch.ai/data/data-centers), CC-BY 4.0.")
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Compute vs Capabilities — does data-center FLOP predict ECI?
+# ══════════════════════════════════════════════════════════════════════════
+
+def _cc_trainflop_frontier(dcs, cap_date):
+    """Running-max frontier of 3mo-train-FLOP across AI-lab sites.
+
+    Returns [(date, flop), …] sorted by date, with every point shifted forward
+    by the 3-month training lead time (a run on a site available at D only
+    finishes at D+3mo), matching the Data Centers tab. Colocation/neutral-host
+    providers are excluded. Monotonic non-decreasing.
+    """
+    series = _dc_series_for_metric(dcs, 'train_flop', cap_date=cap_date)
+    series = {n: v for n, v in series.items()
+              if v['company'] not in _DC_EXCLUDE_COMPANIES}
+    shift = timedelta(days=_DAYS_3MO)
+    series = {n: {'company': v['company'],
+                  'pts': [(d + shift, val) for d, val in v['pts']]}
+              for n, v in series.items()}
+    env = _dc_envelope(series)
+    out = []
+    best = 0.0
+    for d, v, _name, _co in env:
+        if v is None or v <= 0:
+            continue
+        best = max(best, v)
+        out.append((d, best))
+    return out
+
+
+def _cc_loglinear_slope(pts):
+    """OLS slope of log10(value) on years for [(date, value>0), …].
+
+    Returns (slope_oom_per_year, intercept, year0_datetime) or None if <2 points.
+    """
+    usable = [(d, v) for d, v in pts if v is not None and v > 0]
+    if len(usable) < 2:
+        return None
+    d0 = usable[0][0]
+    x = np.array([(d - d0).days / 365.25 for d, _ in usable])
+    y = np.array([np.log10(v) for _, v in usable])
+    slope, intercept = np.polyfit(x, y, 1)
+    return float(slope), float(intercept), d0
+
+
+def _cc_segment_fits(frontier_pts, today):
+    """Per-segment growth of the FLOP frontier.
+
+    Returns a list of dicts: {label, start, end, n, slope_oom, mult, doubling_mo,
+    fit_x:[d0,d1], fit_y:[v0,v1]} — one per _CC_SEGMENTS entry with ≥2 points.
+    """
+    fits = []
+    for label, start, end in _CC_SEGMENTS:
+        seg_start = start if start is not None else today
+        seg_end = end if end is not None else today
+        seg = [(d, v) for d, v in frontier_pts if seg_start <= d <= seg_end]
+        fit = _cc_loglinear_slope(seg)
+        if fit is None:
+            continue
+        slope, intercept, d0 = fit
+        mult = 10.0 ** slope
+        doubling_mo = (12.0 * np.log10(2) / slope) if slope > 0 else float('inf')
+        # Two endpoints of the fit line for plotting.
+        xs = [seg[0][0], seg[-1][0]]
+        ys = [10.0 ** (intercept + slope * ((d - d0).days / 365.25)) for d in xs]
+        fits.append({
+            'label': label, 'start': xs[0], 'end': xs[1], 'n': len(seg),
+            'slope_oom': slope, 'mult': mult, 'doubling_mo': doubling_mo,
+            'fit_x': xs, 'fit_y': ys,
+        })
+    return fits
+
+
+def _cc_decomp(rows):
+    """Regress ECI on log10(training FLOP) and time; decompose frontier growth.
+
+    Returns a dict of fit statistics, or None if too few models. `a_partial` is
+    the time-controlled compute coefficient (ECI per 10× FLOP), `a_solo` is the
+    compute-only coefficient, `b_time` is ECI/year holding compute fixed.
+    `frontier_compute_oom` and `eci_frontier_slope` describe the running-max-ECI
+    frontier subset.
+    """
+    if len(rows) < 10:
+        return None
+    d0 = rows[0]['date']
+    lc = np.array([m['log10_flop'] for m in rows])
+    eci = np.array([m['eci'] for m in rows])
+    t = np.array([(m['date'] - d0).days / 365.25 for m in rows])
+
+    def _ols(X, y):
+        X1 = np.column_stack([X, np.ones(len(y))])
+        beta, _, _, _ = np.linalg.lstsq(X1, y, rcond=None)
+        yh = X1 @ beta
+        ss_res = float(((y - yh) ** 2).sum())
+        ss_tot = float(((y - y.mean()) ** 2).sum())
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float('nan')
+        return beta, r2
+
+    beta_c, r2_c = _ols(lc, eci)                       # ECI ~ compute
+    beta_t, r2_t = _ols(t, eci)                        # ECI ~ time
+    beta_j, r2_j = _ols(np.column_stack([lc, t]), eci)  # ECI ~ compute + time
+
+    # Frontier subset (running-max ECI) growth rates.
+    fr = [m for m in rows if m.get('is_eci_frontier')]
+    fr_compute_oom = None
+    eci_frontier_slope = None
+    if len(fr) >= 2:
+        df0 = fr[0]['date']
+        xf = np.array([(m['date'] - df0).days / 365.25 for m in fr])
+        fr_compute_oom = float(np.polyfit(xf, np.array([m['log10_flop'] for m in fr]), 1)[0])
+        eci_frontier_slope = float(np.polyfit(xf, np.array([m['eci'] for m in fr]), 1)[0])
+
+    return {
+        'n': len(rows),
+        'a_solo': float(beta_c[0]), 'r2_compute': r2_c,
+        'b_time_solo': float(beta_t[0]), 'r2_time': r2_t,
+        'a_partial': float(beta_j[0]), 'b_time': float(beta_j[1]), 'r2_joint': r2_j,
+        'corr_compute_time': float(np.corrcoef(lc, t)[0, 1]),
+        'frontier_compute_oom': fr_compute_oom,
+        'eci_frontier_slope': eci_frontier_slope,
+        'n_frontier': len(fr),
+        'flop_min': float(lc.min()), 'flop_max': float(lc.max()),
+    }
+
+
+# Iso-ECI capability bands used for the algorithmic-efficiency fits.
+_CC_BANDS = [105, 115, 125]
+_CC_BAND_HALFWIDTH = 4.0
+
+# Iso-compute bands (log10 FLOP centers, ± half-dex) for the mirror-image view:
+# hold the compute budget fixed and watch ECI climb over time.
+_CC_COMPUTE_BANDS = [23.5, 24.5, 25.5]
+_CC_CBAND_HALFWIDTH = 0.5
+
+
+def _cc_efficiency(rows):
+    """Algorithmic efficiency: how fast the compute for a *fixed* ECI falls.
+
+    Fits the inverse regression log10(FLOP) = α·ECI + βₜ·t + c (compute as the
+    outcome), so −βₜ is the order-of-magnitude/year reduction in compute needed
+    to hold capability constant, and 1/α is ECI points per 10× compute. Also
+    fits per-band iso-ECI lines for the chart. Returns None if too few models.
+    """
+    if len(rows) < 10:
+        return None
+    d0 = rows[0]['date']
+    eci = np.array([m['eci'] for m in rows])
+    t = np.array([(m['date'] - d0).days / 365.25 for m in rows])
+    lc = np.array([m['log10_flop'] for m in rows])
+
+    X = np.column_stack([eci, t, np.ones(len(rows))])
+    beta, _, _, _ = np.linalg.lstsq(X, lc, rcond=None)
+    yh = X @ beta
+    ss_tot = float(((lc - lc.mean()) ** 2).sum())
+    r2 = 1 - float(((lc - yh) ** 2).sum()) / ss_tot if ss_tot > 0 else float('nan')
+    alpha = float(beta[0])
+    g_inv = -float(beta[1])                 # OOM/yr, all-data inverse-regression
+
+    bands = []
+    band_slopes = []
+    for center in _CC_BANDS:
+        members = [m for m in rows if abs(m['eci'] - center) <= _CC_BAND_HALFWIDTH]
+        if len(members) < 5:
+            continue
+        bx = np.array([(m['date'] - d0).days / 365.25 for m in members])
+        by = np.array([m['log10_flop'] for m in members])
+        s, b = np.polyfit(bx, by, 1)
+        if s >= 0:                          # noisy edge band: skip the fit line
+            continue
+        xs = [members[0]['date'], members[-1]['date']]
+        ys = [b + s * ((d - d0).days / 365.25) for d in xs]
+        bands.append({'center': center, 'n': len(members), 'slope': float(s),
+                      'fit_x': xs, 'fit_y': ys})
+        band_slopes.append(-float(s))
+
+    # Central estimate: average the all-data inverse fit with the band median,
+    # which are the two non-dilution-inflated views. Report the spread too.
+    band_med = float(np.median(band_slopes)) if band_slopes else g_inv
+    g_central = (g_inv + band_med) / 2.0
+    g_lo, g_hi = min(g_inv, band_med), max(g_inv, band_med)
+
+    def _months(factor, g):
+        return float(np.log10(factor) / g * 12) if g > 0 else float('inf')
+
+    times = {f: {'central': _months(f, g_central),
+                 'lo': _months(f, g_hi),     # more efficiency → fewer months
+                 'hi': _months(f, g_lo)}
+             for f in (2, 5, 10)}
+
+    return {
+        'n': len(rows), 'alpha': alpha, 'eci_per_oom': 1.0 / alpha if alpha else float('nan'),
+        'g_inv': g_inv, 'band_median': band_med, 'g_central': g_central,
+        'g_lo': g_lo, 'g_hi': g_hi, 'algo_mult': 10.0 ** g_central, 'r2': r2,
+        'bands': bands, 'times': times,
+    }
+
+
+def _cc_iso_compute(rows):
+    """Mirror of _cc_efficiency: hold compute fixed, watch ECI rise over time.
+
+    Within each compute band (log10 FLOP ± half-dex) fits ECI = s·t + b, so s is
+    ECI points/year of capability gain at a *constant* compute budget. Returns
+    per-band fit lines plus the median rate, or None if too few models.
+    """
+    if len(rows) < 10:
+        return None
+    d0 = rows[0]['date']
+    bands = []
+    slopes = []
+    for clog in _CC_COMPUTE_BANDS:
+        mem = [m for m in rows if abs(m['log10_flop'] - clog) <= _CC_CBAND_HALFWIDTH]
+        if len(mem) < 5:
+            continue
+        bx = np.array([(m['date'] - d0).days / 365.25 for m in mem])
+        by = np.array([m['eci'] for m in mem])
+        s, b = np.polyfit(bx, by, 1)
+        if s <= 0:
+            continue
+        xs = [mem[0]['date'], mem[-1]['date']]
+        ys = [b + s * ((d - d0).days / 365.25) for d in xs]
+        bands.append({'center': clog, 'n': len(mem), 'slope': float(s),
+                      'fit_x': xs, 'fit_y': ys})
+        slopes.append(float(s))
+    if not bands:
+        return None
+    return {'bands': bands, 'eci_per_yr': float(np.median(slopes)),
+            'lo': float(min(slopes)), 'hi': float(max(slopes))}
+
+
+def render_compute_capabilities():
+    _today = datetime.now()
+
+    with st.sidebar:
+        st.header("Compute vs Capabilities")
+        include_future = st.checkbox("Include planned future buildout",
+                                     value=True, key="cc_future")
+        if st.button("Reset", key="cc_reset"):
+            for k in _CC_RESET_KEYS:
+                st.session_state.pop(k, None)
+            st.session_state.update(_CC_DEFAULTS)
+            st.rerun()
+
+    st.header("Compute vs Capabilities")
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 1: Frontier compute growth, segmented
+    # ══════════════════════════════════════════════════════════════════════
+    st.subheader("Is compute slowing?")
+    cap_date = (datetime(2028, 12, 31) if include_future else _today) + timedelta(days=_DAYS_3MO)
+    frontier = _cc_trainflop_frontier(dc_all, cap_date)
+    if not frontier:
+        st.warning("No data-center data available.")
+        return
+    fits = _cc_segment_fits(frontier, _today)
+
+    end_x = frontier[-1][0] + timedelta(days=30)
+    x_start = datetime(2021, 1, 1)
+    fig1 = go.Figure()
+    if include_future:
+        _dc_add_projection_band(fig1, _today, end_x)
+    (a_x, a_y), (p_x, p_y) = _dc_split_at(frontier, _today, end_x)
+    fig1.add_trace(go.Scatter(x=a_x, y=a_y, mode='lines',
+                              line=dict(color='#1F77B4', width=3, shape='hv'),
+                              hoverinfo='skip', showlegend=False))
+    if p_x is not None:
+        fig1.add_trace(go.Scatter(x=p_x, y=p_y, mode='lines',
+                                  line=dict(color='#1F77B4', width=3, shape='hv', dash='dash'),
+                                  hoverinfo='skip', showlegend=False))
+    # Overlay each segment's log-linear fit to make the slope changes visible.
+    seg_colors = ['#9467BD', '#2CA02C', '#D62728', '#FF7F0E']
+    for i, fseg in enumerate(fits):
+        c = seg_colors[i % len(seg_colors)]
+        fig1.add_trace(go.Scatter(
+            x=fseg['fit_x'], y=fseg['fit_y'], mode='lines',
+            line=dict(color=c, width=2, dash='dot'),
+            name=f"{fseg['label']}: ×{fseg['mult']:.1f}/yr",
+            hovertext=[f"{fseg['label']}<br>×{fseg['mult']:.1f}/yr "
+                       f"({fseg['doubling_mo']:.0f}-mo doubling)"] * 2,
+            hoverinfo='text', showlegend=True))
+    fig1.update_layout(**_dc_layout(
+        True, "3mo train FLOP", x_start, end_x,
+        y_range=_dc_yrange([v for _, v in frontier], True),
+        show_legend=True))
+    st.plotly_chart(fig1, use_container_width=True)
+
+    # Segment growth table.
+    rows_md = ["| Period | Growth | Doubling time | Milestones |",
+               "|---|---|---|---|"]
+    for fseg in fits:
+        dbl = "—" if fseg['doubling_mo'] == float('inf') else f"{fseg['doubling_mo']:.1f} mo"
+        rows_md.append(f"| {fseg['label']} | ×{fseg['mult']:.1f}/yr "
+                       f"({fseg['slope_oom']:.2f} OOM/yr) | {dbl} | {fseg['n']} |")
+    st.markdown("\n".join(rows_md))
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 2: The exchange rate — how much capability per FLOP, and how fast
+    # that exchange rate improves (algorithmic efficiency / iso-ECI)
+    # ══════════════════════════════════════════════════════════════════════
+    st.subheader("Compute ⟷ ECI")
+    cc_rows = load_eci_compute(_mtime=_eci_mtime())
+    dec = _cc_decomp(cc_rows)
+    eff = _cc_efficiency(cc_rows)
+    if dec is None or eff is None:
+        st.warning("Not enough models with both ECI and training-compute data.")
+        return
+
+    st.markdown(
+        f"Across **{dec['n']} models** reporting training compute, each 10× of "
+        f"compute buys about **{eff['eci_per_oom']:.0f} ECI points** (at a fixed "
+        f"moment in time). But that exchange rate keeps *improving*: hold ECI "
+        f"constant and the compute you need to reach it **falls ~{eff['g_central']:.1f} "
+        f"orders of magnitude per year** — roughly **÷{eff['algo_mult']:.1f} per "
+        f"year**. That's algorithmic efficiency (better architectures, data, RL, "
+        f"post-training, scaffolding), and it's the same thing as “effective "
+        f"compute per real FLOP” going up.")
+
+    # Iso-ECI scatter: compute vs date. Continuous ECI-by-color reads poorly, so
+    # we use discrete capability bands — each band's dots and its downward fit
+    # line share a distinct color; models outside any band are grey context.
+    _BAND_COLORS = {105: '#4C78A8', 115: '#F58518', 125: '#54A24B'}
+    band_centers = {b['center'] for b in eff['bands']}
+
+    def _in_band(m, c):
+        return abs(m['eci'] - c) <= _CC_BAND_HALFWIDTH
+
+    figx = go.Figure()
+    other = [m for m in cc_rows if not any(_in_band(m, c) for c in band_centers)]
+    figx.add_trace(go.Scatter(
+        x=[m['date'] for m in other], y=[10.0 ** m['log10_flop'] for m in other],
+        mode='markers', marker=dict(size=5, color='#D9D9D9', line=dict(width=0)),
+        text=[f"{m['name']}<br>ECI {m['eci']:.0f}" for m in other],
+        hoverinfo='text', name='outside bands', showlegend=True))
+    for bseg in eff['bands']:
+        c = bseg['center']
+        col = _BAND_COLORS.get(c, '#D62728')
+        rate = 10 ** (-bseg['slope'])
+        mem = [m for m in cc_rows if _in_band(m, c)]
+        figx.add_trace(go.Scatter(
+            x=[m['date'] for m in mem], y=[10.0 ** m['log10_flop'] for m in mem],
+            mode='markers',
+            marker=dict(size=7, color=col, line=dict(color='white', width=0.5)),
+            text=[f"{m['name']}<br>ECI {m['eci']:.0f}" for m in mem],
+            hoverinfo='text', legendgroup=str(c),
+            name=f"ECI {c}±{_CC_BAND_HALFWIDTH:.0f}  →  compute ÷{rate:.1f}/yr",
+            showlegend=True))
+        figx.add_trace(go.Scatter(
+            x=bseg['fit_x'], y=[10.0 ** v for v in bseg['fit_y']], mode='lines',
+            line=dict(color=col, width=2.5, dash='dot'),
+            legendgroup=str(c), hoverinfo='skip', showlegend=False))
+    figx.update_layout(
+        height=440, plot_bgcolor='white', paper_bgcolor='white',
+        margin=dict(l=70, r=20, t=10, b=40), font=dict(color='#222222'),
+        legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
+                    bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
+                    borderwidth=1),
+        xaxis=dict(gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
+                   title_font=dict(color='#222')),
+        yaxis=dict(title_text="Training compute (FLOP)", type='log',
+                   gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
+                   title_font=dict(color='#222')))
+    st.plotly_chart(figx, use_container_width=True)
+    st.caption(
+        "Each colored set is a fixed-capability band (ECI ± "
+        f"{_CC_BAND_HALFWIDTH:.0f}); its matching dotted line is the within-band "
+        "fit. The compute needed to stay in a band slopes *down* over time — that "
+        "downward slope is the efficiency rate. Grey dots sit outside these bands.")
+
+    # Time-to-cheaper table.
+    st.markdown("**Time to reach the same ECI at less compute** "
+                f"(central ≈{eff['g_central']:.1f} OOM/yr; range "
+                f"{eff['g_lo']:.1f}–{eff['g_hi']:.1f} from the band vs all-data fits):")
+    tmd = ["| Compute reduction | Time to match capability | Range |",
+           "|---|---|---|"]
+    for f in (2, 5, 10):
+        tm = eff['times'][f]
+        tmd.append(f"| **{f}× less** | ~{tm['central']:.0f} months | "
+                   f"{tm['lo']:.0f}–{tm['hi']:.0f} mo |")
+    st.markdown("\n".join(tmd))
+    st.caption(
+        "Inverse regression `log10(FLOP) = α·ECI + βₜ·t + c` gives "
+        f"−βₜ = {eff['g_inv']:.2f} OOM/yr (R² {eff['r2']:.2f}); the iso-ECI bands "
+        f"give a median {eff['band_median']:.2f} OOM/yr. NB: ECI rewards "
+        "reasoning/RL/post-training, so this is *total* capability efficiency, "
+        "faster than pure-pretraining algorithmic efficiency.")
+
+    # Mirror image: hold compute fixed, watch ECI climb.
+    isoc = _cc_iso_compute(cc_rows)
+    if isoc is not None:
+        st.markdown(
+            "**The mirror image — same compute, rising capability.** Flip the axes: "
+            "hold the *compute budget* fixed and watch ECI climb. A model trained on "
+            f"the same FLOP a year later scores about **+{isoc['eci_per_yr']:.0f} ECI "
+            f"points** higher (range {isoc['lo']:.0f}–{isoc['hi']:.0f} across budgets).")
+        _CBAND_COLORS = {23.5: '#8C6BB1', 24.5: '#3690C0', 25.5: '#02818A'}
+
+        def _in_cband(m, c):
+            return abs(m['log10_flop'] - c) <= _CC_CBAND_HALFWIDTH
+
+        cband_centers = {b['center'] for b in isoc['bands']}
+        figc = go.Figure()
+        cother = [m for m in cc_rows
+                  if not any(_in_cband(m, c) for c in cband_centers)]
+        figc.add_trace(go.Scatter(
+            x=[m['date'] for m in cother], y=[m['eci'] for m in cother],
+            mode='markers', marker=dict(size=5, color='#D9D9D9', line=dict(width=0)),
+            text=[f"{m['name']}<br>ECI {m['eci']:.0f}" for m in cother],
+            hoverinfo='text', name='outside bands', showlegend=True))
+        for bseg in isoc['bands']:
+            c = bseg['center']
+            col = _CBAND_COLORS.get(c, '#02818A')
+            mem = [m for m in cc_rows if _in_cband(m, c)]
+            figc.add_trace(go.Scatter(
+                x=[m['date'] for m in mem], y=[m['eci'] for m in mem],
+                mode='markers',
+                marker=dict(size=7, color=col, line=dict(color='white', width=0.5)),
+                text=[f"{m['name']}<br>ECI {m['eci']:.0f}" for m in mem],
+                hoverinfo='text', legendgroup=str(c),
+                name=f"~10^{c:.1f} FLOP  →  +{bseg['slope']:.0f} ECI/yr",
+                showlegend=True))
+            figc.add_trace(go.Scatter(
+                x=bseg['fit_x'], y=bseg['fit_y'], mode='lines',
+                line=dict(color=col, width=2.5, dash='dot'),
+                legendgroup=str(c), hoverinfo='skip', showlegend=False))
+        figc.update_layout(
+            height=420, plot_bgcolor='white', paper_bgcolor='white',
+            margin=dict(l=55, r=20, t=10, b=40), font=dict(color='#222222'),
+            legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
+                        bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
+                        borderwidth=1),
+            xaxis=dict(gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
+                       title_font=dict(color='#222')),
+            yaxis=dict(title_text="ECI score", gridcolor='rgba(0,0,0,0.12)',
+                       tickfont=dict(color='#222'), title_font=dict(color='#222')))
+        st.plotly_chart(figc, use_container_width=True)
+        st.caption(
+            "Each colored set is a fixed *compute* band (log₁₀ FLOP ± "
+            f"{_CC_CBAND_HALFWIDTH:.1f} dex); its dotted line slopes *up* — that's "
+            "ECI gained per year at a constant compute budget. Same engine as the "
+            "chart above, axes flipped.")
+
+    # Two engines — what a compute slowdown really costs. Flows on from the
+    # exchange-rate section above (no separate header).
+    eci_per_oom = eff['eci_per_oom']
+    g_frontier = dec['frontier_compute_oom']          # frontier-model physical OOM/yr
+    obs_slope = dec['eci_frontier_slope']             # observed frontier ECI pts/yr
+    g_recent = fits[-2]['slope_oom'] if len(fits) >= 2 else g_frontier   # capacity now
+    g_planned = fits[-1]['slope_oom'] if len(fits) >= 1 else g_recent    # capacity planned
+
+    # Algorithmic efficiency is bracketed by the two views of Section 2, which
+    # disagree by ~2× (regression dilution). Low end = iso-ECI (hold capability,
+    # compute falls); high end = iso-compute (hold compute, ECI rises) converted
+    # to OOM/yr via the neutral (geometric-mean) exchange rate. The truth sits
+    # between; we report the band and use the geometric mean as central.
+    g_algo_lo = eff['g_central']                      # iso-ECI family, OOM/yr
+    xr_neutral = (dec['a_partial'] * eci_per_oom) ** 0.5 if dec['a_partial'] > 0 else eci_per_oom
+    g_algo_hi = (isoc['eci_per_yr'] / xr_neutral) if (isoc and xr_neutral > 0) else g_algo_lo
+    if g_algo_hi < g_algo_lo:
+        g_algo_lo, g_algo_hi = g_algo_hi, g_algo_lo
+    g_algo_mid = (g_algo_lo * g_algo_hi) ** 0.5
+
+    def _phys_share(g_algo):
+        return g_recent / (g_recent + g_algo) if (g_recent + g_algo) else 0.0
+
+    share_hi = _phys_share(g_algo_lo)                 # compute-favorable
+    share_mid = _phys_share(g_algo_mid)
+    share_lo = _phys_share(g_algo_hi)                 # algo-favorable
+
+    st.markdown(
+        f"The frontier gains **~{obs_slope:.0f} ECI points per year**, and that "
+        "splits into two engines — **physical compute** (more FLOP) and "
+        "**algorithmic efficiency** (more capability per FLOP), which combine into "
+        "effective compute. Due to regression dilution, the two above views "
+        "(compute constant and ECI constant) **disagree by ~2×**, leading us to "
+        "have a range of uncertainty:")
+    phys_lo, phys_hi = obs_slope * share_lo, obs_slope * share_hi
+    algo_lo, algo_hi = obs_slope * (1 - share_hi), obs_slope * (1 - share_lo)
+    e1, e2, e3 = st.columns(3)
+    e1.metric("Physical compute", f"~{phys_lo:.0f}–{phys_hi:.0f} ECI/yr",
+              f"×{10**g_recent:.1f}/yr capacity")
+    e2.metric("Algorithmic efficiency", f"~{algo_lo:.0f}–{algo_hi:.0f} ECI/yr",
+              "iso-ECI ↔ iso-compute")
+    e3.metric("Share of growth of compute", f"{share_lo*100:.0f}–{share_hi*100:.0f}%",
+              "≈ ⅓ to ½")
+    st.markdown(
+        f"So **physical compute drives roughly a third to a half** of the "
+        f"~{obs_slope:.0f} ECI-points/yr.")
+
+    # One 100%-of-growth split bar. The boundary between the two engines isn't
+    # pinned down, so the contested middle (iso-compute share → iso-ECI share) is
+    # drawn as a hatched band, with a solid line marking the central-view split.
+    algo_min = (1 - share_hi) * 100          # guaranteed-algorithmic share
+    contested = (share_hi - share_lo) * 100  # boundary could lie anywhere here
+    phys_min = share_lo * 100                # guaranteed-physical share
+    central_split = (1 - share_mid) * 100    # central-view boundary (algo share)
+    figs = go.Figure()
+    figs.add_trace(go.Bar(
+        y=[''], x=[algo_min], orientation='h', name='Algorithmic efficiency',
+        marker_color='#1F77B4', hovertemplate='Algorithmic ≥%{x:.0f}%<extra></extra>'))
+    figs.add_trace(go.Bar(
+        y=[''], x=[contested], orientation='h', name='contested boundary',
+        marker=dict(color='#ECECEC',
+                    pattern=dict(shape='/', fgcolor='#9AA0A6', size=8, solidity=0.35)),
+        hovertemplate='either engine: %{x:.0f}%<extra></extra>'))
+    figs.add_trace(go.Bar(
+        y=[''], x=[phys_min], orientation='h', name='Physical compute',
+        marker_color='#D62728', hovertemplate='Physical ≥%{x:.0f}%<extra></extra>'))
+    figs.add_annotation(x=algo_min / 2, y=0, text='Algorithmic', showarrow=False,
+                        font=dict(color='white', size=13))
+    figs.add_annotation(x=algo_min + contested + phys_min / 2, y=0, text='Physical',
+                        showarrow=False, font=dict(color='white', size=13))
+    figs.add_vline(x=central_split, line=dict(color='#111', width=2.5),
+                   annotation_text=f'central view (~{share_mid*100:.0f}% physical)',
+                   annotation_position='top', annotation_yshift=2,
+                   annotation_font=dict(size=10, color='#111'))
+    figs.update_layout(
+        barmode='stack', height=190, plot_bgcolor='white', paper_bgcolor='white',
+        margin=dict(l=10, r=10, t=28, b=30), font=dict(color='#222222'),
+        legend=dict(orientation='h', y=-0.55, x=0.5, xanchor='center',
+                    font=dict(size=11, color='#222')),
+        xaxis=dict(title_text="Share of frontier ECI growth", range=[0, 100],
+                   ticksuffix='%', gridcolor='rgba(0,0,0,0.12)',
+                   tickfont=dict(color='#222'), title_font=dict(color='#222')),
+        yaxis=dict(showticklabels=False))
+    st.plotly_chart(figs, use_container_width=True)
+    st.caption(
+        f"The **hatched band** is the contested boundary (physical compute "
+        f"**{share_lo*100:.0f}–{share_hi*100:.0f}%** of growth: low end = iso-compute "
+        f"view, high end = iso-ECI view); the **solid line** is the central view "
+        f"(~{share_mid*100:.0f}%). Algorithms are the rest. Frontier-model compute "
+        f"growth (×{10**g_frontier:.1f}/yr) would push physical toward the high end.")
+
+    st.warning(
+        "**Caveats.** (1) The two engines aren't independent: algorithmic progress "
+        "is *compute-fed* — you need GPUs to run the experiments — so a physical "
+        "slowdown would likely drag the algorithmic rate too, making a stall "
+        "*worse* than the ⅓–½ shown. (2) ECI bundles post-training/RL, so the "
+        "efficiency rate is total-capability, not pretraining. (3) Labs rarely "
+        "train small models just to re-hit old capability levels, so the cheap-"
+        "model edge is sparse (Qwen, Kimi, distilled MoEs). (4) The 3mo-FLOP "
+        "series is a capacity *ceiling*, not per-model training compute. Order-of-"
+        "magnitude, not forecasts.")
+    st.caption(
+        "Data: Epoch AI Capabilities Index + Frontier Data Centers. The "
+        "efficiency band spans the iso-ECI fit (compute on ECI+time) and the "
+        "iso-compute fit (ECI on compute+time); these two OLS directions bracket "
+        "the true rate, which errors-in-variables dilution puts between them. "
+        "Frontier rates use the running-max-ECI subset.")
+
+
 # ── URL parameter persistence ────────────────────────────────────────────
 
 _REV_DEFAULTS = {
@@ -5442,6 +6046,7 @@ def _all_tracked():
         (_REV_TRACKED_KEYS, _REV_DEFAULTS),
         (_ECG_TRACKED_KEYS, _ECG_DEFAULTS),
         (_DC_RESET_KEYS, _DC_DEFAULTS),
+        (_CC_RESET_KEYS, _CC_DEFAULTS),
     ]:
         keys.extend(ks)
         defaults.update(ds)
@@ -5554,5 +6159,7 @@ if not os.environ.get("_VP_TESTING"):
         render_eci_gap()
     elif active_tab == "Data Centers":
         render_data_centers()
+    elif active_tab == "Compute vs Capabilities":
+        render_compute_capabilities()
 
     _sync_session_to_url()

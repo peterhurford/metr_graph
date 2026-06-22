@@ -679,3 +679,47 @@ class TestDataCenters:
         at.button(key="dc_reset").click().run()
         _assert_no_error(at, "after dc reset")
         assert at.selectbox(key="dc_metric").value == "Compute (H100-equivalents)"
+
+
+# ===========================================================================
+# Compute vs Capabilities tab
+# ===========================================================================
+
+class TestComputeVsCapabilities:
+    """The Compute vs Capabilities tab renders both requested views."""
+
+    def _cc_app(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Compute vs Capabilities")
+        return at
+
+    def test_renders(self):
+        at = self._cc_app()
+        _assert_no_error(at, "Compute vs Capabilities default")
+        text = " ".join(str(m.value) for m in at.markdown) + \
+            " ".join(str(h.value) for h in at.subheader)
+        # Section 1 (compute slowing?), 2 (exchange rate + two-engine flow).
+        assert "Is compute slowing" in text
+        assert "exchange rate" in text
+        assert "two engines" in text
+
+    def test_has_two_engine_metrics(self):
+        at = self._cc_app()
+        # The effective-compute decomposition exposes its two engines as metrics.
+        labels = " ".join(str(m.label) for m in at.metric)
+        assert "Physical compute" in labels
+        assert "Algorithmic efficiency" in labels
+        assert "Share of growth of compute" in labels
+
+    def test_include_future_toggle(self):
+        at = self._cc_app()
+        at.checkbox(key="cc_future").set_value(False).run()
+        _assert_no_error(at, "Compute vs Capabilities / no future")
+
+    def test_reset(self):
+        at = self._cc_app()
+        at.checkbox(key="cc_future").set_value(False).run()
+        at.button(key="cc_reset").click().run()
+        _assert_no_error(at, "after cc reset")
+        assert at.checkbox(key="cc_future").value is True
