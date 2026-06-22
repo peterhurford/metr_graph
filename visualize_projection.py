@@ -5882,9 +5882,8 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
 
     # Quarter-by-quarter table.
     with st.expander("Quarterly ECI projection table"):
-        tmd = ["| Quarter | Median ECI | METR p50 | METR p80 | 50% CI | "
-               "80% CI | 90% CI |",
-               "|---|---|---|---|---|---|---|"]
+        tmd = ["| Quarter | ECI | METR p50 | METR p80 |",
+               "|---|---|---|---|"]
         for i, d in enumerate(x_dates):
             if i == 0:
                 continue
@@ -5896,13 +5895,12 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
             p80_lo = fmt_hrs(_eci_to_metr_p80_min(pct[10][i])[0] / 60)
             p80_hi = fmt_hrs(_eci_to_metr_p80_min(pct[90][i])[0] / 60)
             tmd.append(
-                f"| {d.year} Q{q} | **{pct[50][i]:.0f}** | "
+                f"| {d.year} Q{q} | "
+                f"**{pct[50][i]:.0f}** ({pct[10][i]:.0f}–{pct[90][i]:.0f}) | "
                 f"{p50_c} ({p50_lo}–{p50_hi}) | "
-                f"{p80_c} ({p80_lo}–{p80_hi}) | "
-                f"{pct[25][i]:.0f}–{pct[75][i]:.0f} | "
-                f"{pct[10][i]:.0f}–{pct[90][i]:.0f} | "
-                f"{pct[5][i]:.0f}–{pct[95][i]:.0f} |")
+                f"{p80_c} ({p80_lo}–{p80_hi}) |")
         st.markdown("\n".join(tmd))
+        st.caption("Each cell shows the median with its 80% band in parentheses.")
 
     st.caption(
         "Method: frontier ECI = today's anchor + physical-compute growth (the "
