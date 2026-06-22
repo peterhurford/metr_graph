@@ -5838,6 +5838,8 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
         [m for m in cc_rows if m.get('is_eci_frontier')]
     fr_get = (lambda m: (m.get('eci_score', m.get('eci')),
                          m.get('display_name') or m.get('name', '')))
+    # Drop Claude 3 Sonnet (an early, low frontier point that stretches the axis).
+    fr = [m for m in fr if 'claude 3 sonnet' not in fr_get(m)[1].lower()]
     fig.add_trace(go.Scatter(
         x=[m['date'] for m in fr], y=[fr_get(m)[0] for m in fr], mode='lines+markers',
         line=dict(color='#888', width=1.5),
@@ -5850,7 +5852,7 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
         legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
                     bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
                     borderwidth=1),
-        xaxis=dict(gridcolor='rgba(0,0,0,0.12)', range=[datetime(2023, 1, 1),
+        xaxis=dict(gridcolor='rgba(0,0,0,0.12)', range=[datetime(2024, 1, 1),
                    horizon + timedelta(days=20)], tickfont=dict(color='#222'),
                    title_font=dict(color='#222')),
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
