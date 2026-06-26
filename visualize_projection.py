@@ -506,6 +506,25 @@ import bisect
 # throughput into total operations over a quarter-long run.
 _DAYS_3MO = 3 * 30
 _SECONDS_3MO = _DAYS_3MO * 24 * 3600
+# A model ships ~1.5mo after its training run finishes (post-training, evals,
+# safety), calibrated to observed train-finish → announce gaps (e.g. Mythos:
+# trained ~Feb, announced Apr 7). Used both to date model runs and to expand a
+# buildout milestone into its DC-online / training / model-out timeline.
+_CC_RUN_COMPLETION_LAG = timedelta(days=45)
+
+
+def _dc_milestone_dates(record_date, key):
+    """Tooltip date line(s) for a buildout milestone. For 3mo-train-FLOP the date
+    is the +3mo-shifted training-completion date, so expand it into DC online
+    (−3mo) / training done / model out (+~1.5mo); other metrics show just the month.
+    """
+    if key == 'train_flop':
+        return (f"DC online ~{(record_date - timedelta(days=_DAYS_3MO)):%b %Y}<br>"
+                f"Training done ~{record_date:%b %Y}<br>"
+                f"Model out ~{(record_date + _CC_RUN_COMPLETION_LAG):%b %Y}")
+    return f"{record_date:%b %Y}"
+
+
 # Fraction of peak throughput actually realized over a real training run.
 _DC_UTILIZATION = 0.3
 
@@ -5309,7 +5328,7 @@ def render_data_centers():
             text=[p[2] for p in pts], textposition='top center',
             textfont=dict(size=9, color='#1F77B4'),
             hovertext=[f"{p[2]} ({p[3]}){' — planned' if projected else ''}<br>"
-                       f"{p[0].strftime('%b %Y')}<br>{_dc_fmt_value(p[1], kind)}"
+                       f"{_dc_fmt_value(p[1], kind)}<br>{_dc_milestone_dates(p[0], key)}"
                        for p in pts],
             hoverinfo='text', showlegend=False,
         ))
@@ -5323,7 +5342,8 @@ def render_data_centers():
             marker=dict(color='white' if _peak_projected else '#1F77B4', size=13,
                         symbol='diamond', line=dict(color='#1F77B4', width=1.5)),
             hovertext=[f"{'Planned peak' if _peak_projected else 'Current'}: "
-                       f"{cn} ({cco})<br>{_dc_fmt_value(cv, kind)}"],
+                       f"{cn} ({cco})<br>{_dc_fmt_value(cv, kind)}<br>"
+                       f"{_dc_milestone_dates(cd, key)}"],
             hoverinfo='text', showlegend=False,
         ))
     fig1.update_layout(**_dc_layout(
@@ -5436,7 +5456,7 @@ def render_data_centers():
                 hovertext=[
                     f"{co} — {s[2]} ({label})"
                     f"{' (planned)' if s[0] > _today else ''}<br>"
-                    f"{s[0].strftime('%b %Y')}<br>{_dc_fmt_value(s[1], kind)}"
+                    f"{_dc_fmt_value(s[1], kind)}<br>{_dc_milestone_dates(s[0], key)}"
                     for s in pts],
                 hoverinfo='text',
             ))
@@ -6028,11 +6048,8 @@ _CC_CN_COMPUTE_HI = 0.30   # ~2×/yr — China's recent disclosed pace holds
 #    run (unlike the US, whose runs sit ~10× below capacity on efficiency slack).
 _CC_CN_CAPACITY_HEADROOM_OOM = 0.5    # ~3× above the largest demonstrated run
 
-# Epoch dates a model at *release*, but its training run finished earlier
-# (post-training, evals, safety). ~1.5mo, calibrated to observed train-finish →
-# announce gaps (e.g. Mythos: trained ~Feb, announced Apr 7). Shift run points
-# back by this so they line up with the run-completion-dated capacity frontier.
-_CC_RUN_COMPLETION_LAG = timedelta(days=45)
+# _CC_RUN_COMPLETION_LAG (model release lag) is defined up by the 3-month-run
+# constants, since both the Data Centers tab and this section use it.
 
 
 def _cc_frontier_eci_slope(fr, cutoff):
@@ -6194,12 +6211,8 @@ def _cc_us_vs_china(cc_rows, today):
         y=[10.0 ** lf for d, lf, n, sd in us_cap_hist],
         mode='lines', line=dict(color='#1F77B4', width=1.5, dash='dash'),
         opacity=0.7, name='US capacity (buildout)',
-        # Timeline per record: DC online (−3mo from the shifted record date sd),
-        # the 3-month training run finishing at sd, model out ~1.5mo after that.
         text=[f"<b>{n}</b><br>{10.0 ** lf:.1e} FLOP (3-mo run)<br>"
-              f"DC online ~{(sd - timedelta(days=_DAYS_3MO)):%b %Y}<br>"
-              f"Training done ~{sd:%b %Y}<br>"
-              f"Model out ~{(sd + _CC_RUN_COMPLETION_LAG):%b %Y}"
+              f"{_dc_milestone_dates(sd, 'train_flop')}"
               for d, lf, n, sd in us_cap_hist],
         hoverinfo='text'))
     # US capacity fan emanates from the last US *run* (not the DC line): lower edge
