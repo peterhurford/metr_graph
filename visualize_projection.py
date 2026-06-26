@@ -1667,7 +1667,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     sidebar_header, milestone_list,
                     overlay_frontier=None, overlay_label=None,
                     extra_table_milestones=None, us_best_marker=None,
-                    us_match_marker=None):
+                    us_match_marker=None, us_match_label=None):
     if st.session_state.pop(f"_reset_{p}", False):
         for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
@@ -2214,6 +2214,12 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
         if us_match_marker is not None:
             _add_us_dot(us_match_marker, '#8e44ad', textpos='bottom center')
+            if us_match_label:
+                fig.add_annotation(
+                    x=1.0, xref='paper', y=us_match_marker['score'],
+                    text=f"  {us_match_label}", showarrow=False,
+                    xanchor='left', yanchor='middle',
+                    font=dict(size=10, color='#8e44ad'))
 
     # --- Overlay trendline (e.g., US trend on the China chart) ---
     if overlay_frontier is not None and len(overlay_frontier) >= 2:
@@ -2543,6 +2549,7 @@ def render_eci_china():
             'score': _us_match['eci_score'],
             'name': _us_match['display_name'],
         },
+        us_match_label=f"China best {_cn_current['eci_score']:.1f}",
     )
 
 
