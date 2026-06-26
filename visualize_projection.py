@@ -513,15 +513,18 @@ _SECONDS_3MO = _DAYS_3MO * 24 * 3600
 _CC_RUN_COMPLETION_LAG = timedelta(days=45)
 
 
-def _dc_milestone_dates(record_date, key):
-    """Tooltip date line(s) for a buildout milestone. For 3mo-train-FLOP the date
-    is the +3mo-shifted training-completion date, so expand it into DC online
-    (−3mo) / training done / model out (+~1.5mo); other metrics show just the month.
+def _dc_milestone_dates(record_date, key, shift_days=0):
+    """Tooltip date line(s) for a buildout milestone. For 3mo-train-FLOP the
+    plotted date is the site's DC-available date shifted forward by the chosen
+    timing (`shift_days`), so reconstruct the base and expand into DC online /
+    training done / model out; other metrics show just the month.
     """
     if key == 'train_flop':
-        return (f"DC online ~{(record_date - timedelta(days=_DAYS_3MO)):%b %Y}<br>"
-                f"Training done ~{record_date:%b %Y}<br>"
-                f"Model out ~{(record_date + _CC_RUN_COMPLETION_LAG):%b %Y}")
+        base = record_date - timedelta(days=shift_days)
+        return (f"DC online ~{base:%b %Y}<br>"
+                f"Training done ~{(base + timedelta(days=_DAYS_3MO)):%b %Y}<br>"
+                f"Model out ~"
+                f"{(base + timedelta(days=_DAYS_3MO) + _CC_RUN_COMPLETION_LAG):%b %Y}")
     return f"{record_date:%b %Y}"
 
 
@@ -623,6 +626,18 @@ _DC_METRICS = {
     "Capital cost ($B)": {"key": "cost", "log": False, "kind": "cost"},
     "Performance (8-bit OP/s)": {"key": "perf", "log": True, "kind": "sci"},
     "3mo train FLOP": {"key": "train_flop", "log": True, "kind": "flop"},
+}
+
+# Timing options for the 3mo-train-FLOP metric: label → days the DC-available
+# date is shifted forward to date the chosen milestone.
+#   • DC construction  — no shift (the site's availability date)
+#   • Training done     — +3mo (a run started at availability finishes that later)
+#   • Model release     — +3mo + ~1.5mo post-training/eval lag (matches the
+#                         Compute vs Capabilities tab's model-release dating)
+_DC_TRAIN_FLOP_TIMINGS = {
+    "Data center construction": 0,
+    "3mo training finished": _DAYS_3MO,
+    "Model release": _DAYS_3MO + _CC_RUN_COMPLETION_LAG.days,
 }
 
 # Stable colors for the most common companies; others fall back to a palette.
@@ -5087,11 +5102,12 @@ def render_eci_gap():
 
 # ── Data Centers ───────────────────────────────────────────────────────────
 
-_DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future"]
+_DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing"]
 _DC_DEFAULTS = {
     "dc_metric": "Compute (H100-equivalents)",
     "dc_log": True,
     "dc_future": True,
+    "dc_timing": "Data center construction",
 }
 
 # Compute vs Capabilities tab
@@ -5222,6 +5238,12 @@ def render_data_centers():
         log_scale = st.checkbox("Log scale", value=cfg["log"], key="dc_log")
         include_future = st.checkbox("Include planned future buildout",
                                      value=True, key="dc_future")
+        # The 3mo-train-FLOP metric can be dated to any of three milestones;
+        # the choice shifts every point forward by that lead time.
+        timing_label = "Data center construction"
+        if cfg["key"] == 'train_flop':
+            timing_label = st.selectbox(
+                "Date points at", list(_DC_TRAIN_FLOP_TIMINGS), key="dc_timing")
         if st.button("Reset", key="dc_reset"):
             for k in _DC_RESET_KEYS:
                 st.session_state.pop(k, None)
@@ -5238,14 +5260,18 @@ def render_data_centers():
     series = {n: v for n, v in series.items()
               if v['company'] not in _DC_EXCLUDE_COMPANIES}
 
-    # For 3-month-training-FLOP, a run on a site available at date D only
-    # completes at D + 3mo, so shift every data point forward by that lead time.
+    # For 3-month-training-FLOP, shift every data point forward from the site's
+    # availability date to the chosen milestone (DC construction / training done /
+    # model release). DC construction means no shift.
+    shift_days = 0
     if key == 'train_flop':
-        shift = timedelta(days=_DAYS_3MO)
-        series = {n: {'company': v['company'],
-                      'pts': [(d + shift, val) for d, val in v['pts']]}
-                  for n, v in series.items()}
-        cap_date = cap_date + shift
+        shift_days = _DC_TRAIN_FLOP_TIMINGS[timing_label]
+        if shift_days:
+            shift = timedelta(days=shift_days)
+            series = {n: {'company': v['company'],
+                          'pts': [(d + shift, val) for d, val in v['pts']]}
+                      for n, v in series.items()}
+            cap_date = cap_date + shift
 
     # ── Header ──
     st.header("Frontier Data Centers Over Time")
@@ -5259,13 +5285,26 @@ def render_data_centers():
            if include_future else ""))
 
     if key == 'train_flop':
+        _timing_note = {
+            "Data center construction":
+                "Points are dated at each site's construction / availability "
+                "date (no shift).",
+            "3mo training finished":
+                f"Every point is shifted forward by {_DAYS_3MO // 30} months, "
+                "since a run started on a site's availability date only finishes "
+                "that much later.",
+            "Model release":
+                f"Every point is shifted forward by "
+                f"{shift_days // 30} months (~{_DAYS_3MO // 30}mo training + "
+                f"~{_CC_RUN_COMPLETION_LAG.days / 30.44:.1f}mo post-training / "
+                "eval), to date the resulting model's release.",
+        }[timing_label]
         st.caption(
             f"Methodology: *3mo train FLOP* = each site's peak performance "
             f"(8-bit OP/s) × a {_DAYS_3MO}-day ({_DAYS_3MO // 30}-month) training "
-            f"run × {_DC_UTILIZATION:.0%} realized utilization. Every data point "
-            f"is shifted forward by {_DAYS_3MO // 30} months, since a run started "
-            "on a site's availability date only finishes that much later. Figures "
-            "are order-of-magnitude estimates, not vendor-reported numbers.")
+            f"run × {_DC_UTILIZATION:.0%} realized utilization. {_timing_note} "
+            "Figures are order-of-magnitude estimates, not vendor-reported "
+            "numbers.")
 
     if not series:
         st.warning("No data available for this metric.")
@@ -5328,7 +5367,7 @@ def render_data_centers():
             text=[p[2] for p in pts], textposition='top center',
             textfont=dict(size=9, color='#1F77B4'),
             hovertext=[f"{p[2]} ({p[3]}){' — planned' if projected else ''}<br>"
-                       f"{_dc_fmt_value(p[1], kind)}<br>{_dc_milestone_dates(p[0], key)}"
+                       f"{_dc_fmt_value(p[1], kind)}<br>{_dc_milestone_dates(p[0], key, shift_days)}"
                        for p in pts],
             hoverinfo='text', showlegend=False,
         ))
@@ -5343,7 +5382,7 @@ def render_data_centers():
                         symbol='diamond', line=dict(color='#1F77B4', width=1.5)),
             hovertext=[f"{'Planned peak' if _peak_projected else 'Current'}: "
                        f"{cn} ({cco})<br>{_dc_fmt_value(cv, kind)}<br>"
-                       f"{_dc_milestone_dates(cd, key)}"],
+                       f"{_dc_milestone_dates(cd, key, shift_days)}"],
             hoverinfo='text', showlegend=False,
         ))
     fig1.update_layout(**_dc_layout(
@@ -5456,7 +5495,7 @@ def render_data_centers():
                 hovertext=[
                     f"{co} — {s[2]} ({label})"
                     f"{' (planned)' if s[0] > _today else ''}<br>"
-                    f"{_dc_fmt_value(s[1], kind)}<br>{_dc_milestone_dates(s[0], key)}"
+                    f"{_dc_fmt_value(s[1], kind)}<br>{_dc_milestone_dates(s[0], key, shift_days)}"
                     for s in pts],
                 hoverinfo='text',
             ))
@@ -6212,7 +6251,7 @@ def _cc_us_vs_china(cc_rows, today):
         mode='lines', line=dict(color='#1F77B4', width=1.5, dash='dash'),
         opacity=0.7, name='US capacity (buildout)',
         text=[f"<b>{n}</b><br>{10.0 ** lf:.1e} FLOP (3-mo run)<br>"
-              f"{_dc_milestone_dates(sd, 'train_flop')}"
+              f"{_dc_milestone_dates(sd, 'train_flop', _DAYS_3MO)}"
               for d, lf, n, sd in us_cap_hist],
         hoverinfo='text'))
     # US capacity fan emanates from the last US *run* (not the DC line): lower edge
