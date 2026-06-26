@@ -1340,12 +1340,15 @@ class TestDefaultProjectionMatchesFit:
             pytest.skip("Not enough ECI models for 3-segment test")
 
         bp_a = mid
-        bp_b = remaining[len(remaining) // 2]
-
         ppy_a = vp.fit_line(days[bp_a:], vals[bp_a:])[1] * 365.25
+        # Pick the remaining breakpoint whose last-segment PPY differs most from
+        # bp_a's, so the test is discriminating regardless of how linear the
+        # current frontier happens to be. Skip if no segment differs enough.
+        bp_b = max(remaining, key=lambda b: abs(
+            vp.fit_line(days[b:], vals[b:])[1] * 365.25 - ppy_a))
         ppy_b = vp.fit_line(days[bp_b:], vals[bp_b:])[1] * 365.25
-        assert abs(ppy_a - ppy_b) / ppy_a > 0.05, \
-            "Different breakpoints yield same PPY — test not discriminating"
+        if abs(ppy_a - ppy_b) / ppy_a <= 0.05:
+            pytest.skip("ECI frontier too linear to discriminate breakpoints")
 
         ci_a = np.sqrt(round(ppy_a / 2, 1) * round(ppy_a * 2, 1))
         ci_b = np.sqrt(round(ppy_b / 2, 1) * round(ppy_b * 2, 1))
