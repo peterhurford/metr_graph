@@ -2026,16 +2026,12 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     # Only active on tabs that supply an overlay (US) frontier.
     _eci_gap_fn = None
     if overlay_frontier is not None and len(overlay_frontier) >= 2:
-        _gp_base = overlay_frontier[0]['date']
-        _gp_days = np.array([(mm['date'] - _gp_base).days for mm in overlay_frontier], dtype=float)
-        _gp_scores = np.array([mm['eci_score'] for mm in overlay_frontier])
-        _gp_intercept, _gp_slope = fit_line(_gp_days, _gp_scores)
+        # Same gap-in-time metric as the US-China section; share one definition.
+        _us_fr_tuples = [(mm['date'], mm['eci_score'], '') for mm in overlay_frontier]
 
         def _eci_gap_fn(score, at_date):
             """Months `score` lags the US trend, evaluated at China date `at_date`."""
-            us_days = (score - _gp_intercept) / _gp_slope
-            us_date = _gp_base + timedelta(days=us_days)
-            return (at_date - us_date).days / 30.44
+            return _eci_months_behind(_us_fr_tuples, score, at_date)
 
     def _eci_gap_hover(score, at_date):
         """'<br>Gap: X mo behind US' suffix, or '' when there's no overlay frontier."""
@@ -5476,7 +5472,7 @@ def render_data_centers():
 # Compute vs Capabilities — does data-center FLOP predict ECI?
 # ══════════════════════════════════════════════════════════════════════════
 
-def _cc_trainflop_frontier(dcs, cap_date):
+def _cc_trainflop_frontier(dcs, cap_date, with_names=False):
     """Running-max frontier of 3mo-train-FLOP across AI-lab sites.
 
     Returns [(date, flop), …] sorted by date, with every point shifted forward
@@ -5494,11 +5490,14 @@ def _cc_trainflop_frontier(dcs, cap_date):
     env = _dc_envelope(series)
     out = []
     best = 0.0
-    for d, v, _name, _co in env:
+    best_name = None
+    best_date = None       # date the current record was set (a fixed expansion)
+    for d, v, name, _co in env:
         if v is None or v <= 0:
             continue
-        best = max(best, v)
-        out.append((d, best))
+        if v > best:
+            best, best_name, best_date = v, name, d
+        out.append((d, best, best_name, best_date) if with_names else (d, best))
     return out
 
 
@@ -5945,7 +5944,7 @@ def _cc_country_frontier(models, country):
 
 def _cc_country_compute_frontier(rows, country):
     """Running-max *training-compute* frontier for one country, from the models
-    that disclose FLOP, as [(date, log10_flop, eci), …].
+    that disclose FLOP, as [(date, log10_flop, eci, model_name), …].
 
     This is the largest disclosed training run to date on each side — the compute
     trajectory itself, the thing export controls actually constrain. Also returns
@@ -5958,24 +5957,128 @@ def _cc_country_compute_frontier(rows, country):
     for m in grp:
         if m['log10_flop'] > best:
             best = m['log10_flop']
-            pts.append((m['date'], m['log10_flop'], m['eci']))
+            pts.append((m['date'], m['log10_flop'], m['eci'],
+                        m.get('name') or 'frontier model'))
     if len(pts) < 2:
         return pts, None
     b = pts[0][0]
     g = float(np.polyfit(
-        np.array([(d - b).days / 365.25 for d, lf, s in pts]),
-        np.array([lf for d, lf, s in pts]), 1)[0])
+        np.array([(d - b).days / 365.25 for d, lf, s, n in pts]),
+        np.array([lf for d, lf, s, n in pts]), 1)[0])
     return pts, g
 
 
-def _cc_us_vs_china(cc_rows, today, obs_slope, g_recent,
-                    share_lo, share_mid, share_hi):
-    """Section 4: read the compute-vs-capability decomposition through a US-China
-    lens. The forecast rides *each country's own compute trajectory* — China's
-    disclosed training compute sits well below the US frontier and is growing
-    slower, so its physical-compute engine delivers less ECI growth. The
-    algorithmic-efficiency engine is treated as shared (methods and open weights
-    diffuse across the field), which isolates the compute constraint as the driver.
+# ── Shared US-trend gap helper (also used by the ECI China tab) ───────────
+
+def _eci_months_behind(us_fr, score, at_date):
+    """Months `score` lags the US ECI frontier's linear trend, at `at_date`.
+
+    `us_fr` is [(date, score, name), …] — a running-max US frontier. This is the
+    same gap-in-time metric the ECI China tab reports, factored out so both
+    places define it identically. Positive = behind the US trend; negative =
+    ahead. Returns NaN if the US trend is flat/declining.
+    """
+    base = us_fr[0][0]
+    days = np.array([(d - base).days for d, s, n in us_fr], dtype=float)
+    scores = np.array([s for d, s, n in us_fr])
+    intercept, slope = fit_line(days, scores)
+    if slope <= 0:
+        return float('nan')
+    us_date = base + timedelta(days=float((score - intercept) / slope))
+    return (at_date - us_date).days / 30.44
+
+
+# Windows for the country frontier-slope sensitivity band. Central = the
+# post-catch-up regime we commit to; the band spans the full record (China still
+# closing the 2023 gap) to 2025-only (the US pulling ahead fastest).
+_CC_GAP_WINDOWS = [
+    ("full record", datetime(2023, 1, 1)),
+    ("since 2024", datetime(2024, 1, 1)),
+    ("2025 only", datetime(2025, 1, 1)),
+]
+
+# Forward compute-growth ranges per country, for the Chart-A cones.
+#
+# US is MEASURED: Epoch's data-center buildout (committed/under-construction) gives
+# a data-backed range — the recent built pace (~3×/yr) down to the planned 2026–28
+# pipeline (~1.9×/yr). Those segment slopes are read live from the DC data, so no
+# US constant lives here.
+#
+# China is a JUDGMENT call: we have no Epoch buildout data for China (its DC
+# tracking is ~all US sites). Export controls cap leading-edge chip supply (no
+# H100/B200; domestic Ascend/SMIC yield-limited), so its buildout is unlikely to
+# keep US pace. Low end = controls bite / stockpiles deplete; high end = China
+# sustains its most recent disclosed leg (~2×/yr). This is the gap we're trying to
+# bound, not measure.
+_CC_CN_COMPUTE_LO = 0.15   # ~1.4×/yr — export controls bite
+_CC_CN_COMPUTE_HI = 0.30   # ~2×/yr — China's recent disclosed pace holds
+
+# China cluster-capacity estimate — largest *single cluster's* 3-month training
+# FLOP, to match the US buildout line (which is the largest single site, not a
+# national total). No Epoch buildout data for China, so this is a judgment
+# (mid-2026):
+#  • China's *total* fleet is large — mostly smuggled / third-country-routed
+#    NVIDIA (H100/H800/H20/B200) plus a domestic Huawei Ascend fleet (~250–300k
+#    usable 910C in 2026, HBM-capped; SemiAnalysis). But total compute ≠ one
+#    cluster: smuggled chips arrive dispersed, and the networking gear to fuse
+#    them into one coherent training run is itself export-controlled.
+#  • So the binding constraint is the largest *single* coherent cluster. We anchor
+#    capacity on China's largest *demonstrated* run and add only modest headroom:
+#    being compute-constrained, China likely uses most of its biggest cluster per
+#    run (unlike the US, whose runs sit ~10× below capacity on efficiency slack).
+_CC_CN_CAPACITY_HEADROOM_OOM = 0.5    # ~3× above the largest demonstrated run
+
+# Epoch dates a model at *release*, but its training run finished earlier
+# (post-training, evals, safety). ~1.5mo, calibrated to observed train-finish →
+# announce gaps (e.g. Mythos: trained ~Feb, announced Apr 7). Shift run points
+# back by this so they line up with the run-completion-dated capacity frontier.
+_CC_RUN_COMPLETION_LAG = timedelta(days=45)
+
+
+def _cc_frontier_eci_slope(fr, cutoff):
+    """OLS ECI/yr of a country's running-max frontier from `cutoff` onward."""
+    pts = [(d, s) for d, s, n in fr if d >= cutoff]
+    if len(pts) < 2:
+        return None
+    base = pts[0][0]
+    return float(np.polyfit(
+        np.array([(d - base).days / 365.25 for d, _ in pts]),
+        np.array([s for _, s in pts]), 1)[0])
+
+
+def _cc_pooled_decomp(rows):
+    """Pooled ECI decomposition from US+China models with disclosed FLOP.
+
+    Joint OLS of ECI on log10(FLOP) and time, returning (a_partial, b_algo):
+    a_partial = ECI per ×10 compute (the exchange rate), b_algo = ECI/yr at fixed
+    compute (shared algorithmic progress, since methods/open weights diffuse).
+    Compute and time are collinear, so the split is approximate. Returns
+    (None, None) if too few models.
+    """
+    sub = [m for m in rows
+           if m.get('country') in ('United States of America', 'China')]
+    if len(sub) < 10:
+        return None, None
+    d0 = min(m['date'] for m in sub)
+    lc = np.array([m['log10_flop'] for m in sub])
+    t = np.array([(m['date'] - d0).days / 365.25 for m in sub])
+    eci = np.array([m['eci'] for m in sub])
+    beta, _, _, _ = np.linalg.lstsq(
+        np.column_stack([lc, t, np.ones(len(sub))]), eci, rcond=None)
+    return float(beta[0]), float(beta[1])
+
+
+def _cc_us_vs_china(cc_rows, today):
+    """Section 4: the US-China frontier read through the compute lens.
+
+    The honest headline is a *mismatch of scale*: the US holds a training-compute
+    lead of orders of magnitude, but only a single-digit ECI lead. China closed
+    most of the gap in one 2023 burst; since 2024 the US has edged back ahead
+    slowly. Returns to compute are modest and algorithmic progress diffuses
+    across the field, so a huge compute gap buys only a small, slowly-widening
+    capability gap. We commit to the since-2024 regime and show the full-record /
+    2025-only windows as the band, because the trend's sign depends on which you
+    pick.
     """
     st.subheader("US vs. China")
 
@@ -5990,64 +6093,130 @@ def _cc_us_vs_china(cc_rows, today, obs_slope, g_recent,
 
     us_best = max(us_fr, key=lambda x: x[1])
     cn_best = max(cn_fr, key=lambda x: x[1])
-    gap_pts = us_best[1] - cn_best[1]
+    gap_now = us_best[1] - cn_best[1]
+    mo_now = _eci_months_behind(us_fr, cn_best[1], cn_best[0])
 
-    # How long ago the US passed the ECI level China's best model sits at today
-    # (China's current lead measured in time, off the US frontier trend).
-    ub = us_fr[0][0]
-    u_int, u_slope = fit_line(
-        np.array([(d - ub).days for d, s, n in us_fr], dtype=float),
-        np.array([s for d, s, n in us_fr]))
-    lag_mo = (cn_best[0] - (ub + timedelta(
-        days=float((cn_best[1] - u_int) / u_slope)))).days / 30.44
+    horizon = datetime(2029, 12, 31)
 
-    # Current disclosed-compute gap: each side's largest disclosed training run.
-    us_c_now, cn_c_now = us_cf[-1][1], cn_cf[-1][1]
-    compute_gap_oom = us_c_now - cn_c_now
+    # ── Compute: largest *actual* runs (grounded, Epoch per-model) vs cluster
+    # *capacity* (US measured from buildout; China estimated from its chips). ──
+    # Actual-run frontiers are us_cf / cn_cf (Epoch's per-model estimates). The
+    # headline gap is run-to-run.
+    us_run_lf, cn_run_lf = us_cf[-1][1], cn_cf[-1][1]
+    run_gap_oom = us_run_lf - cn_run_lf
 
-    st.markdown(
-        "Everything above treats the frontier as a single global trend. Split it "
-        "by country and the story is **about compute**. Export controls keep the "
-        "largest training runs — and the data-center buildout in Section 1 — on "
-        "the US side, so the two countries ride **different compute trajectories**, "
-        "and the physical-compute engine delivers ECI growth at different speeds. "
-        "China answers with the **algorithmic-efficiency** engine (more capability "
-        "per FLOP), but compute is the variable that actually differs.")
+    # US capacity = Epoch's data-center buildout (largest cluster's 3-mo training
+    # capacity); its recent-built vs planned segments give the forward range.
+    dc_fr = _cc_trainflop_frontier(dc_all, horizon, with_names=True)
+    dc_fits = _cc_segment_fits([(d, v) for d, v, n, sd in dc_fr], today)
+    g_us_hi = next((f['slope_oom'] for f in dc_fits
+                    if f['label'].startswith('2025 H2')), 0.47)   # recent built
+    g_us_lo = next((f['slope_oom'] for f in dc_fits
+                    if f['label'].startswith('Planned')), 0.27)   # planned pipeline
+    # Keep every buildout point within the chart window — including the announced
+    # megaclusters years out (Colossus 2, Hyperion, Stargate…) — so the labeled
+    # line rides the real announced buildout to ~2029, not a flat extrapolation.
+    us_cap_hist = [(d, np.log10(v), n, sd) for d, v, n, sd in dc_fr if d <= horizon]
+    us_cap_lf = next(lf for d, lf, n, sd in reversed(us_cap_hist) if d <= today)
+    us_cap_end_lf = us_cap_hist[-1][1]
+    # China capacity = its largest *demonstrated* run + modest single-cluster
+    # headroom (no Epoch buildout data; compute-constrained). Anchored at the last
+    # run so the fan connects to the data: lower edge = the run, upper = +headroom.
+    g_cn_lo, g_cn_hi = _CC_CN_COMPUTE_LO, _CC_CN_COMPUTE_HI
+    cn_cap_d = cn_cf[-1][0] - _CC_RUN_COMPLETION_LAG
+    cn_cap_apex_lo, cn_cap_apex_hi = cn_run_lf, cn_run_lf + _CC_CN_CAPACITY_HEADROOM_OOM
+    d_yrs = (today - cn_cap_d).days / 365.25
+    cn_cap_lo_lf = cn_cap_apex_lo + g_cn_lo * d_yrs     # capacity range at today
+    cn_cap_hi_lf = cn_cap_apex_hi + g_cn_hi * d_yrs
+    cn_cap_lf = 0.5 * (cn_cap_lo_lf + cn_cap_hi_lf)
+    cap_gap_oom = us_cap_lf - cn_cap_lf
+
+    # ECI projection: derived from compute (Chart A growth) + shared algorithmic
+    # progress. a_partial = ECI per ×10 compute; b_algo = shared ECI/yr at fixed
+    # compute (methods diffuse). Each country's ECI slope = a_partial·g + b_algo.
+    a_partial, b_algo = _cc_pooled_decomp(cc_rows)
+    us_eci_slo, us_eci_shi = b_algo + a_partial * g_us_lo, b_algo + a_partial * g_us_hi
+    cn_eci_slo, cn_eci_shi = b_algo + a_partial * g_cn_lo, b_algo + a_partial * g_cn_hi
+    us_eci_smid = 0.5 * (us_eci_slo + us_eci_shi)
+    cn_eci_smid = 0.5 * (cn_eci_slo + cn_eci_shi)
+
+    dt_end = (horizon - today).days / 365.25
+    gap_end = (us_best[1] + us_eci_smid * dt_end) - (cn_best[1] + cn_eci_smid * dt_end)
+    mo_end = (gap_end / us_eci_smid * 12.0) if us_eci_smid > 0 else float('nan')
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Compute gap (training FLOP)", f"~{10 ** compute_gap_oom:.0f}×",
-              f"{compute_gap_oom:.1f} OOM, US ahead", delta_color="off")
-    c2.metric("Compute growth", f"US ×{10 ** g_us:.0f}/yr",
-              f"China ×{10 ** g_cn:.0f}/yr", delta_color="off")
-    c3.metric("Frontier ECI gap", f"{gap_pts:.0f} pts",
-              f"China ~{lag_mo:.0f} mo behind", delta_color="off")
+    c1.metric("Compute gap (largest actual run)",
+              f"~{10 ** run_gap_oom:.0f}×",
+              f"{run_gap_oom:.1f} OOM, US ahead", delta_color="off")
+    c2.metric("ECI gap today", f"{gap_now:.0f} pts",
+              f"~{mo_now:.0f} mo behind", delta_color="off")
+    c3.metric("ECI gap end-2029 (compute + algo)", f"~{gap_end:.0f} pts",
+              f"~{mo_end:.0f} mo behind", delta_color="off")
 
-    # ── Chart A: the compute trajectories themselves ──────────────────────
-    horizon = datetime(2029, 12, 31)
+    # ── Chart A: actual training runs (grounded) vs cluster capacity (est.) ────
     figc = go.Figure()
     _dc_add_projection_band(figc, today, horizon)
 
-    def _compute_now(cf, g):
-        """Extend a country's compute frontier to today at its own OOM/yr."""
-        last_d, last_lf, _ = cf[-1]
-        return last_lf + g * (today - last_d).days / 365.25
+    # Project a capacity band forward: the [lo,hi] level uncertainty at the anchor
+    # grows with the [g_lo,g_hi] rate uncertainty (so a wide band stays wide).
+    def _cap_cone(anchor_d, lo_lf, hi_lf, g_lo, g_hi, rgb):
+        yrs = (horizon - anchor_d).days / 365.25
+        r, gg, bb = rgb
+        figc.add_trace(go.Scatter(
+            x=[anchor_d, horizon, horizon, anchor_d], mode='lines',
+            y=[10.0 ** lo_lf, 10.0 ** (lo_lf + g_lo * yrs),
+               10.0 ** (hi_lf + g_hi * yrs), 10.0 ** hi_lf],
+            fill='toself', fillcolor=f'rgba({r},{gg},{bb},0.10)', line=dict(width=0),
+            hoverinfo='skip', showlegend=False))
 
-    us_now_lf, cn_now_lf = _compute_now(us_cf, g_us), _compute_now(cn_cf, g_cn)
-    for cf, g, now_lf, col, label in (
-            (us_cf, g_us, us_now_lf, '#1F77B4', 'United States'),
-            (cn_cf, g_cn, cn_now_lf, '#D62728', 'China')):
+    # GROUNDED — largest actual estimated training runs (Epoch per-model), dated
+    # at estimated training completion (release − ~2.5mo) so they line up with the
+    # run-completion-dated capacity frontier.
+    for cf, col, label in ((us_cf, '#1F77B4', 'US runs (Epoch est.)'),
+                           (cn_cf, '#D62728', 'China runs (Epoch est.)')):
         figc.add_trace(go.Scatter(
-            x=[d for d, lf, s in cf], y=[10.0 ** lf for d, lf, s in cf],
-            mode='lines+markers', line=dict(color=col, width=2),
+            x=[d - _CC_RUN_COMPLETION_LAG for d, lf, s, n in cf],
+            y=[10.0 ** lf for d, lf, s, n in cf],
+            mode='lines+markers', line=dict(color=col, width=2.5),
             marker=dict(size=6, color=col, line=dict(color='white', width=0.5)),
-            text=[f"{label}<br>10^{lf:.1f} FLOP<br>ECI {s:.0f}"
-                  for d, lf, s in cf],
+            text=[f"<b>{n}</b><br>{10.0 ** lf:.1e} FLOP &nbsp; ECI {s:.0f}<br>"
+                  f"Released {d:%b %Y}<br><i>plotted at est. training completion "
+                  f"(−{_CC_RUN_COMPLETION_LAG.days / 30.44:.1f}mo)</i>"
+                  for d, lf, s, n in cf],
             hoverinfo='text', name=label))
-        end_lf = now_lf + g * (horizon - today).days / 365.25
-        figc.add_trace(go.Scatter(
-            x=[cf[-1][0], horizon], y=[10.0 ** cf[-1][1], 10.0 ** end_lf],
-            mode='lines', line=dict(color=col, width=2, dash='dot'),
-            name=f"{label} trend (×{10 ** g:.0f}/yr)", hoverinfo='skip'))
+
+    # ESTIMATED — cluster capacity ceilings (what the biggest cluster could
+    # train), drawn faded/dashed so they read as estimates, not runs.
+    # Hover dates come from `sd` — the date the leading site SET the record (a
+    # fixed expansion) — not the running x-date, so they don't drift month to month.
+    figc.add_trace(go.Scatter(
+        x=[d for d, lf, n, sd in us_cap_hist],
+        y=[10.0 ** lf for d, lf, n, sd in us_cap_hist],
+        mode='lines', line=dict(color='#1F77B4', width=1.5, dash='dash'),
+        opacity=0.7, name='US capacity (buildout)',
+        # Timeline per record: DC online (−3mo from the shifted record date sd),
+        # the 3-month training run finishing at sd, model out ~1.5mo after that.
+        text=[f"<b>{n}</b><br>{10.0 ** lf:.1e} FLOP (3-mo run)<br>"
+              f"DC online ~{(sd - timedelta(days=_DAYS_3MO)):%b %Y}<br>"
+              f"Training done ~{sd:%b %Y}<br>"
+              f"Model out ~{(sd + _CC_RUN_COMPLETION_LAG):%b %Y}"
+              for d, lf, n, sd in us_cap_hist],
+        hoverinfo='text'))
+    # US capacity fan emanates from the last US *run* (not the DC line): lower edge
+    # at the run, upper edge +the run→announced-capacity gap, growing at the
+    # buildout rate. The announced DC line falls inside it.
+    us_run_d = us_cf[-1][0] - _CC_RUN_COMPLETION_LAG
+    us_headroom = us_cap_lf - us_run_lf
+    _cap_cone(us_run_d, us_run_lf, us_run_lf + us_headroom, g_us_lo, g_us_hi,
+              (31, 119, 180))
+    # China capacity fan: lower edge anchored at its largest demonstrated run (so
+    # it connects to the last red dot), upper edge +headroom; fans by growth range.
+    figc.add_trace(go.Scatter(
+        x=[today, today], y=[10.0 ** cn_cap_lo_lf, 10.0 ** cn_cap_hi_lf],
+        mode='lines', line=dict(color='#D62728', width=7), opacity=0.3,
+        hoverinfo='skip', name='China capacity (est.)'))
+    _cap_cone(cn_cap_d, cn_cap_apex_lo, cn_cap_apex_hi, g_cn_lo, g_cn_hi, (214, 39, 40))
+
     figc.update_layout(
         height=420, plot_bgcolor='white', paper_bgcolor='white',
         margin=dict(l=70, r=20, t=20, b=40), font=dict(color='#222222'),
@@ -6057,51 +6226,50 @@ def _cc_us_vs_china(cc_rows, today, obs_slope, g_recent,
         xaxis=dict(gridcolor='rgba(0,0,0,0.12)',
                    range=[datetime(2023, 1, 1), horizon],
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
-        yaxis=dict(title_text="Largest disclosed training run (FLOP)", type='log',
+        yaxis=dict(title_text="Training compute (FLOP)", type='log',
                    gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
                    title_font=dict(color='#222')))
     st.plotly_chart(figc, use_container_width=True)
     st.caption(
-        "Each line is a country's running-max *disclosed training compute*; dotted "
-        "= its own OOM/yr trend extended to end-2029. China sits "
-        f"~{compute_gap_oom:.1f} orders of magnitude (~{10 ** compute_gap_oom:.0f}×) "
-        "below the US frontier and is climbing slower — the export-control gap "
-        "widening over time. (US frontier labs disclose FLOP rarely, so the US "
-        "line lags its true frontier; the real gap is likely larger.)")
+        f"**Solid = grounded**: largest *actual* training runs Epoch estimates per "
+        f"model — ~{10 ** us_run_lf:.0e} (US) vs ~{10 ** cn_run_lf:.0e} (China), a "
+        f"**~{10 ** run_gap_oom:.0f}× ({run_gap_oom:.1f} OOM)** gap. Recent US "
+        f"frontier models use *less* (GPT-5 ~7e25) — efficiency, not bigger runs. "
+        f"**Dashed/shaded = capacity** — the largest *single cluster's* 3-month "
+        f"run: US ~{10 ** us_cap_lf:.0e} today rising through *announced* "
+        f"megaclusters (Stargate, Hyperion…) to ~{10 ** us_cap_end_lf:.0e} by 2029 "
+        f"(Epoch buildout), China ~{10 ** cn_cap_lo_lf:.0e}–{10 ** cn_cap_hi_lf:.0e} "
+        f"(estimated, no Epoch data). "
+        f"China's *total* chips — mostly smuggled NVIDIA + domestic Ascend — are "
+        f"plentiful, but concentrating them into one coherent run is the bottleneck "
+        f"(dispersed chips, export-controlled networking), so single-cluster "
+        f"capacity stays near its biggest known run (~{10 ** cn_run_lf:.0e}). "
+        f"Capacity grows {10 ** g_us_lo:.1f}–{10 ** g_us_hi:.1f}×/yr (US, measured) "
+        f"vs ~{10 ** g_cn_lo:.1f}–{10 ** g_cn_hi:.1f}×/yr (China), so the gap "
+        f"widens only slowly. *Run points are dated at estimated training "
+        "completion (release − ~2.5mo) to align with the +3mo capacity line.*")
 
-    # ── ECI forecast riding each country's compute path ───────────────────
-    # Same engine as Section 3, but the physical term rides the *country's* Δlog
-    # FLOP. k_phys = ECI per OOM of compute (global exchange rate); k_algo = the
-    # shared algorithmic component. Band spans the contested physical/algo share.
-    g_cal = g_recent if (g_recent and g_recent > 0) else obs_slope
-    shares = sorted({share_lo, share_mid, share_hi})
-    if len(shares) == 1:
-        shares = [max(0.0, shares[0] - 0.05), shares[0], shares[0] + 0.05]
+    # ── Chart B: ECI derived from compute (Chart A) + shared algorithmic
+    # progress — ECI(t) = ECI_now + (a_partial·g_compute + b_algo)·t. The band is
+    # each country's compute-growth range; algo is shared, so the divergence is
+    # purely the compute gap. ──
     qdates = _cc_quarter_ends(today, horizon)
     x_dates = [today] + qdates
-    dt_yrs = np.array([(d - today).days / 365.25 for d in x_dates])
+    dt = np.array([(d - today).days / 365.25 for d in x_dates])
 
     figf = go.Figure()
     _dc_add_projection_band(figf, today, horizon)
-    proj_summary = {}
-    for fr, best, g_ctry, col, rgb, label in (
-            (us_fr, us_best, g_us, '#1F77B4', (31, 119, 180), 'United States'),
-            (cn_fr, cn_best, g_cn, '#D62728', (214, 39, 40), 'China')):
-        eci_now = best[1]
-        # ECI(t) for each share value; physical term rides this country's compute.
-        curves = []
-        for sh in shares:
-            k_phys = sh * obs_slope / g_cal          # ECI per OOM of compute
-            k_algo = (1.0 - sh) * obs_slope          # shared algorithmic ECI/yr
-            curves.append(eci_now + (k_phys * g_ctry + k_algo) * dt_yrs)
-        stack = np.vstack(curves)
-        lo, mid, hi = stack.min(0), stack[len(shares) // 2], stack.max(0)
+    for fr, best, slo, shi, smid, col, rgb, label in (
+            (us_fr, us_best, us_eci_slo, us_eci_shi, us_eci_smid,
+             '#1F77B4', (31, 119, 180), 'United States'),
+            (cn_fr, cn_best, cn_eci_slo, cn_eci_shi, cn_eci_smid,
+             '#D62728', (214, 39, 40), 'China')):
+        lo, hi, mid = best[1] + slo * dt, best[1] + shi * dt, best[1] + smid * dt
         r, gg, bb = rgb
         figf.add_trace(go.Scatter(
             x=x_dates + x_dates[::-1], y=list(hi) + list(lo[::-1]),
-            fill='toself', fillcolor=f'rgba({r},{gg},{bb},0.12)',
+            fill='toself', fillcolor=f'rgba({r},{gg},{bb},0.10)',
             line=dict(width=0), hoverinfo='skip', showlegend=False))
-        # Actual frontier history.
         figf.add_trace(go.Scatter(
             x=[d for d, s, n in fr], y=[s for d, s, n in fr],
             mode='lines+markers', line=dict(color=col, width=1.5),
@@ -6111,8 +6279,7 @@ def _cc_us_vs_china(cc_rows, today, obs_slope, g_recent,
         figf.add_trace(go.Scatter(
             x=x_dates, y=list(mid), mode='lines',
             line=dict(color=col, width=2.5, dash='dash'),
-            name=f"{label} projection", hoverinfo='skip'))
-        proj_summary[label] = mid
+            name=f"{label} (compute + algo)", hoverinfo='skip'))
     figf.update_layout(
         height=440, plot_bgcolor='white', paper_bgcolor='white',
         margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
@@ -6125,41 +6292,22 @@ def _cc_us_vs_china(cc_rows, today, obs_slope, g_recent,
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     st.plotly_chart(figf, use_container_width=True)
-
-    end_gap = proj_summary['United States'][-1] - proj_summary['China'][-1]
     st.caption(
-        "Each ECI projection rides its own country's compute path: the physical-"
-        f"compute term grows with that country's OOM/yr (US ×{10 ** g_us:.0f}, "
-        f"China ×{10 ** g_cn:.0f}), scaled by the global compute→ECI exchange rate "
-        "from Section 2; the algorithmic-efficiency term is shared (methods and "
-        "open weights diffuse). Bands span the contested physical/algo share "
-        f"({shares[0] * 100:.0f}–{shares[-1] * 100:.0f}%).")
-
-    # Forward outlook: compute is the driver.
-    st.markdown(
-        f"**How they stack up going forward.** China starts **~{10 ** compute_gap_oom:.0f}× "
-        f"behind on disclosed training compute** and is growing it slower "
-        f"(×{10 ** g_cn:.0f}/yr vs the US's ×{10 ** g_us:.0f}/yr), so the "
-        f"**physical-compute engine works harder for the US** every year. Because "
-        f"that engine is only ~⅓–½ of ECI growth (Section 2) and algorithmic "
-        f"gains diffuse across the field, China stays close — today's "
-        f"**{gap_pts:.0f}-point / ~{lag_mo:.0f}-month** gap — but on the current "
-        f"compute trajectories it **widens to ~{end_gap:.0f} ECI points by end-"
-        f"2029**. The two levers that move this picture are both compute: "
-        f"**more FLOP for China** (export-control leakage or domestic fabs → "
-        f"faster convergence) or a **US compute stall** (Section 2's caveat — a "
-        f"buildout slowdown drags the US's dominant engine and lets China's "
-        f"efficiency-led trend close the gap).")
+        f"ECI projected as **~{a_partial:.0f} pts per ×10 compute** (pooled US+China "
+        f"exchange rate) riding each country's Chart-A compute growth, **plus a "
+        f"shared ~{b_algo:.0f} pts/yr algorithmic term** (methods diffuse, so it's "
+        f"the same for both). Band = each country's compute-growth range; the "
+        f"divergence is purely the compute gap, so the ECI gap widens slowly — to "
+        f"~{gap_end:.0f} pts (~{mo_end:.0f} mo) by end-2029.")
 
     st.caption(
-        "US = 'United States of America', China = 'China' in Epoch's country tags "
-        "(multi-country and untagged models excluded). ECI frontiers are each "
-        "country's running-max ECI; compute frontiers are each country's running-"
-        "max disclosed training FLOP. Assumes a shared algorithmic rate and a "
-        "shared compute→ECI exchange rate, with only the compute trajectory "
-        "differing by country — so it isolates the compute constraint and ignores "
-        "any country difference in efficiency. Order-of-magnitude, not forecasts.")
-
+        "Caveats: a_partial and b_algo come from a pooled OLS where compute and "
+        "time are collinear, so the compute-vs-algorithm split is approximate; US "
+        "labs under-disclose training FLOP, so the compute gap is if anything "
+        "understated; and no forward data-center data exists for China (Epoch's "
+        "buildout tracking is almost entirely US sites). US = 'United States of "
+        "America', China = 'China' in Epoch's country tags; multi-country and "
+        "untagged models excluded. Order-of-magnitude, not forecasts.")
 
 def render_compute_capabilities():
     _today = datetime.now()
@@ -6489,8 +6637,7 @@ def render_compute_capabilities():
     # ══════════════════════════════════════════════════════════════════════
     # Section 4: US vs. China — the same decomposition read by country
     # ══════════════════════════════════════════════════════════════════════
-    _cc_us_vs_china(cc_rows, _today, obs_slope, g_recent,
-                    share_lo, share_mid, share_hi)
+    _cc_us_vs_china(cc_rows, _today)
 
 
 # ── URL parameter persistence ────────────────────────────────────────────
