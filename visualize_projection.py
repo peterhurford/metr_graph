@@ -3701,7 +3701,7 @@ def render_prinz():
             customdata=[(m["name"], m["org"], m["country"]) for m in ms_sorted],
             hovertemplate=(
                 "%{customdata[0]}<br>%{customdata[1]} (%{customdata[2]})"
-                "<br>%{x|%b %d, %Y}<br>prinzbench: %{y:.0f}<extra></extra>"
+                "<br>prinzbench: %{y:.0f}<extra></extra>"
             ),
             name=label,
         ))
@@ -3724,7 +3724,7 @@ def render_prinz():
             tickfont=dict(color="#1a1a2e"),
             title_font=dict(color="#1a1a2e"),
         ),
-        hovermode="closest",
+        hovermode="x unified",
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01,
                     bgcolor="rgba(255,255,255,0.95)",
                     font=dict(color="#1a1a2e")),
