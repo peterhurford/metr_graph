@@ -594,6 +594,10 @@ def load_data_centers(_mtime=None):
             except (ValueError, TypeError):
                 continue
             perf = _num(r, 'Performance (8-bit OP/s)')
+            # Total 8-bit OPs from a 3-month run at this throughput, derated by
+            # realized utilization.
+            train_flop = (perf * _SECONDS_3MO * _DC_UTILIZATION
+                          if perf is not None else None)
             series.setdefault(dname, []).append({
                 'date': d,
                 'status': r.get('Construction status', ''),
@@ -601,10 +605,11 @@ def load_data_centers(_mtime=None):
                 'it_power': _num(r, 'IT power (MW)'),
                 'power': _num(r, 'Power (MW)'),
                 'perf': perf,
-                # Total 8-bit OPs from a 3-month run at this throughput, derated
-                # by realized utilization.
-                'train_flop': (perf * _SECONDS_3MO * _DC_UTILIZATION
-                               if perf is not None else None),
+                'train_flop': train_flop,
+                # How many GPT-5-scale (2e25 FLOP) / Mythos-scale (1e27 FLOP)
+                # training runs the site's 3-month capacity could produce.
+                'gpt5s': train_flop / 2e25 if train_flop is not None else None,
+                'mythos': train_flop / 1e27 if train_flop is not None else None,
                 'cost': _num(r, 'Total capital cost (2025 USD billions)'),
             })
 
@@ -624,6 +629,8 @@ _DC_METRICS = {
     "Capital cost ($B)": {"key": "cost", "log": False, "kind": "cost"},
     "Performance (8-bit OP/s)": {"key": "perf", "log": True, "kind": "sci"},
     "3mo train FLOP": {"key": "train_flop", "log": True, "kind": "flop"},
+    "Capacity (GPT-5s)": {"key": "gpt5s", "log": True, "kind": "count"},
+    "Capacity (Mythos's)": {"key": "mythos", "log": True, "kind": "count"},
 }
 
 # Timing options for the 3mo-train-FLOP metric: label → days the DC-available
@@ -674,6 +681,12 @@ def _dc_fmt_value(v, kind):
         return f"{v:.2e}"
     if kind == "flop":
         return f"{v:.2e} FLOP"
+    if kind == "count":
+        if v >= 100:
+            return f"{v:,.0f}"
+        if v >= 10:
+            return f"{v:.1f}"
+        return f"{v:.2f}"
     return f"{v:g}"
 
 
@@ -5276,6 +5289,14 @@ def render_data_centers():
             f"(8-bit OP/s) × a {_DAYS_3MO}-day ({_DAYS_3MO // 30}-month) training "
             f"run × {_DC_UTILIZATION:.0%} realized utilization. Figures are "
             "order-of-magnitude estimates, not vendor-reported numbers.")
+    elif key in ('gpt5s', 'mythos'):
+        scale = "2e25 FLOP (GPT-5 scale)" if key == 'gpt5s' else "1e27 FLOP (Mythos scale)"
+        st.caption(
+            f"Methodology: how many {scale} training runs each site's 3mo train "
+            f"FLOP could produce — i.e. *3mo train FLOP* ÷ {scale.split(' ')[0]}. "
+            f"3mo train FLOP = peak performance (8-bit OP/s) × a {_DAYS_3MO}-day "
+            f"run × {_DC_UTILIZATION:.0%} realized utilization. Order-of-magnitude "
+            "estimates, not vendor-reported numbers.")
 
     if not series:
         st.warning("No data available for this metric.")
@@ -5773,6 +5794,32 @@ def _cc_iso_compute(rows):
             'lo': float(min(slopes)), 'hi': float(max(slopes))}
 
 
+def _cc_iso_compute_rate(rows, country, halfwidth=0.4):
+    """Empirical algorithmic rate for one country: ECI/yr at a *fixed* compute
+    budget.
+
+    China's training compute is nearly flat (it clusters tightly at ~10^24.6
+    FLOP), so a joint ECI-on-compute+time OLS can't separate the compute and
+    algorithm terms — they're collinear. Holding compute roughly constant by
+    construction (a band around the country's median log10 FLOP) sidesteps that:
+    the resulting ECI-vs-time slope is a clean read of capability gained per year
+    at a constant compute budget — i.e. the algorithmic-efficiency rate. Returns
+    (rate ECI/yr, n_models, median_log10_flop) or (None, 0, None) if too sparse.
+    """
+    sub = [m for m in rows if m.get('country') == country]
+    if len(sub) < 8:
+        return None, 0, None
+    med = float(np.median([m['log10_flop'] for m in sub]))
+    band = [m for m in sub if abs(m['log10_flop'] - med) <= halfwidth]
+    if len(band) < 8:
+        return None, 0, None
+    d0 = min(m['date'] for m in band)
+    x = np.array([(m['date'] - d0).days / 365.25 for m in band])
+    y = np.array([m['eci'] for m in band])
+    s, _ = np.polyfit(x, y, 1)
+    return float(s), len(band), med
+
+
 def _eci_to_metr_p50_min(eci_score, a=0):
     """ECI score → estimated METR p50 time-horizon in minutes (central, lo, hi).
 
@@ -5880,6 +5927,25 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     r, g, b = int(base[1:3], 16), int(base[3:5], 16), int(base[5:7], 16)
     fig = go.Figure()
     _dc_add_projection_band(fig, today, horizon)
+
+    # Decompose the median line into its two engines. The physical-compute
+    # contribution is the median compute coefficient × the projected Δlog FLOP
+    # (so it curves with the buildout); the rest, back down to today's anchor, is
+    # the algorithmic-efficiency contribution. Split so the two stacked regions
+    # sum exactly to the median line.
+    coef_phys_med = float(np.median(coef_phys))
+    phys_contrib = coef_phys_med * dlog
+    algo_top = list(pct[50] - phys_contrib)           # anchor + algorithmic only
+    base_y = [eci_now] * len(x_dates)
+    fig.add_trace(go.Scatter(
+        x=x_dates + x_dates[::-1], y=algo_top + base_y[::-1],
+        fill='toself', fillcolor='rgba(31,119,180,0.22)', line=dict(width=0),
+        name='Algorithmic component', hoverinfo='skip', showlegend=True))
+    fig.add_trace(go.Scatter(
+        x=x_dates + x_dates[::-1], y=list(pct[50]) + algo_top[::-1],
+        fill='toself', fillcolor='rgba(214,39,40,0.22)', line=dict(width=0),
+        name='Compute component', hoverinfo='skip', showlegend=True))
+
     bands = [
         (pct[5], pct[95], f'rgba({r},{g},{b},0.08)', '90% CI'),
         (pct[10], pct[90], f'rgba({r},{g},{b},0.16)', '80% CI'),
@@ -5924,6 +5990,16 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     st.plotly_chart(fig, use_container_width=True)
+    phys_end = float(phys_contrib[-1])
+    algo_end = float(pct[50][-1] - eci_now - phys_end)
+    st.caption(
+        "The median rise is split into its two engines: the **blue band** is the "
+        f"algorithmic-efficiency contribution (~{algo_end:.0f} ECI by end-2029, a "
+        "straight climb at a constant per-year rate) and the **red band** on top is "
+        f"the physical-compute contribution (~{phys_end:.0f} ECI), which curves as "
+        "it rides the projected compute frontier and flattens as the buildout "
+        "matures. Compute is the thinner, decelerating slice; algorithms do most of "
+        "the lifting at these horizons.")
 
     # Year-end milestone cards, each with its estimated METR p50 horizon.
     cols = st.columns(4)
@@ -6329,6 +6405,19 @@ def _cc_us_vs_china(cc_rows, today):
             marker=dict(size=5, color=col, line=dict(color='white', width=0.5)),
             text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in fr],
             hoverinfo='text', name=f"{label} (actual)"))
+        # Algorithmic-only reference: the same anchor climbing at the *shared*
+        # algo rate, with no compute added. The vertical gap up to the full
+        # (compute + algo) line is that country's physical-compute contribution —
+        # wide for the US, narrow for China, so the gap itself is the compute gap.
+        algo_only = best[1] + b_algo * dt
+        figf.add_trace(go.Scatter(
+            x=x_dates + x_dates[::-1], y=list(mid) + list(algo_only[::-1]),
+            fill='toself', fillcolor=f'rgba({r},{gg},{bb},0.16)',
+            line=dict(width=0), hoverinfo='skip', showlegend=False))
+        figf.add_trace(go.Scatter(
+            x=x_dates, y=list(algo_only), mode='lines',
+            line=dict(color=col, width=1.3, dash='dot'),
+            name=f"{label} (algo only)", hoverinfo='skip'))
         figf.add_trace(go.Scatter(
             x=x_dates, y=list(mid), mode='lines',
             line=dict(color=col, width=2.5, dash='dash'),
@@ -6351,7 +6440,10 @@ def _cc_us_vs_china(cc_rows, today):
         f"shared ~{b_algo:.0f} pts/yr algorithmic term** (methods diffuse, so it's "
         f"the same for both). Band = each country's compute-growth range; the "
         f"divergence is purely the compute gap, so the ECI gap widens slowly — to "
-        f"~{gap_end:.0f} pts (~{mo_end:.0f} mo) by end-2029.")
+        f"~{gap_end:.0f} pts (~{mo_end:.0f} mo) by end-2029. The **dotted line** "
+        "under each country is the algorithmic-only climb (shared rate, no compute); "
+        "the **shaded gap** up to the dashed line is that country's compute "
+        "contribution — visibly wider for the US than for China.")
 
     st.caption(
         "Caveats: a_partial and b_algo come from a pooled OLS where compute and "
@@ -6361,6 +6453,124 @@ def _cc_us_vs_china(cc_rows, today):
         "buildout tracking is almost entirely US sites). US = 'United States of "
         "America', China = 'China' in Epoch's country tags; multi-country and "
         "untagged models excluded. Order-of-magnitude, not forecasts.")
+
+    # ── China's algorithmic edge: the distillation scenario ────────────────────
+    # Chart B assumes a *shared* algorithmic term — methods diffuse, so both
+    # countries gain capability at the same per-year rate at fixed compute. But a
+    # compute-constrained follower has both the incentive and the means (distilling
+    # from open and API-served frontier models, heavy RL/efficiency focus) to push
+    # its own algorithmic rate higher. We test that by measuring each country's
+    # algorithmic rate *empirically and separately* — the iso-compute slope (ECI/yr
+    # at a fixed compute budget) — instead of forcing one shared term.
+    st.markdown("**China's algorithmic edge — the distillation scenario**")
+    us_algo, n_us_iso, _ = _cc_iso_compute_rate(cc_rows, 'United States of America')
+    cn_algo, n_cn_iso, cn_med = _cc_iso_compute_rate(cc_rows, 'China')
+    if us_algo is None or cn_algo is None:
+        st.caption("Not enough same-compute-budget models to estimate per-country "
+                   "algorithmic rates.")
+    else:
+        g_cn_mid = 0.5 * (g_cn_lo + g_cn_hi)
+        compute_term_cn = a_partial * g_cn_mid          # China's compute-driven ECI/yr
+        slope_usalgo = us_algo + compute_term_cn        # China riding US algo rate
+        slope_cnalgo = cn_algo + compute_term_cn        # China riding its own algo rate
+        premium = cn_algo - us_algo
+        premium_pct = (premium / us_algo * 100) if us_algo else 0.0
+
+        # Backdate the scenario to the start of 2025: China's distillation edge has
+        # been operating through the whole post-DeepSeek-V3 era, so the two algo-rate
+        # trajectories diverge from a Jan-2025 anchor rather than from today — the
+        # premium accumulates across the full period it actually applied to. The
+        # China-own-rate line then doubles as a backtest: fit to the real data, it
+        # should track China's actual frontier, while the US-rate line is the
+        # counterfactual "where China would be on the leader's algo rate alone."
+        anchor_date = datetime(2025, 1, 1)
+
+        def _fr_at(fr, d):
+            vals = [s for dd, s, n in fr if dd <= d]
+            return max(vals) if vals else fr[0][1]
+
+        cn_anchor = _fr_at(cn_fr, anchor_date)
+        us_anchor = _fr_at(us_fr, anchor_date)
+        bd_dates = [anchor_date] + _cc_quarter_ends(anchor_date, horizon)
+        dt_bd = np.array([(d - anchor_date).days / 365.25 for d in bd_dates])
+
+        # Both trajectories capped at the US frontier — distillation is a *catch-up*
+        # mechanism (it can't exceed its teacher), so the high-algo line converges
+        # toward the US line, never past it.
+        us_ceiling = us_anchor + us_eci_smid * dt_bd
+        cn_traj_us = cn_anchor + slope_usalgo * dt_bd
+        cn_traj_cn = np.minimum(cn_anchor + slope_cnalgo * dt_bd, us_ceiling)
+
+        us_end = float(us_ceiling[-1])
+        cn_end_us = float(cn_traj_us[-1])
+        cn_end_cn = float(cn_traj_cn[-1])
+        mo_us = (us_end - cn_end_us) / us_eci_smid * 12 if us_eci_smid > 0 else float('nan')
+        mo_cn = (us_end - cn_end_cn) / us_eci_smid * 12 if us_eci_smid > 0 else float('nan')
+
+        st.markdown(
+            "| Scenario | China algo rate | China ECI/yr (algo+compute) | "
+            "China ECI end-2029 | Behind US |\n"
+            "|---|---|---|---|---|\n"
+            f"| **US algo growth** (shared) | {us_algo:.1f} pts/yr | "
+            f"{slope_usalgo:.1f} pts/yr | ~{cn_end_us:.0f} | ~{mo_us:.0f} mo |\n"
+            f"| **China's own algo growth** (distillation) | {cn_algo:.1f} pts/yr | "
+            f"{slope_cnalgo:.1f} pts/yr | ~{cn_end_cn:.0f} | ~{mo_cn:.0f} mo |")
+
+        # Chart: the two China trajectories (backdated to Jan 2025) vs the US
+        # frontier ceiling.
+        figd = go.Figure()
+        _dc_add_projection_band(figd, today, horizon)
+        figd.add_trace(go.Scatter(
+            x=bd_dates, y=list(us_ceiling), mode='lines',
+            line=dict(color='#1F77B4', width=1.5, dash='dot'),
+            name='US frontier (ceiling)', hoverinfo='skip'))
+        figd.add_trace(go.Scatter(
+            x=[d for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
+            mode='lines+markers', line=dict(color='#D62728', width=1.5),
+            marker=dict(size=5, color='#D62728', line=dict(color='white', width=0.5)),
+            text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in cn_fr],
+            hoverinfo='text', name='China (actual)'))
+        figd.add_trace(go.Scatter(
+            x=bd_dates, y=list(cn_traj_us), mode='lines',
+            line=dict(color='#D62728', width=2.5, dash='dash'),
+            name=f'China · US algo rate ({us_algo:.1f})',
+            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US algo</extra>'))
+        figd.add_trace(go.Scatter(
+            x=bd_dates, y=list(cn_traj_cn), mode='lines',
+            line=dict(color='#7F1010', width=2.5),
+            name=f"China · own algo rate ({cn_algo:.1f})",
+            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>China algo</extra>'))
+        figd.update_layout(
+            height=420, plot_bgcolor='white', paper_bgcolor='white',
+            margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
+            legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
+                        bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
+                        borderwidth=1),
+            xaxis=dict(gridcolor='rgba(0,0,0,0.12)',
+                       range=[datetime(2024, 1, 1), horizon],
+                       tickfont=dict(color='#222'), title_font=dict(color='#222')),
+            yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
+                       tickfont=dict(color='#222'), title_font=dict(color='#222')))
+        st.plotly_chart(figd, use_container_width=True)
+        st.caption(
+            f"Backdated to **Jan 2025** (China frontier ≈{cn_anchor:.0f} ECI then), "
+            "so the distillation edge accumulates over the whole period it's applied. "
+            f"Both China lines share the same compute term (~{compute_term_cn:.1f} "
+            f"ECI/yr, from {a_partial:.0f} pts/×10 compute × China's "
+            f"{10 ** g_cn_mid:.1f}×/yr capacity growth); they differ only in the "
+            "algorithmic term. The **solid dark line** uses China's own (higher) "
+            f"empirically-measured rate ({cn_algo:.1f} vs {us_algo:.1f} ECI/yr, "
+            f"a +{premium:.1f}/yr ~+{premium_pct:.0f}% edge) and is **capped at the "
+            "US frontier** — distillation closes the gap faster but can't push a "
+            "follower past the model it learns from; it tracks China's actual points, "
+            "while the dashed **US-rate** line is the counterfactual where China would "
+            "sit on the leader's algo rate alone. So the edge buys China earlier "
+            "*parity*, not a lead. "
+            f"Iso-compute fits use n={n_us_iso} US / n={n_cn_iso} China models within "
+            "±0.4 dex of each country's median compute; with so few same-budget US "
+            "models and a flat China compute axis, treat the edge as suggestive, not "
+            "established.")
+
 
 def render_compute_capabilities():
     _today = datetime.now()
@@ -6573,6 +6783,31 @@ def render_compute_capabilities():
             f"{_CC_CBAND_HALFWIDTH:.1f} dex); its dotted line slopes *up* — that's "
             "ECI gained per year at a constant compute budget. Same engine as the "
             "chart above, axes flipped.")
+
+        # Mirror of the time-to-cheaper table: hold the compute budget fixed and
+        # read off the ECI gained over time. The last column converts that gain to
+        # the compute multiplier it's worth (via the exchange rate), tying this
+        # table back to the one above.
+        st.markdown("**ECI gained at a fixed compute budget** "
+                    f"(central ≈{isoc['eci_per_yr']:.0f} ECI/yr; range "
+                    f"{isoc['lo']:.0f}–{isoc['hi']:.0f} across budgets):")
+        epo = eff['eci_per_oom']
+        imd = ["| Time at same compute | ECI gained | Range | Worth ~ |",
+               "|---|---|---|---|"]
+        for yrs in (1, 2, 3):
+            c = isoc['eci_per_yr'] * yrs
+            lo, hi = isoc['lo'] * yrs, isoc['hi'] * yrs
+            oom = c / epo if epo else float('nan')
+            imd.append(f"| **{yrs} year{'s' if yrs > 1 else ''}** | "
+                       f"+{c:.0f} ECI | +{lo:.0f} to +{hi:.0f} | "
+                       f"{10 ** oom:.0f}× more compute |")
+        st.markdown("\n".join(imd))
+        st.caption(
+            f"At a constant budget, a year's algorithmic progress adds ~"
+            f"{isoc['eci_per_yr']:.0f} ECI — the same capability you'd otherwise "
+            f"have to buy with ~{10 ** (isoc['eci_per_yr'] / epo):.0f}× more compute "
+            f"(at {epo:.0f} ECI per ×10 FLOP). The mirror image of the table above: "
+            "there, capability gets cheaper; here, the same spend buys more.")
 
     # Two engines — what a compute slowdown really costs. Flows on from the
     # exchange-rate section above (no separate header).
