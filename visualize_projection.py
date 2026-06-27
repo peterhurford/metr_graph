@@ -7243,6 +7243,14 @@ _REV_TRACKED_KEYS = list(_REV_DEFAULTS.keys()) + [
 _ECG_DEFAULTS = {"ecg_highlight": "None"}
 _ECG_TRACKED_KEYS = list(_ECG_DEFAULTS.keys())
 
+_PRINZ_DEFAULTS = {
+    "prinz_group": "US vs China",
+    "prinz_region": "Both",
+    "prinz_labels": "Frontier only",
+    "prinz_frontier": True,
+}
+_PRINZ_TRACKED_KEYS = list(_PRINZ_DEFAULTS.keys())
+
 # Internal cache keys: never round-trip through URL
 _URL_EXCLUDED_SUFFIXES = ("_seg_config",)
 
@@ -7255,6 +7263,7 @@ def _all_tracked():
         (_eci_tab_reset_keys("eci"), _eci_tab_defaults("eci")),
         (_eci_tab_reset_keys("ecicn"), _eci_tab_defaults("ecicn")),
         (_RLI_RESET_KEYS, _RLI_DEFAULTS),
+        (_PRINZ_TRACKED_KEYS, _PRINZ_DEFAULTS),
         (_EMP_RESET_KEYS, _EMP_DEFAULTS),
         (_REV_TRACKED_KEYS, _REV_DEFAULTS),
         (_ECG_TRACKED_KEYS, _ECG_DEFAULTS),
@@ -7376,3 +7385,74 @@ if not os.environ.get("_VP_TESTING"):
         render_compute_capabilities()
 
     _sync_session_to_url()
+
+    # ── Share view: copy the (now state-synced) URL to the clipboard ──────
+    import streamlit.components.v1 as _components
+    with st.sidebar:
+        st.markdown("---")
+        _components.html(
+            """
+            <button id="share-view-btn" onclick="copyShareView(this)">
+              🔗 Share view
+            </button>
+            <style>
+              #share-view-btn {
+                width: 100%;
+                padding: 0.5rem 0.75rem;
+                font-size: 0.875rem;
+                font-weight: 600;
+                font-family: "Source Sans Pro", sans-serif;
+                color: rgb(49, 51, 63);
+                background-color: #fff;
+                border: 1px solid rgba(49, 51, 63, 0.2);
+                border-radius: 0.5rem;
+                cursor: pointer;
+                transition: all 0.15s ease;
+              }
+              #share-view-btn:hover {
+                border-color: rgb(255, 75, 75);
+                color: rgb(255, 75, 75);
+              }
+              #share-view-btn.copied {
+                border-color: rgb(33, 195, 84);
+                color: rgb(33, 195, 84);
+              }
+            </style>
+            <script>
+              function _flash(btn, text) {
+                const orig = btn.innerHTML;
+                btn.innerHTML = text;
+                btn.classList.add("copied");
+                setTimeout(function () {
+                  btn.innerHTML = orig;
+                  btn.classList.remove("copied");
+                }, 1500);
+              }
+              function _fallbackCopy(url, btn) {
+                const ta = document.createElement("textarea");
+                ta.value = url;
+                ta.style.position = "fixed";
+                ta.style.opacity = "0";
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand("copy"); _flash(btn, "✓ Copied!"); }
+                catch (e) { _flash(btn, "⚠ Copy failed"); }
+                document.body.removeChild(ta);
+              }
+              function copyShareView(btn) {
+                let url;
+                try { url = window.parent.location.href; }
+                catch (e) { url = document.referrer || window.location.href; }
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(url).then(
+                    function () { _flash(btn, "✓ Copied!"); },
+                    function () { _fallbackCopy(url, btn); }
+                  );
+                } else {
+                  _fallbackCopy(url, btn);
+                }
+              }
+            </script>
+            """,
+            height=52,
+        )
