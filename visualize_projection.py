@@ -5238,12 +5238,10 @@ def render_data_centers():
         log_scale = st.checkbox("Log scale", value=cfg["log"], key="dc_log")
         include_future = st.checkbox("Include planned future buildout",
                                      value=True, key="dc_future")
-        # The 3mo-train-FLOP metric can be dated to any of three milestones;
-        # the choice shifts every point forward by that lead time.
-        timing_label = "Data center construction"
-        if cfg["key"] == 'train_flop':
-            timing_label = st.selectbox(
-                "Date points at", list(_DC_TRAIN_FLOP_TIMINGS), key="dc_timing")
+        # Each site can be dated to any of three milestones; the choice shifts
+        # every point forward by that lead time.
+        timing_label = st.selectbox(
+            "Date points at", list(_DC_TRAIN_FLOP_TIMINGS), key="dc_timing")
         if st.button("Reset", key="dc_reset"):
             for k in _DC_RESET_KEYS:
                 st.session_state.pop(k, None)
@@ -5260,18 +5258,16 @@ def render_data_centers():
     series = {n: v for n, v in series.items()
               if v['company'] not in _DC_EXCLUDE_COMPANIES}
 
-    # For 3-month-training-FLOP, shift every data point forward from the site's
-    # availability date to the chosen milestone (DC construction / training done /
-    # model release). DC construction means no shift.
-    shift_days = 0
-    if key == 'train_flop':
-        shift_days = _DC_TRAIN_FLOP_TIMINGS[timing_label]
-        if shift_days:
-            shift = timedelta(days=shift_days)
-            series = {n: {'company': v['company'],
-                          'pts': [(d + shift, val) for d, val in v['pts']]}
-                      for n, v in series.items()}
-            cap_date = cap_date + shift
+    # Shift every data point forward from the site's availability date to the
+    # chosen milestone (DC construction / training done / model release). DC
+    # construction means no shift.
+    shift_days = _DC_TRAIN_FLOP_TIMINGS[timing_label]
+    if shift_days:
+        shift = timedelta(days=shift_days)
+        series = {n: {'company': v['company'],
+                      'pts': [(d + shift, val) for d, val in v['pts']]}
+                  for n, v in series.items()}
+        cap_date = cap_date + shift
 
     # ── Header ──
     st.header("Frontier Data Centers Over Time")
@@ -5510,20 +5506,48 @@ def render_data_centers():
     st.plotly_chart(fig2, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 4: Current snapshot table
+    # Section 4: Quarterly capacity-by-company table
     # ══════════════════════════════════════════════════════════════════════
-    snap_word = "Planned peak" if include_future else "Current"
-    st.subheader(f"{snap_word} largest data center by company")
-    md = ["| Company | Largest data center | Capacity |", "|---|---|---|"]
-    for co in ranked:
-        last = comp[co][-1]
-        md.append(f"| {co} | {last[2]} | {_dc_fmt_value(last[1], kind)} |")
+    st.subheader("Largest data center by company")
+
+    _table_cos = ["OpenAI", "Anthropic", "Google", "Meta", "SpaceXAI", "Alibaba"]
+    # Epoch's operator names don't always match the display label.
+    _co_aliases = {"Google": ("Google", "Google DeepMind")}
+    _q_ends = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}
+
+    def _steps_for(co):
+        for k in _co_aliases.get(co, (co,)):
+            if k in comp:
+                return comp[k]
+        return []
+
+    def _co_val_at(steps, t):
+        """Forward-filled company value at date t (latest step on/before t)."""
+        cur = None
+        for d, v, _n in steps:
+            if d <= t:
+                cur = v
+            else:
+                break
+        return cur
+
+    _col_steps = {co: _steps_for(co) for co in _table_cos}
+    md = ["| Quarter | " + " | ".join(_table_cos) + " |",
+          "|" + "---|" * (len(_table_cos) + 1)]
+    for yr in range(2024, 2030):
+        for q in range(1, 5):
+            mo, day = _q_ends[q]
+            qd = datetime(yr, mo, day)
+            cells = [_dc_fmt_value(_co_val_at(_col_steps[co], qd), kind)
+                     for co in _table_cos]
+            md.append(f"| {yr}Q{q} | " + " | ".join(cells) + " |")
     st.markdown("\n".join(md))
 
     st.caption(
-        "Capacity is forward-filled between Epoch AI's reported milestones, so a "
-        "site holds its last known value until the next update. "
-        f"{'Includes planned/under-construction buildout dated past today.' if include_future else 'Showing capacity as of today; enable “Include planned future buildout” in the sidebar to see announced expansions.'} "
+        f"Each cell is the company's largest single data center by **{metric_label}** "
+        "as of the end of that quarter, forward-filled between Epoch AI's reported "
+        "milestones. "
+        f"{'Includes planned / under-construction buildout dated past today.' if include_future else 'Planned future buildout is excluded (toggle it in the sidebar); quarters past today repeat the latest known value.'} "
         "Data: Epoch AI, ‘Frontier Data Centers’ (epoch.ai/data/data-centers), CC-BY 4.0.")
 
 
