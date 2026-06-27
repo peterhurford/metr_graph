@@ -513,19 +513,17 @@ _SECONDS_3MO = _DAYS_3MO * 24 * 3600
 _CC_RUN_COMPLETION_LAG = timedelta(days=45)
 
 
-def _dc_milestone_dates(record_date, key, shift_days=0):
-    """Tooltip date line(s) for a buildout milestone. For 3mo-train-FLOP the
-    plotted date is the site's DC-available date shifted forward by the chosen
-    timing (`shift_days`), so reconstruct the base and expand into DC online /
-    training done / model out; other metrics show just the month.
+def _dc_milestone_dates(record_date, shift_days=0):
+    """Tooltip date lines for a buildout milestone. The plotted date is the site's
+    DC-available date shifted forward by the chosen timing (`shift_days`), so
+    reconstruct the base and expand into the three milestones the timing dropdown
+    offers: DC online / training done / model out.
     """
-    if key == 'train_flop':
-        base = record_date - timedelta(days=shift_days)
-        return (f"DC online ~{base:%b %Y}<br>"
-                f"Training done ~{(base + timedelta(days=_DAYS_3MO)):%b %Y}<br>"
-                f"Model out ~"
-                f"{(base + timedelta(days=_DAYS_3MO) + _CC_RUN_COMPLETION_LAG):%b %Y}")
-    return f"{record_date:%b %Y}"
+    base = record_date - timedelta(days=shift_days)
+    return (f"DC online ~{base:%b %d, %Y}<br>"
+            f"Training done ~{(base + timedelta(days=_DAYS_3MO)):%b %d, %Y}<br>"
+            f"Model out ~"
+            f"{(base + timedelta(days=_DAYS_3MO) + _CC_RUN_COMPLETION_LAG):%b %d, %Y}")
 
 
 # Fraction of peak throughput actually realized over a real training run.
@@ -5280,27 +5278,28 @@ def render_data_centers():
            "“Today” divider are planned / under-construction buildout.**"
            if include_future else ""))
 
+    # Timing note — applies to every metric, since the "Date points at" dropdown
+    # shifts all of them by the same lead time.
+    _timing_note = {
+        "Data center construction":
+            "Each point is dated at the site's construction / availability date.",
+        "3mo training finished":
+            f"Each point is shifted forward {_DAYS_3MO // 30} months — when a "
+            "training run started at the site's availability date would finish.",
+        "Model release":
+            f"Each point is shifted forward {shift_days // 30} months "
+            f"(~{_DAYS_3MO // 30}mo training + "
+            f"~{_CC_RUN_COMPLETION_LAG.days / 30.44:.1f}mo post-training / eval) — "
+            "when a model trained at the site would ship.",
+    }[timing_label]
+    st.caption(_timing_note)
+
     if key == 'train_flop':
-        _timing_note = {
-            "Data center construction":
-                "Points are dated at each site's construction / availability "
-                "date (no shift).",
-            "3mo training finished":
-                f"Every point is shifted forward by {_DAYS_3MO // 30} months, "
-                "since a run started on a site's availability date only finishes "
-                "that much later.",
-            "Model release":
-                f"Every point is shifted forward by "
-                f"{shift_days // 30} months (~{_DAYS_3MO // 30}mo training + "
-                f"~{_CC_RUN_COMPLETION_LAG.days / 30.44:.1f}mo post-training / "
-                "eval), to date the resulting model's release.",
-        }[timing_label]
         st.caption(
             f"Methodology: *3mo train FLOP* = each site's peak performance "
             f"(8-bit OP/s) × a {_DAYS_3MO}-day ({_DAYS_3MO // 30}-month) training "
-            f"run × {_DC_UTILIZATION:.0%} realized utilization. {_timing_note} "
-            "Figures are order-of-magnitude estimates, not vendor-reported "
-            "numbers.")
+            f"run × {_DC_UTILIZATION:.0%} realized utilization. Figures are "
+            "order-of-magnitude estimates, not vendor-reported numbers.")
 
     if not series:
         st.warning("No data available for this metric.")
@@ -5343,14 +5342,17 @@ def render_data_centers():
             line=dict(color='#1F77B4', width=3, shape='hv', dash='dash'),
             hoverinfo='skip', showlegend=False,
         ))
-    # Mark each point where the frontier leader changes — filled for actual,
-    # hollow for projected milestones.
-    chg = []
-    prev = None
+    # Mark frontier events: labelled dots where the leading site *changes* (filled
+    # for actual, hollow for projected), plus smaller hollow dots where the same
+    # leader *scales up* to a new capacity. Both carry hovers.
+    new_dots, scale_dots = [], []
+    prev_name, prev_val = None, None
     for d, v, name, co in env:
-        if name != prev:
-            chg.append((d, v, name, co))
-            prev = name
+        if name != prev_name:
+            new_dots.append((d, v, name, co))
+        elif prev_val is not None and v != prev_val:
+            scale_dots.append((d, v, name, co))
+        prev_name, prev_val = name, v
 
     def _marker_trace(pts, projected):
         if not pts:
@@ -5363,13 +5365,30 @@ def render_data_centers():
             text=[p[2] for p in pts], textposition='top center',
             textfont=dict(size=9, color='#1F77B4'),
             hovertext=[f"{p[2]} ({p[3]}){' — planned' if projected else ''}<br>"
-                       f"{_dc_fmt_value(p[1], kind)}<br>{_dc_milestone_dates(p[0], key, shift_days)}"
+                       f"{_dc_fmt_value(p[1], kind)}<br>{_dc_milestone_dates(p[0], shift_days)}"
                        for p in pts],
             hoverinfo='text', showlegend=False,
         ))
 
-    _marker_trace([p for p in chg if p[0] <= _today], projected=False)
-    _marker_trace([p for p in chg if p[0] > _today], projected=True)
+    def _scale_trace(pts):
+        if not pts:
+            return
+        fig1.add_trace(go.Scatter(
+            x=[p[0] for p in pts], y=[p[1] for p in pts],
+            mode='markers',
+            marker=dict(color='white', size=7,
+                        line=dict(color='#1F77B4', width=1.5)),
+            hovertext=[f"{p[2]} ({p[3]}) — scale-up"
+                       f"{' — planned' if p[0] > _today else ''}<br>"
+                       f"{_dc_fmt_value(p[1], kind)}<br>"
+                       f"{_dc_milestone_dates(p[0], shift_days)}"
+                       for p in pts],
+            hoverinfo='text', showlegend=False,
+        ))
+
+    _marker_trace([p for p in new_dots if p[0] <= _today], projected=False)
+    _marker_trace([p for p in new_dots if p[0] > _today], projected=True)
+    _scale_trace(scale_dots)
     if env:
         _peak_projected = include_future and cd > _today
         fig1.add_trace(go.Scatter(
@@ -5378,7 +5397,7 @@ def render_data_centers():
                         symbol='diamond', line=dict(color='#1F77B4', width=1.5)),
             hovertext=[f"{'Planned peak' if _peak_projected else 'Current'}: "
                        f"{cn} ({cco})<br>{_dc_fmt_value(cv, kind)}<br>"
-                       f"{_dc_milestone_dates(cd, key, shift_days)}"],
+                       f"{_dc_milestone_dates(cd, shift_days)}"],
             hoverinfo='text', showlegend=False,
         ))
     fig1.update_layout(**_dc_layout(
@@ -5491,7 +5510,7 @@ def render_data_centers():
                 hovertext=[
                     f"{co} — {s[2]} ({label})"
                     f"{' (planned)' if s[0] > _today else ''}<br>"
-                    f"{_dc_fmt_value(s[1], kind)}<br>{_dc_milestone_dates(s[0], key, shift_days)}"
+                    f"{_dc_fmt_value(s[1], kind)}<br>{_dc_milestone_dates(s[0], shift_days)}"
                     for s in pts],
                 hoverinfo='text',
             ))
@@ -6275,7 +6294,7 @@ def _cc_us_vs_china(cc_rows, today):
         mode='lines', line=dict(color='#1F77B4', width=1.5, dash='dash'),
         opacity=0.7, name='US capacity (buildout)',
         text=[f"<b>{n}</b><br>{10.0 ** lf:.1e} FLOP (3-mo run)<br>"
-              f"{_dc_milestone_dates(sd, 'train_flop', _DAYS_3MO)}"
+              f"{_dc_milestone_dates(sd, _DAYS_3MO)}"
               for d, lf, n, sd in us_cap_hist],
         hoverinfo='text'))
     # US capacity fan emanates from the last US *run* (not the DC line): lower edge
