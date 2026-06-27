@@ -3616,7 +3616,7 @@ def render_prinz():
         prinz_group = st.selectbox(
             "Group by",
             ["US vs China", "Company", "All models (one line)"],
-            key="prinz_group", index=0,
+            key="prinz_group", index=2,
         )
         prinz_region = st.radio(
             "Show", ["Both", "US only", "China only"],
@@ -7244,7 +7244,7 @@ _ECG_DEFAULTS = {"ecg_highlight": "None"}
 _ECG_TRACKED_KEYS = list(_ECG_DEFAULTS.keys())
 
 _PRINZ_DEFAULTS = {
-    "prinz_group": "US vs China",
+    "prinz_group": "All models (one line)",
     "prinz_region": "Both",
     "prinz_labels": "Frontier only",
     "prinz_frontier": True,
