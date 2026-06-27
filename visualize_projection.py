@@ -5269,30 +5269,6 @@ def render_data_centers():
 
     # ── Header ──
     st.header("Frontier Data Centers Over Time")
-    st.markdown(
-        "How big is the largest AI data center at any point in time, and how does "
-        "each company's largest site compare? Capacity is measured as "
-        f"**{metric_label}**, forward-filled between Epoch AI's reported build "
-        "milestones for each site. "
-        + ("**Solid lines are actual capacity; dashed lines past the shaded "
-           "“Today” divider are planned / under-construction buildout.**"
-           if include_future else ""))
-
-    # Timing note — applies to every metric, since the "Date points at" dropdown
-    # shifts all of them by the same lead time.
-    _timing_note = {
-        "Data center construction":
-            "Each point is dated at the site's construction / availability date.",
-        "3mo training finished":
-            f"Each point is shifted forward {_DAYS_3MO // 30} months — when a "
-            "training run started at the site's availability date would finish.",
-        "Model release":
-            f"Each point is shifted forward {shift_days // 30} months "
-            f"(~{_DAYS_3MO // 30}mo training + "
-            f"~{_CC_RUN_COMPLETION_LAG.days / 30.44:.1f}mo post-training / eval) — "
-            "when a model trained at the site would ship.",
-    }[timing_label]
-    st.caption(_timing_note)
 
     if key == 'train_flop':
         st.caption(
@@ -5313,9 +5289,6 @@ def render_data_centers():
 
     if env:
         cd, cv, cn, cco = env[-1]
-        word = "planned peak" if include_future else "current"
-        st.markdown(f"The **{word}** largest single data center is **{cn}** "
-                    f"({cco}) at **{_dc_fmt_value(cv, kind)}**.")
 
     env_dates = [e[0] for e in env]
     env_vals = [e[1] for e in env]
@@ -5527,8 +5500,6 @@ def render_data_centers():
     # ══════════════════════════════════════════════════════════════════════
     # Section 4: Quarterly capacity-by-company table
     # ══════════════════════════════════════════════════════════════════════
-    st.subheader("Largest data center by company")
-
     _table_cos = ["OpenAI", "Anthropic", "Google", "Meta", "SpaceXAI", "Alibaba"]
     # Epoch's operator names don't always match the display label.
     _co_aliases = {"Google": ("Google", "Google DeepMind")}
@@ -5904,19 +5875,6 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     traj = eci_now + coef_phys * dlog[None, :] + coef_algo * dt_yrs[None, :]
 
     pct = {p: np.percentile(traj, p, axis=0) for p in (5, 10, 25, 50, 75, 90, 95)}
-
-    st.markdown(
-        f"Riding the projected compute frontier and the section's algorithmic-"
-        f"efficiency estimate forward, here is the **frontier ECI score for each "
-        f"quarter to the end of 2029**. We anchor on today's frontier "
-        f"(**{pretty(anchor_name)}**, ECI {eci_now:.0f}), grow the physical-"
-        f"compute share of the **~{obs_slope:.0f} ECI-points/yr** along the "
-        f"projected compute path (so it slows as the buildout matures), add a "
-        f"constant algorithmic component, and sample {N:,} trajectories over the "
-        f"contested mix ({s_lo*100:.0f}–{s_hi*100:.0f}% physical), compute "
-        f"delivery, and overall pace. Each ECI is also translated into estimated "
-        f"**METR p50 and p80 time-horizons** (the org-neutral ECI→METR fits from "
-        f"the Epoch ECI tab).")
 
     base = '#6A3D9A'
     r, g, b = int(base[1:3], 16), int(base[3:5], 16), int(base[5:7], 16)
@@ -6481,14 +6439,16 @@ def render_compute_capabilities():
         return
 
     st.markdown(
-        f"Across **{dec['n']} models** reporting training compute, each 10× of "
-        f"compute buys about **{eff['eci_per_oom']:.0f} ECI points** (at a fixed "
-        f"moment in time). But that exchange rate keeps *improving*: hold ECI "
-        f"constant and the compute you need to reach it **falls ~{eff['g_central']:.1f} "
-        f"orders of magnitude per year** — roughly **÷{eff['algo_mult']:.1f} per "
-        f"year**. That's algorithmic efficiency (better architectures, data, RL, "
-        f"post-training, scaffolding), and it's the same thing as “effective "
-        f"compute per real FLOP” going up.")
+        "| Exchange rate | Value | What it means |\n"
+        "|---|---|---|\n"
+        f"| Compute → capability | **+{eff['eci_per_oom']:.0f} ECI** per 10× compute "
+        "| at a fixed moment in time |\n"
+        f"| Capability gets cheaper | **−{eff['g_central']:.1f} OOM/yr** "
+        f"(÷{eff['algo_mult']:.1f}/yr) | hold ECI fixed → less compute needed |")
+    st.caption(
+        f"Based on {dec['n']} models reporting training compute. Row 2 is "
+        "algorithmic efficiency (better architectures, data, RL, post-training, "
+        "scaffolding) — i.e. “effective compute per real FLOP” going up.")
 
     # Iso-ECI scatter: compute vs date. Continuous ECI-by-color reads poorly, so
     # we use discrete capability bands — each band's dots and its downward fit
@@ -6642,12 +6602,11 @@ def render_compute_capabilities():
     share_lo = _phys_share(g_algo_hi)                 # algo-favorable
 
     st.markdown(
-        f"The frontier gains **~{obs_slope:.0f} ECI points per year**, and that "
-        "splits into two engines — **physical compute** (more FLOP) and "
-        "**algorithmic efficiency** (more capability per FLOP), which combine into "
-        "effective compute. Due to regression dilution, the two above views "
-        "(compute constant and ECI constant) **disagree by ~2×**, leading us to "
-        "have a range of uncertainty:")
+        f"#### ~{obs_slope:.0f} ECI/yr  =  physical compute  +  algorithmic "
+        "efficiency  →  effective compute")
+    st.caption(
+        "The two views above (compute-constant and ECI-constant) disagree by ~2× "
+        "due to regression dilution, so each engine below is given as a range.")
     phys_lo, phys_hi = obs_slope * share_lo, obs_slope * share_hi
     algo_lo, algo_hi = obs_slope * (1 - share_hi), obs_slope * (1 - share_lo)
     e1, e2, e3 = st.columns(3)
