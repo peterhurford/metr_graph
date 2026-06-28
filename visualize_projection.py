@@ -795,7 +795,7 @@ dc_all = load_data_centers(_mtime=_dc_mtime())
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "Prinz", "Revenue", "Employment", "ECI Company Gap", "Data Centers", "Compute vs Capabilities"]
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "Prinz", "Revenue", "Employment", "Data Centers", "Compute vs Capabilities"]
 _TAB_SLUG = {"metr": 0, "eci": 1, "rli": 2, "prinz": 3, "revenue": 4, "employment": 5, "ecigap": 6, "datacenters": 7, "computecap": 8}
 
 # Read ?tab= from URL for deep-linking
