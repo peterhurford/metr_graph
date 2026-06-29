@@ -5500,8 +5500,40 @@ def _dc_yrange(values, log_scale):
     return [0, vmax * 1.1]
 
 
+def _dc_log_ticks(y_range):
+    """Explicit log-axis ticks that label every minor tick with its full value
+    (e.g. 20, 30, … in the 10-100 decade rather than Plotly's default 2, 3, …),
+    while keeping the powers of ten larger so the decade hierarchy stays clear."""
+    lo = int(np.floor(y_range[0]))
+    hi = int(np.ceil(y_range[1]))
+    vmin = 10.0 ** y_range[0]
+    vmax = 10.0 ** y_range[1]
+    vals, text = [], []
+    for k in range(lo, hi + 1):
+        base = 10.0 ** k
+        for m in range(1, 10):
+            v = m * base
+            if v < vmin * 0.999 or v > vmax * 1.001:
+                continue
+            label = f"{v:g}"
+            if m == 1:
+                text.append(label)  # decade label at the axis tickfont size
+            else:
+                text.append(f"<span style=\"font-size:9px\">{label}</span>")
+            vals.append(v)
+    return vals, text
+
+
 def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
                height=440, show_legend=False):
+    yaxis = dict(title_text=y_title,
+                 type='log' if log_scale else 'linear',
+                 range=y_range,
+                 gridcolor='rgba(0,0,0,0.12)',
+                 tickfont=dict(color='#222222'), title_font=dict(color='#222222'))
+    if log_scale and y_range is not None:
+        tvals, ttext = _dc_log_ticks(y_range)
+        yaxis.update(tickmode='array', tickvals=tvals, ticktext=ttext)
     return dict(
         height=height,
         plot_bgcolor='white', paper_bgcolor='white',
@@ -5511,11 +5543,7 @@ def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
         legend=dict(font=dict(size=11, color='#222222'), groupclick='togglegroup'),
         xaxis=dict(gridcolor='rgba(0,0,0,0.12)', range=[x_start, x_end],
                    tickfont=dict(color='#222222'), title_font=dict(color='#222222')),
-        yaxis=dict(title_text=y_title,
-                   type='log' if log_scale else 'linear',
-                   range=y_range,
-                   gridcolor='rgba(0,0,0,0.12)',
-                   tickfont=dict(color='#222222'), title_font=dict(color='#222222')),
+        yaxis=yaxis,
     )
 
 
