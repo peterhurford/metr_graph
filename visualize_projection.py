@@ -629,8 +629,8 @@ _DC_METRICS = {
     "Capital cost ($B)": {"key": "cost", "log": False, "kind": "cost"},
     "Performance (8-bit OP/s)": {"key": "perf", "log": True, "kind": "sci"},
     "2mo train FLOP": {"key": "train_flop", "log": True, "kind": "flop"},
-    "Capacity (GPT-5s)": {"key": "gpt5s", "log": True, "kind": "count"},
-    "Capacity (Mythos's)": {"key": "mythos", "log": True, "kind": "count"},
+    "Capacity (x GPT-5)": {"key": "gpt5s", "log": True, "kind": "count"},
+    "Capacity (x Mythos)": {"key": "mythos", "log": True, "kind": "count"},
 }
 
 # Timing options for the 2mo-train-FLOP metric: label → days the DC-available
