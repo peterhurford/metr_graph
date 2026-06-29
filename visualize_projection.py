@@ -502,15 +502,15 @@ def load_rli_data():
 
 import bisect
 
-# 3-month training run (3 × 30-day months), used to turn a site's 8-bit OP/s
-# throughput into total operations over a quarter-long run.
-_DAYS_3MO = 3 * 30
-_SECONDS_3MO = _DAYS_3MO * 24 * 3600
-# A model ships ~1.5mo after its training run finishes (post-training, evals,
-# safety), calibrated to observed train-finish → announce gaps (e.g. Mythos:
-# trained ~Feb, announced Apr 7). Used both to date model runs and to expand a
-# buildout milestone into its DC-online / training / model-out timeline.
-_CC_RUN_COMPLETION_LAG = timedelta(days=45)
+# 2-month training run (2 × 30-day months), used to turn a site's 8-bit OP/s
+# throughput into total operations over a two-month run.
+_DAYS_2MO = 2 * 30
+_SECONDS_2MO = _DAYS_2MO * 24 * 3600
+# A model ships ~1mo after its training run finishes (post-training, evals,
+# safety), calibrated to observed train-finish → announce gaps. Used both to
+# date model runs and to expand a buildout milestone into its DC-online /
+# training / model-out timeline.
+_CC_RUN_COMPLETION_LAG = timedelta(days=30)
 
 
 def _dc_milestone_dates(record_date, shift_days=0):
@@ -521,9 +521,9 @@ def _dc_milestone_dates(record_date, shift_days=0):
     """
     base = record_date - timedelta(days=shift_days)
     return (f"DC online ~{base:%b %d, %Y}<br>"
-            f"Training done ~{(base + timedelta(days=_DAYS_3MO)):%b %d, %Y}<br>"
+            f"Training done ~{(base + timedelta(days=_DAYS_2MO)):%b %d, %Y}<br>"
             f"Model out ~"
-            f"{(base + timedelta(days=_DAYS_3MO) + _CC_RUN_COMPLETION_LAG):%b %d, %Y}")
+            f"{(base + timedelta(days=_DAYS_2MO) + _CC_RUN_COMPLETION_LAG):%b %d, %Y}")
 
 
 # Fraction of peak throughput actually realized over a real training run.
@@ -594,9 +594,9 @@ def load_data_centers(_mtime=None):
             except (ValueError, TypeError):
                 continue
             perf = _num(r, 'Performance (8-bit OP/s)')
-            # Total 8-bit OPs from a 3-month run at this throughput, derated by
+            # Total 8-bit OPs from a 2-month run at this throughput, derated by
             # realized utilization.
-            train_flop = (perf * _SECONDS_3MO * _DC_UTILIZATION
+            train_flop = (perf * _SECONDS_2MO * _DC_UTILIZATION
                           if perf is not None else None)
             series.setdefault(dname, []).append({
                 'date': d,
@@ -607,7 +607,7 @@ def load_data_centers(_mtime=None):
                 'perf': perf,
                 'train_flop': train_flop,
                 # How many GPT-5-scale (2e25 FLOP) / Mythos-scale (1e27 FLOP)
-                # training runs the site's 3-month capacity could produce.
+                # training runs the site's 2-month capacity could produce.
                 'gpt5s': train_flop / 2e25 if train_flop is not None else None,
                 'mythos': train_flop / 1e27 if train_flop is not None else None,
                 'cost': _num(r, 'Total capital cost (2025 USD billions)'),
@@ -628,21 +628,21 @@ _DC_METRICS = {
     "IT power (MW)": {"key": "it_power", "log": False, "kind": "mw"},
     "Capital cost ($B)": {"key": "cost", "log": False, "kind": "cost"},
     "Performance (8-bit OP/s)": {"key": "perf", "log": True, "kind": "sci"},
-    "3mo train FLOP": {"key": "train_flop", "log": True, "kind": "flop"},
+    "2mo train FLOP": {"key": "train_flop", "log": True, "kind": "flop"},
     "Capacity (GPT-5s)": {"key": "gpt5s", "log": True, "kind": "count"},
     "Capacity (Mythos's)": {"key": "mythos", "log": True, "kind": "count"},
 }
 
-# Timing options for the 3mo-train-FLOP metric: label → days the DC-available
+# Timing options for the 2mo-train-FLOP metric: label → days the DC-available
 # date is shifted forward to date the chosen milestone.
 #   • DC construction  — no shift (the site's availability date)
-#   • Training done     — +3mo (a run started at availability finishes that later)
-#   • Model release     — +3mo + ~1.5mo post-training/eval lag (matches the
+#   • Training done     — +2mo (a run started at availability finishes that later)
+#   • Model release     — +2mo + ~1mo post-training/eval lag (matches the
 #                         Compute vs Capabilities tab's model-release dating)
 _DC_TRAIN_FLOP_TIMINGS = {
     "Data center construction": 0,
-    "3mo training finished": _DAYS_3MO,
-    "Model release": _DAYS_3MO + _CC_RUN_COMPLETION_LAG.days,
+    "2mo training finished": _DAYS_2MO,
+    "Model release": _DAYS_2MO + _CC_RUN_COMPLETION_LAG.days,
 }
 
 # Stable colors for the most common companies; others fall back to a palette.
@@ -5582,16 +5582,16 @@ def render_data_centers():
 
     if key == 'train_flop':
         st.caption(
-            f"Methodology: *3mo train FLOP* = each site's peak performance "
-            f"(8-bit OP/s) × a {_DAYS_3MO}-day ({_DAYS_3MO // 30}-month) training "
+            f"Methodology: *2mo train FLOP* = each site's peak performance "
+            f"(8-bit OP/s) × a {_DAYS_2MO}-day ({_DAYS_2MO // 30}-month) training "
             f"run × {_DC_UTILIZATION:.0%} realized utilization. Figures are "
             "order-of-magnitude estimates, not vendor-reported numbers.")
     elif key in ('gpt5s', 'mythos'):
         scale = "2e25 FLOP (GPT-5 scale)" if key == 'gpt5s' else "1e27 FLOP (Mythos scale)"
         st.caption(
-            f"Methodology: how many {scale} training runs each site's 3mo train "
-            f"FLOP could produce — i.e. *3mo train FLOP* ÷ {scale.split(' ')[0]}. "
-            f"3mo train FLOP = peak performance (8-bit OP/s) × a {_DAYS_3MO}-day "
+            f"Methodology: how many {scale} training runs each site's 2mo train "
+            f"FLOP could produce — i.e. *2mo train FLOP* ÷ {scale.split(' ')[0]}. "
+            f"2mo train FLOP = peak performance (8-bit OP/s) × a {_DAYS_2MO}-day "
             f"run × {_DC_UTILIZATION:.0%} realized utilization. Order-of-magnitude "
             "estimates, not vendor-reported numbers.")
 
@@ -5864,17 +5864,17 @@ def render_data_centers():
 # ══════════════════════════════════════════════════════════════════════════
 
 def _cc_trainflop_frontier(dcs, cap_date, with_names=False):
-    """Running-max frontier of 3mo-train-FLOP across AI-lab sites.
+    """Running-max frontier of 2mo-train-FLOP across AI-lab sites.
 
     Returns [(date, flop), …] sorted by date, with every point shifted forward
-    by the 3-month training lead time (a run on a site available at D only
-    finishes at D+3mo), matching the Data Centers tab. Colocation/neutral-host
+    by the 2-month training lead time (a run on a site available at D only
+    finishes at D+2mo), matching the Data Centers tab. Colocation/neutral-host
     providers are excluded. Monotonic non-decreasing.
     """
     series = _dc_series_for_metric(dcs, 'train_flop', cap_date=cap_date)
     series = {n: v for n, v in series.items()
               if v['company'] not in _DC_EXCLUDE_COMPANIES}
-    shift = timedelta(days=_DAYS_3MO)
+    shift = timedelta(days=_DAYS_2MO)
     series = {n: {'company': v['company'],
                   'pts': [(d + shift, val) for d, val in v['pts']]}
               for n, v in series.items()}
@@ -6446,7 +6446,7 @@ _CC_GAP_WINDOWS = [
 _CC_CN_COMPUTE_LO = 0.15   # ~1.4×/yr — export controls bite
 _CC_CN_COMPUTE_HI = 0.30   # ~2×/yr — China's recent disclosed pace holds
 
-# China cluster-capacity estimate — largest *single cluster's* 3-month training
+# China cluster-capacity estimate — largest *single cluster's* 2-month training
 # FLOP, to match the US buildout line (which is the largest single site, not a
 # national total). No Epoch buildout data for China, so this is a judgment
 # (mid-2026):
@@ -6461,7 +6461,7 @@ _CC_CN_COMPUTE_HI = 0.30   # ~2×/yr — China's recent disclosed pace holds
 #    run (unlike the US, whose runs sit ~10× below capacity on efficiency slack).
 _CC_CN_CAPACITY_HEADROOM_OOM = 0.5    # ~3× above the largest demonstrated run
 
-# _CC_RUN_COMPLETION_LAG (model release lag) is defined up by the 3-month-run
+# _CC_RUN_COMPLETION_LAG (model release lag) is defined up by the 2-month-run
 # constants, since both the Data Centers tab and this section use it.
 
 
@@ -6600,7 +6600,7 @@ def _cc_us_vs_china(cc_rows, today):
             hoverinfo='skip', showlegend=False))
 
     # GROUNDED — largest actual estimated training runs (Epoch per-model), dated
-    # at estimated training completion (release − ~2.5mo) so they line up with the
+    # at estimated training completion (release − ~1mo) so they line up with the
     # run-completion-dated capacity frontier.
     for cf, col, label in ((us_cf, '#1F77B4', 'US runs (Epoch est.)'),
                            (cn_cf, '#D62728', 'China runs (Epoch est.)')):
@@ -6624,8 +6624,8 @@ def _cc_us_vs_china(cc_rows, today):
         y=[10.0 ** lf for d, lf, n, sd in us_cap_hist],
         mode='lines', line=dict(color='#1F77B4', width=1.5, dash='dash'),
         opacity=0.7, name='US capacity (buildout)',
-        text=[f"<b>{n}</b><br>{10.0 ** lf:.1e} FLOP (3-mo run)<br>"
-              f"{_dc_milestone_dates(sd, _DAYS_3MO)}"
+        text=[f"<b>{n}</b><br>{10.0 ** lf:.1e} FLOP (2-mo run)<br>"
+              f"{_dc_milestone_dates(sd, _DAYS_2MO)}"
               for d, lf, n, sd in us_cap_hist],
         hoverinfo='text'))
     # US capacity fan emanates from the last US *run* (not the DC line): lower edge
@@ -6661,7 +6661,7 @@ def _cc_us_vs_china(cc_rows, today):
         f"model — ~{10 ** us_run_lf:.0e} (US) vs ~{10 ** cn_run_lf:.0e} (China), a "
         f"**~{10 ** run_gap_oom:.0f}× ({run_gap_oom:.1f} OOM)** gap. Recent US "
         f"frontier models use *less* (GPT-5 ~7e25) — efficiency, not bigger runs. "
-        f"**Dashed/shaded = capacity** — the largest *single cluster's* 3-month "
+        f"**Dashed/shaded = capacity** — the largest *single cluster's* 2-month "
         f"run: US ~{10 ** us_cap_lf:.0e} today rising through *announced* "
         f"megaclusters (Stargate, Hyperion…) to ~{10 ** us_cap_end_lf:.0e} by 2029 "
         f"(Epoch buildout), China ~{10 ** cn_cap_lo_lf:.0e}–{10 ** cn_cap_hi_lf:.0e} "
@@ -6673,7 +6673,7 @@ def _cc_us_vs_china(cc_rows, today):
         f"Capacity grows {10 ** g_us_lo:.1f}–{10 ** g_us_hi:.1f}×/yr (US, measured) "
         f"vs ~{10 ** g_cn_lo:.1f}–{10 ** g_cn_hi:.1f}×/yr (China), so the gap "
         f"widens only slowly. *Run points are dated at estimated training "
-        "completion (release − ~2.5mo) to align with the +3mo capacity line.*")
+        "completion (release − ~1mo) to align with the +2mo capacity line.*")
 
     # ── Chart B: ECI derived from compute (Chart A) + shared algorithmic
     # progress — ECI(t) = ECI_now + (a_partial·g_compute + b_algo)·t. The band is
@@ -6887,7 +6887,7 @@ def render_compute_capabilities():
     # Section 1: Frontier compute growth, segmented
     # ══════════════════════════════════════════════════════════════════════
     st.subheader("Is compute slowing?")
-    cap_date = (datetime(2028, 12, 31) if include_future else _today) + timedelta(days=_DAYS_3MO)
+    cap_date = (datetime(2028, 12, 31) if include_future else _today) + timedelta(days=_DAYS_2MO)
     frontier = _cc_trainflop_frontier(dc_all, cap_date)
     if not frontier:
         st.warning("No data-center data available.")
@@ -6919,7 +6919,7 @@ def render_compute_capabilities():
                        f"({fseg['doubling_mo']:.0f}-mo doubling)"] * 2,
             hoverinfo='text', showlegend=True))
     fig1.update_layout(**_dc_layout(
-        True, "3mo train FLOP", x_start, end_x,
+        True, "2mo train FLOP", x_start, end_x,
         y_range=_dc_yrange([v for _, v in frontier], True),
         show_legend=True))
     st.plotly_chart(fig1, use_container_width=True)
@@ -7203,7 +7203,7 @@ def render_compute_capabilities():
         "*worse* than the ⅓–½ shown. (2) ECI bundles post-training/RL, so the "
         "efficiency rate is total-capability, not pretraining. (3) Labs rarely "
         "train small models just to re-hit old capability levels, so the cheap-"
-        "model edge is sparse (Qwen, Kimi, distilled MoEs). (4) The 3mo-FLOP "
+        "model edge is sparse (Qwen, Kimi, distilled MoEs). (4) The 2mo-FLOP "
         "series is a capacity *ceiling*, not per-model training compute. Order-of-"
         "magnitude, not forecasts.")
     st.caption(
