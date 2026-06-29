@@ -1571,8 +1571,8 @@ def render_metr():
 
     eoy_targets = [
         ("Projected today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
-        ("2026 Jun EOM", datetime(2026, 6, 30)),
         ("2026EOY", datetime(2026, 12, 31)),
+        ("2027 Jun EOM", datetime(2027, 6, 30)),
         ("2027EOY", datetime(2027, 12, 31)),
         ("2028EOY", datetime(2028, 12, 31)),
         ("2029EOY", datetime(2029, 12, 31)),
@@ -2426,8 +2426,8 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
     eoy_targets = [
         ("Projected today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
-        ("2026 Jun EOM", datetime(2026, 6, 30)),
         ("2026EOY", datetime(2026, 12, 31)),
+        ("2027 Jun EOM", datetime(2027, 6, 30)),
         ("2027EOY", datetime(2027, 12, 31)),
         ("2028EOY", datetime(2028, 12, 31)),
         ("2029EOY", datetime(2029, 12, 31)),
@@ -3292,8 +3292,8 @@ def render_rli():
 
     eoy_targets = [
         ("Projected today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
-        ("2026 Jun EOM", datetime(2026, 6, 30)),
         ("2026EOY", datetime(2026, 12, 31)),
+        ("2027 Jun EOM", datetime(2027, 6, 30)),
         ("2027EOY", datetime(2027, 12, 31)),
         ("2028EOY", datetime(2028, 12, 31)),
         ("2029EOY", datetime(2029, 12, 31)),
