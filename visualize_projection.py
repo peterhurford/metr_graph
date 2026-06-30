@@ -5419,8 +5419,8 @@ _DC_DEFAULTS = {
 }
 
 # Compute vs Capabilities tab
-_CC_RESET_KEYS = ["cc_future"]
-_CC_DEFAULTS = {"cc_future": True}
+_CC_RESET_KEYS = ["cc_future", "cc_company"]
+_CC_DEFAULTS = {"cc_future": True, "cc_company": "OpenAI"}
 
 # Fixed segment boundaries for the frontier-compute growth breakdown. Each entry
 # is (label, start, end); the last segment is the planned/under-construction tail.
@@ -5885,6 +5885,9 @@ def render_data_centers():
         "milestones. "
         f"{'Includes planned / under-construction buildout dated past today.' if include_future else 'Planned future buildout is excluded (toggle it in the sidebar); quarters past today repeat the latest known value.'} "
         "Data: Epoch AI, ‘Frontier Data Centers’ (epoch.ai/data/data-centers), CC-BY 4.0.")
+
+    # Per-company: does the buildout predict releases?
+    _cc_company_buildout(_today, cfg["key"], kind, metric_label)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -6895,6 +6898,343 @@ def _cc_us_vs_china(cc_rows, today):
             "±0.4 dex of each country's median compute; with so few same-budget US "
             "models and a flat China compute axis, treat the edge as suggestive, not "
             "established.")
+
+
+# ── Per-company buildout-vs-release timing ────────────────────────────────
+# Empirical check on the DC→trained→release premise, lab by lab: each lab's
+# single largest data center (capacity stepping up as it builds) against its own
+# frontier model (a new ECI high). The pipeline predicts a model ~90 days after a
+# capacity step (2mo training + ~1mo release lag).
+
+_CC_PANEL_LABS = ["OpenAI", "Anthropic", "Google", "xAI", "Meta"]
+_CC_RELEASE_LAG_DAYS = _DAYS_2MO + _CC_RUN_COMPLETION_LAG.days   # 90d
+
+# Match a DC site to one of the 5 labs, owner-first for self-built clusters
+# (xAI/Meta/Google) then primary-user for labs that rent (OpenAI on
+# Microsoft/Oracle, Anthropic on Amazon/Fluidstack). This deliberately differs
+# from load_data_centers' generic company_for so Colossus maps to xAI (its owner)
+# rather than its listed Anthropic tenant.
+def _cc_lab_for_site(owner, user):
+    if owner == 'SpaceXAI':
+        return 'xAI'
+    if owner == 'Meta':
+        return 'Meta'
+    if owner.startswith('Google'):
+        return 'Google'
+    if user == 'OpenAI':
+        return 'OpenAI'
+    if user == 'Anthropic':
+        return 'Anthropic'
+    if user.startswith('Google'):
+        return 'Google'
+    if user in ('Meta', 'xAI'):
+        return user
+    return None
+
+
+def _dc_meta_mtime():
+    p = os.path.join(os.path.dirname(__file__), 'data_centers.csv')
+    return os.path.getmtime(p) if os.path.exists(p) else 0
+
+
+@st.cache_data
+def _cc_lab_attribution(_mtime=None):
+    """site name → one of the 5 labs (or None), via _cc_lab_for_site."""
+    base = os.path.dirname(__file__)
+    path = os.path.join(base, 'data_centers.csv')
+    out = {}
+    if not os.path.exists(path):
+        return out
+    with open(path, 'r') as f:
+        for r in csv.DictReader(f):
+            n = (r.get('Name') or '').strip()
+            if not n:
+                continue
+            owner = _dc_clean_owner(r.get('Owner', ''))
+            user = _dc_clean_owner((r.get('Users', '') or '').split(',')[0])
+            out[n] = _cc_lab_for_site(owner, user)
+    return out
+
+
+def _cc_lab_dc_milestones(lab, attribution, key='perf'):
+    """Capacity records of a lab's single largest DC over time: the running-max of
+    its sites' chosen capacity metric (`key`), keeping only the dates the record
+    steps up. Returns [(date, value, site), …] sorted by date."""
+    pts = []
+    for dc in dc_all:
+        if attribution.get(dc['name']) != lab:
+            continue
+        for p in dc['points']:
+            val = p.get(key)
+            if val and val > 0:
+                pts.append((p['date'], val, dc['name']))
+    pts.sort(key=lambda t: t[0])
+    out = []
+    best = 0.0
+    for d, val, n in pts:
+        if val > best * 1.0001:
+            best = val
+            out.append((d, val, n))
+    return out
+
+
+# Which ECI Organization labels belong to each lab.
+_CC_LAB_ORG_MATCH = {
+    'OpenAI': lambda o: o == 'OpenAI',
+    'Anthropic': lambda o: o == 'Anthropic',
+    'Google': lambda o: o.startswith('Google'),
+    'xAI': lambda o: o == 'xAI',
+    'Meta': lambda o: o in ('Meta AI', 'Meta'),
+}
+
+
+@st.cache_data
+def _cc_company_frontier_models(_mtime=None):
+    """Per-lab frontier models (running-max ECI) from the ECI CSV.
+
+    Returns {lab: [(date, eci, name), …]} keeping only releases that set a new
+    ECI high for that lab (no global dedup, no date cutoff).
+    """
+    base = os.path.dirname(__file__)
+    rows = list(csv.DictReader(open(os.path.join(base, 'epoch_capabilities_index.csv'))))
+    out = {}
+    for lab, match in _CC_LAB_ORG_MATCH.items():
+        ms = []
+        for r in rows:
+            if not match((r.get('Organization', '') or '').strip()):
+                continue
+            sc = (r.get('ECI Score', '') or '').strip()
+            ds = (r.get('Release date', '') or '').strip()
+            nm = (r.get('Display name', '') or r.get('Model name', '')).strip()
+            if not sc or not ds:
+                continue
+            try:
+                sc = float(sc)
+                d = datetime.strptime(ds, '%Y-%m-%d')
+            except (ValueError, TypeError):
+                continue
+            ms.append((d, sc, nm))
+        ms.sort(key=lambda t: t[0])
+        fr = []
+        best = -float('inf')
+        for d, sc, nm in ms:
+            if sc > best:
+                best = sc
+                fr.append((d, sc, nm))
+        out[lab] = fr
+    return out
+
+
+# The frontier-model series start in early 2024; before that Epoch's DC tracking
+# is too sparse to time releases against.
+_CC_PANEL_START = datetime(2024, 1, 1)
+
+
+def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Performance (8-bit OP/s)'):
+    """Per-company data-center buildout vs frontier model timing.
+
+    Rendered at the bottom of the Data Centers tab. `metric_key`/`kind`/
+    `metric_label` come from the tab's capacity-metric selector and drive which
+    metric defines (and labels) each "largest DC" capacity step.
+    """
+    st.subheader("Per-company: does the buildout predict release timing?")
+    st.caption(
+        "A pure timing test — capability is ignored. Each capacity step of the lab's "
+        f"single largest data center is shifted forward {_CC_RELEASE_LAG_DAYS} days "
+        f"({_DAYS_2MO}d training + {_CC_RUN_COMPLETION_LAG.days}d release lag) to the "
+        "release date it implies, then lined up against when the lab's frontier "
+        "models actually shipped. The only thing compared is *when* — not how good "
+        "the model is. 2024 onward.")
+
+    lab = st.selectbox("Company", _CC_PANEL_LABS, key="cc_company")
+    attribution = _cc_lab_attribution(_mtime=_dc_meta_mtime())
+    milestones = _cc_lab_dc_milestones(lab, attribution, key=metric_key)
+    fmodels = _cc_company_frontier_models(_mtime=_eci_mtime()).get(lab, [])
+
+    lag = timedelta(days=_CC_RELEASE_LAG_DAYS)
+    ms_vis = [m for m in milestones if m[0] >= _CC_PANEL_START]
+    fm_vis = [m for m in fmodels if m[0] >= _CC_PANEL_START]
+    all_dates = [m[0] + lag for m in ms_vis] + [m[0] for m in fm_vis]
+    if not all_dates:
+        st.info(f"No 2024-onward data for {lab}.")
+        return
+
+    x_end = max(all_dates) + timedelta(days=45)
+
+    # Match *causally*, not by nearest date. A model needs its training cluster
+    # online before training starts (~lag days pre-release), so a DC step can only
+    # be responsible for a release if its predicted date (step + lag) is on or
+    # before that release. Two complementary matches:
+    #   • forward  — each DC step → the first frontier release it could enable
+    #                (earliest release on/after the predicted date)
+    #   • backward — each release → the most recent cluster that could have
+    #                trained it (latest step whose predicted date ≤ release)
+    # Error = actual − predicted (days), always ≥ 0: how long after the earliest
+    # date the buildout allows the model actually shipped.
+    act_sorted = sorted(fmodels, key=lambda t: t[0])
+
+    def _first_release_after(pred):
+        for t in act_sorted:
+            if t[0] >= pred:
+                return t
+        return None
+
+    def _responsible_cluster(release):
+        cand = [m for m in milestones if (m[0] + lag) <= release]
+        return cand[-1] if cand else None   # milestones are date-sorted
+
+    expected = []
+    for md, mp, mn in ms_vis:
+        pred = md + lag
+        nm = _first_release_after(pred)
+        expected.append({
+            'name': mn, 'step': md, 'perf': mp, 'pred': pred,
+            'future': md > today, 'model': nm,
+            'err': (nm[0] - pred).days if nm else None})
+
+    # Per-release backward match (drives the connectors and the recall table).
+    model_match = []
+    for d, _e, n in fm_vis:
+        resp = _responsible_cluster(d)
+        pred = (resp[0] + lag) if resp else None
+        model_match.append({
+            'date': d, 'name': n, 'resp': resp, 'pred': pred,
+            'err': (d - pred).days if pred else None})
+
+    # ── Timeline: predicted release dates (top) vs actual releases (bottom) ──
+    Y_PRED, Y_ACT = 1, 0
+    fig = go.Figure()
+    _dc_add_projection_band(fig, today, x_end)
+
+    # Connector from each release down to the cluster that could have trained it
+    # (its responsible predicted date), colored by how long after that floor it
+    # shipped.
+    for m in model_match:
+        if m['pred'] is None:
+            continue
+        ae = m['err']
+        c = '#2CA02C' if ae <= 45 else '#FF7F0E' if ae <= 120 else '#D62728'
+        fig.add_trace(go.Scatter(
+            x=[m['pred'], m['date']], y=[Y_PRED, Y_ACT], mode='lines',
+            line=dict(color=c, width=1.4), hoverinfo='skip', showlegend=False))
+
+    pa = [e for e in expected if not e['future']]
+    pf = [e for e in expected if e['future']]
+    if pa:
+        fig.add_trace(go.Scatter(
+            x=[e['pred'] for e in pa], y=[Y_PRED] * len(pa), mode='markers',
+            name=f'Predicted (DC + {_CC_RELEASE_LAG_DAYS}d)',
+            marker=dict(symbol='diamond', size=11, color='#1F77B4',
+                        line=dict(color='white', width=1)),
+            hovertext=[f"{e['name']} — {_dc_fmt_value(e['perf'], kind)}<br>"
+                       f"online {e['step']:%b %d, %Y} → predicts release "
+                       f"~{e['pred']:%b %d, %Y}"
+                       + (f"<br>first release after: {e['model'][2]} "
+                          f"{e['model'][0]:%b %d, %Y} (+{e['err']}d)"
+                          if e['model'] else "<br>no release yet")
+                       for e in pa],
+            hoverinfo='text', showlegend=True))
+    if pf:
+        fig.add_trace(go.Scatter(
+            x=[e['pred'] for e in pf], y=[Y_PRED] * len(pf), mode='markers',
+            name='Predicted (planned DC)',
+            marker=dict(symbol='diamond-open', size=11, color='#1F77B4',
+                        line=dict(color='#1F77B4', width=1.6)),
+            hovertext=[f"{e['name']} (planned) — {_dc_fmt_value(e['perf'], kind)}<br>"
+                       f"online {e['step']:%b %d, %Y} → predicts release "
+                       f"~{e['pred']:%b %d, %Y}" for e in pf],
+            hoverinfo='text', showlegend=True))
+
+    fig.add_trace(go.Scatter(
+        x=[m['date'] for m in model_match], y=[Y_ACT] * len(model_match),
+        mode='markers', name='Actual release',
+        marker=dict(symbol='circle', size=10, color='#2CA02C',
+                    line=dict(color='white', width=1)),
+        hovertext=[f"{m['name']}<br>released {m['date']:%b %d, %Y}"
+                   + (f"<br>trained on {m['resp'][2]} "
+                      f"({_dc_fmt_value(m['resp'][1], kind)}, online "
+                      f"{m['resp'][0]:%b %d, %Y})<br>+{m['err']}d after implied "
+                      f"{m['pred']:%b %d, %Y}"
+                      if m['resp'] else "<br>predates any tracked cluster")
+                   for m in model_match],
+        hoverinfo='text', showlegend=True))
+
+    fig.update_layout(
+        height=300, plot_bgcolor='white', paper_bgcolor='white',
+        margin=dict(l=120, r=30, t=20, b=40), font=dict(color='#222222'),
+        legend=dict(orientation='h', y=1.18, x=0, font=dict(size=11, color='#222')),
+        xaxis=dict(range=[_CC_PANEL_START, x_end], gridcolor='rgba(0,0,0,0.12)',
+                   tickfont=dict(color='#222')),
+        yaxis=dict(range=[-0.6, 1.6], tickmode='array', tickvals=[Y_ACT, Y_PRED],
+                   ticktext=['Actual<br>release', 'Predicted<br>(DC + lag)'],
+                   tickfont=dict(color='#222'), showgrid=False, zeroline=False))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── Verdict line ──
+    errs = [m['err'] for m in model_match if m['err'] is not None]
+    n_orphan = sum(1 for m in model_match if m['resp'] is None)
+    if not milestones:
+        st.info(f"Epoch tracks no {lab} data center, so its releases can't be "
+                "timed against a buildout.")
+    elif errs:
+        med_abs = int(np.median(errs))
+        within = sum(1 for x in errs if x <= 60)
+        orphan_note = (f" {n_orphan} release(s) predate any tracked {lab} cluster."
+                       if n_orphan else "")
+        st.markdown(
+            f"**{lab}: frontier models ship a median {med_abs} days after the "
+            f"earliest date their largest cluster allows** — {within}/{len(errs)} "
+            "within 60 days of that floor (capacity-gated); longer gaps mean the "
+            f"model was limited by something other than compute.{orphan_note}")
+
+    # ── Both directions as date-only tables ──
+    st.markdown("**Cluster → release it enables** "
+                "(each step, the earliest release it could have trained)")
+    rowsA = [f"| Largest DC ({metric_label}) | Online | "
+             f"Predicts (+{_CC_RELEASE_LAG_DAYS}d) | First release on/after | "
+             "Gap |", "|---|---|---|---|---|"]
+    for e in expected:
+        dc = f"{e['name']} — {_dc_fmt_value(e['perf'], kind)}"
+        if e['future']:
+            rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | "
+                         f"{e['pred']:%Y-%m-%d} | *(DC still future)* | — |")
+        elif e['model']:
+            rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | {e['pred']:%Y-%m-%d} | "
+                         f"{e['model'][2]} ({e['model'][0]:%Y-%m-%d}) | "
+                         f"+{e['err']}d |")
+        else:
+            rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | "
+                         f"{e['pred']:%Y-%m-%d} | *(no release yet)* | — |")
+    st.markdown("\n".join(rowsA))
+
+    st.markdown("**Release → cluster it came from** "
+                "(the most recent cluster online early enough to have trained it)")
+    rowsB = [f"| Frontier release | Trained on (largest cluster, {metric_label}) | "
+             f"Implies (+{_CC_RELEASE_LAG_DAYS}d) | Shipped after |",
+             "|---|---|---|---|"]
+    for m in model_match:
+        if m['resp']:
+            r = m['resp']
+            rowsB.append(f"| {m['name']} ({m['date']:%Y-%m-%d}) | "
+                         f"{r[2]} — {_dc_fmt_value(r[1], kind)} ({r[0]:%Y-%m-%d}) | "
+                         f"{m['pred']:%Y-%m-%d} | +{m['err']}d |")
+        else:
+            rowsB.append(f"| {m['name']} ({m['date']:%Y-%m-%d}) | "
+                         "*(predates any tracked cluster)* | — | — |")
+    st.markdown("\n".join(rowsB))
+
+    st.caption(
+        f"Diamonds = capacity steps shifted forward {_CC_RELEASE_LAG_DAYS} days to "
+        "the release date they imply (hollow = planned/under-construction DC); "
+        "circles = actual frontier releases. Matching is *causal*: a release is tied "
+        "only to a cluster online at least the train+lag window before it, so a "
+        "cluster that came online too recently (e.g. New Carlisle Mar 2026, 78 days "
+        "before Fable) can't claim a model it had no time to train. Connector color = "
+        "days after that floor (green ≤45, orange ≤120, red >120). Capability is "
+        "never used — only dates. The rule lands close when a model is gated by a "
+        "fresh cluster (xAI/Colossus throughout; others post-2025) and drifts when "
+        "the frontier moves algorithmically on an existing cluster (OpenAI's 2024 "
+        "reasoning wave).")
 
 
 def render_compute_capabilities():
