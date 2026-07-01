@@ -815,6 +815,10 @@ if active_tab == _DEFAULT_TAB:
 else:
     st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
 
+# region is an ECI-only param; drop it when viewing any other tab
+if active_tab != "Epoch ECI" and "region" in st.query_params:
+    del st.query_params["region"]
+
 
 
 # ── METR Horizon ─────────────────────────────────────────────────────────
@@ -2555,13 +2559,30 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
 
 
+_ECI_REGION_OPTIONS = ["United States", "China"]
+_ECI_REGION_SLUG = {"us": "United States", "china": "China"}
+_ECI_REGION_FOR_SLUG = {v: k for k, v in _ECI_REGION_SLUG.items()}
+_ECI_DEFAULT_REGION = _ECI_REGION_OPTIONS[0]
+
+
 def render_eci():
     # Region toggle: the US frontier or China-only, sharing one tab.
+    # Deep-link via ?region= (omit when at the default US frontier).
+    _url_region = _ECI_REGION_SLUG.get(st.query_params.get("region", "").lower())
+    _region_idx = (
+        _ECI_REGION_OPTIONS.index(_url_region) if _url_region is not None else 0
+    )
     with st.sidebar:
         eci_region = st.radio(
-            "Region", ["United States", "China"],
-            key="eci_region", horizontal=True,
+            "Region", _ECI_REGION_OPTIONS,
+            index=_region_idx, key="eci_region", horizontal=True,
         )
+
+    if eci_region == _ECI_DEFAULT_REGION:
+        if "region" in st.query_params:
+            del st.query_params["region"]
+    else:
+        st.query_params["region"] = _ECI_REGION_FOR_SLUG[eci_region]
 
     if eci_region == "China":
         _render_eci_china()
