@@ -3956,7 +3956,7 @@ def render_revenue():
         with st.expander("OpenAI projection"):
             if oai_can_project:
                 oai_n_recent = st.slider("Fit to last N points", 3, len(oai_vals_fit),
-                                          value=min(6, len(oai_vals_fit)), key="oai_n_recent")
+                                          value=min(15, len(oai_vals_fit)), key="oai_n_recent")
                 # Pre-compute OLS DT for defaults
                 _oai_log = np.log2(np.array(oai_vals_fit))
                 _oai_days = np.array([(d - oai_dates_fit[0]).days for d in oai_dates_fit], dtype=float)
@@ -3974,7 +3974,7 @@ def render_revenue():
         with st.expander("Anthropic projection"):
             if ant_can_project:
                 ant_n_recent = st.slider("Fit to last N points", 3, len(ant_vals_fit),
-                                          value=min(6, len(ant_vals_fit)), key="ant_n_recent")
+                                          value=min(15, len(ant_vals_fit)), key="ant_n_recent")
                 _ant_log = np.log2(np.array(ant_vals_fit))
                 _ant_days = np.array([(d - ant_dates_fit[0]).days for d in ant_dates_fit], dtype=float)
                 _ant_p = fit_line(_ant_days[-ant_n_recent:], _ant_log[-ant_n_recent:])
