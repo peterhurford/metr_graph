@@ -359,7 +359,7 @@ def _eci_mtime():
 
 
 @st.cache_data
-def load_eci_frontier(_mtime=None, country=None):
+def load_eci_frontier(_mtime=None, country=None, orgs=None):
     csv_path = os.path.join(os.path.dirname(__file__), 'epoch_capabilities_index.csv')
     with open(csv_path, 'r') as f:
         reader = csv.DictReader(f)
@@ -401,6 +401,14 @@ def load_eci_frontier(_mtime=None, country=None):
     # Optional country filter
     if country:
         deduped = [m for m in deduped if m.get('country') == country]
+
+    # Optional organization filter: keep models whose Organization field
+    # contains any of the given substrings (case-insensitive). Handles the
+    # comma-joined multi-org strings in the CSV (e.g. "Google DeepMind,Google").
+    if orgs:
+        _orgs_l = [o.lower() for o in orgs]
+        deduped = [m for m in deduped
+                   if any(o in m.get('organization', '').lower() for o in _orgs_l)]
 
     # Frontier detection: running max
     max_score = -float('inf')
@@ -785,10 +793,6 @@ eci_all = load_eci_frontier(_mtime=_eci_mtime())
 eci_frontier_all = [m for m in eci_all if m['is_frontier']]
 eci_frontier_names = [m['display_name'] for m in eci_frontier_all]
 
-ecicn_all = load_eci_frontier(_mtime=_eci_mtime(), country='China')
-ecicn_frontier_all = [m for m in ecicn_all if m['is_frontier']]
-ecicn_frontier_names = [m['display_name'] for m in ecicn_frontier_all]
-
 rli_all = load_rli_data()
 rli_frontier_all = [m for m in rli_all if m['is_frontier']]
 rli_frontier_names = [m['name'] for m in rli_frontier_all]
@@ -818,9 +822,11 @@ if active_tab == _DEFAULT_TAB:
 else:
     st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
 
-# region is an ECI-only param; drop it when viewing any other tab
-if active_tab != "Epoch ECI" and "region" in st.query_params:
-    del st.query_params["region"]
+# a/b (and legacy region) are ECI-only params; drop them on any other tab
+if active_tab != "Epoch ECI":
+    for _p in ("a", "b", "region"):
+        if _p in st.query_params:
+            del st.query_params[_p]
 
 
 
@@ -1719,7 +1725,8 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     sidebar_header, milestone_list,
                     overlay_frontier=None, overlay_label=None,
                     extra_table_milestones=None, us_best_marker=None,
-                    us_match_marker=None, us_match_label=None):
+                    us_match_marker=None, us_match_label=None,
+                    overlay_name="US"):
     if st.session_state.pop(f"_reset_{p}", False):
         for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
@@ -2074,25 +2081,26 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             name=label, hoverinfo='skip', showlegend=True,
         ))
 
-    # US-trend gap helpers (months China lags the US trend at a given score).
-    # Only active on tabs that supply an overlay (US) frontier.
+    # Comparison-trend gap helpers (months the primary entity lags the overlay
+    # entity's trend at a given score). Only active when an overlay frontier is
+    # supplied. `overlay_name` labels the compared-against entity in hovers.
     _eci_gap_fn = None
     if overlay_frontier is not None and len(overlay_frontier) >= 2:
         # Same gap-in-time metric as the US-China section; share one definition.
         _us_fr_tuples = [(mm['date'], mm['eci_score'], '') for mm in overlay_frontier]
 
         def _eci_gap_fn(score, at_date):
-            """Months `score` lags the US trend, evaluated at China date `at_date`."""
+            """Months `score` lags the overlay trend, evaluated at `at_date`."""
             return _eci_months_behind(_us_fr_tuples, score, at_date)
 
     def _eci_gap_hover(score, at_date):
-        """'<br>Gap: X mo behind US' suffix, or '' when there's no overlay frontier."""
+        """'<br>Gap: X mo behind <overlay>' suffix, or '' with no overlay frontier."""
         if _eci_gap_fn is None:
             return ""
         g = _eci_gap_fn(score, at_date)
         if g >= 0:
-            return f"<br>Gap: {g:.1f} mo behind US"
-        return f"<br>Gap: {-g:.1f} mo ahead of US"
+            return f"<br>Gap: {g:.1f} mo behind {overlay_name}"
+        return f"<br>Gap: {-g:.1f} mo ahead of {overlay_name}"
 
     # --- Trend lines ---
     def _eci_trend_hover(params, d_start, d_end, base_dt):
@@ -2562,69 +2570,140 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
 
 
-_ECI_REGION_OPTIONS = ["United States", "China"]
-_ECI_REGION_SLUG = {"us": "United States", "china": "China"}
-_ECI_REGION_FOR_SLUG = {v: k for k, v in _ECI_REGION_SLUG.items()}
-_ECI_DEFAULT_REGION = _ECI_REGION_OPTIONS[0]
+# Entities selectable in the two ECI comparison dropdowns. Each label maps to a
+# filter over the ECI model list: a country for the "best" aggregates, or a list
+# of Organization substrings for an individual lab (matched case-insensitively,
+# handling the comma-joined multi-org strings in the CSV).
+_ECI_ENTITY_SPECS = {
+    "US best":    {"country": "United States of America"},
+    "China best": {"country": "China"},
+    "Anthropic":  {"orgs": ["Anthropic"]},
+    "OpenAI":     {"orgs": ["OpenAI"]},
+    "xAI":        {"orgs": ["xAI"]},
+    "Google":     {"orgs": ["Google DeepMind", "Google"]},
+    "Meta":       {"orgs": ["Meta AI"]},
+    "Alibaba":    {"orgs": ["Alibaba"]},
+    "Zhipu AI":   {"orgs": ["Z.ai (Zhipu AI)", "Zhipu"]},
+    "Moonshot":   {"orgs": ["Moonshot"]},
+    "DeepSeek":   {"orgs": ["DeepSeek"]},
+    "Mistral":    {"orgs": ["Mistral"]},
+}
+_ECI_ENTITY_OPTIONS = list(_ECI_ENTITY_SPECS.keys())
+_ECI_NONE_LABEL = "—"  # em-dash: "no comparison" for the second dropdown
+
+# Absolute milestone lines shown for the default US-best frontier.
+_ECI_US_MILESTONES = [
+    (155, "ECI 155", '#888888'), (160, "ECI 160", '#666666'),
+    (165, "ECI 165", '#c0392b'), (170, "ECI 170", '#8e44ad'),
+]
+
+# Deep-link slugs for ?a= / ?b= URL params.
+_ECI_ENTITY_SLUG = {
+    "US best": "us", "China best": "china", "Anthropic": "anthropic",
+    "OpenAI": "openai", "xAI": "xai", "Google": "google", "Meta": "meta",
+    "Alibaba": "alibaba", "Zhipu AI": "zhipu", "Moonshot": "moonshot",
+    "DeepSeek": "deepseek", "Mistral": "mistral",
+}
+_ECI_ENTITY_FOR_SLUG = {v: k for k, v in _ECI_ENTITY_SLUG.items()}
+
+
+def _eci_entity_data(label):
+    """Return (all, frontier_all, frontier_names) for a comparison entity."""
+    spec = _ECI_ENTITY_SPECS[label]
+    all_ = load_eci_frontier(
+        _mtime=_eci_mtime(), country=spec.get("country"),
+        orgs=tuple(spec["orgs"]) if spec.get("orgs") else None)
+    fr = [m for m in all_ if m['is_frontier']]
+    return all_, fr, [m['display_name'] for m in fr]
 
 
 def render_eci():
-    # Region toggle: the US frontier or China-only, sharing one tab.
-    # Deep-link via ?region= (omit when at the default US frontier).
-    _url_region = _ECI_REGION_SLUG.get(st.query_params.get("region", "").lower())
-    _region_idx = (
-        _ECI_REGION_OPTIONS.index(_url_region) if _url_region is not None else 0
-    )
+    # Two dropdowns. The first is the benchmark/reference (default "US best");
+    # the second is the subject projected against it (default none). With no
+    # second entity, the benchmark itself is projected as a plain single view.
+    # So [US, blank] = US frontier; [US, China] = China projected vs the US
+    # trend (the old China view), reading naturally left-to-right.
+    # Deep-link via ?a= (benchmark) / ?b= (subject); omit at the defaults.
+    _b_opts = [_ECI_NONE_LABEL] + _ECI_ENTITY_OPTIONS
+    _url_a = _ECI_ENTITY_FOR_SLUG.get(st.query_params.get("a", "").lower())
+    _url_b = _ECI_ENTITY_FOR_SLUG.get(st.query_params.get("b", "").lower())
+    # Back-compat: the old ?region=china deep link maps to US benchmark / China.
+    if _url_a is None and st.query_params.get("region", "").lower() == "china":
+        _url_a, _url_b = "US best", "China best"
+    _a_idx = _ECI_ENTITY_OPTIONS.index(_url_a) if _url_a in _ECI_ENTITY_OPTIONS else 0
+    _b_idx = _b_opts.index(_url_b) if _url_b in _b_opts else 0
+
     with st.sidebar:
-        eci_region = st.radio(
-            "Region", _ECI_REGION_OPTIONS,
-            index=_region_idx, key="eci_region", horizontal=True,
-        )
+        entity_a = st.selectbox(
+            "Entity", _ECI_ENTITY_OPTIONS, index=_a_idx, key="eci_entity_a")
+        entity_b = st.selectbox(
+            "Compare to", _b_opts, index=_b_idx, key="eci_entity_b")
 
-    if eci_region == _ECI_DEFAULT_REGION:
-        if "region" in st.query_params:
-            del st.query_params["region"]
+    # Keep the URL in sync (omit params at their defaults).
+    if entity_a == "US best":
+        st.query_params.pop("a", None)
     else:
-        st.query_params["region"] = _ECI_REGION_FOR_SLUG[eci_region]
+        st.query_params["a"] = _ECI_ENTITY_SLUG[entity_a]
+    if entity_b == _ECI_NONE_LABEL:
+        st.query_params.pop("b", None)
+    else:
+        st.query_params["b"] = _ECI_ENTITY_SLUG[entity_b]
+    st.query_params.pop("region", None)  # superseded by ?a= / ?b=
 
-    if eci_region == "China":
-        _render_eci_china()
-    else:
+    # No (or self-) comparison: project the benchmark itself, single-entity view.
+    if entity_b == _ECI_NONE_LABEL or entity_b == entity_a:
+        s_all, s_fr, s_names = _eci_entity_data(entity_a)
+        if len(s_fr) < 2:
+            st.warning(f"Not enough {entity_a} models on the ECI frontier to project.")
+            return
+        milestones = _ECI_US_MILESTONES if entity_a == "US best" else []
         _render_eci_tab(
-            eci_all, eci_frontier_all, eci_frontier_names, "eci",
-            "ECI Projection",
-            [(155, "ECI 155", '#888888'), (160, "ECI 160", '#666666'),
-             (165, "ECI 165", '#c0392b'), (170, "ECI 170", '#8e44ad')],
-        )
+            s_all, s_fr, s_names, "eci",
+            f"{entity_a} ECI Projection", milestones)
+        return
 
+    # Comparison view: project the subject (B), overlay the benchmark (A) trend.
+    bench_all, bench_fr, bench_names = _eci_entity_data(entity_a)
+    subj_all, subj_fr, subj_names = _eci_entity_data(entity_b)
+    if len(subj_fr) < 2:
+        st.warning(f"Not enough {entity_b} models on the ECI frontier to project.")
+        return
+    if len(bench_fr) < 2:
+        st.warning(f"Not enough {entity_a} models to draw a comparison trend.")
+        _render_eci_tab(subj_all, subj_fr, subj_names, "eci",
+                        f"{entity_b} ECI Projection", [])
+        return
 
-def _render_eci_china():
-    # Single milestone line at the current best US ECI (frontier max). The line
-    # emanates rightward from a labeled dot at the model's actual release date.
-    _us_best = max(eci_frontier_all, key=lambda m: m['eci_score'])
-    _us_best_score = _us_best['eci_score']
-    _us_best_label = f"US best {_us_best_score:.1f}"
-    # US model closest to China's current best ECI — marks when the US passed
-    # the level China sits at today (the lead time China currently lags).
-    _cn_current = max(ecicn_frontier_all, key=lambda m: m['eci_score'])
-    _us_match = min(eci_frontier_all, key=lambda m: abs(m['eci_score'] - _cn_current['eci_score']))
+    # Benchmark's best model → milestone line + labeled dot at its release date.
+    bench_best = max(bench_fr, key=lambda m: m['eci_score'])
+    subj_current = max(subj_fr, key=lambda m: m['eci_score'])
+    # The benchmark model nearest the subject's current best marks where the
+    # benchmark passed the level the subject sits at today. Only meaningful when
+    # the benchmark actually reached that level (it leads); if the subject leads,
+    # there's no such crossing, so omit the marker.
+    bench_match = None
+    if bench_best['eci_score'] >= subj_current['eci_score']:
+        bench_match = min(
+            bench_fr, key=lambda m: abs(m['eci_score'] - subj_current['eci_score']))
     _render_eci_tab(
-        ecicn_all, ecicn_frontier_all, ecicn_frontier_names, "ecicn",
-        "ECI China Projection",
-        [(_us_best_score, _us_best_label, '#8e44ad')],
-        overlay_frontier=eci_frontier_all,
-        overlay_label="US trend",
+        subj_all, subj_fr, subj_names, "eci",
+        f"{entity_b} ECI Projection",
+        [(bench_best['eci_score'], f"{entity_a} best {bench_best['eci_score']:.1f}", '#8e44ad')],
+        overlay_frontier=bench_fr,
+        overlay_label=f"{entity_a} trend",
+        overlay_name=entity_a,
         us_best_marker={
-            'date': _us_best['date'],
-            'score': _us_best_score,
-            'name': _us_best['display_name'],
+            'date': bench_best['date'],
+            'score': bench_best['eci_score'],
+            'name': bench_best['display_name'],
         },
-        us_match_marker={
-            'date': _us_match['date'],
-            'score': _us_match['eci_score'],
-            'name': _us_match['display_name'],
+        us_match_marker=None if bench_match is None else {
+            'date': bench_match['date'],
+            'score': bench_match['eci_score'],
+            'name': bench_match['display_name'],
         },
-        us_match_label=f"China best {_cn_current['eci_score']:.1f}",
+        us_match_label=(None if bench_match is None
+                        else f"{entity_b} best {subj_current['eci_score']:.1f}"),
     )
 
 
@@ -7779,10 +7858,9 @@ if not os.environ.get("_VP_TESTING"):
     _sync_session_to_url()
 
     # ── Share view: copy the (now state-synced) URL to the clipboard ──────
-    import streamlit.components.v1 as _components
     with st.sidebar:
         st.markdown("---")
-        _components.html(
+        st.html(
             """
             <button id="share-view-btn" onclick="copyShareView(this)">
               🔗 Share view
@@ -7846,5 +7924,5 @@ if not os.environ.get("_VP_TESTING"):
               }
             </script>
             """,
-            height=52,
+            unsafe_allow_javascript=True,
         )

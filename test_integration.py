@@ -71,6 +71,25 @@ class TestNonDefaultProjectionBases:
         at.radio(key="eci_proj_basis").set_value("Superexponential").run()
         _assert_no_error(at, "ECI / Superexponential")
 
+    def test_eci_entity_comparison(self):
+        """A second entity (subject) is projected against the first (benchmark)."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Epoch ECI")
+        # [US best, China best]: project China against the US trend.
+        at.selectbox(key="eci_entity_b").set_value("China best").run()
+        _assert_no_error(at, "ECI / US best vs China best")
+        assert at.selectbox(key="eci_entity_a").value == "US best"
+
+    def test_eci_single_entity(self):
+        """A non-default primary entity with no comparison renders alone."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Epoch ECI")
+        at.selectbox(key="eci_entity_a").set_value("DeepSeek").run()
+        _assert_no_error(at, "ECI / DeepSeek solo")
+        assert at.selectbox(key="eci_entity_b").value == "—"
+
     def test_rli_linear(self):
         at = _fresh_app()
         at.run()
