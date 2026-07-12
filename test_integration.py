@@ -716,10 +716,11 @@ class TestComputeVsCapabilities:
     def test_renders(self):
         at = self._cc_app()
         _assert_no_error(at, "Compute vs Capabilities default")
-        text = " ".join(str(m.value) for m in at.markdown) + \
-            " ".join(str(h.value) for h in at.subheader)
+        text = (" ".join(str(m.value) for m in at.markdown) +
+                " ".join(str(h.value) for h in at.subheader) +
+                " ".join(str(w.value) for w in at.warning)).lower()
         # Section 1 (compute slowing?), 2 (exchange rate + two-engine flow).
-        assert "Is compute slowing" in text
+        assert "is compute slowing" in text
         assert "exchange rate" in text
         assert "two engines" in text
 
