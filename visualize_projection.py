@@ -487,6 +487,7 @@ _RLI_RAW = [
 ]
 
 
+@st.cache_data
 def load_rli_data():
     models = []
     for r in _RLI_RAW:
@@ -3656,6 +3657,7 @@ def _prinz_org_color(org, idx=0):
     return _PRINZ_ORG_COLORS.get(org, _PRINZ_FALLBACK_COLORS[idx % len(_PRINZ_FALLBACK_COLORS)])
 
 
+@st.cache_data
 def load_prinz_data():
     """Parse the prinzbench table into dicts sorted by date, with per-country
     running-max frontier flags."""
@@ -6346,7 +6348,7 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
         s_lo, s_hi = s_lo - 0.05, s_hi + 0.05
     s_mid = min(max(s_mid, s_lo), s_hi)
 
-    N = 20000
+    N = 5000
     share = np.random.triangular(s_lo, s_mid, s_hi, N)          # physical/algo mix
     pace = np.clip(np.random.normal(1.0, 0.12, N), 0.65, 1.35)  # overall pace
     cmult = np.random.triangular(0.5, 1.0, 1.15, N)             # compute delivery

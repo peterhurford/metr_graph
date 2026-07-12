@@ -83,7 +83,7 @@ Line numbers below are approximate — grep for the function/table name to locat
 
 ### Projection Engine (repeated per tab)
 
-Each tab supports three projection bases: **Linear** (single OLS), **Piecewise linear** (multi-segment OLS, last segment extrapolated), and **Superexponential** (doubling time decays via `superexp_trajectory()` with a floor). All sample 20,000 trajectories and render Plotly fan charts with 50%/80%/90% CI bands.
+Each tab supports three projection bases: **Linear** (single OLS), **Piecewise linear** (multi-segment OLS, last segment extrapolated), and **Superexponential** (doubling time decays via `superexp_trajectory()` with a floor). All sample 5,000 trajectories and render Plotly fan charts with 50%/80%/90% CI bands.
 
 ### Session State and Reset
 
