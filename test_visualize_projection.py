@@ -6,7 +6,7 @@ Run: pytest test_visualize_projection.py -v
 
 import numpy as np
 import pytest
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import sys
 
@@ -1728,3 +1728,335 @@ class TestSyncSessionToUrl:
             vp._hydrate_session_from_url()
             for k, v in original.items():
                 assert m.session_state[k] == v, f"{k}: {m.session_state[k]!r} != {v!r}"
+
+
+# ===========================================================================
+# Compute vs Capabilities tab — pure numerical helpers (_cc_*)
+# ===========================================================================
+
+def _ccrow(date, log10_flop, eci, **extra):
+    """Build a model row shaped like the ones load_eci_compute() emits."""
+    row = {"date": date, "log10_flop": log10_flop, "eci": eci}
+    row.update(extra)
+    return row
+
+
+class TestCcLoglinearSlope:
+    """_cc_loglinear_slope: OLS of log10(value) on years."""
+
+    def test_known_line(self):
+        # value = 10^(t years): one dex per year → slope ≈ 1.0 OOM/yr.
+        d0 = datetime(2020, 1, 1)
+        pts = [(d0, 1.0), (d0 + timedelta(days=365), 10.0)]
+        slope, intercept, year0 = vp._cc_loglinear_slope(pts)
+        assert slope == pytest.approx(1.0, rel=0.01)
+        assert intercept == pytest.approx(0.0, abs=1e-9)
+        assert year0 == d0
+
+    def test_returns_none_when_fewer_than_two_points(self):
+        assert vp._cc_loglinear_slope([(datetime(2020, 1, 1), 5.0)]) is None
+        assert vp._cc_loglinear_slope([]) is None
+
+    def test_filters_nonpositive_and_none_values(self):
+        # Only the two positive points are usable; the rest are dropped.
+        d0 = datetime(2020, 1, 1)
+        pts = [(d0, 10.0), (d0 + timedelta(days=365), 100.0),
+               (d0 + timedelta(days=730), None), (d0 + timedelta(days=1095), -5.0)]
+        slope, intercept, year0 = vp._cc_loglinear_slope(pts)
+        assert slope == pytest.approx(1.0, rel=0.01)  # 1→2 in log10 over ~1 yr
+        assert year0 == d0
+
+    def test_none_when_nonpositive_leaves_under_two(self):
+        d0 = datetime(2020, 1, 1)
+        assert vp._cc_loglinear_slope([(d0, -1.0), (d0, 0.0), (d0, 5.0)]) is None
+
+
+class TestCcSegmentFits:
+    """_cc_segment_fits: per-segment growth of the FLOP frontier."""
+
+    def test_increasing_and_decreasing_segments(self):
+        today = datetime(2026, 7, 1)
+        frontier_pts = [
+            # Segment "2021–2023": +2 dex over ~2 yr → positive slope.
+            (datetime(2021, 6, 1), 1e20), (datetime(2023, 6, 1), 1e22),
+            # Segment "2023 H2 – 2025 H1": falling → slope ≤ 0.
+            (datetime(2023, 8, 1), 1e22), (datetime(2025, 6, 1), 1e21),
+        ]
+        fits = vp._cc_segment_fits(frontier_pts, today)
+        by_label = {f["label"]: f for f in fits}
+        rising = by_label["2021–2023"]
+        assert rising["n"] == 2
+        assert rising["slope_oom"] == pytest.approx(1.0, rel=0.02)
+        assert rising["doubling_mo"] == pytest.approx(12 * np.log10(2) / rising["slope_oom"])
+        falling = by_label["2023 H2 – 2025 H1"]
+        assert falling["slope_oom"] < 0
+        assert falling["doubling_mo"] == float("inf")
+
+    def test_drops_segments_with_under_two_points(self):
+        today = datetime(2026, 7, 1)
+        # Only one point lands in any segment → nothing fittable.
+        fits = vp._cc_segment_fits([(datetime(2022, 1, 1), 1e21)], today)
+        assert fits == []
+
+
+class TestCcDecomp:
+    """_cc_decomp: regress ECI on log10(FLOP) and time."""
+
+    def _rows(self):
+        base = datetime(2022, 1, 1)
+        # FLOP chosen to be uncorrelated with time so the joint fit is identified.
+        flops = [23.0, 24.0, 23.5, 25.0, 24.2, 23.8, 24.9, 23.2, 25.1, 24.4,
+                 23.6, 24.7]
+        rows = []
+        for i, lf in enumerate(flops):
+            d = base + timedelta(days=90 * i)
+            t = (d - base).days / 365.25
+            rows.append(_ccrow(d, lf, 3.0 * lf + 5.0 * t))  # exact ECI = 3·lc + 5·t
+        # Mark a monotone (date & FLOP increasing) subset as the ECI frontier.
+        for i in (0, 1, 3):
+            rows[i]["is_eci_frontier"] = True
+        return rows
+
+    def test_returns_none_under_ten_rows(self):
+        assert vp._cc_decomp(self._rows()[:9]) is None
+
+    def test_recovers_known_coefficients(self):
+        d = vp._cc_decomp(self._rows())
+        assert d["n"] == 12
+        assert d["a_partial"] == pytest.approx(3.0, abs=1e-6)
+        assert d["b_time"] == pytest.approx(5.0, abs=1e-6)
+        assert d["r2_joint"] == pytest.approx(1.0, abs=1e-9)
+
+    def test_frontier_subset_growth(self):
+        d = vp._cc_decomp(self._rows())
+        assert d["n_frontier"] == 3
+        assert d["frontier_compute_oom"] > 0     # FLOP rising along the frontier
+        assert d["eci_frontier_slope"] > 0
+
+    def test_no_frontier_subset_leaves_none(self):
+        rows = self._rows()
+        for r in rows:
+            r.pop("is_eci_frontier", None)
+        d = vp._cc_decomp(rows)
+        assert d["n_frontier"] == 0
+        assert d["frontier_compute_oom"] is None
+        assert d["eci_frontier_slope"] is None
+
+
+class TestCcEfficiency:
+    """_cc_efficiency: compute needed for a fixed ECI falls over time."""
+
+    def _rows(self):
+        # log10(FLOP) = 0.05·ECI − 0.4·t + 10  →  exchange rate 20 ECI/dex,
+        # iso-ECI compute falling 0.4 OOM/yr.
+        base = datetime(2022, 1, 1)
+        # A ≥5-member band around ECI 115, with ECI decorrelated from time.
+        band = [(112, 0.0), (118, 0.5), (113, 1.0), (117, 1.5),
+                (114, 2.0), (116, 2.5), (115, 3.0)]
+        extras = [(104, 0.3), (106, 1.2), (124, 0.8), (126, 2.2)]
+        rows = []
+        for eci, t in band + extras:
+            d = base + timedelta(days=round(t * 365.25))
+            rows.append(_ccrow(d, 0.05 * eci - 0.4 * t + 10.0, eci))
+        return rows
+
+    def test_returns_none_under_ten_rows(self):
+        assert vp._cc_efficiency(self._rows()[:9]) is None
+
+    def test_recovers_exchange_rate_and_efficiency(self):
+        e = vp._cc_efficiency(self._rows())
+        assert e["eci_per_oom"] == pytest.approx(20.0, rel=1e-3)  # 1/alpha
+        assert e["g_inv"] == pytest.approx(0.4, rel=1e-3)
+        assert 0.0 < e["g_central"] < 1.0
+        assert e["algo_mult"] == pytest.approx(10 ** e["g_central"], rel=1e-9)
+        assert e["bands"], "the ECI-115 band should produce a fit line"
+
+    def test_times_are_monotonic_and_bracketed(self):
+        e = vp._cc_efficiency(self._rows())
+        t2, t5, t10 = e["times"][2], e["times"][5], e["times"][10]
+        # More compute reduction → more months to match capability.
+        assert 0 < t2["central"] < t5["central"] < t10["central"]
+        # lo uses the faster efficiency rate (g_hi) → fewer months.
+        assert t2["lo"] <= t2["central"] <= t2["hi"]
+
+
+class TestCcIsoCompute:
+    """_cc_iso_compute: hold compute fixed, watch ECI rise."""
+
+    def _rows(self):
+        base = datetime(2022, 1, 1)
+        # A ≥5-member band around log10(FLOP) 24.5, ECI = 10·t + 100.
+        band = [24.2, 24.3, 24.4, 24.5, 24.6, 24.7]
+        rows = []
+        for i, lf in enumerate(band):
+            t = 0.4 * i
+            rows.append(_ccrow(base + timedelta(days=round(t * 365.25)), lf,
+                               10.0 * t + 100.0))
+        # Padding well below every compute band (< 23.0) to clear the 10-row
+        # minimum without polluting the ECI-24.5 band.
+        for i in range(4):
+            rows.append(_ccrow(base + timedelta(days=30 * i), 22.0 + 0.2 * i, 90 + i))
+        return rows
+
+    def test_returns_none_under_ten_rows(self):
+        assert vp._cc_iso_compute(self._rows()[:9]) is None
+
+    def test_recovers_capability_rate(self):
+        r = vp._cc_iso_compute(self._rows())
+        assert r["eci_per_yr"] == pytest.approx(10.0, rel=1e-2)
+        assert r["lo"] <= r["eci_per_yr"] <= r["hi"]
+
+
+class TestCcIsoComputeRate:
+    """_cc_iso_compute_rate: one country's ECI/yr at a fixed compute budget."""
+
+    def _rows(self, country="China", n=8, rate=8.0):
+        base = datetime(2023, 1, 1)
+        rows = []
+        for i in range(n):
+            t = 0.3 * i
+            # FLOP clustered within ±0.4 dex of the median so the band holds.
+            lf = 24.6 + (0.1 if i % 2 else -0.1)
+            rows.append(_ccrow(base + timedelta(days=round(t * 365.25)), lf,
+                               rate * t + 90.0, country=country))
+        return rows
+
+    def test_returns_rate_for_dense_country(self):
+        rate, n, med = vp._cc_iso_compute_rate(self._rows(), "China")
+        assert rate == pytest.approx(8.0, rel=1e-2)
+        assert n == 8
+        assert med == pytest.approx(24.6, abs=0.11)
+
+    def test_sparse_country_returns_none(self):
+        rate, n, med = vp._cc_iso_compute_rate(self._rows(n=5), "China")
+        assert rate is None and n == 0 and med is None
+
+    def test_unknown_country_returns_none(self):
+        rate, n, med = vp._cc_iso_compute_rate(self._rows(), "Narnia")
+        assert rate is None and n == 0 and med is None
+
+
+class TestCcQuarterEnds:
+    """_cc_quarter_ends: quarter-end dates strictly after start, through end."""
+
+    def test_full_year(self):
+        out = vp._cc_quarter_ends(datetime(2026, 1, 15), datetime(2026, 12, 31))
+        assert out == [datetime(2026, 3, 31), datetime(2026, 6, 30),
+                       datetime(2026, 9, 30), datetime(2026, 12, 31)]
+
+    def test_start_on_quarter_end_is_exclusive(self):
+        out = vp._cc_quarter_ends(datetime(2026, 3, 31), datetime(2026, 9, 30))
+        assert out == [datetime(2026, 6, 30), datetime(2026, 9, 30)]
+
+    def test_empty_when_no_quarter_in_range(self):
+        assert vp._cc_quarter_ends(datetime(2026, 4, 1), datetime(2026, 5, 1)) == []
+
+
+class TestCcCountryFrontier:
+    """_cc_country_frontier: running-max ECI frontier within one country."""
+
+    def _models(self):
+        return [
+            {"country": "US", "eci_score": 100, "date": datetime(2024, 1, 1),
+             "display_name": "a"},
+            {"country": "US", "eci_score": 95, "date": datetime(2024, 6, 1),
+             "display_name": "b"},          # not a new max → skipped
+            {"country": "US", "eci_score": 120, "date": datetime(2024, 9, 1),
+             "display_name": "c"},
+            {"country": "China", "eci_score": 200, "date": datetime(2024, 3, 1),
+             "display_name": "x"},          # other country → excluded
+        ]
+
+    def test_running_max_and_country_filter(self):
+        fr = vp._cc_country_frontier(self._models(), "US")
+        assert [s for _, s, _ in fr] == [100, 120]
+        assert [n for _, _, n in fr] == ["a", "c"]
+
+
+class TestCcCountryComputeFrontier:
+    """_cc_country_compute_frontier: running-max FLOP frontier + growth rate."""
+
+    def test_growth_over_rising_frontier(self):
+        base = datetime(2023, 1, 1)
+        rows = [
+            _ccrow(base, 24.0, 100, country="US", name="m0"),
+            _ccrow(base + timedelta(days=365), 23.5, 105, country="US", name="dip"),
+            _ccrow(base + timedelta(days=730), 25.0, 120, country="US", name="m2"),
+        ]
+        pts, g = vp._cc_country_compute_frontier(rows, "US")
+        assert [round(lf, 2) for _, lf, _, _ in pts] == [24.0, 25.0]  # dip skipped
+        assert g == pytest.approx(0.5, rel=0.02)  # +1 dex over ~2 yr
+
+    def test_single_point_has_no_slope(self):
+        rows = [_ccrow(datetime(2023, 1, 1), 24.0, 100, country="US", name="m0")]
+        pts, g = vp._cc_country_compute_frontier(rows, "US")
+        assert len(pts) == 1 and g is None
+
+
+class TestCcFrontierEciSlope:
+    """_cc_frontier_eci_slope: OLS ECI/yr from a cutoff onward."""
+
+    def _fr(self):
+        return [
+            (datetime(2023, 1, 1), 100, "a"),
+            (datetime(2024, 1, 1), 110, "b"),
+            (datetime(2025, 1, 1), 120, "c"),
+        ]
+
+    def test_slope_from_cutoff(self):
+        s = vp._cc_frontier_eci_slope(self._fr(), datetime(2023, 1, 1))
+        assert s == pytest.approx(10.0, rel=0.01)  # +10 ECI/yr
+
+    def test_none_when_cutoff_leaves_under_two(self):
+        assert vp._cc_frontier_eci_slope(self._fr(), datetime(2025, 6, 1)) is None
+
+
+class TestCcPooledDecomp:
+    """_cc_pooled_decomp: joint ECI decomposition over US+China models."""
+
+    def _rows(self, n=12):
+        base = datetime(2022, 1, 1)
+        flops = [23.0, 24.0, 23.5, 25.0, 24.2, 23.8, 24.9, 23.2, 25.1, 24.4,
+                 23.6, 24.7]
+        rows = []
+        for i in range(n):
+            lf = flops[i % len(flops)]
+            d = base + timedelta(days=90 * i)
+            t = (d - base).days / 365.25
+            country = "United States of America" if i % 2 else "China"
+            rows.append(_ccrow(d, lf, 3.0 * lf + 5.0 * t, country=country))
+        return rows
+
+    def test_returns_none_under_ten(self):
+        a, b = vp._cc_pooled_decomp(self._rows(n=9))
+        assert a is None and b is None
+
+    def test_recovers_coefficients(self):
+        a, b = vp._cc_pooled_decomp(self._rows())
+        assert a == pytest.approx(3.0, abs=1e-6)
+        assert b == pytest.approx(5.0, abs=1e-6)
+
+    def test_ignores_other_countries(self):
+        rows = self._rows()
+        for r in rows:
+            r["country"] = "France"       # none in {US, China} → too few
+        a, b = vp._cc_pooled_decomp(rows)
+        assert a is None and b is None
+
+
+class TestEciMonthsBehind:
+    """_eci_months_behind: months a score lags the US ECI trend."""
+
+    def test_behind_the_trend(self):
+        base = datetime(2023, 1, 1)
+        us_fr = [(base, 100, "a"),
+                 (base + timedelta(days=365), 110, "b")]  # +10 ECI/yr
+        # Score 100 evaluated a year after the US hit it → ~12 months behind.
+        months = vp._eci_months_behind(us_fr, 100, base + timedelta(days=365))
+        assert months == pytest.approx(12.0, rel=0.02)
+
+    def test_declining_trend_is_nan(self):
+        # A flat-or-declining US trend has no forward crossing → NaN.
+        base = datetime(2023, 1, 1)
+        declining = [(base, 110, "a"), (base + timedelta(days=365), 100, "b")]
+        assert np.isnan(vp._eci_months_behind(declining, 100, base))
