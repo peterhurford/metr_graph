@@ -3601,6 +3601,7 @@ def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=5000,
 # before public release (per the chart's footnote).
 _PRINZ_RAW = [
     # name,                       score, date,         org,        country
+    ("gpt-5.6-sol-pro (extended)",  91, "2026-07-09", "OpenAI",    "United States"),
     ("gpt-5.5-pro (extended)*",     82, "2026-04-23", "OpenAI",    "United States"),
     ("gpt-5.4-pro (extended)",      79, "2026-03-05", "OpenAI",    "United States"),
     ("gpt-5.5-thinking (hvy)*",     74, "2026-04-23", "OpenAI",    "United States"),
