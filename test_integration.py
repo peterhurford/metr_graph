@@ -701,6 +701,41 @@ class TestDataCenters:
 
 
 # ===========================================================================
+# Revenue tab
+# ===========================================================================
+
+class TestRevenueDefaults:
+    """Revenue "Fit to last N points" sliders default to the maximum."""
+
+    def _rev_app(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Revenue")
+        return at
+
+    def test_fit_to_last_n_defaults_to_max(self):
+        import visualize_projection as vp
+        at = self._rev_app()
+        _, oai_vals = vp._parse_revenue(vp._OPENAI_REVENUE)
+        _, ant_vals = vp._parse_revenue(vp._ANTHROPIC_REVENUE)
+        oai = at.slider(key="oai_n_recent")
+        ant = at.slider(key="ant_n_recent")
+        # Default "project as of" is the latest date, so the fit window spans
+        # every available data point.
+        assert oai.value == len(oai_vals), \
+            f"OpenAI fit-N should default to max ({len(oai_vals)}), got {oai.value}"
+        assert ant.value == len(ant_vals), \
+            f"Anthropic fit-N should default to max ({len(ant_vals)}), got {ant.value}"
+
+    def test_fit_to_last_n_still_reducible(self):
+        """The slider remains user-adjustable to fit on fewer recent points."""
+        at = self._rev_app()
+        at.slider(key="oai_n_recent").set_value(3).run()
+        _assert_no_error(at, "Revenue / reduced fit-N")
+        assert at.slider(key="oai_n_recent").value == 3
+
+
+# ===========================================================================
 # Compute vs Capabilities tab
 # ===========================================================================
 
