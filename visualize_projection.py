@@ -178,7 +178,7 @@ def _ss_number_input(parent, label, key, default, **kwargs):
     """
     if key not in st.session_state:
         st.session_state[key] = default
-    return parent.number_input(label, key=key, value=st.session_state[key], **kwargs)
+    return parent.number_input(label, key=key, **kwargs)
 
 
 def superexp_trajectory(days, dt_0, halflife, dt_floor):
