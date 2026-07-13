@@ -1858,6 +1858,70 @@ class TestCcSegmentFits:
         assert fits == []
 
 
+class TestCcTrainingFloorMatch:
+    """Backward (release → cluster) match uses a training-run causal floor
+    (_CC_TRAIN_FLOOR_DAYS, ~60d), not the full +90d expected-release lag. A
+    cluster online at least one training run before a release can claim it even
+    if the model shipped a few weeks faster than the full pipeline; a cluster
+    online less than a training run before it cannot."""
+
+    def _responsible(self, release, milestones, floor):
+        """Replicates render's backward match: the most recent cluster online at
+        least one training run (floor) before the release."""
+        cand = [m for m in milestones if (m[0] + floor) <= release]
+        return cand[-1] if cand else None
+
+    def test_floor_is_training_run_not_full_lag(self):
+        # The causal floor is the ~2-month training run, strictly less than the
+        # 90d train+release-prep window used for the *expected* release date.
+        assert vp._CC_TRAIN_FLOOR_DAYS == vp._DAYS_2MO
+        assert vp._CC_TRAIN_FLOOR_DAYS < vp._CC_RELEASE_LAG_DAYS
+
+    def test_sol_ties_to_wisconsin_under_floor(self):
+        from datetime import timedelta
+        attr = vp._cc_lab_attribution()
+        milestones = vp._cc_lab_dc_milestones("OpenAI", attr, key="perf")
+        fm = vp._cc_company_frontier_models().get("OpenAI", [])
+        lag = timedelta(days=vp._CC_RELEASE_LAG_DAYS)
+        floor = timedelta(days=vp._CC_TRAIN_FLOOR_DAYS)
+
+        sol = next((m for m in fm if m[2] == "GPT-5.6 Sol (pro, max)"), None)
+        assert sol is not None, "Sol not found in OpenAI frontier releases"
+        d = sol[0]
+
+        # The strict full-lag rule would have fallen back to Atlanta...
+        strict = [m for m in milestones if (m[0] + lag) <= d][-1]
+        assert strict[2] == "Microsoft Fairwater Atlanta"
+
+        # ...but Wisconsin was online a full training run (>=60d) before Sol, so
+        # the training-floor rule ties Sol to Wisconsin.
+        resp = self._responsible(d, milestones, floor)
+        assert resp[2] == "Microsoft Fairwater Wisconsin"
+        assert (d - resp[0]).days >= vp._CC_TRAIN_FLOOR_DAYS
+
+    def test_implausibly_fresh_cluster_is_excluded(self):
+        # A model that shipped only ~2 weeks after a much bigger cluster came
+        # online can't be attributed to it — no time to train — so the match
+        # falls back to the earlier cluster that was online long enough.
+        from datetime import timedelta
+        floor = timedelta(days=vp._CC_TRAIN_FLOOR_DAYS)
+        release = datetime(2026, 6, 1)
+        old = (datetime(2026, 1, 1), 1.0, "Old cluster")        # 151d before
+        fresh = (datetime(2026, 5, 18), 9.0, "Fresh cluster")   # 14d before
+        milestones = [old, fresh]
+        resp = self._responsible(release, milestones, floor)
+        assert resp[2] == "Old cluster"
+
+    def test_cluster_exactly_at_floor_qualifies(self):
+        from datetime import timedelta
+        floor = timedelta(days=vp._CC_TRAIN_FLOOR_DAYS)
+        release = datetime(2026, 6, 1)
+        exact = (release - floor, 5.0, "Exactly one training run")
+        just_short = (release - floor + timedelta(days=1), 9.0, "One day short")
+        resp = self._responsible(release, [exact, just_short], floor)
+        assert resp[2] == "Exactly one training run"
+
+
 class TestCcDecomp:
     """_cc_decomp: regress ECI on log10(FLOP) and time."""
 

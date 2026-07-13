@@ -7015,7 +7015,14 @@ def _cc_us_vs_china(cc_rows, today):
 # capacity step (2mo training + ~1mo release lag).
 
 _CC_PANEL_LABS = ["OpenAI", "Anthropic", "Google", "xAI", "Meta"]
-_CC_RELEASE_LAG_DAYS = _DAYS_2MO + _CC_RUN_COMPLETION_LAG.days   # 90d
+_CC_RELEASE_LAG_DAYS = _DAYS_2MO + _CC_RUN_COMPLETION_LAG.days   # 90d, expected release
+# Causal eligibility floor for "could this cluster have *trained* the model?" — the
+# training run itself (~2mo), without the extra ~1mo release-prep lag. That lag is
+# compressible polish, not a hard gate, so a cluster online at least a training run
+# before a release can claim it even if the model shipped a few weeks faster than
+# the full 90d pipeline (e.g. Sol, 84d after Fairwater Wisconsin). Anything shorter
+# than one training run (e.g. a model out ~2 weeks after a DC) still can't.
+_CC_TRAIN_FLOOR_DAYS = _DAYS_2MO   # 60d
 
 # Match a DC site to one of the 5 labs, owner-first for self-built clusters
 # (xAI/Meta/Google) then primary-user for labs that rent (OpenAI on
@@ -7169,16 +7176,19 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
 
     x_end = max(all_dates) + timedelta(days=45)
 
-    # Match *causally*, not by nearest date. A model needs its training cluster
-    # online before training starts (~lag days pre-release), so a DC step can only
-    # be responsible for a release if its predicted date (step + lag) is on or
-    # before that release. Two complementary matches:
-    #   • forward  — each DC step → the first frontier release it could enable
-    #                (earliest release on/after the predicted date)
+    # Match *causally*, not by nearest date. Two complementary matches use two
+    # different clocks:
+    #   • forward  — each DC step → the first frontier release on/after its
+    #                *expected* date (step + 90d = train + release-prep lag).
     #   • backward — each release → the most recent cluster that could have
-    #                trained it (latest step whose predicted date ≤ release)
-    # Error = actual − predicted (days), always ≥ 0: how long after the earliest
-    # date the buildout allows the model actually shipped.
+    #                *trained* it: the latest step online at least one training
+    #                run (60d) before the release. The extra ~1mo release lag
+    #                isn't required here — a model can ship a few weeks faster
+    #                than the full pipeline — but a cluster online less than a
+    #                training run before the release still can't claim it.
+    # Error = actual − expected (release − (step + 90d)), signed: positive = shipped
+    # after the implied date; slightly negative = shipped faster than the pipeline.
+    train_floor = timedelta(days=_CC_TRAIN_FLOOR_DAYS)
     act_sorted = sorted(fmodels, key=lambda t: t[0])
 
     def _first_release_after(pred):
@@ -7188,7 +7198,7 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
         return None
 
     def _responsible_cluster(release):
-        cand = [m for m in milestones if (m[0] + lag) <= release]
+        cand = [m for m in milestones if (m[0] + train_floor) <= release]
         return cand[-1] if cand else None   # milestones are date-sorted
 
     expected = []
@@ -7215,12 +7225,12 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
     _dc_add_projection_band(fig, today, x_end)
 
     # Connector from each release down to the cluster that could have trained it
-    # (its responsible predicted date), colored by how long after that floor it
-    # shipped.
+    # (its implied +90d date), colored by how far — early or late — the release
+    # landed from that implied date.
     for m in model_match:
         if m['pred'] is None:
             continue
-        ae = m['err']
+        ae = abs(m['err'])
         c = '#2CA02C' if ae <= 45 else '#FF7F0E' if ae <= 120 else '#D62728'
         fig.add_trace(go.Scatter(
             x=[m['pred'], m['date']], y=[Y_PRED, Y_ACT], mode='lines',
@@ -7261,7 +7271,7 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
         hovertext=[f"{m['name']}<br>released {m['date']:%b %d, %Y}"
                    + (f"<br>trained on {m['resp'][2]} "
                       f"({_dc_fmt_value(m['resp'][1], kind)}, online "
-                      f"{m['resp'][0]:%b %d, %Y})<br>+{m['err']}d after implied "
+                      f"{m['resp'][0]:%b %d, %Y})<br>{m['err']:+d}d after implied "
                       f"{m['pred']:%b %d, %Y}"
                       if m['resp'] else "<br>predates any tracked cluster")
                    for m in model_match],
@@ -7285,15 +7295,16 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
         st.info(f"Epoch tracks no {lab} data center, so its releases can't be "
                 "timed against a buildout.")
     elif errs:
-        med_abs = int(np.median(errs))
-        within = sum(1 for x in errs if x <= 60)
+        med = int(np.median(errs))
+        within = sum(1 for x in errs if abs(x) <= 60)
         orphan_note = (f" {n_orphan} release(s) predate any tracked {lab} cluster."
                        if n_orphan else "")
         st.markdown(
-            f"**{lab}: frontier models ship a median {med_abs} days after the "
-            f"earliest date their largest cluster allows** — {within}/{len(errs)} "
-            "within 60 days of that floor (capacity-gated); longer gaps mean the "
-            f"model was limited by something other than compute.{orphan_note}")
+            f"**{lab}: frontier models ship a median {med:+d} days from the date "
+            f"their largest cluster's capacity implies (online + {_CC_RELEASE_LAG_DAYS}d)** "
+            f"— {within}/{len(errs)} within 60 days of that implied date "
+            "(capacity-gated); large positive gaps mean the model was limited by "
+            f"something other than compute.{orphan_note}")
 
     # ── Both directions as date-only tables ──
     st.markdown("**Cluster → release it enables** "
@@ -7318,14 +7329,14 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
     st.markdown("**Release → cluster it came from** "
                 "(the most recent cluster online early enough to have trained it)")
     rowsB = [f"| Frontier release | Trained on (largest cluster, {metric_label}) | "
-             f"Implies (+{_CC_RELEASE_LAG_DAYS}d) | Shipped after |",
+             f"Implies (+{_CC_RELEASE_LAG_DAYS}d) | Shipped vs implied |",
              "|---|---|---|---|"]
     for m in model_match:
         if m['resp']:
             r = m['resp']
             rowsB.append(f"| {m['name']} ({m['date']:%Y-%m-%d}) | "
                          f"{r[2]} — {_dc_fmt_value(r[1], kind)} ({r[0]:%Y-%m-%d}) | "
-                         f"{m['pred']:%Y-%m-%d} | +{m['err']}d |")
+                         f"{m['pred']:%Y-%m-%d} | {m['err']:+d}d |")
         else:
             rowsB.append(f"| {m['name']} ({m['date']:%Y-%m-%d}) | "
                          "*(predates any tracked cluster)* | — | — |")
@@ -7335,10 +7346,12 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
         f"Diamonds = capacity steps shifted forward {_CC_RELEASE_LAG_DAYS} days to "
         "the release date they imply (hollow = planned/under-construction DC); "
         "circles = actual frontier releases. Matching is *causal*: a release is tied "
-        "only to a cluster online at least the train+lag window before it, so a "
-        "cluster that came online too recently (e.g. New Carlisle Mar 2026, 78 days "
-        "before Fable) can't claim a model it had no time to train. Connector color = "
-        "days after that floor (green ≤45, orange ≤120, red >120). Capability is "
+        f"only to a cluster online at least one training run ({_CC_TRAIN_FLOOR_DAYS}d) "
+        "before it — a cluster online less than a training run before a release "
+        "couldn't have trained it. The extra ~1mo release-prep lag isn't required, so "
+        "a model that shipped a bit faster than the full pipeline still counts (e.g. "
+        "Sol, 84d after Fairwater Wisconsin). Connector color = days from the implied "
+        "date (green ≤45, orange ≤120, red >120). Capability is "
         "never used — only dates. The rule lands close when a model is gated by a "
         "fresh cluster (xAI/Colossus throughout; others post-2025) and drifts when "
         "the frontier moves algorithmically on an existing cluster (OpenAI's 2024 "
