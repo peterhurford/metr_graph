@@ -1438,6 +1438,65 @@ class TestNumberInputTypes:
 
 
 # ===========================================================================
+# _ss_number_input widget-conflict regression
+# ===========================================================================
+
+class _SpyParent:
+    """Records the kwargs passed to number_input so we can assert on them."""
+    def __init__(self):
+        self.calls = []
+
+    def number_input(self, label, **kw):
+        self.calls.append((label, kw))
+        return kw.get("value", 0)
+
+
+class TestSsNumberInput:
+    """Regression guard for the widget-conflict crash on Streamlit Cloud.
+
+    Passing both key= and value= to number_input when the session_state key
+    is already set violates Streamlit's check_session_state_rules, logs a
+    warning, and segfaulted the worker. _ss_number_input must pass key= only.
+    """
+
+    def _clear(self, key):
+        vp.st.session_state.pop(key, None)
+
+    def test_does_not_pass_value_with_key(self):
+        """The core regression: number_input is called with key but not value."""
+        self._clear("_ss_test_key")
+        parent = _SpyParent()
+        vp._ss_number_input(parent, "L", "_ss_test_key", 42, min_value=10, step=5)
+        assert len(parent.calls) == 1
+        _, kw = parent.calls[0]
+        assert kw.get("key") == "_ss_test_key"
+        assert "value" not in kw, "value= must not be passed alongside key="
+
+    def test_initialises_session_state_to_default(self):
+        """On first render the session_state key is seeded with the default."""
+        self._clear("_ss_test_key2")
+        parent = _SpyParent()
+        vp._ss_number_input(parent, "L", "_ss_test_key2", 99)
+        assert vp.st.session_state["_ss_test_key2"] == 99
+
+    def test_preserves_existing_session_state(self):
+        """If the key already exists, the default does not overwrite it."""
+        vp.st.session_state["_ss_test_key3"] = 7
+        parent = _SpyParent()
+        vp._ss_number_input(parent, "L", "_ss_test_key3", 99)
+        assert vp.st.session_state["_ss_test_key3"] == 7
+
+    def test_extra_kwargs_forwarded(self):
+        """min_value/max_value/step are forwarded to number_input."""
+        self._clear("_ss_test_key4")
+        parent = _SpyParent()
+        vp._ss_number_input(parent, "L", "_ss_test_key4", 42,
+                            min_value=10, max_value=2000, step=5)
+        _, kw = parent.calls[0]
+        assert kw["min_value"] == 10 and kw["max_value"] == 2000 and kw["step"] == 5
+
+
+# ===========================================================================
 # Edge cases / error conditions
 # ===========================================================================
 
