@@ -803,8 +803,9 @@ dc_all = load_data_centers(_mtime=_dc_mtime())
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "Employment", "Prinz", "Revenue", "Data Centers", "Compute vs Capabilities"]
-_TAB_SLUG = {"metr": 0, "eci": 1, "rli": 2, "prinz": 3, "revenue": 4, "employment": 5, "ecigap": 6, "datacenters": 7, "computecap": 8}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "Employment", "Revenue", "Data Centers", "Compute vs Capabilities"]
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute vs Capabilities": "computecap"}
+_TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 
 # Read ?tab= from URL for deep-linking
 _url_tab = st.query_params.get("tab", "").lower()
@@ -815,7 +816,6 @@ with st.sidebar:
     st.markdown("---")
 
 # Keep URL in sync with selected tab (omit when at default)
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Prinz": "prinz", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute vs Capabilities": "computecap"}
 _DEFAULT_TAB = _TAB_OPTIONS[0]
 if active_tab == _DEFAULT_TAB:
     if "tab" in st.query_params:
@@ -3587,295 +3587,6 @@ def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=5000,
         pcts[p] = np.percentile(trajectories, p, axis=0)
 
     return proj_dates_out, pcts, ols_dt, dt_lo, dt_hi, ols_dates_out, ols_vals_out, trajectories
-
-
-# ── Prinzbench ───────────────────────────────────────────────────────────
-#
-# Scores are read off the published "prinzbench (full)" bar chart (0–99 scale),
-# so they are approximate (±1). Release dates are sourced from
-# epoch_capabilities_index.csv where the model appears.
-#
-# NOTE: "qwen-q3-max" has no exact match in the ECI data; it is mapped to
-# qwen3-max (2025-09-24). If that date is wrong, fix it in this table.
-#
-# A trailing "*" on a name means the model was accessed in early testing,
-# before public release (per the chart's footnote).
-_PRINZ_RAW = [
-    # name,                       score, date,         org,        country
-    ("gpt-5.6-sol-pro (extended)",  91, "2026-07-09", "OpenAI",    "United States"),
-    ("gpt-5.5-pro (extended)*",     82, "2026-04-23", "OpenAI",    "United States"),
-    ("gpt-5.4-pro (extended)",      79, "2026-03-05", "OpenAI",    "United States"),
-    ("gpt-5.5-thinking (hvy)*",     74, "2026-04-23", "OpenAI",    "United States"),
-    ("gpt-5.4 (xhigh)",             69, "2026-03-05", "OpenAI",    "United States"),
-    ("gpt-5.4-thinking (hvy)",      68, "2026-03-05", "OpenAI",    "United States"),
-    ("gpt-5.4-thinking (ext)",      57, "2026-03-05", "OpenAI",    "United States"),
-    ("gpt-5.2-thinking (ext)",      52, "2025-12-11", "OpenAI",    "United States"),
-    ("gpt-5.3-codex-high",          52, "2026-02-05", "OpenAI",    "United States"),
-    ("gemini-3.1-pro",              51, "2026-02-19", "Google",    "United States"),
-    ("grok-4.20",                   43, "2026-02-17", "xAI",       "United States"),
-    ("opus-4.8 (max)",              42, "2026-05-28", "Anthropic", "United States"),
-    ("gemini-3-flash",              36, "2025-12-17", "Google",    "United States"),
-    ("gemini-3-pro",                35, "2025-11-18", "Google",    "United States"),
-    ("kimi-k2.5-thinking",          35, "2026-01-27", "Moonshot",  "China"),
-    ("meta-muse-spark",             31, "2026-04-08", "Meta",      "United States"),
-    ("glm-5.2",                     30, "2026-06-16", "Z.ai",      "China"),
-    ("grok-4.1-thinking",           25, "2025-11-17", "xAI",       "United States"),
-    ("qwen-q3-max",                 25, "2025-09-24", "Alibaba",   "China"),
-    ("opus-4.7",                    25, "2026-04-16", "Anthropic", "United States"),
-    ("grok-4",                      23, "2025-07-09", "xAI",       "United States"),
-    ("deepseek-v4-pro",             23, "2026-04-24", "DeepSeek",  "China"),
-    ("kimi-k2-thinking",            22, "2025-11-06", "Moonshot",  "China"),
-    ("sonnet-4.5",                  19, "2025-09-29", "Anthropic", "United States"),
-    ("opus-4.6",                    18, "2026-02-05", "Anthropic", "United States"),
-    ("opus-4.5",                    13, "2025-11-24", "Anthropic", "United States"),
-    ("sonnet 4.6",                   7, "2026-02-17", "Anthropic", "United States"),
-]
-
-_PRINZ_US_COLOR = "#4F8DFD"
-_PRINZ_CN_COLOR = "#e74c3c"
-
-# Per-company colors for the "Company" grouping mode.
-_PRINZ_ORG_COLORS = {
-    "OpenAI":    "#10a37f",
-    "Anthropic": "#d97706",
-    "Google":    "#4285F4",
-    "xAI":       "#111111",
-    "Meta":      "#9aa0c9",
-    "Moonshot":  "#ff5a36",
-    "Z.ai":      "#2da8e8",
-    "Alibaba":   "#8e44ad",
-    "DeepSeek":  "#1f3a93",
-}
-# Fallback palette for any org not in the map above.
-_PRINZ_FALLBACK_COLORS = [
-    "#e6194b", "#3cb44b", "#ffe119", "#0082c8", "#f58231",
-    "#911eb4", "#46f0f0", "#f032e6", "#d2f53c", "#fabebe",
-]
-
-
-def _prinz_org_color(org, idx=0):
-    return _PRINZ_ORG_COLORS.get(org, _PRINZ_FALLBACK_COLORS[idx % len(_PRINZ_FALLBACK_COLORS)])
-
-
-@st.cache_data
-def load_prinz_data():
-    """Parse the prinzbench table into dicts sorted by date, with per-country
-    running-max frontier flags."""
-    models = []
-    for name, score, date_str, org, country in _PRINZ_RAW:
-        models.append({
-            "name": name,
-            "score": float(score),
-            "date": datetime.strptime(date_str, "%Y-%m-%d"),
-            "org": org,
-            "country": country,
-        })
-    models.sort(key=lambda m: (m["date"], -m["score"]))
-    # Per-country frontier: running max of score in date order.
-    maxes = {}
-    for m in models:
-        c = m["country"]
-        prev = maxes.get(c, -float("inf"))
-        m["is_frontier"] = m["score"] > prev
-        if m["is_frontier"]:
-            maxes[c] = m["score"]
-    return models
-
-
-def _prinz_frontier_from(ms, end_date):
-    """Running-max (date, score) step points for an arbitrary model list,
-    extended flat to end_date. Returns the points and the set of frontier model
-    ids (each model that set a new running max)."""
-    pts = []
-    fr_ids = set()
-    cur = -float("inf")
-    for m in sorted(ms, key=lambda x: x["date"]):
-        if m["score"] > cur:
-            cur = m["score"]
-            pts.append((m["date"], cur))
-            fr_ids.add(id(m))
-    if pts and pts[-1][0] < end_date:
-        pts.append((end_date, cur))
-    return pts, fr_ids
-
-
-def _prinz_frontier_points(models, country, end_date):
-    """Running-max (date, score) step points for one country, extended to end_date."""
-    pts, _ = _prinz_frontier_from(
-        [m for m in models if m["country"] == country], end_date)
-    return pts
-
-
-def render_prinz():
-    st.header("Prinzbench (full) — capability by release date")
-    st.caption(
-        "Scores read from the published prinzbench (full) chart (approximate, ±1). "
-        "Source: [prinz-ai/prinzbench](https://github.com/prinz-ai/prinzbench). "
-        "Release dates from Epoch's Capabilities Index data. "
-        "A trailing * marks a model accessed in early testing, before public release."
-    )
-
-    models = load_prinz_data()
-
-    with st.sidebar:
-        st.header("Prinzbench")
-        prinz_group = st.selectbox(
-            "Group by",
-            ["US vs China", "Company", "All models (one line)"],
-            key="prinz_group", index=2,
-        )
-        prinz_region = st.radio(
-            "Show", ["Both", "US only", "China only"],
-            horizontal=True, key="prinz_region", index=0,
-        )
-        prinz_labels = st.radio(
-            "Labels", ["Frontier only", "All", "None"],
-            horizontal=True, key="prinz_labels", index=0,
-        )
-        prinz_frontier = st.checkbox("Show frontier lines", value=True, key="prinz_frontier")
-        if st.button("Reset", key="_reset_prinz_btn"):
-            for k in ("prinz_group", "prinz_region", "prinz_labels", "prinz_frontier"):
-                st.session_state.pop(k, None)
-            st.rerun()
-
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    end_date = max(m["date"] for m in models)
-    right_edge = max(today, end_date) + timedelta(days=20)
-
-    # Region filter applies to every grouping mode.
-    shown = [m for m in models
-             if prinz_region == "Both"
-             or (prinz_region == "US only" and m["country"] == "United States")
-             or (prinz_region == "China only" and m["country"] == "China")]
-
-    # Build (label, color, model_list) groups for the selected grouping mode.
-    if prinz_group == "Company":
-        by_org = {}
-        for m in shown:
-            by_org.setdefault(m["org"], []).append(m)
-        ordered = sorted(by_org.items(),
-                         key=lambda kv: -max(x["score"] for x in kv[1]))
-        groups = [(org, _prinz_org_color(org, i), ms)
-                  for i, (org, ms) in enumerate(ordered)]
-    elif prinz_group == "All models (one line)":
-        groups = [("All models", _PRINZ_US_COLOR, shown)]
-    else:  # US vs China
-        groups = [(lbl, col, [m for m in shown if m["country"] == ctry])
-                  for ctry, lbl, col in (
-                      ("United States", "United States", _PRINZ_US_COLOR),
-                      ("China", "China", _PRINZ_CN_COLOR))]
-        groups = [g for g in groups if g[2]]
-
-    fig = go.Figure()
-
-    # ── Frontier step lines + scatter, one group at a time ───────────────
-    for label, color, ms in groups:
-        if not ms:
-            continue
-        ms_sorted = sorted(ms, key=lambda m: m["date"])
-        fr_pts, fr_ids = _prinz_frontier_from(ms_sorted, right_edge)
-
-        if prinz_frontier and len(fr_pts) >= 2:
-            fig.add_trace(go.Scatter(
-                x=[p[0] for p in fr_pts], y=[p[1] for p in fr_pts],
-                mode="lines", line=dict(color=color, width=2, shape="hv"),
-                opacity=0.55, hoverinfo="skip",
-                name=f"{label} frontier", showlegend=(prinz_group != "Company"),
-            ))
-
-        is_fr = [id(m) in fr_ids for m in ms_sorted]
-        if prinz_labels == "All":
-            text = [m["name"] for m in ms_sorted]
-            mode = "markers+text"
-        elif prinz_labels == "Frontier only":
-            text = [m["name"] if f else "" for m, f in zip(ms_sorted, is_fr)]
-            mode = "markers+text"
-        else:
-            text = None
-            mode = "markers"
-        fig.add_trace(go.Scatter(
-            x=[m["date"] for m in ms_sorted], y=[m["score"] for m in ms_sorted],
-            mode=mode,
-            marker=dict(
-                color=color,
-                size=[13 if f else 9 for f in is_fr],
-                symbol=["star" if f else "circle" for f in is_fr],
-                line=dict(color="white", width=1),
-            ),
-            text=text, textposition="middle right",
-            textfont=dict(size=9, color="#1a1a2e"),
-            customdata=[(m["name"], m["org"], m["country"]) for m in ms_sorted],
-            hovertemplate=(
-                "%{customdata[0]}<br>%{customdata[1]} (%{customdata[2]})"
-                "<br>prinzbench: %{y:.0f}<extra></extra>"
-            ),
-            name=label,
-        ))
-
-    fig.update_layout(
-        height=650,
-        margin=dict(l=50, r=160, t=50, b=40),
-        font=dict(color="#1a1a2e"),
-        xaxis=dict(
-            range=[min(m["date"] for m in models) - timedelta(days=20), right_edge],
-            gridcolor="rgba(0,0,0,0.1)",
-            tickfont=dict(color="#1a1a2e"),
-            zeroline=False,
-        ),
-        yaxis=dict(
-            title="prinzbench (full) score",
-            range=[0, max(m["score"] for m in models) * 1.1],
-            gridcolor="rgba(0,0,0,0.1)",
-            zeroline=False,
-            tickfont=dict(color="#1a1a2e"),
-            title_font=dict(color="#1a1a2e"),
-        ),
-        hovermode="x unified",
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01,
-                    bgcolor="rgba(255,255,255,0.95)",
-                    font=dict(color="#1a1a2e")),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-    )
-
-    st.plotly_chart(fig, width="stretch")
-
-    # ── US vs China comparison ───────────────────────────────────────────
-    us = [m for m in models if m["country"] == "United States"]
-    cn = [m for m in models if m["country"] == "China"]
-    if us and cn:
-        us_best = max(us, key=lambda m: m["score"])
-        cn_best = max(cn, key=lambda m: m["score"])
-        gap = us_best["score"] - cn_best["score"]
-
-        st.subheader("US vs China")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("US best", f"{us_best['score']:.0f}", help=us_best["name"])
-        c2.metric("China best", f"{cn_best['score']:.0f}", help=cn_best["name"])
-        c3.metric("Gap (points)", f"{gap:+.0f}")
-
-        # Lead time: when did the US frontier first reach China's current best?
-        us_fr = _prinz_frontier_points(us, "United States", right_edge)
-        us_cross = next((d for d, s in us_fr if s >= cn_best["score"]), None)
-        if us_cross is not None:
-            lead_days = (cn_best["date"] - us_cross).days
-            if lead_days > 0:
-                st.markdown(
-                    f"The US frontier reached China's current best score "
-                    f"(**{cn_best['score']:.0f}**, {pretty(cn_best['name'])}, "
-                    f"{cn_best['date']:%b %Y}) back on **{us_cross:%b %Y}** — "
-                    f"roughly **{lead_days/30.4:.1f} months** earlier. "
-                    f"That is the lead China currently lags by on prinzbench."
-                )
-            else:
-                st.markdown(
-                    f"China's best ({cn_best['score']:.0f}) is at or above where the "
-                    f"US frontier sat at the same time — no clear US lead on this metric."
-                )
-        st.caption(
-            f"US: {len(us)} models · China: {len(cn)} models. "
-            "Frontier = running maximum within each country over time."
-        )
 
 
 def _fmt_revenue(val):
@@ -7732,14 +7443,6 @@ _REV_TRACKED_KEYS = list(_REV_DEFAULTS.keys()) + [
 _ECG_DEFAULTS = {"ecg_highlight": "None"}
 _ECG_TRACKED_KEYS = list(_ECG_DEFAULTS.keys())
 
-_PRINZ_DEFAULTS = {
-    "prinz_group": "All models (one line)",
-    "prinz_region": "Both",
-    "prinz_labels": "Frontier only",
-    "prinz_frontier": True,
-}
-_PRINZ_TRACKED_KEYS = list(_PRINZ_DEFAULTS.keys())
-
 # Internal cache keys: never round-trip through URL
 _URL_EXCLUDED_SUFFIXES = ("_seg_config",)
 
@@ -7752,7 +7455,6 @@ def _all_tracked():
         (_eci_tab_reset_keys("eci"), _eci_tab_defaults("eci")),
         (_eci_tab_reset_keys("ecicn"), _eci_tab_defaults("ecicn")),
         (_RLI_RESET_KEYS, _RLI_DEFAULTS),
-        (_PRINZ_TRACKED_KEYS, _PRINZ_DEFAULTS),
         (_EMP_RESET_KEYS, _EMP_DEFAULTS),
         (_REV_TRACKED_KEYS, _REV_DEFAULTS),
         (_ECG_TRACKED_KEYS, _ECG_DEFAULTS),
@@ -7860,8 +7562,6 @@ if not os.environ.get("_VP_TESTING"):
         render_eci()
     elif active_tab == "Remote Labor Index":
         render_rli()
-    elif active_tab == "Prinz":
-        render_prinz()
     elif active_tab == "Revenue":
         render_revenue()
     elif active_tab == "Employment":

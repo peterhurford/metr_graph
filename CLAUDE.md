@@ -36,7 +36,7 @@ No build system, no CI/CD, no package manager beyond requirements.txt.
 
 ## Architecture
 
-Nine-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. URL slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `employment`, `prinz`, `revenue`, `datacenters`, `computecap`.
+Eight-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. URL slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `employment`, `revenue`, `datacenters`, `computecap`.
 
 ### Tabs and Render Functions
 
@@ -47,7 +47,6 @@ Line numbers drift as the file grows — grep `^def render_` to find the current
 | METR Horizon | `render_metr()` (~866) | `benchmark_results_1_1.yaml` → `load_frontier()` | log₂(minutes) |
 | Epoch ECI | `render_eci()` (~2620) | `epoch_capabilities_index.csv` → `load_eci_frontier()` | linear score |
 | Remote Labor Index | `render_rli()` (~2738) | hardcoded `_RLI_RAW` → `load_rli_data()` | logit-transformed score (0-100 bounded) |
-| Prinz | `render_prinz()` (~3707) | hardcoded `_PRINZ_RAW` → `load_prinz_data()` | prinzbench score (0-99) |
 | Revenue | `render_revenue()` (~3897) | hardcoded `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` | ARR in billions |
 | Employment | `render_employment()` (~4353) | derived from RLI frontier + slider assumptions (no external feed) | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` (~5223) | `epoch_capabilities_index.csv` (filtered by org/country) | linear score gap |
@@ -65,7 +64,6 @@ Five external data feeds back the tabs; the rest are derived. Canonical sources 
 | `data_centers.csv` | Epoch AI | Download `https://epoch.ai/data/data_centers/data_centers.csv` and overwrite |
 | `data_center_timelines.csv` | Epoch AI | Download `https://epoch.ai/data/data_centers/data_center_timelines.csv` and overwrite. Column order differs from older pulls; the loader uses `DictReader` (by header name) so this is safe |
 | `_RLI_RAW` (hardcoded) | Scale Labs RLI leaderboard (`labs.scale.com/leaderboard/rli`) / `remotelabor.ai` | Hand-edit new rows |
-| `_PRINZ_RAW` (hardcoded) | prinzbench "full" bar chart | Hand-edit; scores read off the chart are ±1; dates sourced from the ECI CSV |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | Press reports (The Information, Reuters, etc.) | Hand-edit `(date, ARR_in_billions)` tuples |
 
 Before overwriting a CSV wholesale, diff by key column to confirm no locally-curated rows would be lost (ECI key = `Model version`; DC metadata key = `Name`; timelines key = `Data center` + `Date`). After any data change, sanity-check with `_VP_TESTING=1 python3 -c "import visualize_projection as v; ..."` calling the relevant loader, then run the tests.
@@ -76,9 +74,9 @@ Line numbers below are approximate — grep for the function/table name to locat
 
 - Shared helpers — `pretty()`, `log2min_to_label()`, `fmt_hrs()`, `fit_line()`, `_fit_slope_p50_intercept_display()`, distribution samplers, `_ss_number_input()`, `superexp_trajectory()`, `_logit()`/`_inv_logit()`
 - Backtesting helpers — `_backtest_stats()`, `_bt_color_for()`, `_add_backtest_traces()`, `_backtest_summary()`
-- Data loading — `load_frontier()` / `load_metr_all()` (YAML), `load_eci_frontier()` and `load_eci_compute()` (ECI CSV, with dedup + running-max frontier), `load_rli_data()`, `load_data_centers()`, `load_prinz_data()`
+- Data loading — `load_frontier()` / `load_metr_all()` (YAML), `load_eci_frontier()` and `load_eci_compute()` (ECI CSV, with dedup + running-max frontier), `load_rli_data()`, `load_data_centers()`
 - Data init + tab selector (`_TAB_OPTIONS`, `_TAB_SLUG`, `_SLUG_FOR_TAB`)
-- The nine `render_*()` functions (see table above)
+- The eight `render_*()` functions (see table above)
 - Dispatch at end of file (skipped when `_VP_TESTING=1`)
 
 ### Projection Engine (repeated per tab)
