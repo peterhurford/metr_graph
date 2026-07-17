@@ -1727,7 +1727,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     overlay_frontier=None, overlay_label=None,
                     extra_table_milestones=None, us_best_marker=None,
                     us_match_marker=None, us_match_label=None,
-                    overlay_name="US"):
+                    overlay_name="US", subject_name=None):
     if st.session_state.pop(f"_reset_{p}", False):
         for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
@@ -2278,6 +2278,33 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     xanchor='left', yanchor='middle',
                     font=dict(size=10, color='#8e44ad'))
 
+        # Third comparison marker: the benchmark model nearest where the
+        # subject's median projection sits today. Only meaningful when the
+        # benchmark actually reached that level, and skipped when it lands on
+        # a model already marked (best / current-best match).
+        if overlay_frontier is not None and us_best_marker is not None:
+            _pt_today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            _pt_idx = (_pt_today - eci_current['date']).days
+            if 0 <= _pt_idx < len(pct50):
+                _proj_today_score = float(pct50[_pt_idx])
+                _ovl_best_score = max(m['eci_score'] for m in overlay_frontier)
+                _taken = {m['name'] for m in (us_best_marker, us_match_marker) if m}
+                if _ovl_best_score >= _proj_today_score:
+                    _proj_match = min(
+                        overlay_frontier,
+                        key=lambda m: abs(m['eci_score'] - _proj_today_score))
+                    if _proj_match['display_name'] not in _taken:
+                        _add_us_dot({
+                            'date': _proj_match['date'],
+                            'score': _proj_match['eci_score'],
+                            'name': _proj_match['display_name'],
+                        }, '#a569bd', textpos='bottom center')
+                        fig.add_annotation(
+                            x=1.0, xref='paper', y=_proj_match['eci_score'],
+                            text=f"  {subject_name or 'Subject'} proj. today {_proj_today_score:.1f}",
+                            showarrow=False, xanchor='left', yanchor='middle',
+                            font=dict(size=10, color='#a569bd'))
+
     # --- Overlay trendline (e.g., US trend on the China chart) ---
     if overlay_frontier is not None and len(overlay_frontier) >= 2:
         _ovl_base = overlay_frontier[0]['date']
@@ -2608,6 +2635,11 @@ _ECI_ENTITY_SLUG = {
 _ECI_ENTITY_FOR_SLUG = {v: k for k, v in _ECI_ENTITY_SLUG.items()}
 
 
+def _eci_entity_short(label):
+    """'US best' → 'US', so composed labels don't read 'US best best 148.3'."""
+    return label[:-len(" best")] if label.endswith(" best") else label
+
+
 def _eci_entity_data(label):
     """Return (all, frontier_all, frontier_names) for a comparison entity."""
     spec = _ECI_ENTITY_SPECS[label]
@@ -2651,28 +2683,32 @@ def render_eci():
         st.query_params["b"] = _ECI_ENTITY_SLUG[entity_b]
     st.query_params.pop("region", None)  # superseded by ?a= / ?b=
 
+    # Short display names ("US best" → "US") for composed labels/titles.
+    _a_name = _eci_entity_short(entity_a)
+    _b_name = _eci_entity_short(entity_b)
+
     # No (or self-) comparison: project the benchmark itself, single-entity view.
     if entity_b == _ECI_NONE_LABEL or entity_b == entity_a:
         s_all, s_fr, s_names = _eci_entity_data(entity_a)
         if len(s_fr) < 2:
-            st.warning(f"Not enough {entity_a} models on the ECI frontier to project.")
+            st.warning(f"Not enough {_a_name} models on the ECI frontier to project.")
             return
         milestones = _ECI_US_MILESTONES if entity_a == "US best" else []
         _render_eci_tab(
             s_all, s_fr, s_names, "eci",
-            f"{entity_a} ECI Projection", milestones)
+            f"{_a_name} ECI Projection", milestones)
         return
 
     # Comparison view: project the subject (B), overlay the benchmark (A) trend.
     bench_all, bench_fr, bench_names = _eci_entity_data(entity_a)
     subj_all, subj_fr, subj_names = _eci_entity_data(entity_b)
     if len(subj_fr) < 2:
-        st.warning(f"Not enough {entity_b} models on the ECI frontier to project.")
+        st.warning(f"Not enough {_b_name} models on the ECI frontier to project.")
         return
     if len(bench_fr) < 2:
-        st.warning(f"Not enough {entity_a} models to draw a comparison trend.")
+        st.warning(f"Not enough {_a_name} models to draw a comparison trend.")
         _render_eci_tab(subj_all, subj_fr, subj_names, "eci",
-                        f"{entity_b} ECI Projection", [])
+                        f"{_b_name} ECI Projection", [])
         return
 
     # Benchmark's best model → milestone line + labeled dot at its release date.
@@ -2688,11 +2724,11 @@ def render_eci():
             bench_fr, key=lambda m: abs(m['eci_score'] - subj_current['eci_score']))
     _render_eci_tab(
         subj_all, subj_fr, subj_names, "eci",
-        f"{entity_b} ECI Projection",
-        [(bench_best['eci_score'], f"{entity_a} best {bench_best['eci_score']:.1f}", '#8e44ad')],
+        f"{_b_name} ECI Projection",
+        [(bench_best['eci_score'], f"{_a_name} best {bench_best['eci_score']:.1f}", '#8e44ad')],
         overlay_frontier=bench_fr,
-        overlay_label=f"{entity_a} trend",
-        overlay_name=entity_a,
+        overlay_label=f"{_a_name} trend",
+        overlay_name=_a_name,
         us_best_marker={
             'date': bench_best['date'],
             'score': bench_best['eci_score'],
@@ -2704,7 +2740,8 @@ def render_eci():
             'name': bench_match['display_name'],
         },
         us_match_label=(None if bench_match is None
-                        else f"{entity_b} best {subj_current['eci_score']:.1f}"),
+                        else f"{_b_name} best {subj_current['eci_score']:.1f}"),
+        subject_name=_b_name,
     )
 
 
