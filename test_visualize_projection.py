@@ -2183,3 +2183,164 @@ class TestEciMonthsBehind:
         base = datetime(2023, 1, 1)
         declining = [(base, 110, "a"), (base + timedelta(days=365), 100, "b")]
         assert np.isnan(vp._eci_months_behind(declining, 100, base))
+
+
+class TestLoadUkCyber:
+    """AISI narrow cyber tasks (digitized from the published figure)."""
+
+    def test_returns_list(self):
+        data = vp.load_ukcyber()
+        assert isinstance(data, list)
+        assert len(data) > 0
+
+    def test_models_have_required_keys(self):
+        data = vp.load_ukcyber()
+        required = {'name', 'date', 'cyber_score', 'organization',
+                    'country', 'weights', 'is_frontier'}
+        for m in data:
+            assert required.issubset(m.keys()), f"Missing keys: {required - m.keys()}"
+
+    def test_sorted_by_date(self):
+        data = vp.load_ukcyber()
+        dates = [m['date'] for m in data]
+        assert dates == sorted(dates)
+
+    def test_scores_are_percentages(self):
+        for m in vp.load_ukcyber():
+            assert 0 <= m['cyber_score'] <= 100, f"{m['name']}: {m['cyber_score']}"
+
+    def test_comment_lines_are_skipped(self):
+        """The CSV carries a provenance header of '#' comment lines."""
+        names = [m['name'] for m in vp.load_ukcyber()]
+        assert not any(n.startswith('#') for n in names)
+        assert "GLM-5.2" in names
+
+    def test_frontier_is_closed_weight_only(self):
+        """Open-weight models are the subject measured against the frontier,
+        so they must never define it."""
+        for m in vp.load_ukcyber():
+            if m['is_frontier']:
+                assert m['weights'] == 'closed', f"{m['name']} is open but frontier"
+
+    def test_frontier_is_running_max(self):
+        frontier = [m for m in vp.load_ukcyber() if m['is_frontier']]
+        scores = [m['cyber_score'] for m in frontier]
+        assert scores == sorted(scores)
+
+
+class TestUkCyberLag:
+    """Lag of open-weight models behind the closed frontier."""
+
+    def _frontier(self):
+        base = datetime(2025, 1, 1)
+        return [
+            {'name': 'A', 'date': base, 'cyber_score': 50.0},
+            {'name': 'B', 'date': base + timedelta(days=100), 'cyber_score': 60.0},
+        ]
+
+    def test_bracketing_models_are_identified(self):
+        fr = self._frontier()
+        assert vp._ukc_frontier_match_for_score(fr, 55.0)['name'] == 'B'
+        assert vp._ukc_frontier_below_for_score(fr, 55.0)['name'] == 'A'
+        assert vp._ukc_frontier_below_for_score(fr, 50.0) is None
+
+    def test_crossing_is_interpolated_between_bracketing_models(self):
+        """A score midway between two frontier models crosses midway in time."""
+        fr = self._frontier()
+        crossing, below, above = vp._ukc_frontier_crossing(fr, 55.0)
+        assert below['name'] == 'A' and above['name'] == 'B'
+        # 55 is halfway from 50 to 60, so ~50 days into the 100-day gap.
+        assert (crossing - fr[0]['date']).days == pytest.approx(50, abs=1)
+
+    def test_crossing_snaps_when_no_lower_bracket(self):
+        fr = self._frontier()
+        crossing, below, above = vp._ukc_frontier_crossing(fr, 50.0)
+        assert below is None and crossing == fr[0]['date']
+
+    def test_score_beyond_frontier_is_unmatched(self):
+        assert vp._ukc_frontier_match_for_score(self._frontier(), 99.0) is None
+        assert vp._ukc_frontier_crossing(self._frontier(), 99.0)[0] is None
+
+    def test_empty_frontier_is_unmatched(self):
+        assert vp._ukc_frontier_match_for_score([], 50.0) is None
+
+    def test_lag_rows_only_cover_open_weight_models(self):
+        rows = vp.ukc_lag_rows(vp.ukc_all, vp.ukc_frontier_all)
+        assert rows, "expected at least one open-weight model"
+        for r in rows:
+            assert r['weights'] == 'open'
+
+    def test_model_ahead_of_frontier_reports_no_lag(self):
+        models = [{'name': 'X', 'date': datetime(2025, 6, 1), 'cyber_score': 99.0,
+                   'weights': 'open', 'country': 'China', 'organization': 'Org'}]
+        row = vp.ukc_lag_rows(models, self._frontier())[0]
+        assert row['lag_months'] is None and row['match_date'] is None
+
+    def test_optimistic_bracket_reproduces_aisi_published_lags(self):
+        """AISI's figure prints 5.0mo for DeepSeek-V4-Pro and 4.3mo for GLM-5.2,
+        measured against the next model up. That is our lag_lo bound, and it
+        remains the calibration check that the digitization matches the source."""
+        by_name = {r['name']: r for r in vp.ukc_lag_rows(vp.ukc_all, vp.ukc_frontier_all)}
+        assert by_name['DeepSeek-V4-Pro']['lag_lo'] == pytest.approx(5.0, abs=0.15)
+        assert by_name['GLM-5.2']['lag_lo'] == pytest.approx(4.3, abs=0.15)
+
+    def test_reproduces_aisi_comparison_models(self):
+        """AISI drew its annotations against these specific models."""
+        by_name = {r['name']: r for r in vp.ukc_lag_rows(vp.ukc_all, vp.ukc_frontier_all)}
+        assert by_name['DeepSeek-V4-Pro']['above_name'] == 'Opus 4.5'
+        assert by_name['GLM-5.2']['above_name'] == 'Claude Opus 4.6'
+
+    def test_point_estimate_sits_inside_the_bracket(self):
+        """Interpolated lag must fall between the optimistic and pessimistic ends."""
+        for r in vp.ukc_lag_rows(vp.ukc_all, vp.ukc_frontier_all):
+            assert r['lag_lo'] <= r['lag_months'] <= r['lag_hi'], r['name']
+
+    def test_interpolation_does_not_equate_distant_scores(self):
+        """The point of interpolating: DeepSeek (55.7%) must not be credited with
+        Opus 4.5's 62.6%, which would understate its lag."""
+        by_name = {r['name']: r for r in vp.ukc_lag_rows(vp.ukc_all, vp.ukc_frontier_all)}
+        ds = by_name['DeepSeek-V4-Pro']
+        assert ds['below_name'] == 'GPT-5' and ds['above_name'] == 'Opus 4.5'
+        assert ds['lag_months'] > ds['lag_lo'] + 1.0
+        assert ds['lag_months'] == pytest.approx(7.4, abs=0.2)
+
+    def test_digitized_dates_match_known_releases(self):
+        """Dates are inferred from marker x-positions, so guard the calibration."""
+        by_name = {m['name']: m for m in vp.ukc_all}
+        assert abs((by_name['GPT-5']['date'] - datetime(2025, 8, 7)).days) <= 3
+        assert abs((by_name['Opus 3']['date'] - datetime(2024, 3, 4)).days) <= 3
+
+
+class TestUkCyberTargetEta:
+    """When open-weight models reach the 90% target."""
+
+    def test_eta_is_frontier_crossing_plus_lag(self):
+        eta = vp.ukc_target_eta(vp.ukc_all, vp.ukc_frontier_all, 90.0)
+        assert eta is not None
+        # 90% falls between Mythos Preview (88.8%) and Claude Mythos 5 (90.3%).
+        assert eta['frontier_between'] == ('Mythos Preview', 'Claude Mythos 5')
+        # Bounds are the crossing date offset by the min/max measured lag.
+        assert eta['date_lo'] > eta['frontier_date']
+        assert eta['date_hi'] > eta['date_lo']
+        assert eta['lag_lo'] == pytest.approx(4.7, abs=0.2)
+        assert eta['lag_hi'] == pytest.approx(7.4, abs=0.2)
+
+    def test_eta_bounds_match_lag_offsets(self):
+        eta = vp.ukc_target_eta(vp.ukc_all, vp.ukc_frontier_all, 90.0)
+        lo_days = (eta['date_lo'] - eta['frontier_date']).days
+        assert lo_days == pytest.approx(eta['lag_lo'] * vp._UKC_DAYS_PER_MONTH, abs=1)
+
+    def test_unreachable_target_returns_none(self):
+        assert vp.ukc_target_eta(vp.ukc_all, vp.ukc_frontier_all, 99.9) is None
+
+    def test_direct_extrapolation_is_a_sanity_check(self):
+        """Two-point fit is fragile but should land in the same rough season as
+        the lag-based estimate, not years away."""
+        eta = vp.ukc_target_eta(vp.ukc_all, vp.ukc_frontier_all, 90.0)
+        direct = vp.ukc_target_eta_direct(vp.ukc_all, 90.0)
+        assert direct is not None
+        assert abs((direct - eta['date_lo']).days) < 180
+
+    def test_direct_needs_two_open_models(self):
+        one = [m for m in vp.ukc_all if m['weights'] == 'open'][:1]
+        assert vp.ukc_target_eta_direct(one, 90.0) is None

@@ -790,3 +790,72 @@ class TestComputeVsCapabilities:
         at.button(key="cc_reset").click().run()
         _assert_no_error(at, "after cc reset")
         assert at.checkbox(key="cc_future").value is True
+
+
+# ===========================================================================
+# UK Cyber (AISI narrow cyber tasks)
+# ===========================================================================
+
+class TestUkCyberTab:
+    """Frontier projection + open-weight lag."""
+
+    def _ukc_app(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "UK Cyber")
+        return at
+
+    def test_renders(self):
+        at = self._ukc_app()
+        _assert_no_error(at, "UK Cyber / default")
+
+    def test_deep_link_slug(self):
+        at = _fresh_app()
+        at.query_params["tab"] = "ukcyber"
+        at.run()
+        _assert_no_error(at, "UK Cyber / deep link")
+        assert at.session_state["_active_tab"] == "UK Cyber"
+
+    def test_piecewise(self):
+        at = self._ukc_app()
+        at.radio(key="ukc_proj_basis").set_value("Piecewise linear (logit)").run()
+        _assert_no_error(at, "UK Cyber / Piecewise linear (logit)")
+
+    def test_superexp(self):
+        at = self._ukc_app()
+        at.radio(key="ukc_proj_basis").set_value("Superexponential (logit)").run()
+        _assert_no_error(at, "UK Cyber / Superexponential (logit)")
+
+    def test_backtest_vantage_point(self):
+        at = self._ukc_app()
+        at.selectbox(key="_ukc_proj_as_of").set_value("GPT-5").run()
+        _assert_no_error(at, "UK Cyber / backtest from GPT-5")
+
+    def test_toggles(self):
+        at = self._ukc_app()
+        at.toggle(key="ukc_show_open").set_value(False).run()
+        _assert_no_error(at, "UK Cyber / open-weight hidden")
+        at.toggle(key="ukc_show_lag").set_value(False).run()
+        _assert_no_error(at, "UK Cyber / lag markers hidden")
+
+    def test_target_eta_is_shown(self):
+        """The headline output is when open-weight models reach the target."""
+        at = self._ukc_app()
+        labels = [m.label for m in at.metric]
+        assert "China reaches 90%" in labels
+        assert "Measured open-weight lag" in labels
+        lag = [m for m in at.metric if m.label == "Measured open-weight lag"][0]
+        assert lag.value == "4.7–7.4 mo"
+
+    def test_confound_caveat_is_surfaced(self):
+        """Country and openness are confounded; the UI must say so wherever it
+        says "China"."""
+        at = self._ukc_app()
+        assert any("cannot be separated" in c.value for c in at.caption)
+
+    def test_reset(self):
+        at = self._ukc_app()
+        at.toggle(key="ukc_show_lag").set_value(False).run()
+        at.button(key="reset_ukc").click().run()
+        _assert_no_error(at, "after UK Cyber reset")
+        assert at.toggle(key="ukc_show_lag").value is True

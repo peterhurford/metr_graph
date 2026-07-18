@@ -1,0 +1,25 @@
+# AISI narrow cyber tasks -- average success rate on 70 tasks, 5 attempts/task, 2.5M token limit/attempt.
+# SOURCE: https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber (Figure 1)
+# PROVENANCE: AISI publishes NO numeric data for this figure. Every value below was digitized from the
+#   published PNG (fig1-narrow.png) by pixel analysis, not read from a table. Treat as approximate.
+# CALIBRATION: y-axis 0%=row1760, 100%=row547. x-axis ticks Aug2024=601.5px, Feb2025=1010.0px,
+#   Aug2025=1411.0px, Feb2026=1819.5px; linear fit 0.45080 days/px, residuals <=0.11px.
+# VALIDATION: derived dates match known releases (GPT-5 2025-08-07 exact; Opus 3 off by 1d; o3 off by 1d).
+#   Derived lags reproduce AISI's printed annotations: GLM-5.2 vs Opus 4.6 = 4.30mo (chart "4.3 mo");
+#   DeepSeek-V4-Pro vs Opus 4.5 = 5.06mo (chart "5.0 mo").
+# CAVEAT: date_source=chart means the date is inferred from marker x-position, NOT a published release date.
+# CAVEAT: this figure contains NO US open-weight and NO Chinese closed models, so country and
+#   weights are perfectly confounded -- see notes in render_ukcyber().
+model,date,date_source,success_rate,organization,country,weights
+Opus 3,2024-03-03,chart,18.3,Anthropic,US,closed
+o1,2024-12-16,chart,28.8,OpenAI,US,closed
+o3,2025-04-15,chart,39.4,OpenAI,US,closed
+GPT-5,2025-08-07,chart,52.5,OpenAI,US,closed
+Opus 4.5,2025-11-21,chart,62.6,Anthropic,US,closed
+GPT-5.2-Codex,2025-12-18,chart,64.8,OpenAI,US,closed
+Claude Opus 4.6,2026-02-05,chart,74.8,Anthropic,US,closed
+Mythos Preview,2026-04-07,chart,88.8,Anthropic,US,closed
+DeepSeek-V4-Pro,2026-04-24,chart,55.7,DeepSeek,China,open
+Claude Mythos 5,2026-06-09,chart,90.3,Anthropic,US,closed
+GLM-5.2,2026-06-16,chart,72.5,Zhipu AI,China,open
+GPT-5.6-Sol,2026-06-26,chart,92.8,OpenAI,US,closed

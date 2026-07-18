@@ -510,6 +510,233 @@ def load_rli_data():
     return models
 
 
+# ── AISI narrow cyber tasks ──────────────────────────────────────────────
+# Average success rate on 70 of AISI's narrow cyber tasks. Unlike every other
+# feed in this app, AISI publishes no numbers for this chart -- the values in
+# aisi_cyber_narrow.csv were digitized from the published figure by pixel
+# analysis. See the CSV header for calibration and validation details, and
+# _UKC_PROVENANCE below for the caveat surfaced in the UI.
+
+_UKC_PROVENANCE = (
+    "Values digitized from AISI's published figure by pixel analysis — AISI releases "
+    "no underlying numbers for this chart. Dates are inferred from marker positions, not "
+    "published release dates. Calibration reproduces AISI's own printed lag annotations "
+    "(4.3mo, 5.0mo) to within 0.1 month, and derived dates match known releases to within "
+    "~1 day, but treat all values as approximate."
+)
+
+# The figure contains only closed-weight US models and open-weight Chinese
+# models -- no US open-weight, no Chinese closed. Country and openness are
+# therefore perfectly confounded, so the frontier is defined by weights
+# (the published framing) rather than by country. The two Chinese models here
+# are also the only open-weight ones, so "China" and "open-weight" name the same
+# two points -- worth stating wherever the tab says "China". Folded into the
+# fine-print caption.
+_UKC_CONFOUND_PLAIN = (
+    "\"China\" here means the two Chinese open-weight models in AISI's figure; it contains "
+    "no US open-weight and no Chinese closed-weight models, so country and openness cannot "
+    "be separated in this data."
+)
+
+
+def _ukc_mtime():
+    p = os.path.join(os.path.dirname(__file__), 'aisi_cyber_narrow.csv')
+    return os.path.getmtime(p)
+
+
+@st.cache_data
+def load_ukcyber(_mtime=None):
+    """Load digitized AISI narrow-cyber-task success rates.
+
+    Returns models sorted by date, each flagged `is_frontier` if it set a new
+    running-max success rate among closed-weight models.
+    """
+    csv_path = os.path.join(os.path.dirname(__file__), 'aisi_cyber_narrow.csv')
+    with open(csv_path, 'r') as f:
+        lines = [ln for ln in f if not ln.lstrip().startswith('#')]
+    reader = csv.DictReader(lines)
+
+    models = []
+    for r in reader:
+        score_str = (r.get('success_rate') or '').strip()
+        date_str = (r.get('date') or '').strip()
+        if not score_str or not date_str:
+            continue
+        try:
+            score = float(score_str)
+            date = datetime.strptime(date_str, '%Y-%m-%d')
+        except (ValueError, TypeError):
+            continue
+        models.append({
+            'name': (r.get('model') or '').strip(),
+            'date': date,
+            'cyber_score': score,
+            'organization': (r.get('organization') or '').strip(),
+            'country': (r.get('country') or '').strip(),
+            'weights': (r.get('weights') or '').strip().lower(),
+        })
+    models.sort(key=lambda m: m['date'])
+
+    # Frontier = running max among closed-weight models. Open-weight models are
+    # the subject being measured against it, so they never define it.
+    max_score = -float('inf')
+    for m in models:
+        if m['weights'] == 'closed' and m['cyber_score'] > max_score:
+            max_score = m['cyber_score']
+            m['is_frontier'] = True
+        else:
+            m['is_frontier'] = False
+
+    return models
+
+
+def _ukc_frontier_match_for_score(frontier, score):
+    """First closed-frontier model that matched or beat `score`.
+
+    This is the *optimistic* end of the lag bracket -- see
+    `_ukc_frontier_crossing`. AISI's published annotations use this convention,
+    so it is also the calibration check on the digitization.
+
+    Returns None if no frontier model reaches it (the model is ahead, not behind).
+    """
+    for m in frontier:
+        if m['cyber_score'] >= score:
+            return m
+    return None
+
+
+def _ukc_frontier_below_for_score(frontier, score):
+    """Last closed-frontier model still *below* `score` (pessimistic bracket end)."""
+    below = [m for m in frontier if m['cyber_score'] < score]
+    return below[-1] if below else None
+
+
+def _ukc_frontier_crossing(frontier, score):
+    """Date the closed frontier reached `score`, interpolated between the two
+    bracketing released models.
+
+    Snapping to the next model up would equate scores that are far apart:
+    DeepSeek-V4-Pro's 55.7% sits in a 10-point gap between GPT-5 (52.5%,
+    Aug 2025) and Opus 4.5 (62.6%, Nov 2025). Calling it "as good as Opus 4.5"
+    credits it with ~7 points it does not have and understates its lag by
+    ~2.4 months. Interpolating places the crossing where the frontier plausibly
+    passed that level instead.
+
+    The honest caveat is that no model was released in that gap, so the crossing
+    date is an estimate; `ukc_lag_rows` carries the bracketing models alongside
+    it so the width of that uncertainty stays visible.
+
+    Returns (crossing_date, below_model, above_model); crossing_date is None if
+    the frontier never reaches the score.
+    """
+    above = _ukc_frontier_match_for_score(frontier, score)
+    if above is None:
+        return None, None, None
+    below = _ukc_frontier_below_for_score(frontier, score)
+    if below is None:
+        # Score is at or under the first frontier point -- nothing to interpolate.
+        return above['date'], None, above
+    span = above['cyber_score'] - below['cyber_score']
+    if span <= 0:
+        return above['date'], below, above
+    frac = (score - below['cyber_score']) / span
+    crossing = below['date'] + timedelta(
+        days=(above['date'] - below['date']).days * frac)
+    return crossing, below, above
+
+
+_UKC_DAYS_PER_MONTH = 30.44
+
+
+def ukc_lag_rows(models, frontier):
+    """Lag of each open-weight model behind the closed frontier.
+
+    `lag_months` is the point estimate, from the interpolated crossing.
+    `lag_lo`/`lag_hi` bracket it using the two models the score falls between:
+    the lower bound credits the open model with matching the stronger model
+    above it, the upper bound only credits it with beating the weaker model
+    below. No model was released between them, so that width is real
+    uncertainty rather than noise.
+    """
+    rows = []
+    for m in models:
+        if m['weights'] != 'open':
+            continue
+        crossing, below, above = _ukc_frontier_crossing(frontier, m['cyber_score'])
+        if crossing is None:
+            rows.append({**m, 'match_date': None, 'below_name': None,
+                         'above_name': None, 'lag_days': None, 'lag_months': None,
+                         'lag_lo': None, 'lag_hi': None})
+            continue
+        lag_days = (m['date'] - crossing).days
+        rows.append({
+            **m,
+            'match_date': crossing,
+            'below_name': below['name'] if below else None,
+            'above_name': above['name'] if above else None,
+            'lag_days': lag_days,
+            'lag_months': lag_days / _UKC_DAYS_PER_MONTH,
+            'lag_lo': (m['date'] - above['date']).days / _UKC_DAYS_PER_MONTH if above else None,
+            'lag_hi': (m['date'] - below['date']).days / _UKC_DAYS_PER_MONTH if below else None,
+        })
+    return rows
+
+
+_UKC_TARGET = 90.0
+
+
+def ukc_target_eta(models, frontier, target=_UKC_TARGET):
+    """When do open-weight models reach `target`% success?
+
+    Modelled as the closed frontier's crossing date plus the measured
+    open-weight lag -- the same frontier+lag structure the tab is built on,
+    and the only approach the data supports. Fitting a trend through the
+    open-weight points alone would extrapolate from two models released 53
+    days apart; see `ukc_target_eta_direct` for that as a cross-check.
+
+    Returns None if the frontier never reaches the target.
+    """
+    crossing, below, above = _ukc_frontier_crossing(frontier, target)
+    if crossing is None:
+        return None
+    lags = [r['lag_months'] for r in ukc_lag_rows(models, frontier)
+            if r['lag_months'] is not None]
+    if not lags:
+        return None
+    lag_lo, lag_hi = min(lags), max(lags)
+    return {
+        'target': target,
+        'frontier_date': crossing,
+        'frontier_between': (below['name'] if below else None,
+                             above['name'] if above else None),
+        'lag_lo': lag_lo,
+        'lag_hi': lag_hi,
+        'date_lo': crossing + timedelta(days=lag_lo * _UKC_DAYS_PER_MONTH),
+        'date_hi': crossing + timedelta(days=lag_hi * _UKC_DAYS_PER_MONTH),
+    }
+
+
+def ukc_target_eta_direct(models, target=_UKC_TARGET):
+    """Cross-check: extrapolate the open-weight points themselves, in logit space.
+
+    Deliberately not the headline -- with only two open-weight models this
+    slope is very sensitive to either point. Useful only to check the
+    lag-based estimate lands in the same season.
+    """
+    open_models = sorted([m for m in models if m['weights'] == 'open'],
+                         key=lambda m: m['date'])
+    if len(open_models) < 2:
+        return None
+    base = open_models[0]['date']
+    days = np.array([(m['date'] - base).days for m in open_models], dtype=float)
+    lg = _logit(np.array([m['cyber_score'] / 100 for m in open_models]))
+    params = fit_line(days, lg)
+    if params[1] <= 0:
+        return None
+    needed = (_logit(target / 100) - params[0]) / params[1]
+    return base + timedelta(days=float(needed))
+
+
 # ── Data center data (Epoch AI Frontier Data Centers) ────────────────────
 
 import bisect
@@ -800,11 +1027,15 @@ rli_frontier_names = [m['name'] for m in rli_frontier_all]
 
 dc_all = load_data_centers(_mtime=_dc_mtime())
 
+ukc_all = load_ukcyber(_mtime=_ukc_mtime())
+ukc_frontier_all = [m for m in ukc_all if m['is_frontier']]
+ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
+
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "Employment", "Revenue", "Data Centers", "Compute vs Capabilities"]
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute vs Capabilities": "computecap"}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "UK Cyber", "Employment", "Revenue", "Data Centers", "Compute vs Capabilities"]
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "UK Cyber": "ukcyber", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute vs Capabilities": "computecap"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 
 # Read ?tab= from URL for deep-linking
@@ -3532,6 +3763,471 @@ def render_rli():
             st.table(arrival_rows)
 
     st.caption("Fine print: RLI = Remote Labor Index (remotelabor.ai). Projections use logit-space fitting to keep scores bounded 0\u2013100%." + PROJ_DISCLAIMER)
+
+
+# ── UK Cyber (AISI narrow cyber tasks) ───────────────────────────────────
+
+_UKC_RESET_KEYS = [
+    "ukc_proj_basis", "ukc_custom_dt_lo", "ukc_custom_dt_hi",
+    "ukc_custom_pos_lo", "ukc_custom_pos_hi", "ukc_custom_dt_dist",
+    "ukc_piecewise_n_seg", "ukc_bp1_select",
+    "ukc_superexp_halflife", "ukc_superexp_dt_floor",
+    "ukc_superexp_dt_ci_lo", "ukc_superexp_dt_ci_hi",
+    "ukc_labels", "ukc_show_open", "ukc_show_lag",
+    "_ukc_proj_as_of", "ukc_end_year", "_ukc_seg_config",
+]
+
+_UKC_DEFAULTS = {
+    "ukc_proj_basis": "Linear (logit)",
+    "ukc_piecewise_n_seg": 1,
+    "ukc_custom_dt_dist": "Lognormal",
+    "ukc_labels": True,
+    "ukc_show_open": True,
+    "ukc_show_lag": True,
+    "ukc_end_year": 2027,
+}
+
+# Open-weight models are coloured by country so the confound stays visible.
+# Deliberately not blue: the closed frontier already owns #4F8DFD, and the
+# open-vs-closed contrast is the whole point of the tab.
+_UKC_OPEN_COLORS = {"China": "#8e44ad", "US": "#e67e22"}
+
+
+def render_ukcyber():
+    if st.session_state.pop("_reset_ukc", False):
+        for k in _UKC_RESET_KEYS:
+            st.session_state.pop(k, None)
+        st.session_state.update(_UKC_DEFAULTS)
+        st.rerun()
+
+    for k, v in _UKC_DEFAULTS.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+    # ── Sidebar ──────────────────────────────────────────────────────────
+    with st.sidebar:
+        st.header("Cyber Projection")
+
+        ukc_as_of_name = st.session_state.get('_ukc_proj_as_of', ukc_frontier_names[-1])
+        if ukc_as_of_name not in ukc_frontier_names:
+            ukc_as_of_name = ukc_frontier_names[-1]
+        ukc_as_of_idx = ukc_frontier_names.index(ukc_as_of_name)
+
+        ukc_basis = st.radio(
+            "Projection basis",
+            ["Linear (logit)", "Piecewise linear (logit)", "Superexponential (logit)"],
+            key="ukc_proj_basis",
+            help="All projections fit in logit space so success rates stay bounded 0–100%.")
+        ukc_is_superexp = ukc_basis == "Superexponential (logit)"
+
+        # Pre-fit the closed frontier for data-driven CI defaults.
+        _ukc_fr_used = ukc_frontier_all[:ukc_as_of_idx + 1]
+        _ukc_base = ukc_frontier_all[0]['date']
+        _ukc_days = np.array([(m['date'] - _ukc_base).days for m in _ukc_fr_used], dtype=float)
+        _ukc_logit = _logit(np.array([m['cyber_score'] / 100 for m in _ukc_fr_used]))
+        _ukc_params = fit_line(_ukc_days, _ukc_logit) if len(_ukc_fr_used) >= 2 else np.array([0.0, 0.007])
+        _ukc_ols_dt = round(np.log(2) / _ukc_params[1]) if _ukc_params[1] > 0 else 100
+
+        ukc_bps = []
+        ukc_n_segments = 1
+        ukc_dt_lo = ukc_dt_hi = None
+        ukc_pos_lo = ukc_pos_hi = None
+        ukc_dt_dist = "Lognormal"
+        ukc_halflife = ukc_dt_floor = None
+        ukc_se_dt_lo = ukc_se_dt_hi = None
+
+        _ukc_names_used = [m['name'] for m in _ukc_fr_used]
+
+        with st.expander("Advanced options"):
+            st.button("Reset to defaults", key="reset_ukc",
+                      on_click=lambda: st.session_state.update(_reset_ukc=True))
+
+            if ukc_basis == "Piecewise linear (logit)":
+                if st.session_state.get("ukc_piecewise_n_seg", 1) < 2:
+                    st.session_state["ukc_piecewise_n_seg"] = 2
+                _seg_opts = [2, 3] if len(_ukc_names_used) >= 5 else [2]
+                ukc_n_segments = st.radio("Segments", _seg_opts, horizontal=True,
+                                          key="ukc_piecewise_n_seg")
+                if len(_ukc_names_used) >= 3:
+                    _bp_choices = _ukc_names_used[1:-1] or _ukc_names_used[1:]
+                    _bp1 = st.selectbox("Breakpoint", _bp_choices,
+                                        index=len(_bp_choices) // 2, key="ukc_bp1_select")
+                    ukc_bps.append(_bp1)
+            else:
+                st.session_state.pop("ukc_piecewise_n_seg", None)
+
+            # Slope defaults come from the last segment actually being extrapolated.
+            _seg_start = _ukc_names_used.index(ukc_bps[-1]) if ukc_bps and ukc_bps[-1] in _ukc_names_used else 0
+            _seg_days, _seg_logit = _ukc_days[_seg_start:], _ukc_logit[_seg_start:]
+            if len(_seg_days) >= 2:
+                _seg_params = fit_line(_seg_days, _seg_logit)
+                _seg_dt = round(np.log(2) / _seg_params[1]) if _seg_params[1] > 0 else _ukc_ols_dt
+            else:
+                _seg_dt = _ukc_ols_dt
+
+            # Reset slope CIs when the segmentation changes under them.
+            _seg_config = (ukc_basis, ukc_n_segments, tuple(ukc_bps))
+            if st.session_state.get("_ukc_seg_config") != _seg_config:
+                st.session_state["_ukc_seg_config"] = _seg_config
+                st.session_state.pop("ukc_custom_dt_lo", None)
+                st.session_state.pop("ukc_custom_dt_hi", None)
+
+            _cur_score = _ukc_fr_used[-1]['cyber_score']
+
+            if ukc_is_superexp:
+                _c1, _c2 = st.columns(2)
+                ukc_halflife = _ss_number_input(_c1, "Rate half-life (days)",
+                    "ukc_superexp_halflife", 365, min_value=30, max_value=5000, step=30,
+                    help="How quickly the rate accelerates. Lower = faster.")
+                ukc_dt_floor = _ss_number_input(_c2, "Min odds 2x time (days)",
+                    "ukc_superexp_dt_floor", 15.0, min_value=1.0, max_value=500.0, step=1.0,
+                    help="Rate can't exceed this. Prevents runaway projections.")
+                _s1, _s2 = st.columns(2)
+                ukc_se_dt_lo = _ss_number_input(_s1, "Odds 2x CI low (days)",
+                    "ukc_superexp_dt_ci_lo", float(round(max(5.0, _seg_dt / 2))),
+                    min_value=5.0, max_value=2000.0, step=5.0)
+                ukc_se_dt_hi = _ss_number_input(_s2, "Odds 2x CI high (days)",
+                    "ukc_superexp_dt_ci_hi", float(round(_seg_dt * 2)),
+                    min_value=5.0, max_value=5000.0, step=5.0)
+                if ukc_se_dt_lo > ukc_se_dt_hi:
+                    st.error("Odds 2x CI low must be ≤ CI high.")
+                    st.stop()
+            else:
+                _d1, _d2 = st.columns(2)
+                ukc_dt_lo = _ss_number_input(_d1, "Odds 2x time CI low (days)",
+                    "ukc_custom_dt_lo", float(round(max(5.0, _seg_dt / 2))),
+                    min_value=5.0, max_value=2000.0, step=5.0,
+                    help="Fast scenario: days for the odds p/(1-p) to double.")
+                ukc_dt_hi = _ss_number_input(_d2, "Odds 2x time CI high (days)",
+                    "ukc_custom_dt_hi", float(round(_seg_dt * 2)),
+                    min_value=5.0, max_value=5000.0, step=5.0,
+                    help="Slow scenario: days for the odds to double.")
+                if ukc_dt_lo > ukc_dt_hi:
+                    st.error("Odds 2x CI low must be ≤ CI high.")
+                    st.stop()
+                ukc_dt_dist = st.radio("Trend distribution",
+                    ["Normal", "Lognormal", "Log-log"], horizontal=True,
+                    key="ukc_custom_dt_dist")
+
+            _p1, _p2 = st.columns(2)
+            ukc_pos_lo = _ss_number_input(_p1, "Pos CI low (%)", "ukc_custom_pos_lo",
+                round(max(_cur_score - 2.0, 0.1), 2), min_value=0.01, max_value=99.9, step=0.1)
+            ukc_pos_hi = _ss_number_input(_p2, "Pos CI high (%)", "ukc_custom_pos_hi",
+                round(min(_cur_score + 2.0, 99.9), 2), min_value=0.02, max_value=99.99, step=0.1)
+            if ukc_pos_lo > ukc_pos_hi:
+                st.error("Position CI low must be ≤ CI high.")
+                st.stop()
+
+        st.markdown("---")
+        ukc_show_labels = st.toggle("Labels", key="ukc_labels")
+        ukc_show_open = st.toggle("Open-weight models", key="ukc_show_open")
+        ukc_show_lag = st.toggle("Lag markers", key="ukc_show_lag")
+
+        st.markdown("---")
+        with st.expander("Projection range"):
+            st.selectbox("Project as of", ukc_frontier_names,
+                         index=ukc_as_of_idx, key='_ukc_proj_as_of',
+                         help="Backtest: project from an earlier model's vantage point.")
+            ukc_end_year = st.radio("Project through", [2026, 2027, 2028, 2029],
+                                    horizontal=True, key="ukc_end_year")
+
+    # ── Fit ──────────────────────────────────────────────────────────────
+    frontier_used = ukc_frontier_all[:ukc_as_of_idx + 1]
+    base_date = ukc_frontier_all[0]['date']
+    days_used = np.array([(m['date'] - base_date).days for m in frontier_used], dtype=float)
+    logit_used = _logit(np.array([m['cyber_score'] / 100 for m in frontier_used]))
+    n_samples = 5000
+
+    _names_used = [m['name'] for m in frontier_used]
+    _break_idxs = [_names_used.index(b) for b in ukc_bps if b in _names_used]
+    _last_seg_start = _break_idxs[-1] if _break_idxs else 0
+
+    current = frontier_used[-1]
+    current_day = (current['date'] - base_date).days
+
+    if ukc_is_superexp:
+        z = 2 ** (days_used / ukc_halflife)
+        X = np.column_stack([np.ones_like(z), z])
+        (se_A, se_K), *_ = np.linalg.lstsq(X, logit_used, rcond=None)
+        fitted_logit = se_A + se_K * 2 ** (current_day / ukc_halflife)
+        proj_dt = _lognormal_from_ci(ukc_se_dt_lo, ukc_se_dt_hi, n_samples)
+    else:
+        _fit_days = days_used[_last_seg_start:]
+        _fit_logit = logit_used[_last_seg_start:]
+        if len(_fit_days) < 2:
+            _fit_days, _fit_logit = days_used, logit_used
+        seg_params = fit_line(_fit_days, _fit_logit)
+        fitted_logit = seg_params[0] + seg_params[1] * current_day
+        if ukc_dt_dist == "Log-log":
+            proj_dt = _log_lognormal_from_ci(ukc_dt_lo, ukc_dt_hi, n_samples)
+        elif ukc_dt_dist == "Lognormal":
+            proj_dt = _lognormal_from_ci(ukc_dt_lo, ukc_dt_hi, n_samples)
+        else:
+            proj_dt = _normal_from_ci(ukc_dt_lo, ukc_dt_hi, n_samples)
+
+    proj_logit_slope = np.log(2) / proj_dt
+
+    # Position uncertainty, sampled in logit space so it respects the bound.
+    _pos_lo_logit, _pos_hi_logit = _logit(ukc_pos_lo / 100), _logit(ukc_pos_hi / 100)
+    _pos_sigma = max((_pos_hi_logit - _pos_lo_logit) / (2 * 1.282), 0)
+    start_logit = np.random.normal(fitted_logit, _pos_sigma, n_samples)
+
+    # ── Trajectories ─────────────────────────────────────────────────────
+    proj_end_date = datetime(ukc_end_year, 12, 31)
+    proj_n_days = max((proj_end_date - current['date']).days + 1, 2)
+    proj_days_arr = np.arange(0, proj_n_days, 1)
+    proj_dates = [current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
+
+    if ukc_is_superexp:
+        logit_traj = start_logit[:, None] + np.log(2) * superexp_trajectory(
+            proj_days_arr, proj_dt, ukc_halflife, ukc_dt_floor)
+    else:
+        logit_traj = start_logit[:, None] + proj_days_arr[None, :] * proj_logit_slope[:, None]
+    all_trajectories = _inv_logit(logit_traj) * 100
+
+    pct = {p: np.percentile(all_trajectories, p, axis=0) for p in (5, 10, 25, 50, 75, 90, 95)}
+
+    # ── Chart ────────────────────────────────────────────────────────────
+    st.header("AISI Narrow Cyber Tasks — open-weight lag behind the closed frontier")
+
+    fig = go.Figure()
+
+    for lo, hi, color, label in [
+        (pct[5], pct[95], 'rgba(52,152,219,0.10)', '90% CI'),
+        (pct[10], pct[90], 'rgba(52,152,219,0.18)', '80% CI'),
+        (pct[25], pct[75], 'rgba(52,152,219,0.28)', '50% CI'),
+    ]:
+        fig.add_trace(go.Scatter(
+            x=proj_dates + proj_dates[::-1],
+            y=list(hi) + list(lo[::-1]),
+            fill='toself', fillcolor=color, line=dict(width=0),
+            name=label, hoverinfo='skip', showlegend=True,
+        ))
+
+    # Historical OLS through the fitted segment, then the projected slope.
+    if not ukc_is_superexp:
+        _d0, _d1x = int(_fit_days[0]), int(_fit_days[-1])
+        _hd = np.arange(_d0, _d1x + 1, 1)
+        _hy = _inv_logit(seg_params[0] + seg_params[1] * _hd) * 100
+        _seg_dt_disp = np.log(2) / seg_params[1] if seg_params[1] > 0 else float('inf')
+        _hdates = [base_date + timedelta(days=int(d)) for d in _hd]
+        fig.add_trace(go.Scatter(
+            x=_hdates, y=_hy.tolist(),
+            mode='lines', line=dict(color='#2c3e50', width=2.5),
+            name=f'Fitted trend (2x odds: {_seg_dt_disp:.0f}d)',
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Fitted trend: {y:.1f}%"
+                       f"<br>Odds 2x: {_seg_dt_disp:.0f}d"
+                       for d, y in zip(_hdates, _hy)],
+            hoverinfo='text',
+        ))
+
+    fig.add_trace(go.Scatter(
+        x=proj_dates, y=pct[50].tolist(),
+        mode='lines', line=dict(color='#2980b9', width=2.5),
+        name='Projection (median)',
+        hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {v:.1f}%"
+                   for d, v in zip(proj_dates, pct[50])],
+        hoverinfo='text',
+    ))
+
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
+    fig.add_annotation(x=today, y=1.0, yref='paper', text='Today', showarrow=False,
+                       font=dict(size=10, color='gray'), yanchor='top')
+
+    # Target threshold the ETA below is measured against.
+    fig.add_hline(y=_UKC_TARGET, line=dict(color='#e74c3c', width=1.5, dash='dot'),
+                  opacity=0.8)
+    fig.add_annotation(x=1.0, xref='paper', y=_UKC_TARGET, text=f'{_UKC_TARGET:.0f}%',
+                       showarrow=False, xanchor='right', yanchor='bottom',
+                       font=dict(size=10, color='#e74c3c'))
+
+    # Backtesting against later frontier models.
+    is_backtesting = ukc_as_of_idx < len(ukc_frontier_all) - 1
+    backtest_results = []
+    _bt_lookup = {}
+    if is_backtesting:
+        backtest_results = _backtest_stats(
+            ukc_frontier_all[ukc_as_of_idx + 1:], all_trajectories,
+            current['date'], proj_end_date,
+            lambda m: m['cyber_score'], lambda m: m['name'])
+        _bt_lookup = {r['name']: r for r in backtest_results}
+
+    # Closed models that never set the frontier.
+    for m in ukc_all:
+        if m['is_frontier'] or m['weights'] != 'closed':
+            continue
+        fig.add_trace(go.Scatter(
+            x=[m['date']], y=[m['cyber_score']],
+            mode='markers' + ('+text' if ukc_show_labels else ''),
+            marker=dict(color='#aaaaaa', size=7, symbol='circle-open',
+                        line=dict(color='#bbbbbb', width=1)),
+            text=[m['name']] if ukc_show_labels else None,
+            textposition='top right', textfont=dict(size=8, color='#bbbbbb'),
+            hovertext=f"{m['name']}<br>{m['date'].strftime('%b %d, %Y')}<br>"
+                      f"Success: {m['cyber_score']:.1f}%<br>{m['organization']} · closed",
+            hoverinfo='text', showlegend=False,
+        ))
+
+    # The closed frontier itself.
+    for idx_m, m in enumerate(ukc_frontier_all):
+        hover = (f"{m['name']}<br>{m['date'].strftime('%b %d, %Y')}<br>"
+                 f"Success: {m['cyber_score']:.1f}%<br>{m['organization']} · closed")
+        if idx_m <= ukc_as_of_idx:
+            is_sel = idx_m == ukc_as_of_idx
+            fig.add_trace(go.Scatter(
+                x=[m['date']], y=[m['cyber_score']],
+                mode='markers' + ('+text' if ukc_show_labels else ''),
+                marker=dict(color='#e74c3c' if is_sel else '#4F8DFD',
+                            size=14 if is_sel else 10,
+                            symbol='star' if is_sel else 'circle',
+                            line=dict(color='white', width=1)),
+                text=[m['name']] if ukc_show_labels else None,
+                textposition='top right',
+                textfont=dict(size=9, color='#c0392b' if is_sel else '#1a1a2e'),
+                hovertext=hover, hoverinfo='text', showlegend=False,
+            ))
+        elif m['name'] in _bt_lookup:
+            r = _bt_lookup[m['name']]
+            _c = _bt_color_for(r)
+            fig.add_trace(go.Scatter(
+                x=[m['date']], y=[m['cyber_score']],
+                mode='markers+text',
+                marker=dict(color=_c, size=12, symbol='diamond',
+                            line=dict(color='white', width=1)),
+                text=[f"{m['name']} (p{r['percentile']:.0f})"],
+                textposition='top right', textfont=dict(size=9, color=_c),
+                hovertext=hover + f"<br>Percentile: {r['percentile']:.0f}%",
+                hoverinfo='text', showlegend=False,
+            ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=[m['date']], y=[m['cyber_score']],
+                mode='markers' + ('+text' if ukc_show_labels else ''),
+                marker=dict(color='#aaaaaa', size=10, symbol='circle-open',
+                            line=dict(color='#777777', width=2)),
+                text=[m['name']] if ukc_show_labels else None,
+                textposition='top right', textfont=dict(size=9, color='#999999'),
+                hovertext=hover, hoverinfo='text', showlegend=False,
+            ))
+
+    # Open-weight models, plus the horizontal lag connector back to the frontier.
+    lag_rows = ukc_lag_rows(ukc_all, ukc_frontier_all)
+    if ukc_show_open:
+        _legend_seen = set()
+        for r in lag_rows:
+            _color = _UKC_OPEN_COLORS.get(r['country'], '#8e44ad')
+            if r['lag_months'] is None:
+                _lag_txt = "<br>Ahead of the closed frontier"
+            else:
+                _lag_txt = f"<br>Lag: {r['lag_months']:.1f} mo behind frontier"
+                if r['lag_lo'] is not None and r['lag_hi'] is not None:
+                    _lag_txt += (f"<br>Range: {r['lag_lo']:.1f}–{r['lag_hi']:.1f} mo"
+                                 f"<br>(between {r['below_name']} and {r['above_name']})")
+            if ukc_show_lag and r['match_date'] is not None:
+                fig.add_trace(go.Scatter(
+                    x=[r['match_date'], r['date']],
+                    y=[r['cyber_score'], r['cyber_score']],
+                    mode='lines', line=dict(color=_color, width=1.5, dash='dot'),
+                    hoverinfo='skip', showlegend=False,
+                ))
+                fig.add_annotation(
+                    x=r['match_date'] + (r['date'] - r['match_date']) / 2,
+                    y=r['cyber_score'], text=f"{r['lag_months']:.1f} mo",
+                    showarrow=False, yshift=-14,
+                    font=dict(size=10, color=_color))
+            _show_legend = r['country'] not in _legend_seen
+            _legend_seen.add(r['country'])
+            fig.add_trace(go.Scatter(
+                x=[r['date']], y=[r['cyber_score']],
+                mode='markers' + ('+text' if ukc_show_labels else ''),
+                marker=dict(color=_color, size=12, symbol='square',
+                            line=dict(color='white', width=1)),
+                text=[r['name']] if ukc_show_labels else None,
+                textposition='bottom right', textfont=dict(size=9, color=_color),
+                name=f"Open-weight ({r['country']})",
+                showlegend=_show_legend,
+                hovertext=f"{r['name']}<br>{r['date'].strftime('%b %d, %Y')}<br>"
+                          f"Success: {r['cyber_score']:.1f}%<br>"
+                          f"{r['organization']} · {r['country']} · open{_lag_txt}",
+                hoverinfo='text',
+            ))
+
+    if is_backtesting and backtest_results:
+        _add_backtest_traces(fig, backtest_results, current['date'])
+
+    _y_max = min(max(pct[95][-1], max(m['cyber_score'] for m in ukc_all) + 3, 60) + 5, 105)
+    fig.update_layout(
+        height=650,
+        margin=dict(l=50, r=140, t=50, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(range=[ukc_all[0]['date'] - timedelta(days=30),
+                          proj_end_date + timedelta(days=30)],
+                   gridcolor='rgba(0,0,0,0.1)',
+                   tickfont=dict(color='#1a1a2e'), zeroline=False),
+        yaxis=dict(title="Avg success rate on 70 narrow cyber tasks (%)",
+                   range=[0, _y_max], gridcolor='rgba(0,0,0,0.1)',
+                   zeroline=False, ticksuffix='%',
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        hovermode='closest',
+        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
+                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+        plot_bgcolor='white', paper_bgcolor='white',
+    )
+
+    st.plotly_chart(fig, width="stretch")
+    if is_backtesting and backtest_results:
+        _backtest_summary(backtest_results)
+
+    # ── Time for open-weight models to reach the target ──────────────────
+    st.subheader(f"Time for China to reach {_UKC_TARGET:.0f}%")
+
+    eta = ukc_target_eta(ukc_all, ukc_frontier_all, _UKC_TARGET)
+    if eta is None:
+        st.info(f"The closed frontier has not yet reached {_UKC_TARGET:.0f}%, "
+                "so there is no crossing date to lag behind.")
+    else:
+        _c1, _c2, _c3 = st.columns(3)
+        with _c1:
+            st.metric("Closed frontier crossed it",
+                      eta['frontier_date'].strftime('%b %Y'))
+            _btw = [n for n in eta['frontier_between'] if n]
+            st.caption(" → ".join(_btw) if len(_btw) > 1 else (_btw[0] if _btw else ""))
+        with _c2:
+            st.metric("Measured open-weight lag",
+                      f"{eta['lag_lo']:.1f}–{eta['lag_hi']:.1f} mo")
+            st.caption("From the two open-weight models observed")
+        with _c3:
+            _lo, _hi = eta['date_lo'], eta['date_hi']
+            _span = (f"{_lo.strftime('%b')}–{_hi.strftime('%b %Y')}"
+                     if _lo.year == _hi.year else
+                     f"{_lo.strftime('%b %Y')}–{_hi.strftime('%b %Y')}")
+            st.metric(f"China reaches {_UKC_TARGET:.0f}%", _span)
+            _m_lo = (_lo - today).days / _UKC_DAYS_PER_MONTH
+            _m_hi = (_hi - today).days / _UKC_DAYS_PER_MONTH
+            if _m_hi < 0:
+                st.caption("Already passed")
+            else:
+                st.caption(f"{max(_m_lo, 0):.1f}–{max(_m_hi, 0):.1f} months from today")
+
+        _direct = ukc_target_eta_direct(ukc_all, _UKC_TARGET)
+        _direct_txt = (f" Extrapolating the two open-weight models directly instead gives "
+                       f"{_direct.strftime('%b %Y')} — a fragile fit from two points "
+                       f"53 days apart, shown only as a sanity check."
+                       if _direct is not None else "")
+        _btw_txt = (f" (interpolated between {eta['frontier_between'][0]} and "
+                    f"{eta['frontier_between'][1]})"
+                    if all(eta['frontier_between']) else "")
+        st.caption(
+            f"Method: the closed frontier reached {_UKC_TARGET:.0f}% around "
+            f"{eta['frontier_date'].strftime('%b %Y')}{_btw_txt}; open-weight models have "
+            f"trailed it by {eta['lag_lo']:.1f}–{eta['lag_hi']:.1f} months, so they reach "
+            f"{_UKC_TARGET:.0f}% that much later. Lags are measured against the frontier's "
+            f"interpolated crossing of each score, not against the next model up — snapping "
+            f"to the next model up would equate scores several points apart." + _direct_txt
+        )
+
+    st.caption("Fine print: " + _UKC_PROVENANCE + " " + _UKC_CONFOUND_PLAIN + PROJ_DISCLAIMER)
 
 
 # ── Revenue ──────────────────────────────────────────────────────────────
@@ -7492,6 +8188,7 @@ def _all_tracked():
         (_eci_tab_reset_keys("eci"), _eci_tab_defaults("eci")),
         (_eci_tab_reset_keys("ecicn"), _eci_tab_defaults("ecicn")),
         (_RLI_RESET_KEYS, _RLI_DEFAULTS),
+        (_UKC_RESET_KEYS, _UKC_DEFAULTS),
         (_EMP_RESET_KEYS, _EMP_DEFAULTS),
         (_REV_TRACKED_KEYS, _REV_DEFAULTS),
         (_ECG_TRACKED_KEYS, _ECG_DEFAULTS),
@@ -7599,6 +8296,8 @@ if not os.environ.get("_VP_TESTING"):
         render_eci()
     elif active_tab == "Remote Labor Index":
         render_rli()
+    elif active_tab == "UK Cyber":
+        render_ukcyber()
     elif active_tab == "Revenue":
         render_revenue()
     elif active_tab == "Employment":
