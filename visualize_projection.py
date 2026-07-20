@@ -483,7 +483,7 @@ _RLI_RAW = [
     {"name": "Opus 4.6",       "date": "2026-02-05", "rli_score": 4.17},
     {"name": "GPT-5.5",        "date": "2026-04-23", "rli_score": 6.25},
     {"name": "Opus 4.8",       "date": "2026-05-28", "rli_score": 8.33},
-    {"name": "Fable 5",        "date": "2026-06-09", "rli_score": 16.10},
+    {"name": "Fable 5",        "date": "2026-06-09", "rli_score": 15.83},
 ]
 
 
