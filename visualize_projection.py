@@ -4247,6 +4247,7 @@ _OPENAI_REVENUE = [
     ("2026-03-31", 26.0),
     ("2026-04-30", 28.0),
     ("2026-05-15", 30.0),
+    ("2026-05-27", 33.0),
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -4262,9 +4263,12 @@ _ANTHROPIC_REVENUE = [
     ("2026-02-01", 14.0),
     ("2026-03-01", 19.0),
     ("2026-04-01", 30.0),
-    ("2026-05-15", 40.0),
-    ("2026-05-21", 45.0),
-    ("2026-05-28", 47.0),
+    # Anthropic's Series H post (announced 05-28) said the run rate "crossed
+    # $47 billion earlier this month", so the figure is dated to mid-May rather
+    # than to the announcement. The earlier 40.0 (05-15) and 45.0 (05-21) media
+    # reports were dropped: both are superseded by that company disclosure and
+    # would otherwise sit at or below it on the same or a later date.
+    ("2026-05-15", 47.0),
 ]
 
 
