@@ -1,0 +1,55 @@
+# AISI / CAISI cyber range "The Last Ones" (TLO) -- average steps completed of 32, 10 runs per model,
+#   100M token limit per run. TLO is a 32-step corporate-network attack across 4 subnets / ~20 hosts,
+#   estimated at ~20 hours for a human expert.
+# WHY THIS FILE: this is the apples-to-apples long-horizon counterpart to aisi_cyber_narrow.csv. Same
+#   institution, same eval protocol, but it measures autonomous end-to-end attack execution rather than
+#   isolated skills -- and it yields a *larger* open-weight lag (AISI: "4 to 7 months", where the narrow
+#   tasks give the 4-5 month end and TLO gives the 7 month end).
+# SOURCES (two posts, one eval):
+#   [A] https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber
+#       (2026-07-17), Figure 2 `fig2-ranges.png` -- 9 models, token-vs-steps trajectories.
+#   [B] https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities (2026-07-23),
+#       joint UK AISI / CAISI; NIST mirror:
+#       https://www.nist.gov/news-events/news/2026/07/uk-aisi-caisi-preliminary-assessment-kimi-k3s-cyber-capabilities
+#       -- Kimi K3 and GLM-5.2 endpoints stated in prose, no digitization needed.
+# PROVENANCE: `steps` for the 9 models from [A] were digitized from fig2-ranges.png by pixel analysis
+#   (AISI publishes no numbers for that figure); Kimi K3's 17.0 is quoted directly from [B].
+# CALIBRATION (fig2-ranges.png, 3500x2160): y-axis ticks are 17 evenly spaced rows, 76.06px apart;
+#   row 1715 = 0 steps, row 498 = 32 steps. Endpoint = the solid (average) trace at the right edge of
+#   the plot; the two dotted traces reaching 32 are "best attempt" runs, not averages, and are excluded.
+# VALIDATION -- four independent checks against numbers AISI/CAISI printed in prose:
+#   1. GLM-5.2 digitizes to 11.0; [B] states "step 11 for GLM-5.2".            exact
+#   2. GPT-5.6-Sol 29.1 and Claude Mythos 5 27.7 average to 28.4; [B] states
+#      "the most cyber-capable U.S. models reached 28.5 steps on average".     within 0.1
+#   3. DeepSeek-V4-Pro 8.0 < Sonnet 4.5 8.9; [A] states V4-Pro "falls below Sonnet 4.5".
+#   4. GLM-5.2 11.0 == Opus 4.5 11.0; [A] states GLM-5.2 "reaches as far as Opus 4.5".
+#   Derived lags also reproduce [A]'s prose: GLM-5.2 6.7mo ("less than 7 months"), DeepSeek-V4-Pro
+#   6.8mo ("7 months before it").
+# DATES: unlike aisi_cyber_narrow.csv, this figure's x-axis is cumulative tokens, so it carries NO date
+#   information. Dates here are published release dates (Epoch ECI release dates; Kimi K3's is stated in
+#   [B]), NOT chart-derived. The one exception is Mythos Preview, which has no published release record,
+#   so its date is carried over from the narrow-task figure -- flagged date_source=chart.
+#   Note this makes two dates disagree with aisi_cyber_narrow.csv, whose dates are marker-derived:
+#   GPT-5.6-Sol (published 2026-07-09 vs chart 2026-06-26) and Opus 4.5 (2025-11-24 vs 2025-11-21).
+# CAVEAT -- sparse frontier: only 7 closed models were run on TLO, so the running-max frontier is much
+#   coarser than the narrow-task one, and interpolated crossings span wider gaps. AISI itself calls this
+#   "weaker evidence... drawn from a smaller set of ranges". Note also that AISI describes Sonnet 4.5 as
+#   "sub-cyber-frontier" -- it anchors the frontier here only because it is the earliest model tested.
+# CAVEAT -- Kimi K3 weights: released 2026-07-16 as a hosted model with open weights slated for
+#   2026-07-27, and evaluated by AISI/CAISI before that date. Classified `open` because it is the
+#   open-weight release being assessed, but its weights were not public at evaluation time.
+# CAVEAT -- U.S. closed models were evaluated with system-level safeguards disabled to measure maximal
+#   capability; public deployments have those safeguards enabled.
+# CAVEAT -- same confound as the narrow tasks: every open model here is Chinese and every closed model
+#   is American, so country and weights cannot be separated.
+model,date,date_source,steps,organization,country,weights
+Sonnet 4.5,2025-09-29,published,8.9,Anthropic,US,closed
+Opus 4.5,2025-11-24,published,11.0,Anthropic,US,closed
+Claude Opus 4.6,2026-02-05,published,16.8,Anthropic,US,closed
+Mythos Preview,2026-04-07,chart,25.2,Anthropic,US,closed
+GPT-5.5,2026-04-23,published,22.3,OpenAI,US,closed
+DeepSeek-V4-Pro,2026-04-24,published,8.0,DeepSeek,China,open
+Claude Mythos 5,2026-06-09,published,27.7,Anthropic,US,closed
+GLM-5.2,2026-06-16,published,11.0,Zhipu AI,China,open
+GPT-5.6-Sol,2026-07-09,published,29.1,OpenAI,US,closed
+Kimi K3,2026-07-16,published,17.0,Moonshot AI,China,open

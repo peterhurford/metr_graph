@@ -2344,3 +2344,120 @@ class TestUkCyberTargetEta:
     def test_direct_needs_two_open_models(self):
         one = [m for m in vp.ukc_all if m['weights'] == 'open'][:1]
         assert vp.ukc_target_eta_direct(one, 90.0) is None
+
+
+class TestUkCyberTlo:
+    """Cyber range "The Last Ones" -- AISI's long-horizon cyber measure.
+
+    Digitized from fig2-ranges.png, except Kimi K3 which AISI/CAISI printed.
+    The published-number checks below are the calibration guards on that
+    digitization, exactly as `lag_lo` is for the narrow-task figure.
+    """
+
+    def _tlo(self):
+        return vp.load_ukcyber_tlo(vp._ukc_tlo_mtime())
+
+    def _lags(self):
+        tlo = self._tlo()
+        return {r['name']: r for r in
+                vp.ukc_lag_rows(tlo, [m for m in tlo if m['is_frontier']])}
+
+    def test_loads_all_models(self):
+        tlo = self._tlo()
+        assert len(tlo) == 10
+        assert {m['name'] for m in tlo if m['weights'] == 'open'} == {
+            'DeepSeek-V4-Pro', 'GLM-5.2', 'Kimi K3'}
+
+    def test_scores_are_steps_not_percent(self):
+        for m in self._tlo():
+            assert 0 <= m['cyber_score'] <= vp._UKC_TLO_STEPS
+            assert m['steps'] == m['cyber_score']
+
+    def test_glm52_endpoint_matches_published_value(self):
+        """CAISI/AISI state "step 11 for GLM-5.2" in prose -- the digitization
+        must reproduce it exactly, or the y-axis calibration has drifted."""
+        by_name = {m['name']: m for m in self._tlo()}
+        assert by_name['GLM-5.2']['cyber_score'] == pytest.approx(11.0, abs=0.2)
+
+    def test_top_us_models_average_matches_published_value(self):
+        """"the most cyber-capable U.S. models reached 28.5 steps on average"."""
+        by_name = {m['name']: m for m in self._tlo()}
+        top = [by_name['GPT-5.6-Sol']['cyber_score'],
+               by_name['Claude Mythos 5']['cyber_score']]
+        assert sum(top) / len(top) == pytest.approx(28.5, abs=0.2)
+
+    def test_kimi_k3_is_quoted_not_digitized(self):
+        """AISI/CAISI printed Kimi K3's average as step 17."""
+        by_name = {m['name']: m for m in self._tlo()}
+        assert by_name['Kimi K3']['cyber_score'] == pytest.approx(17.0, abs=0.01)
+
+    def test_ordering_claims_in_the_post_hold(self):
+        by_name = {m['name']: m for m in self._tlo()}
+        # "DeepSeek's V4-Pro falls below Sonnet 4.5"
+        assert by_name['DeepSeek-V4-Pro']['cyber_score'] < by_name['Sonnet 4.5']['cyber_score']
+        # "GLM-5.2 reaches as far as Opus 4.5"
+        assert by_name['GLM-5.2']['cyber_score'] == pytest.approx(
+            by_name['Opus 4.5']['cyber_score'], abs=0.2)
+
+    def test_lags_reproduce_the_posts_prose(self):
+        """AISI: GLM-5.2 trails Opus 4.5 by "less than 7 months"; DeepSeek-V4-Pro
+        trails Sonnet 4.5, "released 7 months before it"."""
+        lags = self._lags()
+        assert 6.0 < lags['GLM-5.2']['lag_months'] < 7.0
+        assert lags['DeepSeek-V4-Pro']['lag_months'] == pytest.approx(6.8, abs=0.3)
+
+    def test_range_lag_exceeds_narrow_task_lag(self):
+        """The headline reason this file exists: AISI's "4 to 7 months" spans
+        both measures, with the range at the pessimistic end.
+
+        Compared on `lag_lo`, the next-model-up convention AISI's own figures
+        use -- Figure 1 is titled "4-5 months prior" and Figure 2 "7 months
+        prior", and those are lag_lo on each dataset. The interpolated point
+        estimates are NOT comparable across the two: DeepSeek-V4-Pro's narrow
+        score lands in a 10-point frontier gap (inflating it to 7.4mo) while its
+        TLO score sits below every frontier model (no interpolation at all), so
+        on point estimates the ordering inverts for reasons about frontier
+        sampling rather than about capability.
+        """
+        tlo = self._lags()
+        narrow = {r['name']: r for r in
+                  vp.ukc_lag_rows(vp.ukc_all, vp.ukc_frontier_all)}
+        for name in ('GLM-5.2', 'DeepSeek-V4-Pro'):
+            assert tlo[name]['lag_lo'] > narrow[name]['lag_lo'], name
+
+    def test_reproduces_both_figure_titles(self):
+        """Figure 1: "4-5 months prior". Figure 2: "7 months prior"."""
+        tlo = self._lags()
+        narrow = {r['name']: r for r in
+                  vp.ukc_lag_rows(vp.ukc_all, vp.ukc_frontier_all)}
+        pair = ('GLM-5.2', 'DeepSeek-V4-Pro')
+        nar = [narrow[n]['lag_lo'] for n in pair]
+        rng = [tlo[n]['lag_lo'] for n in pair]
+        assert 4.0 <= min(nar) and max(nar) <= 5.5
+        assert 6.5 <= min(rng) and max(rng) <= 7.5
+
+    def test_deepseek_tlo_lag_is_a_lower_bound_only(self):
+        """DeepSeek-V4-Pro's 8.0 steps is under every frontier model, so the
+        crossing collapses onto the earliest one and there is no upper bracket
+        -- the frontier passed 8.0 steps at some unmeasured earlier date."""
+        r = self._lags()['DeepSeek-V4-Pro']
+        assert r['below_name'] is None
+        assert r['lag_hi'] is None
+        assert r['lag_months'] == r['lag_lo']
+
+    def test_frontier_is_closed_weights_only(self):
+        tlo = self._tlo()
+        assert all(m['weights'] == 'closed' for m in tlo if m['is_frontier'])
+
+    def test_frontier_is_monotonic(self):
+        frontier = [m for m in self._tlo() if m['is_frontier']]
+        scores = [m['cyber_score'] for m in frontier]
+        assert scores == sorted(scores)
+
+    def test_dates_are_published_release_dates(self):
+        """Unlike the narrow-task file, TLO dates come from release records --
+        the figure's x-axis is tokens and carries no date information."""
+        by_name = {m['name']: m for m in self._tlo()}
+        assert by_name['Kimi K3']['date'] == datetime(2026, 7, 16)
+        assert by_name['Sonnet 4.5']['date'] == datetime(2025, 9, 29)
+        assert by_name['GPT-5.5']['date'] == datetime(2026, 4, 23)

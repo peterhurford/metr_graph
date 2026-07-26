@@ -590,6 +590,69 @@ def load_ukcyber(_mtime=None):
     return models
 
 
+_UKC_TLO_STEPS = 32          # "The Last Ones" is a 32-step attack chain
+_UKC_TLO_FILE = 'aisi_cyber_tlo.csv'
+
+
+def _ukc_tlo_mtime():
+    p = os.path.join(os.path.dirname(__file__), _UKC_TLO_FILE)
+    return os.path.getmtime(p)
+
+
+@st.cache_data
+def load_ukcyber_tlo(_mtime=None):
+    """Load AISI/CAISI cyber-range ("The Last Ones") average steps completed.
+
+    The long-horizon counterpart to `load_ukcyber()`: same institution and eval
+    protocol, but it scores autonomous end-to-end attack execution instead of
+    isolated skills, and it produces the wide end of AISI's "4 to 7 months"
+    open-weight lag where the narrow tasks produce the narrow end.
+
+    Deliberately returns the same shape as `load_ukcyber()`, with `cyber_score`
+    carrying steps (0-32) rather than percent, so `_ukc_frontier_crossing()` and
+    `ukc_lag_rows()` work on it unchanged. `steps` is kept as an alias for
+    callers that want the unit to be explicit at the call site.
+    """
+    csv_path = os.path.join(os.path.dirname(__file__), _UKC_TLO_FILE)
+    with open(csv_path, 'r') as f:
+        lines = [ln for ln in f if not ln.lstrip().startswith('#')]
+    reader = csv.DictReader(lines)
+
+    models = []
+    for r in reader:
+        steps_str = (r.get('steps') or '').strip()
+        date_str = (r.get('date') or '').strip()
+        if not steps_str or not date_str:
+            continue
+        try:
+            steps = float(steps_str)
+            date = datetime.strptime(date_str, '%Y-%m-%d')
+        except (ValueError, TypeError):
+            continue
+        models.append({
+            'name': (r.get('model') or '').strip(),
+            'date': date,
+            'cyber_score': steps,
+            'steps': steps,
+            'organization': (r.get('organization') or '').strip(),
+            'country': (r.get('country') or '').strip(),
+            'weights': (r.get('weights') or '').strip().lower(),
+        })
+    models.sort(key=lambda m: m['date'])
+
+    # Same frontier rule as the narrow tasks: running max over closed-weight
+    # models only, since the open ones are the subject being measured.
+    max_score = -float('inf')
+    for m in models:
+        if m['weights'] == 'closed' and m['cyber_score'] > max_score:
+            max_score = m['cyber_score']
+            m['is_frontier'] = True
+        else:
+            m['is_frontier'] = False
+
+    return models
+
+
 def _ukc_frontier_match_for_score(frontier, score):
     """First closed-frontier model that matched or beat `score`.
 
@@ -4227,7 +4290,126 @@ def render_ukcyber():
             f"to the next model up would equate scores several points apart." + _direct_txt
         )
 
+    # ── Cross-check: the same question on the long-horizon cyber range ───
+    _render_ukcyber_tlo(lag_rows)
+
     st.caption("Fine print: " + _UKC_PROVENANCE + " " + _UKC_CONFOUND_PLAIN + PROJ_DISCLAIMER)
+
+
+def _render_ukcyber_tlo(narrow_lag_rows):
+    """AISI's other cyber measure, on the same models and the same lag method.
+
+    Kept as a cross-check section rather than a second projection: TLO has only
+    ten models and a much sparser frontier, so it is worth showing beside the
+    narrow-task lag but not worth fanning out into its own forecast. Together
+    the two reproduce AISI's "4 to 7 months" -- narrow tasks give the low end,
+    the range gives the high end.
+    """
+    tlo_all = load_ukcyber_tlo(_ukc_tlo_mtime())
+    tlo_frontier = [m for m in tlo_all if m['is_frontier']]
+    tlo_lag = ukc_lag_rows(tlo_all, tlo_frontier)
+    if not tlo_lag:
+        return
+
+    st.subheader("Cross-check: long-horizon cyber range")
+    st.caption(
+        "AISI's other cyber measure — average steps completed on \"The Last Ones\", a "
+        f"{_UKC_TLO_STEPS}-step simulated corporate-network attack (10 runs per model, 100M "
+        "tokens each), scored on autonomous end-to-end execution rather than isolated skills. "
+        "Same frontier and lag method as above, applied to steps instead of percent."
+    )
+
+    fig = go.Figure()
+    _fx = [m['date'] for m in tlo_frontier]
+    _fy = [m['cyber_score'] for m in tlo_frontier]
+    fig.add_trace(go.Scatter(
+        x=_fx, y=_fy, mode='lines+markers+text', name='Closed frontier',
+        line=dict(color='#2c3e50', width=2), marker=dict(size=9, color='#2c3e50'),
+        text=[m['name'] for m in tlo_frontier], textposition='top left',
+        textfont=dict(size=9, color='#7f8c8d'),
+        hovertext=[f"{m['name']}<br>{m['cyber_score']:.1f} of {_UKC_TLO_STEPS} steps"
+                   f"<br>{m['date'].strftime('%b %d, %Y')}" for m in tlo_frontier],
+        hoverinfo='text',
+    ))
+    _seen = set()
+    for r in tlo_lag:
+        _color = _UKC_OPEN_COLORS.get(r['country'], '#8e44ad')
+        if r['match_date'] is not None:
+            fig.add_trace(go.Scatter(
+                x=[r['match_date'], r['date']], y=[r['cyber_score'], r['cyber_score']],
+                mode='lines', line=dict(color=_color, width=1.5, dash='dot'),
+                hoverinfo='skip', showlegend=False))
+            fig.add_annotation(
+                x=r['match_date'] + (r['date'] - r['match_date']) / 2,
+                y=r['cyber_score'], text=f"{r['lag_months']:.1f} mo",
+                showarrow=False, yshift=-14, font=dict(size=10, color=_color))
+        fig.add_trace(go.Scatter(
+            x=[r['date']], y=[r['cyber_score']], mode='markers+text',
+            name=f"Open weight ({r['country']})",
+            marker=dict(size=11, color=_color, symbol='diamond'),
+            text=[r['name']], textposition='middle right',
+            textfont=dict(size=9, color=_color),
+            hovertext=[f"{r['name']}<br>{r['cyber_score']:.1f} of {_UKC_TLO_STEPS} steps"
+                       f"<br>{r['lag_months']:.1f} mo behind the frontier"],
+            hoverinfo='text', showlegend=r['country'] not in _seen))
+        _seen.add(r['country'])
+
+    fig.update_layout(
+        height=420, margin=dict(l=10, r=10, t=30, b=10),
+        xaxis=dict(title="Release date", gridcolor='rgba(0,0,0,0.1)',
+                   tickfont=dict(color='#1a1a2e'), zeroline=False),
+        yaxis=dict(title=f"Avg steps completed (of {_UKC_TLO_STEPS})",
+                   range=[0, _UKC_TLO_STEPS], gridcolor='rgba(0,0,0,0.1)',
+                   zeroline=False, tickfont=dict(color='#1a1a2e'),
+                   title_font=dict(color='#1a1a2e')),
+        hovermode='closest',
+        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
+                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+        plot_bgcolor='white', paper_bgcolor='white',
+    )
+    st.plotly_chart(fig, width="stretch")
+
+    # Side-by-side lag on the two measures, for models that appear on both.
+    # Both columns use lag_lo (next model up) so they are on the same footing --
+    # see the caption below for why the interpolated estimates are not.
+    _narrow_by_name = {r['name']: r for r in narrow_lag_rows}
+    rows = []
+    for r in tlo_lag:
+        _n = _narrow_by_name.get(r['name'])
+        rows.append({
+            'Model': r['name'],
+            'Released': r['date'].strftime('%b %d, %Y'),
+            'Steps': f"{r['cyber_score']:.1f} / {_UKC_TLO_STEPS}",
+            'Lag — cyber range': (f"≥ {r['lag_lo']:.1f} mo" if r['lag_hi'] is None
+                                  else f"{r['lag_lo']:.1f} mo"),
+            'Lag — narrow tasks': (f"{_n['lag_lo']:.1f} mo"
+                                   if _n and _n['lag_lo'] is not None else "not tested"),
+        })
+    st.table(rows)
+
+    # Compared on lag_lo, the next-model-up convention AISI's own figure titles
+    # use. The interpolated point estimates are not comparable across the two
+    # datasets: DeepSeek-V4-Pro's narrow score falls in a 10-point frontier gap
+    # while its TLO score sits below every frontier model, so on point estimates
+    # the ordering flips for reasons about how each frontier is sampled.
+    _both = [(r, _narrow_by_name.get(r['name'])) for r in tlo_lag]
+    _both = [(a, b) for a, b in _both
+             if b and b['lag_lo'] is not None and a['lag_lo'] is not None]
+    if _both:
+        _tlo_rng = (min(a['lag_lo'] for a, _ in _both),
+                    max(a['lag_lo'] for a, _ in _both))
+        _nar_rng = (min(b['lag_lo'] for _, b in _both),
+                    max(b['lag_lo'] for _, b in _both))
+        st.caption(
+            f"On the models measured both ways, the lag is {_nar_rng[0]:.1f}–{_nar_rng[1]:.1f} "
+            f"months on narrow tasks but {_tlo_rng[0]:.1f}–{_tlo_rng[1]:.1f} months on the "
+            "cyber range — the two ends of AISI's \"4 to 7 months\" headline. Both figures use "
+            "the next-model-up convention AISI's own chart titles use, which is the only one "
+            "comparable across the two datasets. AISI treats the range as the weaker evidence "
+            "of the two: it draws on far fewer tasks, and a model stalling mid-chain may be "
+            "failing on long-horizon planning rather than on cyber skill. Only ten models have "
+            "been run on it, so the frontier it is measured against is correspondingly coarse."
+        )
 
 
 # ── Revenue ──────────────────────────────────────────────────────────────
