@@ -2167,6 +2167,122 @@ class TestCcPooledDecomp:
         assert a is None and b is None
 
 
+class TestCcCnTargetYears:
+    """_cc_cn_target_years: China's ETA to a target ECI, from compute + algo."""
+
+    # Deterministic inputs: algo pinned at 10, compute 0.2 OOM/yr × 10 pts/OOM =
+    # 2 → 12 ECI/yr, so a 12-point gap is exactly one year before any spread.
+    _ARGS = dict(anchor_eci=100.0, target=112.0, algo_lo=10.0, algo_mid=10.0,
+                 algo_hi=10.0, a_partial=10.0, g_lo=0.2, g_hi=0.2)
+
+    def test_central_case_is_gap_over_rate(self):
+        y, r = vp._cc_cn_target_years(pace_lo=1.0, pace_hi=1.0, n=2000, **self._ARGS)
+        assert np.median(r) == pytest.approx(12.0, rel=0.02)
+        assert np.median(y) == pytest.approx(1.0, rel=0.05)
+
+    def test_wider_pace_widens_the_band_both_ways(self):
+        narrow, _ = vp._cc_cn_target_years(pace_lo=0.95, pace_hi=1.05, n=4000,
+                                           **self._ARGS)
+        wide, _ = vp._cc_cn_target_years(pace_lo=0.6, pace_hi=1.4, n=4000,
+                                         **self._ARGS)
+        spread = lambda a: np.percentile(a, 90) - np.percentile(a, 10)
+        assert spread(wide) > spread(narrow)
+        # A slower pace takes *longer*, so the wide band must reach further out.
+        assert np.percentile(wide, 90) > np.percentile(narrow, 90)
+
+    def test_release_wait_only_pushes_dates_later(self):
+        base, _ = vp._cc_cn_target_years(pace_lo=1.0, pace_hi=1.0, n=4000,
+                                         **self._ARGS)
+        waited, _ = vp._cc_cn_target_years(pace_lo=1.0, pace_hi=1.0, n=4000,
+                                           release_gap_days=60.0, **self._ARGS)
+        # Exponential(60d) adds ~0.16 yr on average, and can never subtract.
+        assert np.median(waited) > np.median(base)
+        assert np.mean(waited) == pytest.approx(np.mean(base) + 60 / 365.25, abs=0.03)
+
+    def test_faster_compute_growth_pulls_the_date_in(self):
+        args = dict(self._ARGS, g_lo=0.4, g_hi=0.4)
+        fast, _ = vp._cc_cn_target_years(pace_lo=1.0, pace_hi=1.0, n=2000, **args)
+        slow, _ = vp._cc_cn_target_years(pace_lo=1.0, pace_hi=1.0, n=2000,
+                                         **self._ARGS)
+        assert np.median(fast) < np.median(slow)
+
+    def test_degenerate_ranges_do_not_crash_triangular(self):
+        # algo_lo == algo_hi and g_lo == g_hi would be invalid triangular args;
+        # the helper pads them instead of raising.
+        y, r = vp._cc_cn_target_years(pace_lo=1.0, pace_hi=1.0, n=500, **self._ARGS)
+        assert np.all(np.isfinite(y)) and np.all(r > 0)
+
+    def test_algo_mode_outside_range_is_clamped(self):
+        args = dict(self._ARGS, algo_lo=8.0, algo_mid=99.0, algo_hi=12.0)
+        _, r = vp._cc_cn_target_years(pace_lo=1.0, pace_hi=1.0, n=4000, **args)
+        # Mode clamps to algo_hi=12, so no sample can exceed the envelope — the
+        # widest algo, compute, and pace draws, each including the ±pad the helper
+        # adds to the degenerate g and pace ranges.
+        assert r.max() <= (12.0 + 10.0 * (0.2 + 0.01)) * 1.05 + 1e-9
+        # ...and a mode pinned at the top skews the draw high, not to the middle.
+        assert np.median(r) > 0.5 * ((8.0 + 1.9) + (12.0 + 2.1))
+
+
+class TestCcReleaseGapDays:
+    """_cc_release_gap_days: how often a frontier actually steps up."""
+
+    def _fr(self):
+        base = datetime(2025, 1, 1)
+        return [(base + timedelta(days=d), 100 + i, f"m{i}")
+                for i, d in enumerate((0, 30, 60, 120))]   # gaps 30, 30, 60
+
+    def test_median_gap(self):
+        assert vp._cc_release_gap_days(self._fr()) == pytest.approx(30.0)
+
+    def test_since_filters_old_releases(self):
+        # Keeps only the last two points → a single 60-day gap, but that is under
+        # the three-point floor, so it declines to guess.
+        assert vp._cc_release_gap_days(self._fr(), since=datetime(2025, 3, 1)) is None
+
+    def test_too_few_points(self):
+        assert vp._cc_release_gap_days(self._fr()[:2]) is None
+
+
+class TestCcFirstReached:
+    """_cc_first_reached: first frontier model at or above a level."""
+
+    def _fr(self):
+        return [(datetime(2025, 1, 1), 100.0, "a"),
+                (datetime(2025, 6, 1), 120.0, "b"),
+                (datetime(2026, 1, 1), 140.0, "c")]
+
+    def test_returns_first_crossing_model(self):
+        assert vp._cc_first_reached(self._fr(), 110.0) == (datetime(2025, 6, 1), "b")
+
+    def test_exact_match_counts(self):
+        assert vp._cc_first_reached(self._fr(), 120.0)[1] == "b"
+
+    def test_none_when_target_above_frontier(self):
+        assert vp._cc_first_reached(self._fr(), 999.0) is None
+
+
+class TestCcCnTargetIsTodaysUsFrontier:
+    """The 161 bar is meant to be ~today's US frontier, not an arbitrary number.
+
+    If Epoch's rescoring or a new US model moves the frontier far from the
+    constant, the section's framing ("China matching where the US is now") stops
+    being true and `_CC_CN_TARGET_ECI` needs revisiting.
+    """
+
+    def test_target_sits_at_the_us_frontier(self):
+        eci = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        us = vp._cc_country_frontier(eci, "United States of America")
+        assert us, "no US-tagged ECI frontier"
+        best = max(s for _, s, _ in us)
+        assert vp._CC_CN_TARGET_ECI <= best, "target is above the US frontier"
+        assert best - vp._CC_CN_TARGET_ECI < 5.0, "target has fallen behind the US"
+
+    def test_china_has_not_yet_crossed_it(self):
+        eci = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        cn = vp._cc_country_frontier(eci, "China")
+        assert max(s for _, s, _ in cn) < vp._CC_CN_TARGET_ECI
+
+
 class TestEciMonthsBehind:
     """_eci_months_behind: months a score lags the US ECI trend."""
 

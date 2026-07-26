@@ -54,7 +54,7 @@ Line numbers drift as the file grows — grep `^def render_` to find the current
 | Employment | `render_employment()` (~4353) | derived from RLI frontier + slider assumptions (no external feed) | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` (~5223) | `epoch_capabilities_index.csv` (filtered by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` (~5669) | `data_centers.csv` + `data_center_timelines.csv` → `load_data_centers()` | H100-equiv / power / cost |
-| Compute vs Capabilities | `render_compute_capabilities()` (~7344) | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI |
+| Compute vs Capabilities | `render_compute_capabilities()` (~7344) | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; ends with China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) |
 
 ### Data Sources and How to Update
 
@@ -81,6 +81,7 @@ Line numbers below are approximate — grep for the function/table name to locat
 - Backtesting helpers — `_backtest_stats()`, `_bt_color_for()`, `_add_backtest_traces()`, `_backtest_summary()`
 - Data loading — `load_frontier()` / `load_metr_all()` (YAML), `load_eci_frontier()` and `load_eci_compute()` (ECI CSV, with dedup + running-max frontier), `load_rli_data()`, `load_data_centers()`, `load_ukcyber()`
 - UK Cyber lag helpers — `_ukc_frontier_crossing()` (interpolated crossing + bracketing models), `_ukc_frontier_match_for_score()` / `_ukc_frontier_below_for_score()` (bracket ends), `ukc_lag_rows()`, `ukc_tlo_lag_rows()` (shared TLO rows), `ukc_open_only_on_tlo()`, `ukc_target_eta()` / `ukc_target_eta_direct()`
+- Compute-vs-capabilities helpers — `_cc_pooled_decomp()`, `_cc_iso_compute_rate()`, `_cc_country_frontier()` / `_cc_country_compute_frontier()`, `_cc_frontier_eci_slope()`, and the China-ETA trio `_cc_cn_target_years()` / `_cc_release_gap_days()` / `_cc_first_reached()`
 - Data init + tab selector (`_TAB_OPTIONS`, `_TAB_SLUG`, `_SLUG_FOR_TAB`)
 - The nine `render_*()` functions (see table above)
 - Dispatch at end of file (skipped when `_VP_TESTING=1`)
@@ -118,6 +119,39 @@ Rejected alternatives, for the record: matching to the *last model below* is def
 The dataset has no US open-weight and no Chinese closed-weight models, so country and openness are perfectly confounded. The tab headline says "China" because the two Chinese models are also the only open-weight ones — `_UKC_CONFOUND_PLAIN` is folded into the fine-print caption so that's stated wherever the tab says "China". It was previously a standalone `st.warning` banner; if the caveat ever needs that prominence again, promote the same constant rather than adding a second wording to keep in sync.
 
 `ukc_target_eta()` answers "when do open-weight models reach `_UKC_TARGET` (90%)": the frontier's interpolated crossing of the target, plus the min/max measured lag. `ukc_target_eta_direct()` fits the open-weight points themselves as a cross-check only — two models 53 days apart make that slope very sensitive, so it is never the headline.
+
+### Compute vs Capabilities — China's ETA to a target ECI
+
+The tab's last section (`_render_cc_china_target()`) answers "when does China cross
+`_CC_CN_TARGET_ECI`" (161) with a date distribution instead of the gap metrics the
+sections above it report. Three things are load-bearing:
+
+1. **The target is meant to track today's US frontier.** 161 is where the US sits
+   as of mid-2026 (GPT-5.6 Sol, 161.7), which is what makes the framing —"China
+   matching where the US is *now*" — true. `TestCcCnTargetIsTodaysUsFrontier`
+   asserts the constant stays at or under the US frontier and within 5 points of
+   it; if an ECI refresh breaks that test, retarget the constant rather than
+   loosening the test, and re-check the caption wording.
+2. **The rate is the same two-engine model as Chart B**, deliberately: algorithmic
+   term (iso-compute rates, mode = China's own) + `a_partial` × China's compute
+   growth. Don't swap in a direct fit of China's frontier — the section would then
+   contradict the chart above it. The bottom-up rate currently runs hot (~14
+   ECI/yr) against a frontier that has managed 10–13, so `_cc_cn_target_years()`
+   takes a `pace_lo`/`pace_hi` band that the caller derives from China's observed
+   slope over `_CC_GAP_WINDOWS`. That reality check is the main uncertainty: the
+   two iso-compute fits sit within a point of each other and alone would produce a
+   spuriously tight band.
+3. **The crossing waits for a release.** The frontier is a step function, so
+   clearing the bar needs a model to ship. `release_gap_days` (from
+   `_cc_release_gap_days()`, the median recent inter-release gap) adds an
+   exponential wait on top of the smooth crossing. This is why the median-crossing
+   diamond sits *right* of where the fan meets the target line — the fan is the
+   smooth capability path, the diamond and the vertical band are release-inclusive.
+   Not a plotting bug; don't "fix" it by aligning them.
+
+The fan traces set `mode='lines'` explicitly. The fan spans only ~6 quarters, and
+plotly defaults a Scatter under 20 points to `lines+markers`, which studs the band
+outline with stray default-blue dots.
 
 ### Backtesting
 
