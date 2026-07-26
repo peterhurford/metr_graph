@@ -45,6 +45,8 @@ Google Lincoln,287518.9489641233,141,5.341361999999999,Google #confident,,"- [Ar
 - [DCD article on the start of site construction](https://www.datacenterdynamics.com/en/news/work-on-data-center-in-lincoln-nebraska-finally-starting/)
 - [Rezoning approval, stating 75 ft building height](https://lnklan.granicus.com/DocumentViewer.php?file=lnklan_bfe1e3023d49404348f26355e113cb22.pdf&view=1)
 ",https://docs.google.com/spreadsheets/d/1ep7v8wbYnMLBSKj7xxhWRcwILh9MYcdoE2-5eduV4kQ/edit?usp=sharing,,,,,,,United States,"5475 Cloud Ct, Lincoln, NE 68514"
+Google Bristow,283675.08842849924,279,10.569078000000001,Google,Google DeepMind,"[Google Environmental Report](https://sustainability.google/reports/google-2026-environmental-report/)
+",https://docs.google.com/spreadsheets/d/1hcg8KynO5Ho81RGRvQyKnHOG7gy2fvmBrJu5FDnCJ6Q/edit?usp=sharing,,"TPU v5e,TPU v5p,TPU v6e,TPU v7","TPU v5e,TPU v5p,TPU v6e,TPU v7",,,,United States,"13001 Rollins Ford Road, Bristow, VA 20136"
 DayOne Nusajaya,281670.4396159676,240,9.09168,,,"- [News of Phase 2 operation](https://www.moomoo.com/news/post/41886329/support-ai-computing-deployment-gds-holdings-nusajaya-technology-park-datacenter?level=1&data_ticket=1778269491837872)
 - [Archived DayOne website - ""120 MW in operation"" in Johor](https://web.archive.org/web/20241231165420/https://dayonedc.com/)
 - [Archived DayOne website - 390 MW ""in service"" in Johor](https://web.archive.org/web/20260314134756/https://dayonedc.com/market/johor)
@@ -115,6 +117,11 @@ Meta Temple,173247.6719844078,152,5.758064,Meta #confident,Meta #confident,"- [J
 - [TDLR filing](https://www.tdlr.texas.gov/TABS/Search/Project/TABS2022017728) reporting the start and end date, square footage of Building 1 and 2
 - [TDLR filing](https://www.tdlr.texas.gov/TABS/Search/Project/TABS2026008019) for Building 3
 ",https://docs.google.com/spreadsheets/d/1SwdruUu3hHAs6hd0m3SvZY22bGBCO7-9aiLSCiJl6-k/edit?usp=sharing,,B300,B300,,JE Dunn,,United States,"2310 Eberhardt Rd, Temple, TX 76504"
+Meta Cheyenne,172814.5528044467,152,5.758064,Meta #confident,Meta #confident,"- [Meta Introduction to the Cheyenne Project](https://datacenters.atmeta.com/2024/07/hello-cheyenne/)
+- [Fortis Construction announcement](https://fortisconstruction.com/news/fortis-building-metas-cheyenne-campus/)
+- [Press announcement suggesting a 2027 operational date](https://cheyenneleads.org/meta-announces-new-data-center-a-major-investment-in-cheyenne-wyoming/)
+
+",https://docs.google.com/spreadsheets/d/12-VqZMagtKT_6aSSlHXIg22E6iWwVWU5FJ4yZurQtro/edit?gid=2010365208#gid=2010365208,,B300,B300,,,,United States,"Cheyenne, WY 82007, USA"
 Amazon Ridgeland,171298.6356745831,228,8.637096,Amazon #confident,Anthropic #speculative,"- [Air Construction Permit](https://drive.google.com/file/d/1dQ5Pxl7rQAHLvHoTYrpOX32WAolo46d7/view?usp=sharing)
 - [Permit review document](https://drive.google.com/file/d/1myQ6BYqqzcfsWwv41tufHobvA8T3qo_d/view?usp=sharing)
 - [Backup diesel generator referenced in the permit](https://www.cat.com/en_US/products/new/power-systems/electric-power/diesel-generator-sets/117341.html)
@@ -265,11 +272,6 @@ Google Fort Wayne,0,0,0,Google #confident,Google DeepMind #speculative,"- [Googl
 Google Kansas City East,0,0,0,Google #confident,,"- [Hunt Midwest Business Center press release linking data center with Google](https://huntmidwest.com/2024/03/google-announces-1-billion-data-center-at-hunt-midwest-business-center/)
 - [DCD article on the site](https://www.datacenterdynamics.com/en/news/google-files-project-plan-for-data-center-in-kansas-city-missouri/)
 ",https://docs.google.com/spreadsheets/d/1CKYzvfMSEIM4PvLeBIbbkFRRknMyq1w-BJAfTs2yWxQ/edit?usp=sharing,,,,,,,United States,
-Meta Cheyenne,0,0,0,Meta #confident,Meta #confident,"- [Meta Introduction to the Cheyenne Project](https://datacenters.atmeta.com/2024/07/hello-cheyenne/)
-- [Fortis Construction announcement](https://fortisconstruction.com/news/fortis-building-metas-cheyenne-campus/)
-- [Press announcement suggesting a 2027 operational date](https://cheyenneleads.org/meta-announces-new-data-center-a-major-investment-in-cheyenne-wyoming/)
-
-",https://docs.google.com/spreadsheets/d/12-VqZMagtKT_6aSSlHXIg22E6iWwVWU5FJ4yZurQtro/edit?gid=2010365208#gid=2010365208,,,B300,,,,United States,"Cheyenne, WY 82007, USA"
 Meta Hyperion,0,0,0,Meta #confident,Meta #confident,"- [Data center profile by Meta](https://datacenters.atmeta.com/richland-parish-data-center/)
 - [Entergy's application for generation and transmission resources](https://drive.google.com/file/d/1FLY13apaHy4hI8RNVk9n_nlJpwFHtBrB/view?usp=sharing)
 - [MISO update with 1.8 GW substation plan](https://drive.google.com/file/d/1D4eUHwEuirNi0g3IU_xGOti3PcC8fcXi/view?usp=sharing)
@@ -297,7 +299,7 @@ OpenAI Stargate New Mexico,0,0,0,Oracle #confident,OpenAI #confident,"- [Project
 - [West Microgrid Permitting](https://drive.google.com/file/d/1zO6mGU6lOoDpU5vilRSa7x9_6n6j_deK/view?usp=drivesdk)
 - [East Microgrid Permitting](https://drive.google.com/file/d/186WXWRfH49_SpaTCi_u_uDZ4rwzPyAtd/view?usp=drivesdk)
 - [Oracle, BorderPlex and Bloom Energy to power Project Jupiter with fuel cell technology (Apr 27, 2026)](https://www.oracle.com/news/announcement/oracle-borderplex-and-bloom-energy-to-power-project-jupiter-with-fuel-cell-technology-2026-04-27/)
-",https://docs.google.com/spreadsheets/d/1Dd2oXxg3tdBebaWOW-qSj1U1-HZ9zM9LkXseTayWhBM/edit?usp=sharing,Stargate #confident,,,,,,United States,
+",https://docs.google.com/spreadsheets/d/1Dd2oXxg3tdBebaWOW-qSj1U1-HZ9zM9LkXseTayWhBM/edit?usp=sharing,Stargate #confident,,,,,Bloom Energy,United States,
 OpenAI Stargate Shackelford,0,0,0,Oracle #confident,OpenAI #confident,"- [Vantage data center page with power capacity, number of buildings, and first building timeline](https://vantage-dc.com/data-center-locations/north-america/shackelford-county-tx)
 - [OpenAI Stargate expansion announcement mentioning Shackelford site](https://openai.com/index/five-new-stargate-sites/)
 - [Vantage LinkedIn post connecting the data center to OpenAI Stargate](https://web.archive.org/web/20260226203340/https://www.linkedin.com/posts/vantage-data-centers_ai-digitalinfrastructure-stargate-activity-7405254667062124544-FOcd/?rcm=ACoAAAmuuF4BvsgagH4Z8-Z8-0LaBPPY6467cAs)

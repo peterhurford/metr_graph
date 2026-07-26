@@ -4248,6 +4248,12 @@ _OPENAI_REVENUE = [
     ("2026-04-30", 28.0),
     ("2026-05-15", 30.0),
     ("2026-05-27", 33.0),
+    # TickerTrends alt-data estimate (published 2026-07-23), dated to publication
+    # since the post gives only "July 2026". Not a disclosure and uncorroborated by
+    # press -- mainstream reporting still cites ~$25B as of Feb 2026. Kept because
+    # the 21.4 and 33.0 points above are from the same TickerTrends series, so this
+    # continues one line rather than splicing two.
+    ("2026-07-23", 41.3),
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -4269,6 +4275,12 @@ _ANTHROPIC_REVENUE = [
     # reports were dropped: both are superseded by that company disclosure and
     # would otherwise sit at or below it on the same or a later date.
     ("2026-05-15", 47.0),
+    # This series is company-disclosed throughout, deliberately. Third-party tracker
+    # estimates exist for mid-2026 (YipitData ~$69B late June; TickerTrends $74.1B
+    # July) but are not added: TickerTrends put April at $35.6B where Anthropic
+    # disclosed $30B, so appending one would bend the curve by a source-level shift
+    # rather than by measured growth. Anthropic's "exceed $50B by end of July"
+    # investor guidance is a forecast, not an achieved run rate, and is excluded too.
 ]
 
 
