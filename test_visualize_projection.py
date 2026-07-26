@@ -2461,3 +2461,57 @@ class TestUkCyberTlo:
         assert by_name['Kimi K3']['date'] == datetime(2026, 7, 16)
         assert by_name['Sonnet 4.5']['date'] == datetime(2025, 9, 29)
         assert by_name['GPT-5.5']['date'] == datetime(2026, 4, 23)
+
+    def test_shared_lag_helper_matches_manual_construction(self):
+        """The callout and the cross-check section must not be able to drift
+        onto different frontiers or lag conventions."""
+        tlo_all, tlo_lag = vp.ukc_tlo_lag_rows()
+        manual = vp.ukc_lag_rows(tlo_all, [m for m in tlo_all if m['is_frontier']])
+        assert [r['name'] for r in tlo_lag] == [r['name'] for r in manual]
+        assert [r['lag_lo'] for r in tlo_lag] == [r['lag_lo'] for r in manual]
+
+
+class TestUkCyberOpenOnlyOnTlo:
+    """The headline callout for an open-weight model only the range has run.
+
+    Kimi K3 is the live case: AISI/CAISI ran ExploitBench + TLO on it, not the
+    70-task narrow suite, so it has no point on the main chart.
+    """
+
+    def _rows(self):
+        narrow = vp.ukc_lag_rows(vp.ukc_all, vp.ukc_frontier_all)
+        _, tlo = vp.ukc_tlo_lag_rows()
+        return narrow, tlo
+
+    def test_surfaces_kimi_k3(self):
+        narrow, tlo = self._rows()
+        r = vp.ukc_open_only_on_tlo(narrow, tlo)
+        assert r is not None and r['name'] == 'Kimi K3'
+        assert r['name'] not in {n['name'] for n in narrow}
+
+    def test_callout_carries_a_bracket_not_just_a_point(self):
+        """The tab renders lag_lo-lag_hi here; TLO's sparse frontier makes the
+        interpolated point estimate a poor single number to headline."""
+        narrow, tlo = self._rows()
+        r = vp.ukc_open_only_on_tlo(narrow, tlo)
+        assert r['lag_lo'] is not None and r['lag_hi'] is not None
+        assert r['lag_lo'] < r['lag_months'] < r['lag_hi']
+        assert (r['above_name'], r['below_name']) == ('Mythos Preview', 'Claude Opus 4.6')
+
+    def test_disappears_once_the_narrow_suite_catches_up(self):
+        """A data-coverage notice, not a permanent panel -- if AISI later runs
+        the 70-task suite on Kimi K3, the callout must stop rendering."""
+        narrow, tlo = self._rows()
+        kimi = next(r for r in tlo if r['name'] == 'Kimi K3')
+        assert vp.ukc_open_only_on_tlo(narrow + [dict(kimi)], tlo) is None
+
+    def test_ignores_older_gaps_in_tlo_coverage(self):
+        """Only a model newer than every open-weight point on the chart means
+        the chart is out of date; an older gap is a curiosity."""
+        _, tlo = self._rows()
+        newer_narrow = [{**r, 'date': datetime(2027, 1, 1)} for r in tlo[:1]]
+        assert vp.ukc_open_only_on_tlo(newer_narrow, tlo) is None
+
+    def test_returns_none_when_suites_agree(self):
+        _, tlo = self._rows()
+        assert vp.ukc_open_only_on_tlo([dict(r) for r in tlo], tlo) is None

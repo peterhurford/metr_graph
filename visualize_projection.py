@@ -653,6 +653,41 @@ def load_ukcyber_tlo(_mtime=None):
     return models
 
 
+def ukc_tlo_lag_rows():
+    """TLO models plus their lag rows, computed exactly as the narrow ones are.
+
+    Shared by the headline callout and the cross-check section so the two can't
+    drift apart on which frontier or lag convention they use.
+    """
+    tlo_all = load_ukcyber_tlo(_ukc_tlo_mtime())
+    return tlo_all, ukc_lag_rows(tlo_all, [m for m in tlo_all if m['is_frontier']])
+
+
+def ukc_open_only_on_tlo(narrow_lag_rows, tlo_lag_rows):
+    """The newest open-weight model the cyber range has measured but the narrow
+    tasks have not -- or None when the two suites cover the same models.
+
+    Kimi K3 is the case this exists for. AISI/CAISI ran only a selective set on
+    it (ExploitBench + the TLO range), not the 70-task narrow suite, so it has
+    no point on the main chart and would otherwise not surface until the
+    cross-check section at the very bottom of the tab. Returns None once the
+    narrow suite catches up, so the callout is a data-coverage notice that
+    disappears on its own rather than a permanent panel.
+
+    Only reports a model newer than every open-weight model on the narrow
+    chart: an *older* gap in TLO coverage is a curiosity, not a case of the
+    headline chart being out of date.
+    """
+    narrow_names = {r['name'] for r in narrow_lag_rows}
+    missing = [r for r in tlo_lag_rows if r['name'] not in narrow_names]
+    if not missing:
+        return None
+    newest = max(missing, key=lambda r: r['date'])
+    if narrow_lag_rows and newest['date'] <= max(r['date'] for r in narrow_lag_rows):
+        return None
+    return newest
+
+
 def _ukc_frontier_match_for_score(frontier, score):
     """First closed-frontier model that matched or beat `score`.
 
@@ -4053,6 +4088,11 @@ def render_ukcyber():
     # ── Chart ────────────────────────────────────────────────────────────
     st.header("AISI Narrow Cyber Tasks — open-weight lag behind the closed frontier")
 
+    # Computed before the chart because the callout below reports on it too.
+    lag_rows = ukc_lag_rows(ukc_all, ukc_frontier_all)
+    tlo_all, tlo_lag_rows = ukc_tlo_lag_rows()
+    _render_ukcyber_newest_open(lag_rows, tlo_all, tlo_lag_rows)
+
     fig = go.Figure()
 
     for lo, hi, color, label in [
@@ -4175,7 +4215,6 @@ def render_ukcyber():
             ))
 
     # Open-weight models, plus the horizontal lag connector back to the frontier.
-    lag_rows = ukc_lag_rows(ukc_all, ukc_frontier_all)
     if ukc_show_open:
         _legend_seen = set()
         for r in lag_rows:
@@ -4296,6 +4335,55 @@ def render_ukcyber():
     st.caption("Fine print: " + _UKC_PROVENANCE + " " + _UKC_CONFOUND_PLAIN + PROJ_DISCLAIMER)
 
 
+def _render_ukcyber_newest_open(narrow_lag_rows, tlo_all, tlo_lag_rows):
+    """Promote the newest open-weight model when only the cyber range has it.
+
+    Without this the chart below silently omits the most recent open-weight
+    release, and the only sign of it is a table at the bottom of the tab. Uses
+    the lag bracket rather than the interpolated point estimate: TLO's frontier
+    is sparse enough that the point estimate can sit anywhere inside a wide
+    bracket, and the bracket is also what is comparable to the narrow-task
+    figures elsewhere on the tab.
+    """
+    r = ukc_open_only_on_tlo(narrow_lag_rows, tlo_lag_rows)
+    if r is None:
+        return
+
+    _color = _UKC_OPEN_COLORS.get(r['country'], '#8e44ad')
+    _lag = (f"{r['lag_lo']:.1f}–{r['lag_hi']:.1f} mo" if r['lag_hi'] is not None
+            else f"≥ {r['lag_lo']:.1f} mo")
+    _fr = [m for m in tlo_all if m['is_frontier']]
+    _best = max(_fr, key=lambda m: m['cyber_score']) if _fr else None
+
+    with st.container(border=True):
+        _c1, _c2, _c3 = st.columns(3)
+        with _c1:
+            st.markdown(f"**Newest open-weight model**<br>"
+                        f"<span style='font-size:1.6rem;color:{_color}'>{r['name']}</span>",
+                        unsafe_allow_html=True)
+            st.caption(f"{r['organization']} · {r['country']} · "
+                       f"released {r['date'].strftime('%b %d, %Y')}")
+        with _c2:
+            st.metric("Cyber range score", f"{r['cyber_score']:.1f} / {_UKC_TLO_STEPS} steps")
+            st.caption(f"Closed frontier: {_best['cyber_score']:.1f} ({_best['name']})"
+                       if _best else "")
+        with _c3:
+            st.metric("Lag behind closed frontier", _lag)
+            _ends = [n for n in (r['above_name'], r['below_name']) if n]
+            st.caption(f"Bracketed by {' and '.join(_ends)}" if _ends
+                       else "Below every frontier model — lower bound only")
+
+        st.caption(
+            f"**Not on the chart below.** AISI/CAISI ran only a selective set on "
+            f"{r['name']} — ExploitBench and the \"The Last Ones\" cyber range — not the "
+            f"70-task narrow suite this chart is built from, so it has no narrow-task "
+            f"score to plot and does not enter the projection or the lag readout beneath "
+            f"it. The range is the weaker of AISI's two cyber measures and its frontier is "
+            f"far sparser; see the cross-check at the bottom of this tab for the full "
+            f"comparison."
+        )
+
+
 def _render_ukcyber_tlo(narrow_lag_rows):
     """AISI's other cyber measure, on the same models and the same lag method.
 
@@ -4305,9 +4393,8 @@ def _render_ukcyber_tlo(narrow_lag_rows):
     the two reproduce AISI's "4 to 7 months" -- narrow tasks give the low end,
     the range gives the high end.
     """
-    tlo_all = load_ukcyber_tlo(_ukc_tlo_mtime())
+    tlo_all, tlo_lag = ukc_tlo_lag_rows()
     tlo_frontier = [m for m in tlo_all if m['is_frontier']]
-    tlo_lag = ukc_lag_rows(tlo_all, tlo_frontier)
     if not tlo_lag:
         return
 
