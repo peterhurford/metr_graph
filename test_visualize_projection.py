@@ -1885,7 +1885,12 @@ class TestCcTrainingFloorMatch:
         lag = timedelta(days=vp._CC_RELEASE_LAG_DAYS)
         floor = timedelta(days=vp._CC_TRAIN_FLOOR_DAYS)
 
-        sol = next((m for m in fm if m[2] == "GPT-5.6 Sol (pro, max)"), None)
+        # Match on the model family, not the reasoning-effort suffix: every
+        # gpt-5.6-sol_* variant carries the same ECI, so which one wins the dedup
+        # is arbitrary and flips between Epoch pulls (it was "(pro, max)" until
+        # Epoch added a `_none` variant in the 2026-08-08 refresh). The date and
+        # score — the things this test is actually about — are unaffected.
+        sol = next((m for m in fm if m[2].startswith("GPT-5.6 Sol")), None)
         assert sol is not None, "Sol not found in OpenAI frontier releases"
         d = sol[0]
 

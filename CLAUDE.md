@@ -65,13 +65,32 @@ Six external data feeds back the tabs; the rest are derived. Canonical sources a
 | `benchmark_results_1_1.yaml` | METR | Download `https://metr.org/assets/benchmark_results_1_1.yaml` and overwrite |
 | `epoch_capabilities_index.csv` | Epoch AI | Extract `epoch_capabilities_index.csv` from `https://epoch.ai/data/benchmark_data.zip` and overwrite. Epoch recomputes scores live, so existing rows drift slightly on each pull |
 | `data_centers.csv` | Epoch AI | Download `https://epoch.ai/data/data_centers/data_centers.csv` and overwrite |
-| `data_center_timelines.csv` | Epoch AI | Download `https://epoch.ai/data/data_centers/data_center_timelines.csv` and overwrite. Column order differs from older pulls; the loader uses `DictReader` (by header name) so this is safe |
+| `data_center_timelines.csv` | Epoch AI | Download `https://epoch.ai/data/data_centers/data_center_timelines.csv` and overwrite. Column order differs from older pulls; the loader uses `DictReader` (by header name) so this is safe. **One curated deletion — see below** |
 | `_RLI_RAW` (hardcoded) | Scale Labs RLI leaderboard (`labs.scale.com/leaderboard/rli`) / `remotelabor.ai` | Hand-edit new rows |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | Press reports (The Information, Reuters, etc.) | Hand-edit `(date, ARR_in_billions)` tuples |
 | `aisi_cyber_tlo.csv` | UK AISI Figure 2 (same post) + [UK AISI/CAISI Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) (2026-07-23) | **Not downloadable.** 9 rows digitized from `fig2-ranges.png`; Kimi K3's 17.0 quoted from the CAISI post's prose. Calibration and the four published-number validation checks are in the file's `#` header and guarded by `TestUkCyberTlo`. Dates here are **published release dates**, not chart-derived — the figure's x-axis is tokens |
 | `aisi_cyber_narrow.csv` | UK AISI blog, [open-weight cyber gap post](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) (2026-07-17) | **Not downloadable.** AISI publishes no numbers for this chart — values were digitized from `fig1-narrow.png` by pixel analysis. Refreshing is a *figure-unchanged check*, not a download: re-fetch the PNG and confirm gridlines still sit at row 547 (=100%) / row 1760 (=0%) and that each row's (date, score) still lands on its marker colour. Only re-digitize if the figure actually changed, then re-verify against `test_digitized_dates_match_known_releases` and `test_optimistic_bracket_reproduces_aisi_published_lags` — those two are the calibration guards. Hand-editing a row is fine if AISI states a number in prose. See `.claude/commands/update-data.md` for the full recipe and for AISI cyber data that exists but is deliberately not ingested |
 
 Before overwriting a CSV wholesale, diff by key column to confirm no locally-curated rows would be lost (ECI key = `Model version`; DC metadata key = `Name`; timelines key = `Data center` + `Date`). After any data change, sanity-check with `_VP_TESTING=1 python3 -c "import visualize_projection as v; ..."` calling the relevant loader, then run the tests.
+
+#### The one curated deletion: `Fluidstack Lake Mariner`
+
+`data_center_timelines.csv` is **not** a byte-faithful mirror of Epoch's export. As of the
+2026-08-08 pull, Epoch renamed the site to `Anthropic Lake Mariner` in `data_centers.csv`
+and re-scoped it to buildings CB3–5, but the timelines export still emits 8 stale rows under
+the old name covering the *whole* site (CB1–5, i.e. including the Core42-leased buildings).
+Epoch's live page lists 77 sites and no longer includes `Fluidstack Lake Mariner`.
+
+`load_data_centers()` is **timelines-driven** — metadata only supplies the company label, so a
+timeline series with no metadata row still loads as its own site (company falls back to the
+first name token). Ingesting verbatim therefore materializes a phantom 78th site that
+double-counts Lake Mariner: +0.4% of current H100-equiv, +4.7% of the 2027-03 total. The 8
+rows are deleted locally. **Re-delete them on every refresh until Epoch fixes the export**;
+check with `set(timelines['Data center']) - set(metadata['Name'])`.
+
+Two other timeline-only names are legitimate and must be kept: `EdgeCore Mesa PH03` (a
+long-standing orphan) and `DayOne Kempas` (new in the 2026-08-08 pull). Neither duplicates
+another site — only Lake Mariner does.
 
 ### Key Sections of visualize_projection.py
 

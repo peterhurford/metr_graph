@@ -25,6 +25,13 @@
 #   4. GLM-5.2 11.0 == Opus 4.5 11.0; [A] states GLM-5.2 "reaches as far as Opus 4.5".
 #   Derived lags also reproduce [A]'s prose: GLM-5.2 6.7mo ("less than 7 months"), DeepSeek-V4-Pro
 #   6.8mo ("7 months before it").
+# LAST VERIFIED 2026-08-08 (figure-unchanged check, not a re-digitization): re-fetched fig2-ranges.png
+#   from the post's current CDN URL. Still 3500x2160; the 32-step gridline is at rows 498-499 and the
+#   0-step baseline at 1713-1715, giving 76.06px per tick -- the recorded 498/1715 calibration holds to
+#   ~1.5px (0.04 steps). A saturated-colour census of the plot interior finds exactly three non-greyscale
+#   trace hues -- blue (85,114,254), green (60,179,113), orange (204,120,92) -- unchanged, so no trace has
+#   been added. No AISI/CAISI post after [B] states a new TLO endpoint in prose either (the 2026-08-04
+#   agent-incident report is qualitative and prints no benchmark numbers).
 # DATES: unlike aisi_cyber_narrow.csv, this figure's x-axis is cumulative tokens, so it carries NO date
 #   information. Dates here are published release dates (Epoch ECI release dates; Kimi K3's is stated in
 #   [B]), NOT chart-derived. The one exception is Mythos Preview, which has no published release record,

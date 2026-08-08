@@ -484,6 +484,16 @@ _RLI_RAW = [
     {"name": "GPT-5.5",        "date": "2026-04-23", "rli_score": 6.25},
     {"name": "Opus 4.8",       "date": "2026-05-28", "rli_score": 8.33},
     {"name": "Fable 5",        "date": "2026-06-09", "rli_score": 15.83},
+    # Rechecked 2026-08-08 against labs.scale.com/leaderboard/rli: no entry newer
+    # than Fable 5. Two standing discrepancies, deliberately left as-is:
+    #   * Scale renders Fable 5 as 15.80, the CAIS dashboard as 15.83. We keep 15.83 --
+    #     the benchmark's denominator is 240 projects and 38/240 = 15.833%, so 15.80
+    #     is a rounding artifact. (A third-party blog's "16.1%" is on no canonical
+    #     surface and is not a multiple of 1/240; ignore it.)
+    #   * Grok 4 has been dropped from the live leaderboard (it was in the Oct 2025
+    #     paper). Its 2.08 is not contradicted, just no longer reproducible upstream.
+    # Leaderboard rows below our floor and intentionally not carried: Manus 1.0 (2.50),
+    # ChatGPT agent (1.25), gpt-5.2 (default) 2.08 -- we carry the (medium) variant.
 ]
 
 
@@ -4517,12 +4527,23 @@ _OPENAI_REVENUE = [
     ("2026-04-30", 28.0),
     ("2026-05-15", 30.0),
     ("2026-05-27", 33.0),
+    # TickerTrends' 2026-07-30 post ("OpenAI ARR Growth Accelerated Into July")
+    # prints its underlying read dates rather than a month label, so these four
+    # carry real as-of dates instead of a publication date. Same alt-data series
+    # as everything from 2025-12-31 down.
+    ("2026-06-25", 37.3),
+    ("2026-07-02", 38.5),
+    ("2026-07-09", 40.3),
     # TickerTrends alt-data estimate (published 2026-07-23), dated to publication
-    # since the post gives only "July 2026". Not a disclosure and uncorroborated by
+    # since that post gives only "July 2026". Not a disclosure and uncorroborated by
     # press -- mainstream reporting still cites ~$25B as of Feb 2026. Kept because
     # the 21.4 and 33.0 points above are from the same TickerTrends series, so this
     # continues one line rather than splicing two.
     ("2026-07-23", 41.3),
+    ("2026-07-29", 42.6),
+    # Excluded: OpenAI CFO Sarah Friar told employees on 2026-07-29 that July ARR
+    # "surpassed the company's entire second quarter" (CNBC). No dollar figure was
+    # given, and it mixes ARR against a quarterly total -- not a datapoint.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -4545,11 +4566,14 @@ _ANTHROPIC_REVENUE = [
     # would otherwise sit at or below it on the same or a later date.
     ("2026-05-15", 47.0),
     # This series is company-disclosed throughout, deliberately. Third-party tracker
-    # estimates exist for mid-2026 (YipitData ~$69B late June; TickerTrends $74.1B
-    # July) but are not added: TickerTrends put April at $35.6B where Anthropic
-    # disclosed $30B, so appending one would bend the curve by a source-level shift
-    # rather than by measured growth. Anthropic's "exceed $50B by end of July"
-    # investor guidance is a forecast, not an achieved run rate, and is excluded too.
+    # estimates exist for mid-2026 (YipitData $69B at 2026-07-10; TickerTrends $69.6B
+    # June / $74.1B July) but are not added: TickerTrends put April at $35.6B where
+    # Anthropic disclosed $30B, so appending one would bend the curve by a source-level
+    # shift rather than by measured growth. Anthropic's "exceed $50B by end of July"
+    # investor guidance is a forecast, not an achieved run rate, and is excluded too;
+    # so is the $10.9B Q2-2026 figure shown to investors -- a projection, and quarterly
+    # revenue rather than run rate. Rechecked 2026-08-08: no company disclosure since
+    # the Series H $47B; Anthropic's June-August newsroom activity was all IPO-related.
 ]
 
 
