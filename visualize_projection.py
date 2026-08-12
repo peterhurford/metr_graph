@@ -484,12 +484,15 @@ _RLI_RAW = [
     {"name": "GPT-5.5",        "date": "2026-04-23", "rli_score": 6.25},
     {"name": "Opus 4.8",       "date": "2026-05-28", "rli_score": 8.33},
     {"name": "Fable 5",        "date": "2026-06-09", "rli_score": 15.83},
-    # Rechecked 2026-08-08 against labs.scale.com/leaderboard/rli: no entry newer
-    # than Fable 5. Two standing discrepancies, deliberately left as-is:
+    # Rechecked 2026-08-11 against labs.scale.com/leaderboard/rli: no entry newer
+    # than Fable 5, and the CAIS blog (2026-07-01) is still the latest RLI announcement.
+    # Two standing discrepancies, deliberately left as-is:
     #   * Scale renders Fable 5 as 15.80, the CAIS dashboard as 15.83. We keep 15.83 --
     #     the benchmark's denominator is 240 projects and 38/240 = 15.833%, so 15.80
-    #     is a rounding artifact. (A third-party blog's "16.1%" is on no canonical
-    #     surface and is not a multiple of 1/240; ignore it.)
+    #     is a rounding artifact. A "16.1%" figure also circulates (secondary reporting
+    #     attributes it to CAIS and to scoring 218 of 240 jobs, 22 being unscorable);
+    #     that denominator is not stated on either canonical surface, so we keep the
+    #     dashboard's 15.83 -- remotelabor.ai designates the dashboard as canonical.
     #   * Grok 4 has been dropped from the live leaderboard (it was in the Oct 2025
     #     paper). Its 2.08 is not contradicted, just no longer reproducible upstream.
     # Leaderboard rows below our floor and intentionally not carried: Manus 1.0 (2.50),
@@ -4541,6 +4544,9 @@ _OPENAI_REVENUE = [
     # continues one line rather than splicing two.
     ("2026-07-23", 41.3),
     ("2026-07-29", 42.6),
+    # Rechecked 2026-08-11: TickerTrends has published no August post on either company,
+    # so 42.6 remains the newest read in the series. (Their 07-30 post dates that May read
+    # to 05-30; we carry the 33.0 at 05-27 -- a 3-day pre-existing discrepancy, not new data.)
     # Excluded: OpenAI CFO Sarah Friar told employees on 2026-07-29 that July ARR
     # "surpassed the company's entire second quarter" (CNBC). No dollar figure was
     # given, and it mixes ARR against a quarterly total -- not a datapoint.
@@ -4572,8 +4578,12 @@ _ANTHROPIC_REVENUE = [
     # shift rather than by measured growth. Anthropic's "exceed $50B by end of July"
     # investor guidance is a forecast, not an achieved run rate, and is excluded too;
     # so is the $10.9B Q2-2026 figure shown to investors -- a projection, and quarterly
-    # revenue rather than run rate. Rechecked 2026-08-08: no company disclosure since
-    # the Series H $47B; Anthropic's June-August newsroom activity was all IPO-related.
+    # revenue rather than run rate. Rechecked 2026-08-11: no company disclosure since
+    # the Series H $47B. Anthropic's June-August newsroom posts are product/safety/policy
+    # only, and the S-1 announced 2026-06-01 is still a confidential draft -- nothing has
+    # been filed publicly on EDGAR, so there is no filing-derived disclosure to ingest.
+    # Cross-checked against Epoch's ai_companies_revenue_reports.csv, whose newest
+    # Anthropic row is still 2026-05-15 / $47B / annualized run rate / company disclosure.
 ]
 
 

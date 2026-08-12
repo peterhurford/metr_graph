@@ -228,6 +228,10 @@ Microsoft-Nebius New Jersey,56846.89236988378,50,1.8941,Nebius #confident,Micros
 - [Large data center nears completion in Vineland (Cape May County Herald)](https://capemaycountyherald.com/article/large-data-center-nears-completion-in-vineland/)
 - [SemiAnalysis: Stop Saying Half of 2026 US Datacenter Capacity Is Canceled](https://newsletter.semianalysis.com/p/stop-saying-half-of-2026-us-datacenter)
 ",https://docs.google.com/spreadsheets/d/1-x8TTkzOemQ4hI61I5tuHgatFUSI0e5F3RAw8uufooI/edit,,B300,B300,,,,United States,"3963 S Lincoln Ave, Vineland, New Jersey"
+Southgate Melbourne,46488.12531581607,41,1.553162,Firmus #confident,,"- [Firmus Expands Project Southgate Across Australia](https://firmus.co/newsroom/southgate-expansion) (the CDC partnership, Melbourne location and timing all point to the CDC Brooklyn campus)
+- [Firmus Signs Multi-Year Agreement with Global Hyperscale Customer at Project Southgate](https://firmus.co/newsroom/firmus-signs-multi-year-agreement-with-global-hyperscale-customer-at-project-southgate) (mentions 18,400 GB300 GPUs to be deployed at the Melbourne facility)
+- [CDC Melbourne](https://cdc.com/locations/melbourne/)
+",https://docs.google.com/spreadsheets/d/11HPAZWME2riqB1Ru6YADdiWUmALWtIZ4ELMcMDqBow4/edit,,B300,B300,,,,Australia,
 Stream Phoenix,46134.4113188479,64,2.424448,,,"- [Official page for the data center.](https://www.streamdatacenters.com/locations/phoenix/)
 - [Official pre-construction planning document.](https://www.streamdatacenters.com/wp-content/uploads/2026/01/SDC-Goodyear-CaseStudy-251218.pdf)
 ",https://docs.google.com/spreadsheets/d/1SC63z3YKLbCg9XNmo2uIcuGxife8xhHqYTc_IyEuzk0/edit?usp=drive_link,,H100,H100,,,,United States,2950 S. Litchfield Road
@@ -325,7 +329,3 @@ QTS Cedar Rapids,0,0,0,,,"- [MISO new load announcements](https://cdn.misoenergy
 - [Article by Corridor Business Journal ](https://corridorbusiness.com/scope-of-qts-data-project-in-cedar-rapids-continuing-to-grow/)featuring a rendering of Buildings 1-3.
 - [Post by GLD Commercial ](https://www.gldcommercial.com/google-and-qts-data/)featuring a map with land assigned to QTS in Big Cedar Industrial Center.
 ",https://docs.google.com/spreadsheets/d/1zXqoogyqGbmgvdu4vSTepZG3Cy8kMoJjp0n3KaZPkd4/edit?usp=sharing,,,Rubin,,,Alliant Energy,United States,"6200 76th Ave SW, Fairfax, IA 52228"
-Southgate Melbourne,0,0,0,Firmus #confident,,"- [Firmus Expands Project Southgate Across Australia](https://firmus.co/newsroom/southgate-expansion) (the CDC partnership, Melbourne location and timing all point to the CDC Brooklyn campus)
-- [Firmus Signs Multi-Year Agreement with Global Hyperscale Customer at Project Southgate](https://firmus.co/newsroom/firmus-signs-multi-year-agreement-with-global-hyperscale-customer-at-project-southgate) (mentions 18,400 GB300 GPUs to be deployed at the Melbourne facility)
-- [CDC Melbourne](https://cdc.com/locations/melbourne/)
-",https://docs.google.com/spreadsheets/d/11HPAZWME2riqB1Ru6YADdiWUmALWtIZ4ELMcMDqBow4/edit,,,B300,,,,Australia,

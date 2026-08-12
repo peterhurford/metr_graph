@@ -7,13 +7,16 @@
 # VALIDATION: derived dates match known releases (GPT-5 2025-08-07 exact; Opus 3 off by 1d; o3 off by 1d).
 #   Derived lags reproduce AISI's printed annotations: GLM-5.2 vs Opus 4.6 = 4.30mo (chart "4.3 mo");
 #   DeepSeek-V4-Pro vs Opus 4.5 = 5.06mo (chart "5.0 mo").
-# LAST VERIFIED 2026-08-08 (figure-unchanged check, not a re-digitization): re-fetched fig1-narrow.png
-#   from the post's current CDN URL. Still 2840x2160; gridline bands at rows 546-549 and 1758-1761, so the
-#   recorded 547/1760 calibration holds. All 12 rows below still land on their marker colour, and a
-#   saturated-colour census of the plot interior finds exactly two non-greyscale hues -- blue (85,114,254)
-#   = DeepSeek-V4-Pro and green (57,178,111) = GLM-5.2 -- so no open-weight marker has been added.
+# LAST VERIFIED 2026-08-11 (figure-unchanged check, not a re-digitization): re-fetched fig1-narrow.png
+#   from the post's current CDN URL. Still 2840x2160; gridline bands at rows 546-549 and 1758-1761 (both
+#   darkest at 229 grey on rows 547/1760), so the recorded 547/1760 calibration holds. All 12 rows below
+#   still land on their marker colour, and a saturated-colour census of the plot interior returns the same
+#   palette as before -- four Anthropic salmons plus exactly two open-weight hues, blue (85,114,254) =
+#   DeepSeek-V4-Pro and green (60,179,113) = GLM-5.2 -- so no open-weight marker has been added.
 #   AISI's newer cyber posts (Kimi K3 assessment 2026-07-23; cheating-behaviour 2026-07-21; agent-incident
 #   report 2026-08-04) carry NO narrow-task numbers, so this suite has gained no models since 2026-07-17.
+#   Rechecked 2026-08-11: the AISI blog and cyber category list nothing after the 2026-08-04 incident
+#   report, which is qualitative; Kimi K3 still has no narrow-task score (see aisi_cyber_tlo.csv).
 # CAVEAT: date_source=chart means the date is inferred from marker x-position, NOT a published release date.
 # CAVEAT: this figure contains NO US open-weight and NO Chinese closed models, so country and
 #   weights are perfectly confounded -- see notes in render_ukcyber().

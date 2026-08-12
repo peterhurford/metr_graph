@@ -25,13 +25,17 @@
 #   4. GLM-5.2 11.0 == Opus 4.5 11.0; [A] states GLM-5.2 "reaches as far as Opus 4.5".
 #   Derived lags also reproduce [A]'s prose: GLM-5.2 6.7mo ("less than 7 months"), DeepSeek-V4-Pro
 #   6.8mo ("7 months before it").
-# LAST VERIFIED 2026-08-08 (figure-unchanged check, not a re-digitization): re-fetched fig2-ranges.png
-#   from the post's current CDN URL. Still 3500x2160; the 32-step gridline is at rows 498-499 and the
-#   0-step baseline at 1713-1715, giving 76.06px per tick -- the recorded 498/1715 calibration holds to
-#   ~1.5px (0.04 steps). A saturated-colour census of the plot interior finds exactly three non-greyscale
-#   trace hues -- blue (85,114,254), green (60,179,113), orange (204,120,92) -- unchanged, so no trace has
-#   been added. No AISI/CAISI post after [B] states a new TLO endpoint in prose either (the 2026-08-04
-#   agent-incident report is qualitative and prints no benchmark numbers).
+# LAST VERIFIED 2026-08-11 (figure-unchanged check, not a re-digitization): re-fetched fig2-ranges.png
+#   from the post's current CDN URL. Still 3500x2160. The y-axis tick marks left of the axis (x=249) sit
+#   at 17 evenly spaced rows running 498.0 -> 1715.0 at 76.0-76.5px apart, i.e. exactly the recorded
+#   498/1715 calibration at 76.06px per tick. Both open-weight trace endpoints reproduce their stored
+#   values off that calibration to within 0.01 steps (blue x=2668 -> 8.01 vs DeepSeek-V4-Pro's 8.0;
+#   green x=2668 -> 11.00 vs GLM-5.2's 11.0) -- note the rightmost pixels of each hue at x~2695 are the
+#   legend swatches, not the traces. A saturated-colour census of the plot interior returns the same
+#   palette as before -- blue (85,114,254), green (60,179,113), and the Anthropic salmon/orange family
+#   topping out at (204,120,92) -- so no trace has been added. No AISI/CAISI post after [B] states a new
+#   TLO endpoint in prose either (the 2026-08-04 agent-incident report is qualitative and prints no
+#   benchmark numbers), and nothing has been published after 2026-08-04 as of this check.
 # DATES: unlike aisi_cyber_narrow.csv, this figure's x-axis is cumulative tokens, so it carries NO date
 #   information. Dates here are published release dates (Epoch ECI release dates; Kimi K3's is stated in
 #   [B]), NOT chart-derived. The one exception is Mythos Preview, which has no published release record,
