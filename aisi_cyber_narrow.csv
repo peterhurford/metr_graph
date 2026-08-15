@@ -7,16 +7,21 @@
 # VALIDATION: derived dates match known releases (GPT-5 2025-08-07 exact; Opus 3 off by 1d; o3 off by 1d).
 #   Derived lags reproduce AISI's printed annotations: GLM-5.2 vs Opus 4.6 = 4.30mo (chart "4.3 mo");
 #   DeepSeek-V4-Pro vs Opus 4.5 = 5.06mo (chart "5.0 mo").
-# LAST VERIFIED 2026-08-11 (figure-unchanged check, not a re-digitization): re-fetched fig1-narrow.png
-#   from the post's current CDN URL. Still 2840x2160; gridline bands at rows 546-549 and 1758-1761 (both
-#   darkest at 229 grey on rows 547/1760), so the recorded 547/1760 calibration holds. All 12 rows below
-#   still land on their marker colour, and a saturated-colour census of the plot interior returns the same
-#   palette as before -- four Anthropic salmons plus exactly two open-weight hues, blue (85,114,254) =
-#   DeepSeek-V4-Pro and green (60,179,113) = GLM-5.2 -- so no open-weight marker has been added.
+# LAST VERIFIED 2026-08-15 (figure-unchanged check, not a re-digitization): re-fetched fig1-narrow.png
+#   from the post's current CDN URL. Still 2840x2160; gridline bands darkest at rows 547/1760, so the
+#   recorded calibration holds, and the x-tick fit still returns 0.45080 days/px with residuals <=0.11px.
+#   All 12 rows below still land on their marker colour. Note the OpenAI markers are a *greyscale* ramp
+#   (o1 175, o3 153, GPT-5 109, GPT-5.2-Codex 88, GPT-5.6-Sol 0) and Opus 3's salmon is nearly unsaturated
+#   at (234,216,210), so a naive "saturated pixel" probe reports those six as empty -- check against the
+#   near-white background instead, not against saturation. A saturated-colour census of the plot interior
+#   returns the same palette as before -- four Anthropic salmons plus exactly two open-weight hues, blue
+#   (85,114,254) = DeepSeek-V4-Pro and green (60,179,113) = GLM-5.2 -- so no open-weight marker was added.
 #   AISI's newer cyber posts (Kimi K3 assessment 2026-07-23; cheating-behaviour 2026-07-21; agent-incident
 #   report 2026-08-04) carry NO narrow-task numbers, so this suite has gained no models since 2026-07-17.
-#   Rechecked 2026-08-11: the AISI blog and cyber category list nothing after the 2026-08-04 incident
-#   report, which is qualitative; Kimi K3 still has no narrow-task score (see aisi_cyber_tlo.csv).
+#   Rechecked 2026-08-15: the AISI blog listing is newest-first and still tops out at the 2026-08-04
+#   incident report, which is qualitative; Kimi K3 still has no narrow-task score (see aisi_cyber_tlo.csv).
+#   Not to be confused with "How fast is autonomous AI cyber capability advancing?" (2026-05-13), which
+#   predates this post and reports cyber *time horizons* -- a different metric, not success rates.
 # CAVEAT: date_source=chart means the date is inferred from marker x-position, NOT a published release date.
 # CAVEAT: this figure contains NO US open-weight and NO Chinese closed models, so country and
 #   weights are perfectly confounded -- see notes in render_ukcyber().

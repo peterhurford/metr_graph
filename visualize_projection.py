@@ -484,8 +484,12 @@ _RLI_RAW = [
     {"name": "GPT-5.5",        "date": "2026-04-23", "rli_score": 6.25},
     {"name": "Opus 4.8",       "date": "2026-05-28", "rli_score": 8.33},
     {"name": "Fable 5",        "date": "2026-06-09", "rli_score": 15.83},
-    # Rechecked 2026-08-11 against labs.scale.com/leaderboard/rli: no entry newer
+    # Rechecked 2026-08-15 against labs.scale.com/leaderboard/rli: no entry newer
     # than Fable 5, and the CAIS blog (2026-07-01) is still the latest RLI announcement.
+    # GPT-5.6 Sol and the Gemini 3.x line have no published RLI score anywhere.
+    # A "16.1%" for Fable 5 circulates via a third-party blog (Pebblous) citing "CAIS
+    # (2026)" with no link; contradicted by all three primary surfaces (Scale 15.80,
+    # CAIS blog 15.8, dashboard.safe.ai 15.83). Treated as an error, not a revision.
     # Two standing discrepancies, deliberately left as-is:
     #   * Scale renders Fable 5 as 15.80, the CAIS dashboard as 15.83. We keep 15.83 --
     #     the benchmark's denominator is 240 projects and 38/240 = 15.833%, so 15.80
@@ -4544,9 +4548,16 @@ _OPENAI_REVENUE = [
     # continues one line rather than splicing two.
     ("2026-07-23", 41.3),
     ("2026-07-29", 42.6),
-    # Rechecked 2026-08-11: TickerTrends has published no August post on either company,
-    # so 42.6 remains the newest read in the series. (Their 07-30 post dates that May read
-    # to 05-30; we carry the 33.0 at 05-27 -- a 3-day pre-existing discrepancy, not new data.)
+    # TickerTrends' 2026-08-14 post ("OpenAI ARR Tracking Reached $44.3B as Bloomberg
+    # Reported $40B Run Rate") states "$44.3B as of Aug. 12, up from $42.6B on Jul. 29",
+    # so it chains explicitly off the row above and carries a real as-of date.
+    ("2026-08-12", 44.3),
+    # Excluded: Bloomberg reported 2026-08-13 that OpenAI's run rate "topped $40B" as of
+    # 2026-07-31 (sourced to internal staff memos). A press report, not the TickerTrends
+    # alt-data series -- and it sits *below* the 42.6 tracked two days earlier, the same
+    # gross-vs-net gap that makes splicing the two source classes produce fake dips.
+    # Epoch's ai_companies_revenue_reports.csv carries that $40B as its newest OpenAI row;
+    # we deliberately keep the alt-data line instead of switching mid-series.
     # Excluded: OpenAI CFO Sarah Friar told employees on 2026-07-29 that July ARR
     # "surpassed the company's entire second quarter" (CNBC). No dollar figure was
     # given, and it mixes ARR against a quarterly total -- not a datapoint.
@@ -4578,12 +4589,17 @@ _ANTHROPIC_REVENUE = [
     # shift rather than by measured growth. Anthropic's "exceed $50B by end of July"
     # investor guidance is a forecast, not an achieved run rate, and is excluded too;
     # so is the $10.9B Q2-2026 figure shown to investors -- a projection, and quarterly
-    # revenue rather than run rate. Rechecked 2026-08-11: no company disclosure since
+    # revenue rather than run rate. Rechecked 2026-08-15: no company disclosure since
     # the Series H $47B. Anthropic's June-August newsroom posts are product/safety/policy
-    # only, and the S-1 announced 2026-06-01 is still a confidential draft -- nothing has
-    # been filed publicly on EDGAR, so there is no filing-derived disclosure to ingest.
+    # only (Aug 4 Cuellar hire, Aug 7 Fable 5 bio safeguards, Aug 14 text watermark), and
+    # the S-1 announced 2026-06-01 is still a confidential draft -- nothing has been filed
+    # publicly on EDGAR, so there is no filing-derived disclosure to ingest.
     # Cross-checked against Epoch's ai_companies_revenue_reports.csv, whose newest
     # Anthropic row is still 2026-05-15 / $47B / annualized run rate / company disclosure.
+    # Also excluded, and prominent in mid-August press: Q2-2026 revenue "over $11.5B"
+    # (Bloomberg 2026-08-14, CNBC/Fortune 2026-08-15). Quarterly revenue, not run rate,
+    # and sourced to people familiar rather than disclosed. Naively annualizing lands
+    # near the May 47.0 by coincidence; that is not a reason to enter it.
 ]
 
 

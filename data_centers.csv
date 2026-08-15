@@ -12,15 +12,15 @@ Microsoft Fairwater Atlanta,768768.7220818596,636,24.092952,Microsoft #confident
 - [Bloomberg article](https://www.bloomberg.com/news/features/2024-12-08/georgia-s-blackstone-backed-qts-data-center-hits-resistance-over-ai-power-needs)
 
 ",https://docs.google.com/spreadsheets/d/1XeruHu2ES3UsSrsAU3HSMkk5zwzFOQzxQE9pQ_fuEUw/edit?usp=sharing,Microsoft AI WAN #confident,B200,B200,,,Georgia Power,United States,"1435 Hwy 54 W, Fayetteville, GA 30214"
-Meta Prometheus,763011.622031329,631,23.903541999999998,Meta #confident,Meta #confident,"- [Meta blog post with details on Prometheus](https://engineering.fb.com/2025/09/29/data-infrastructure/metas-infrastructure-evolution-and-the-advent-of-ai/)
-- [New Albany Business Park land use map](https://drive.google.com/file/d/1Wb_BBVOnhu5UCQ8Q5d6iRIG9K_vigD8A/view?usp=sharing)
-- [Letter on Socrates South Power Generation Project](https://drive.google.com/file/d/1OMbFbdNGPmfSkwVWqOAK-5pOufiKQBu1/view?usp=sharing)
-",https://docs.google.com/spreadsheets/d/1rL6xWR9h4JllErYT9U2TzoOMNxTNLcjUnIhV22bc4JQ/edit?usp=sharing,Prometheus #confident,B200,B200,,,"Williams,American Electric Power",United States,"1 Community Cir, New Albany, OH 43054"
 Anthropic-Amazon New Carlisle,685912.076806468,910,34.47262,Amazon #confident,Anthropic #confident,"- [Air Construction Permit application for the northern portion](https://drive.google.com/file/d/1BKiTFNUk2KDaUaiHG7fz0KlkNSBTHzbb/view?usp=sharing)
 - [Backup diesel generator referenced in the permit](https://www.cat.com/en_US/products/new/power-systems/electric-power/diesel-generator-sets/117341.html)
 - [Announcement of Project Rainier coming online](https://www.aboutamazon.com/news/aws/aws-project-rainier-ai-trainium-chips-compute-cluster)
 - [Air permit for Buildings 19-32, suggesting expansion to 2.3 GW total facility power](https://t.co/HsAO7oyKa2)
 ",https://docs.google.com/spreadsheets/d/1umU-KLAB_6A-lKRCdLuF7SPv74HlqKjDdfDor1bRGuY/edit?usp=sharing,Project Rainier #confident,Trainium2,Trainium2,,,,United States,"55001 Larrison Blvd, New Carlisle, IN 46552"
+Meta Prometheus,677109.6513390602,562,21.289684,Meta #confident,Meta #confident,"- [Meta blog post with details on Prometheus](https://engineering.fb.com/2025/09/29/data-infrastructure/metas-infrastructure-evolution-and-the-advent-of-ai/)
+- [New Albany Business Park land use map](https://drive.google.com/file/d/1Wb_BBVOnhu5UCQ8Q5d6iRIG9K_vigD8A/view?usp=sharing)
+- [Letter on Socrates South Power Generation Project](https://drive.google.com/file/d/1OMbFbdNGPmfSkwVWqOAK-5pOufiKQBu1/view?usp=sharing)
+",https://docs.google.com/spreadsheets/d/1BXuOzOGyQCEgXl6o-zUrXbLvxYzw_hGnN25Rj13z37c/edit?usp=sharing,Prometheus #confident,B200,B200,,,"Williams,American Electric Power",United States,"1 Community Cir, New Albany, OH 43054"
 OpenAI Stargate Abilene,509348.15563415864,421,15.948322,Oracle #confident,OpenAI #confident,"- [Crusoe 2024 Impact Report, with details on Abilene](https://drive.google.com/file/d/1oHWA9vmpvFOh-LvDy5fgq_wq5ITuxd1r/view?usp=sharing)
 - [Air Permit Application for buildings 1-2, featuring blueprints on p.157](https://drive.google.com/file/d/1FgfX6hqojlBtqNXJHjzJmnwWAMx4_M0b/view?usp=sharing)
 - [Mortensen’s profile of the project, with details of substations](https://www.mortenson.com/projects/abilene-data-center-development)
@@ -38,9 +38,12 @@ Google New Albany,351692.77412834764,339,12.841998,Google #confident,Google Deep
 - Google’s [2025 Environmental Report](https://sustainability.google/reports/google-2025-environmental-report/)
 
 ",https://docs.google.com/spreadsheets/d/1BeBRnZIRIC0daw-VUJ4udbD0-TA_bnbIMOU_PHnCzzE/edit?usp=sharing,,"TPU v5e,TPU v5p,TPU v6e,TPU v7","TPU v5e,TPU v5p,TPU v6e,TPU v7",,,,United States,"1101 Beech Rd SW, New Albany, OH 43054"
-Google Council Bluffs (East),339060.1313794846,237,8.978034,Google #confident,Google DeepMind #speculative,"- [Construction permit application form with site address](https://programs.iowadnr.gov/easyair/Public/EnSuite/Shared/Pages/Util/ServerRptViewer.aspx?sr=/IDNR/Reports/EASY/RPT_Construction_Application_A_GEN&SUBMISSION_RID=67330&SUB_FORM_RID=148293)
+Google Mesa,343102.57705912075,183,6.932405999999999,Google #confident,,"- [DCD article on the site breaking ground](https://www.datacenterdynamics.com/en/news/google-breaks-ground-on-mesa-data-center-campus-in-arizona/)
+- [DCD article on announcement to build Building 2](https://www.datacenterdynamics.com/en/news/google-files-to-build-second-data-center-at-mesa-campus-in-arizona/)
+",https://docs.google.com/spreadsheets/d/1S0kcGYrj2y1UionUXVFyxjc1EAwzyfABT2PJECqRYZs/edit?usp=sharing,,TPU v6e,TPU v6e,,,,United States,
+Google Council Bluffs (East),289034.86609398684,237,8.978034,Google #confident,Google DeepMind #speculative,"- [Construction permit application form with site address](https://programs.iowadnr.gov/easyair/Public/EnSuite/Shared/Pages/Util/ServerRptViewer.aspx?sr=/IDNR/Reports/EASY/RPT_Construction_Application_A_GEN&SUBMISSION_RID=67330&SUB_FORM_RID=148293)
 - [Construction permit application form with backup generator data](https://programs.iowadnr.gov/easyair/Public/EnSuite/Shared/Pages/Util/ServerRptViewer.aspx?sr=/IDNR/Reports/EASY/RPT_Construction_Application_E_EU&SUBMISSION_RID=67330&SUB_FORM_RID=148297) (believed to be for Building 3)
-",https://docs.google.com/spreadsheets/d/1WblymQao5_dmUYzp0MWlVPzGJ3EVSWofn4v8jI-LHh4/edit?usp=sharing,,"TPU v5e,TPU v6e,TPU v5p,TPU v7","TPU v5e,TPU v6e,TPU v5p,TPU v7",,,,United States,"10410 Bunge Ave, Council Bluffs, IA 51503"
+",https://docs.google.com/spreadsheets/d/1px89m8yCkr9h0hzSVMWxCrHzHwBXQw2W8Gbh6YEMSLo/edit?usp=sharing,,"TPU v5e,TPU v6e,TPU v5p,TPU v7","TPU v5e,TPU v6e,TPU v5p,TPU v7",,,,United States,"10410 Bunge Ave, Council Bluffs, IA 51503"
 Google Lincoln,287518.9489641233,141,5.341361999999999,Google #confident,,"- [Army corps land use application with a useful construction plan diagram, split across 7 phases](https://upload.wikimedia.org/wikipedia/commons/2/25/Application_no-_NWO-2019-00110-WEH_-_USACE-p16021coll15-1525.pdf)
 - [DCD article on the start of site construction](https://www.datacenterdynamics.com/en/news/work-on-data-center-in-lincoln-nebraska-finally-starting/)
 - [Rezoning approval, stating 75 ft building height](https://lnklan.granicus.com/DocumentViewer.php?file=lnklan_bfe1e3023d49404348f26355e113cb22.pdf&view=1)
@@ -130,6 +133,9 @@ Amazon Ridgeland,171298.6356745831,228,8.637096,Amazon #confident,Anthropic #spe
 - [Backup diesel generator referenced in the permit](https://www.cat.com/en_US/products/new/power-systems/electric-power/diesel-generator-sets/117341.html)
 - [New York Times article on Project Rainier](https://www.nytimes.com/2025/06/24/technology/amazon-ai-data-centers.html)
 ",https://docs.google.com/spreadsheets/d/1WWWmkFubzXYb2RY9PZsF4BtrpmbmdcSJtVTw1kcJxVs/edit?usp=sharing,Project Rainier #speculative,Trainium2,"Trainium2,Trainium3",,,Entergy,United States,"1626 County Line Road Ridgeland, Mississippi"
+Meta Huntsville,166750.8842849924,146,5.530772,Meta #confident,Meta #confident,"- [Announcement of expansion completing in 2026 ](https://plateauexcavation.com/projects/huntsville-meta-data-center-meta-project-ferris/)
+- [TVA solar installation announcements](https://www.prnewswire.com/news-releases/tva-announces-largest-valley-solar-installations--built-for-facebook-300743255.html)
+",https://docs.google.com/spreadsheets/d/1Rk-yikcpmRBm2V9iwBTdad2IILaZEODw1Xzk66GYEJk/edit?gid=2010365208#gid=2010365208,,B300,B300,,,"Tennessee Valley Authority,NextEra Energy Resources,First Solar",United States,"5400 Prosperity Dr NW, Toney, AL"
 Meta Aiken,161697.82718544718,142,5.379244,Meta #confident,Meta #confident,"- [Meta Introduction to the Aiken Project](https://datacenters.atmeta.com/2024/08/hello-south-carolina/)
 - [DPR Construction project page](https://www.dpr.com/projects/meta-aiken-data-center-aiken-sc)
 
@@ -155,15 +161,15 @@ Meta Eagle Mountain,151354.21930267813,133,5.038306,Meta #confident,Meta #confid
 ",https://docs.google.com/spreadsheets/d/1mVv_XB56SrZcy2jAwoG6lzgeXQHp0G3adhIaChbNh4E/edit?usp=sharing,,B300,B300,,Mortenson,Williams,United States,"1275 N Community Cir, Eagle Mountain, UT 84005"
 Google Lancaster,130368.8731682668,137,5.189834,Google #confident,,"- [DCD article discussing the announcement of this site](https://www.datacenterdynamics.com/en/news/google-to-build-two-more-data-centers-in-columbus-ohio/)
 ",https://docs.google.com/spreadsheets/d/1yR7SiR5ORQCKoUzl7JOJdSSHCHZh0NHfqQ8Vxv8n2Mg/edit?usp=sharing,,"TPU v5e,TPU v5p,TPU v7,TPU v6e","TPU v5e,TPU v5p,TPU v7,TPU v6e",,,,United States,"105 Whiley Rd, Lancaster, OH 43130"
-Google Mesa,125821.1217786761,90,3.4093799999999996,Google #confident,,"- [DCD article on the site breaking ground](https://www.datacenterdynamics.com/en/news/google-breaks-ground-on-mesa-data-center-campus-in-arizona/)
-- [DCD article on announcement to build Building 2](https://www.datacenterdynamics.com/en/news/google-files-to-build-second-data-center-at-mesa-campus-in-arizona/)
-",https://docs.google.com/spreadsheets/d/1S0kcGYrj2y1UionUXVFyxjc1EAwzyfABT2PJECqRYZs/edit?usp=sharing,,TPU v6e,TPU v6e,,,,United States,
 Google Waltham Cross,123799.89893885801,88,3.3336159999999997,Google #confident,Google DeepMind #speculative,"- [Google — Waltham Cross data centre page](https://datacenters.google/locations/waltham-cross/)
 - [Google opening announcement (Sept 2025)](https://www.googlecloudpresscorner.com/2025-09-16-Google-Opens-Waltham-Cross-Data-Centre-as-Part-of-Two-year-GBP5-Billion-Investment-in-the-UK-to-Help-Power-its-AI-Economy)
 - [Project Saracen scoping report (Broxbourne planning application ref 07/18/1181/O) ](https://www.broxbourne.gov.uk/downloads/file/51/project-saracen-scoping-report-for-submission-full-13-08-18-compressed-v2)
 - [Planning application description (CPRE Hertfordshire)](https://www.cpreherts.org.uk/resources/land-at-maxwells-farm-west-great-cambridge-road-cheshunt-hertfordshire/)
 
 ",https://docs.google.com/spreadsheets/d/1lLfeTMkuesVmRtc_RT5qVQSX9C-K-zMN-hH981ZwK1g/edit?usp=drive_link,,"TPU v6e,TPU v7","TPU v6e,TPU v7",,,"Shell Energy Europe,Engie",United Kingdom,"Land at Maxwell's Farm West, Great Cambridge Road, Cheshunt, EN8 8XH"
+Meta-QTS Hillsboro 2,123799.89893885801,180,6.818759999999999,Meta #likely,Meta #likely,"- [QTS Hillsboro 2 data center announcement](https://q.com/data-centers/hillsboro-2/)
+- [QTS and Meta sign an agreement with PGE for a 120MWac solar installation](https://q.com/news/avangrid-and-portland-general-electric-collaborate-with-qts-and-meta-to-build-120-mwac-solar-project-in-oregon/)
+",https://docs.google.com/spreadsheets/d/1IDIlQvAa0AMeV0xAT0592dV1cV8Ptj1B4Kzyefna1fg/edit?usp=sharing,,H100,H100,,,"Portland General Electric,Avangrid",United States,"4755 NE Huffman St, Hillsboro, OR 97124"
 VNET Bayin Ulanqab,122789.28751894896,221,8.371922,VNET #confident,ByteDance #speculative,"- [Official VNET resource page for data centers](https://web.archive.org/web/20260619185141/https://www.vnet.com/resource.html)
 - [Analyst report by Zhongtai Securities, citing 1-GW capacity goals](https://web.archive.org/web/20260619185224/https://stcn.com/article/detail/2241162.html)
 - [Interview with VP Gavin Shen: campus will be AI-driven](https://web.archive.org/web/2/https://www.insidermonkey.com/blog/vnet-group-inc-nasdaqvnet-q3-2024-earnings-call-transcript-1395031/)
@@ -199,6 +205,11 @@ Oracle Batam,84386.05356240526,72,2.7275039999999997,Oracle #likely,,"- [DayOne 
 - [Oracle is later reported to be leasing DayOne data centers in Indonesia](https://www.datacenterdynamics.com/en/news/oracle-establishes-cloud-presence-in-indonesia/)
 - [DayOne video stating 72 MW of IT power and NVIDIA partnership, and showing cooling tower fan movement](https://www.linkedin.com/posts/dayonedc-datacenter-batam-ugcPost-7450899048925986816-Wxqu/)
 ",https://docs.google.com/spreadsheets/d/1C4sc-3wUDCdAm9aKw8xC8xcCCnD4EdXEIM5azFZ4rR4/edit?usp=sharing,,"B200,B300","B200,B300",,,,Indonesia,
+AWS Berwick,81354.21930267812,108,4.091256,Amazon #confident,Anthropic #speculative,"- [NYT reporting that one of the Project Rainier sites may be in Pennsylvania](https://www.nytimes.com/2025/06/24/technology/amazon-ai-data-centers.html)
+- [Talen SEC filing detailing the $650M sale of the Cumulus data center campus to AWS](https://www.sec.gov/Archives/edgar/data/1622536/000162828024036935/tln-20240630.htm)
+- [Pennsylvania PUC filing describing the planned 16-building AWS data center development](https://www.puc.pa.gov/pcdocs/1861638.pdf)
+- [SRBC filing covering AWS campus expansion and water-use plans](https://www.srbc.gov/about/news/docs/2025-159-final-public-comment-responses-20260128.pdf) 
+",https://docs.google.com/spreadsheets/d/1InmGZk_dfT4oFdHmD5jVt2Q--H1wgeT8lMmx-qqmwFI/edit?usp=sharing,Project Rainier #speculative,Trainium2,"Trainium2,Trainium3",,,,United States,"1125 Electron Ave, Berwick, PA 18603"
 Google Papillion,80343.60788276908,237,8.978034,Google #confident,Google DeepMind #speculative,"- [Draft basis of air permit with details of cooling towers](https://drive.google.com/file/d/1nONzuLnpMPST0bOINDKXmSZ0ANlynYY0/view?usp=sharing)
 - Google’s [2025 Environmental Report](https://sustainability.google/reports/google-2025-environmental-report/) Page 109.
 
@@ -228,6 +239,10 @@ Microsoft-Nebius New Jersey,56846.89236988378,50,1.8941,Nebius #confident,Micros
 - [Large data center nears completion in Vineland (Cape May County Herald)](https://capemaycountyherald.com/article/large-data-center-nears-completion-in-vineland/)
 - [SemiAnalysis: Stop Saying Half of 2026 US Datacenter Capacity Is Canceled](https://newsletter.semianalysis.com/p/stop-saying-half-of-2026-us-datacenter)
 ",https://docs.google.com/spreadsheets/d/1-x8TTkzOemQ4hI61I5tuHgatFUSI0e5F3RAw8uufooI/edit,,B300,B300,,,,United States,"3963 S Lincoln Ave, Vineland, New Jersey"
+CoreWeave Norway,50773.11773623042,42,1.5910440000000001,CoreWeave #confident,OpenAI #speculative,"- [CoreWeave/Bulk N01 partnership announcement](https://bulkinfrastructure.com/newsroom/coreweave-partners-with-bulk-infrastructure)
+- [Bulk N01 expansion announcement](https://bulkinfrastructure.com/newsroom/bulk-data-centers-unveils-plan-for-data-center-expansion-following-unprecedented-demand)
+- [Bulk N01 campus brochure with 5-data-center plan](https://bulkinfrastructure.com/uploads/N01-Campus_Brochure_May24.pdf)
+",https://docs.google.com/spreadsheets/d/1FRJgBDYY-e4bGkkHh54hBNz_b1baQjVwgWCXZnv22eg/edit?usp=sharing,,B200,B200,,,,Norway,"Stølevegen 39, 4715 Øvrebø, Norway"
 Southgate Melbourne,46488.12531581607,41,1.553162,Firmus #confident,,"- [Firmus Expands Project Southgate Across Australia](https://firmus.co/newsroom/southgate-expansion) (the CDC partnership, Melbourne location and timing all point to the CDC Brooklyn campus)
 - [Firmus Signs Multi-Year Agreement with Global Hyperscale Customer at Project Southgate](https://firmus.co/newsroom/firmus-signs-multi-year-agreement-with-global-hyperscale-customer-at-project-southgate) (mentions 18,400 GB300 GPUs to be deployed at the Melbourne facility)
 - [CDC Melbourne](https://cdc.com/locations/melbourne/)
@@ -329,3 +344,6 @@ QTS Cedar Rapids,0,0,0,,,"- [MISO new load announcements](https://cdn.misoenergy
 - [Article by Corridor Business Journal ](https://corridorbusiness.com/scope-of-qts-data-project-in-cedar-rapids-continuing-to-grow/)featuring a rendering of Buildings 1-3.
 - [Post by GLD Commercial ](https://www.gldcommercial.com/google-and-qts-data/)featuring a map with land assigned to QTS in Big Cedar Industrial Center.
 ",https://docs.google.com/spreadsheets/d/1zXqoogyqGbmgvdu4vSTepZG3Cy8kMoJjp0n3KaZPkd4/edit?usp=sharing,,,Rubin,,,Alliant Energy,United States,"6200 76th Ave SW, Fairfax, IA 52228"
+QTS Eagle Mountain,0,0,0,,Meta #speculative,"- [QTS Eagle Mountain website](https://q.com/data-centers/eagle-mountain/)
+- [DEQ Approval listing emergency generators](https://daqpermitting.utah.gov/DocViewer?IntDocID=155764&contentType=application/pdf)
+",https://docs.google.com/spreadsheets/d/1pWiTKivojS1IY4tiv0aHM06FugKbLA2qjLJ-5DFoRF4/edit?usp=sharing,,,B300,,,,United States,"652 E Hyperscale Way, Eagle Mountain, UT 84013"
