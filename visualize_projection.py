@@ -484,9 +484,10 @@ _RLI_RAW = [
     {"name": "GPT-5.5",        "date": "2026-04-23", "rli_score": 6.25},
     {"name": "Opus 4.8",       "date": "2026-05-28", "rli_score": 8.33},
     {"name": "Fable 5",        "date": "2026-06-09", "rli_score": 15.83},
-    # Rechecked 2026-08-15 against labs.scale.com/leaderboard/rli: no entry newer
-    # than Fable 5, and the CAIS blog (2026-07-01) is still the latest RLI announcement.
-    # GPT-5.6 Sol and the Gemini 3.x line have no published RLI score anywhere.
+    # Rechecked 2026-08-18 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
+    # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
+    # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
+    # line, Kimi K3, and Claude Mythos 5 have no published RLI score anywhere.
     # A "16.1%" for Fable 5 circulates via a third-party blog (Pebblous) citing "CAIS
     # (2026)" with no link; contradicted by all three primary surfaces (Scale 15.80,
     # CAIS blog 15.8, dashboard.safe.ai 15.83). Treated as an error, not a revision.
@@ -4558,6 +4559,9 @@ _OPENAI_REVENUE = [
     # gross-vs-net gap that makes splicing the two source classes produce fake dips.
     # Epoch's ai_companies_revenue_reports.csv carries that $40B as its newest OpenAI row;
     # we deliberately keep the alt-data line instead of switching mid-series.
+    # Rechecked 2026-08-18: TickerTrends has published nothing since the 2026-08-14 post
+    # that produced the 44.3 above, so this series is current. Greg Brockman's internal
+    # note (July run rate grew >20% MoM) states no absolute figure and is not a datapoint.
     # Excluded: OpenAI CFO Sarah Friar told employees on 2026-07-29 that July ARR
     # "surpassed the company's entire second quarter" (CNBC). No dollar figure was
     # given, and it mixes ARR against a quarterly total -- not a datapoint.
@@ -4582,24 +4586,40 @@ _ANTHROPIC_REVENUE = [
     # reports were dropped: both are superseded by that company disclosure and
     # would otherwise sit at or below it on the same or a later date.
     ("2026-05-15", 47.0),
-    # This series is company-disclosed throughout, deliberately. Third-party tracker
+    # SOURCE-CLASS EXCEPTION, added 2026-08-18 with explicit user sign-off: this is a
+    # *press report of a private investor update*, not a public company disclosure --
+    # the only non-disclosed point in this series. Bloomberg (2026-08-17) reported the
+    # run rate "surpasses $65 billion", sourced to people familiar with a regular
+    # investor update; CNBC ran it as "Anthropic tells investors annualized revenue run
+    # rate climbed to $65 billion in July". Dated 2026-07-31 (end of July), which is the
+    # as-of date, matching how Epoch's ai_companies_revenue_reports.csv carries the row --
+    # not the 08-17 publication date. anthropic.com/news has no August revenue post; the
+    # newest *public* company statement is still the Series H $47B above.
+    # Admitted because the figure is company-originated and is the right unit (annualized
+    # run rate), so it is a much smaller basis shift than a tracker estimate would be.
+    # Note it is still a steep bend -- 47 -> 65 in 2.5 months -- so treat any projection
+    # anchored on it with care. If Anthropic states a run rate publicly (the S-1 announced
+    # 2026-06-01 is still a confidential draft, nothing filed on EDGAR), prefer that.
+    ("2026-07-31", 65.0),
+    # Every OTHER point in this series is company-disclosed, deliberately. Third-party tracker
     # estimates exist for mid-2026 (YipitData $69B at 2026-07-10; TickerTrends $69.6B
     # June / $74.1B July) but are not added: TickerTrends put April at $35.6B where
     # Anthropic disclosed $30B, so appending one would bend the curve by a source-level
     # shift rather than by measured growth. Anthropic's "exceed $50B by end of July"
     # investor guidance is a forecast, not an achieved run rate, and is excluded too;
     # so is the $10.9B Q2-2026 figure shown to investors -- a projection, and quarterly
-    # revenue rather than run rate. Rechecked 2026-08-15: no company disclosure since
-    # the Series H $47B. Anthropic's June-August newsroom posts are product/safety/policy
-    # only (Aug 4 Cuellar hire, Aug 7 Fable 5 bio safeguards, Aug 14 text watermark), and
-    # the S-1 announced 2026-06-01 is still a confidential draft -- nothing has been filed
-    # publicly on EDGAR, so there is no filing-derived disclosure to ingest.
-    # Cross-checked against Epoch's ai_companies_revenue_reports.csv, whose newest
-    # Anthropic row is still 2026-05-15 / $47B / annualized run rate / company disclosure.
+    # revenue rather than run rate. Rechecked 2026-08-18: still no *public*
+    # company disclosure since the Series H $47B -- the 65.0 above came via press. The
+    # TickerTrends line now reads $69.6B (June) / $74.1B (July), i.e. ~14% above the
+    # investor-reported 65.0, which is the same tracker-vs-disclosure gap seen in April
+    # and the reason that series is still excluded.
     # Also excluded, and prominent in mid-August press: Q2-2026 revenue "over $11.5B"
     # (Bloomberg 2026-08-14, CNBC/Fortune 2026-08-15). Quarterly revenue, not run rate,
     # and sourced to people familiar rather than disclosed. Naively annualizing lands
     # near the May 47.0 by coincidence; that is not a reason to enter it.
+    # Also excluded (2026-08-18 check): full-year 2026 guidance of $100-120B and 2028
+    # guidance of $190-200B are forecasts; ARK's 2026-08-18 "Anthropic + OpenAI revenue
+    # tops $115B" is a third-party combined aggregate, not a per-company run rate.
 ]
 
 

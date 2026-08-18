@@ -7,6 +7,7 @@ Run: pytest test_visualize_projection.py -v
 import numpy as np
 import pytest
 from datetime import datetime, timedelta
+import csv
 import os
 import sys
 
@@ -1881,18 +1882,35 @@ class TestCcTrainingFloorMatch:
         from datetime import timedelta
         attr = vp._cc_lab_attribution()
         milestones = vp._cc_lab_dc_milestones("OpenAI", attr, key="perf")
-        fm = vp._cc_company_frontier_models().get("OpenAI", [])
         lag = timedelta(days=vp._CC_RELEASE_LAG_DAYS)
         floor = timedelta(days=vp._CC_TRAIN_FLOOR_DAYS)
 
         # Match on the model family, not the reasoning-effort suffix: every
         # gpt-5.6-sol_* variant carries the same ECI, so which one wins the dedup
         # is arbitrary and flips between Epoch pulls (it was "(pro, max)" until
-        # Epoch added a `_none` variant in the 2026-08-08 refresh). The date and
-        # score — the things this test is actually about — are unaffected.
-        sol = next((m for m in fm if m[2].startswith("GPT-5.6 Sol")), None)
-        assert sol is not None, "Sol not found in OpenAI frontier releases"
-        d = sol[0]
+        # Epoch added a `_none` variant in the 2026-08-08 refresh). The date —
+        # the only thing this test is actually about — is unaffected.
+        #
+        # Source Sol from *all* OpenAI ECI rows, not from
+        # _cc_company_frontier_models(): that helper keeps only running-max
+        # releases, and Epoch's live recompute can drop Sol out of it without
+        # changing its date. The 2026-08-18 pull did exactly that — Sol fell
+        # 161.65 -> 161.03 while GPT-5.5 Pro (xhigh, 2026-04-23) rose
+        # 161.49 -> 161.60, so Sol stopped setting a new OpenAI high. What this
+        # test asserts (that Sol's release date ties to Wisconsin under the
+        # training floor but to Atlanta under the full lag) is a statement about
+        # dates and cluster timing, so it must not hinge on running-max status.
+        sol_dates = {
+            datetime.strptime(r["Release date"], "%Y-%m-%d")
+            for r in csv.DictReader(open(
+                os.path.join(os.path.dirname(vp.__file__),
+                             "epoch_capabilities_index.csv")))
+            if (r.get("Model name") or "").strip().startswith("GPT-5.6 Sol")
+            and (r.get("Release date") or "").strip()
+        }
+        assert sol_dates, "Sol not found in the ECI table"
+        assert len(sol_dates) == 1, f"Sol has inconsistent release dates: {sol_dates}"
+        d = sol_dates.pop()
 
         # The strict full-lag rule would have fallen back to Atlanta...
         strict = [m for m in milestones if (m[0] + lag) <= d][-1]
