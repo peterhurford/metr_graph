@@ -139,6 +139,29 @@ The dataset has no US open-weight and no Chinese closed-weight models, so countr
 
 `ukc_target_eta()` answers "when do open-weight models reach `_UKC_TARGET` (90%)": the frontier's interpolated crossing of the target, plus the min/max measured lag. `ukc_target_eta_direct()` fits the open-weight points themselves as a cross-check only — two models 53 days apart make that slope very sensitive, so it is never the headline.
 
+### ECI tabs — organization matching
+
+The Epoch ECI tab and the ECI Company Gap tab read the same CSV and **must resolve
+organizations identically**. Both match Epoch's `Organization` field by *substring*:
+the ECI tab via `load_eci_frontier(orgs=…)` / `_ECI_ENTITY_SPECS`, the gap tab via
+`_ecg_org_display()` / `_ECG_ORG_MAP`.
+
+Don't turn either back into an exact-key lookup. The gap tab used to do exactly that,
+and the tabs silently disagreed: Epoch spells Google four ways (`Google DeepMind`,
+`Google`, `Google DeepMind,Google`, `Google,Google DeepMind`), so a map keyed only on
+`Google DeepMind` dropped four Google models and drew a different 2025 frontier point
+(Gemini 2.0 Pro Exp 135.43 / 2025-02-05 instead of Gemini 2.0 Flash Thinking Exp
+136.00 / 2025-01-21). Google's *current* gap was unaffected, which is why it went
+unnoticed — the divergence was only in the historical curve.
+
+Keep `_ECG_ORG_MAP` keys canonical (one per company); the matcher handles the
+comma-joined and co-authored spellings, so enumerating them is unnecessary.
+Substring matching is only safe while no `Organization` string contains two different
+mapped companies — `TestEcgOrgMatching` asserts that across all 64 distinct strings,
+along with tab-to-tab set equality and the presence of colour/dash/country metadata
+for every display name. Adding a company means updating `_ECG_ORG_MAP`, `_ECG_COLORS`,
+`_ECG_DASH`, `_ECG_COUNTRY`, and `_ECI_ENTITY_SPECS`/`_ECI_ENTITY_SLUG` together.
+
 ### Compute vs Capabilities — China's ETA to a target ECI
 
 The tab's last section (`_render_cc_china_target()`) answers "when does China cross
@@ -146,11 +169,15 @@ The tab's last section (`_render_cc_china_target()`) answers "when does China cr
 sections above it report. Three things are load-bearing:
 
 1. **The target is meant to track today's US frontier.** 161 is where the US sits
-   as of mid-2026 (GPT-5.6 Sol, 161.7), which is what makes the framing —"China
+   as of mid-2026, which is what makes the framing —"China
    matching where the US is *now*" — true. `TestCcCnTargetIsTodaysUsFrontier`
    asserts the constant stays at or under the US frontier and within 5 points of
    it; if an ECI refresh breaks that test, retarget the constant rather than
-   loosening the test, and re-check the caption wording.
+   loosening the test, and re-check the caption wording. Don't hardcode the
+   anchor model in prose — Epoch recomputes live and the anchor moves: the
+   2026-08-18 pull dropped GPT-5.6 Sol 161.65 → 161.03 (below GPT-5.5 Pro's
+   161.60, so Sol left OpenAI's running-max frontier entirely) and lifted Claude
+   Fable 5 to 162.30, which is the current US frontier.
 2. **The rate is the same two-engine model as Chart B**, deliberately: algorithmic
    term (iso-compute rates, mode = China's own) + `a_partial` × China's compute
    growth. Don't swap in a direct fit of China's frontier — the section would then

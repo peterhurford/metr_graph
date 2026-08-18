@@ -2962,6 +2962,8 @@ _ECI_ENTITY_SPECS = {
     "Moonshot":   {"orgs": ["Moonshot"]},
     "DeepSeek":   {"orgs": ["DeepSeek"]},
     "Mistral":    {"orgs": ["Mistral"]},
+    "MiniMax":    {"orgs": ["MiniMax"]},
+    "Thinking Machines": {"orgs": ["Thinking Machines"]},
 }
 _ECI_ENTITY_OPTIONS = list(_ECI_ENTITY_SPECS.keys())
 _ECI_NONE_LABEL = "—"  # em-dash: "no comparison" for the second dropdown
@@ -2978,6 +2980,7 @@ _ECI_ENTITY_SLUG = {
     "OpenAI": "openai", "xAI": "xai", "Google": "google", "Meta": "meta",
     "Alibaba": "alibaba", "Zhipu AI": "zhipu", "Moonshot": "moonshot",
     "DeepSeek": "deepseek", "Mistral": "mistral",
+    "MiniMax": "minimax", "Thinking Machines": "thinkingmachines",
 }
 _ECI_ENTITY_FOR_SLUG = {v: k for k, v in _ECI_ENTITY_SLUG.items()}
 
@@ -5938,21 +5941,56 @@ def render_employment():
 
 # ── ECI Company Gap ────────────────────────────────────────────────────
 
-# Map raw CSV org names → display names
+# Maps a substring of Epoch's `Organization` field to the display name used on
+# the gap tab. Matched by SUBSTRING via _ecg_org_display(), not by exact key --
+# see that function for why. Keep these keys canonical (one per company); the
+# comma-joined and co-authored spellings Epoch emits are handled by the matcher,
+# so there is no need to enumerate them here.
 _ECG_ORG_MAP = {
     "OpenAI": "OpenAI",
     "Anthropic": "Anthropic",
     "Google DeepMind": "Google",
+    "Google": "Google",
     "Meta AI": "Meta",
     "xAI": "xAI",
     "Mistral AI": "Mistral",
     "DeepSeek": "DeepSeek",
-    "DeepSeek,Peking University": "DeepSeek",
     "Moonshot": "Moonshot",
     "Alibaba": "Alibaba",
     "Z.ai (Zhipu AI)": "Zhipu AI",
-    "Z.ai (Zhipu AI),Tsinghua University": "Zhipu AI",
+    "MiniMax": "MiniMax",
+    "Thinking Machines": "Thinking Machines",
 }
+
+
+def _ecg_org_display(org_raw):
+    """Map Epoch's raw `Organization` string to a gap-tab display name.
+
+    Substring match, longest key first, returning None when nothing matches.
+
+    This deliberately mirrors the substring semantics `load_eci_frontier(orgs=…)`
+    uses for the Epoch ECI tab. The two tabs previously disagreed because this
+    one did an exact dict lookup: Epoch spells Google four different ways
+    ("Google DeepMind", "Google", "Google DeepMind,Google", "Google,Google
+    DeepMind"), so an exact map keyed only on "Google DeepMind" silently dropped
+    four Google models and put a different point on Google's 2025 frontier
+    (Gemini 2.0 Pro Exp 135.43 on 2025-02-05, where the ECI tab correctly showed
+    Gemini 2.0 Flash Thinking Exp 136.00 on 2025-01-21). Matching by substring
+    keeps the two tabs consistent by construction, so a new spelling in a future
+    Epoch pull cannot desync them again. TestEcgOrgMatching guards this.
+
+    Longest-key-first only matters for keys that are substrings of one another
+    ("Google" ⊂ "Google DeepMind"); both resolve to "Google" here, but ordering
+    keeps the result deterministic if a future key pair does not. A census of all
+    64 distinct Organization strings finds no string matching two *different*
+    display names, so the match is unambiguous.
+    """
+    o = (org_raw or "").lower()
+    for k in sorted(_ECG_ORG_MAP, key=len, reverse=True):
+        if k.lower() in o:
+            return _ECG_ORG_MAP[k]
+    return None
+
 
 _ECG_COLORS = {
     "OpenAI": "#10a37f",
@@ -5965,18 +6003,23 @@ _ECG_COLORS = {
     "Moonshot": "#9B59B6",
     "Alibaba": "#E74C3C",
     "Zhipu AI": "#2ECC71",
+    "MiniMax": "#16A085",
+    "Thinking Machines": "#C0392B",
 }
 
 _ECG_DASH = {
     "OpenAI": "solid", "Anthropic": "solid", "Google": "solid",
     "Meta": "solid", "xAI": "solid", "Mistral": "dash",
     "DeepSeek": "dot", "Moonshot": "dashdot", "Alibaba": "dot", "Zhipu AI": "dashdot",
+    "MiniMax": "dash", "Thinking Machines": "dash",
 }
 
 _ECG_COUNTRY = {
     "OpenAI": "US", "Anthropic": "US", "Google": "US", "Meta": "US", "xAI": "US",
+    "Thinking Machines": "US",
     "Mistral": "FR",
     "DeepSeek": "CN", "Moonshot": "CN", "Alibaba": "CN", "Zhipu AI": "CN",
+    "MiniMax": "CN",
 }
 
 _ECG_FLAG = {"US": "\U0001f1fa\U0001f1f8", "CN": "\U0001f1e8\U0001f1f3", "FR": "\U0001f1eb\U0001f1f7"}
@@ -6037,7 +6080,7 @@ def render_eci_gap():
     org_models = {}
     for m in all_models:
         org_raw = m.get('organization', '')
-        display = _ECG_ORG_MAP.get(org_raw)
+        display = _ecg_org_display(org_raw)
         if not display:
             continue
         org_models.setdefault(display, []).append(m)

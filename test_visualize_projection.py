@@ -1859,6 +1859,59 @@ class TestCcSegmentFits:
         assert fits == []
 
 
+class TestEcgOrgMatching:
+    """The ECI tab and the ECI Company Gap tab must resolve organizations
+    identically. They read the same CSV but used to disagree: the gap tab did an
+    exact dict lookup on Epoch's `Organization` string while the ECI tab matched
+    by substring. Epoch spells Google four ways, so the gap tab silently dropped
+    four Google models and drew a different 2025 frontier point for Google."""
+
+    def _eci_rows(self):
+        return list(csv.DictReader(open(
+            os.path.join(os.path.dirname(vp.__file__),
+                         "epoch_capabilities_index.csv"))))
+
+    def test_both_tabs_resolve_identical_model_sets(self):
+        eci_all = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        for label, spec in vp._ECI_ENTITY_SPECS.items():
+            if not spec.get("orgs"):
+                continue  # country entities, not org entities
+            tab = vp.load_eci_frontier(_mtime=vp._eci_mtime(),
+                                       orgs=tuple(spec["orgs"]))
+            gap = [m for m in eci_all
+                   if vp._ecg_org_display(m["organization"]) == label]
+            assert {m["version"] for m in tab} == {m["version"] for m in gap}, (
+                f"{label}: ECI tab and gap tab disagree on which models belong")
+
+    def test_all_google_spellings_resolve(self):
+        # The regression that motivated this class. Every spelling Epoch has
+        # emitted must land on "Google", not just the exact map key.
+        for spelling in ("Google DeepMind", "Google", "Google DeepMind,Google",
+                         "Google,Google DeepMind"):
+            assert vp._ecg_org_display(spelling) == "Google", spelling
+
+    def test_no_org_string_matches_two_display_names(self):
+        # Substring matching is only safe while no Organization string contains
+        # two different mapped companies. Guard it against future Epoch pulls.
+        for org in {(r["Organization"] or "").strip() for r in self._eci_rows()}:
+            hits = {d for k, d in vp._ECG_ORG_MAP.items() if k.lower() in org.lower()}
+            assert len(hits) <= 1, f"{org!r} matches multiple companies: {hits}"
+
+    def test_unmatched_org_returns_none(self):
+        assert vp._ecg_org_display("Some Unlisted Lab") is None
+        assert vp._ecg_org_display("") is None
+        assert vp._ecg_org_display(None) is None
+
+    def test_every_display_name_has_render_metadata(self):
+        # A company in the map but missing a colour/dash/country would blow up or
+        # render blank on the gap tab.
+        for display in set(vp._ECG_ORG_MAP.values()):
+            assert display in vp._ECG_COLORS, display
+            assert display in vp._ECG_DASH, display
+            assert display in vp._ECG_COUNTRY, display
+            assert vp._ECG_COUNTRY[display] in vp._ECG_FLAG, display
+
+
 class TestCcTrainingFloorMatch:
     """Backward (release → cluster) match uses a training-run causal floor
     (_CC_TRAIN_FLOOR_DAYS, ~60d), not the full +90d expected-release lag. A
