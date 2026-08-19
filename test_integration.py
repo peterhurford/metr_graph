@@ -687,6 +687,18 @@ class TestDataCenters:
         at.selectbox(key="dc_metric").set_value("Power (MW)").run()
         _assert_no_error(at, "Data Centers / Power (MW)")
 
+    def test_train_time_metrics_render_durations(self):
+        for label in ("Capacity (time to GPT-5)", "Capacity (time to Mythos)"):
+            at = self._dc_app()
+            at.selectbox(key="dc_metric").set_value(label).run()
+            _assert_no_error(at, f"Data Centers / {label}")
+            text = " ".join(str(m.value) for m in at.markdown) + \
+                " ".join(str(c.value) for c in at.caption)
+            # The quarterly table cells and captions are in time units, never
+            # a bare run count.
+            assert "how long the site would take to train" in text
+            assert any(u in text for u in ("hour", "day", "week", "month"))
+
     def test_include_future(self):
         at = self._dc_app()
         at.checkbox(key="dc_future").set_value(True).run()

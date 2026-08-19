@@ -963,6 +963,11 @@ def load_data_centers(_mtime=None):
                 'train_flop': train_flop,
                 # How many GPT-5-scale (2e25 FLOP) / Mythos-scale (1e27 FLOP)
                 # training runs the site's 2-month capacity could produce.
+                # Displayed as *time to train one* (kind 'traintime',
+                # days = _DAYS_2MO / runs), but stored as runs-per-2mo so that
+                # every "largest data center" aggregation in the tab — envelope,
+                # per-company max, ranking — stays a plain max. Bigger number =
+                # faster site, so the ordering is identical either way.
                 'gpt5s': train_flop / 2e25 if train_flop is not None else None,
                 'mythos': train_flop / 1e27 if train_flop is not None else None,
                 'cost': _num(r, 'Total capital cost (2025 USD billions)'),
@@ -984,8 +989,8 @@ _DC_METRICS = {
     "Capital cost ($B)": {"key": "cost", "log": False, "kind": "cost"},
     "Performance (8-bit OP/s)": {"key": "perf", "log": True, "kind": "sci"},
     "2mo train FLOP": {"key": "train_flop", "log": True, "kind": "flop"},
-    "Capacity (x GPT-5)": {"key": "gpt5s", "log": True, "kind": "count"},
-    "Capacity (x Mythos)": {"key": "mythos", "log": True, "kind": "count"},
+    "Capacity (time to GPT-5)": {"key": "gpt5s", "log": True, "kind": "traintime"},
+    "Capacity (time to Mythos)": {"key": "mythos", "log": True, "kind": "traintime"},
 }
 
 # Timing options for the 2mo-train-FLOP metric: label → days the DC-available
@@ -1019,6 +1024,35 @@ _DC_EXCLUDE_COMPANIES = {
 }
 
 
+def _fmt_duration_days(days):
+    """A duration in days as a rough human-readable span ("~3 weeks").
+
+    Deliberately coarse — these come from order-of-magnitude FLOP estimates, so
+    the unit is picked to keep the number small and the "~" is always shown.
+    """
+    if days is None or not np.isfinite(days) or days <= 0:
+        return "—"
+
+    def _u(v, unit):
+        s = f"{v:.1f}".rstrip('0').rstrip('.') if v < 10 else f"{v:,.0f}"
+        return f"~{s} {unit}{'' if s == '1' else 's'}"
+
+    if days < 1 / 24:
+        mins = days * 24 * 60
+        return f"~{mins:.0f} min" if mins >= 1 else "<1 min"
+    if days < 1:
+        return _u(days * 24, "hour")
+    if days < 7:
+        return _u(days, "day")
+    # Each unit switches only at a whole 1 of the next one up, so a value is
+    # never reported as a fraction ("~0.9 months").
+    if days < 30.4375:
+        return _u(days / 7, "week")
+    if days < 365.25:
+        return _u(days / 30.4375, "month")
+    return _u(days / 365.25, "year")
+
+
 def _dc_fmt_value(v, kind):
     if v is None:
         return "—"
@@ -1036,12 +1070,9 @@ def _dc_fmt_value(v, kind):
         return f"{v:.2e}"
     if kind == "flop":
         return f"{v:.2e} FLOP"
-    if kind == "count":
-        if v >= 100:
-            return f"{v:,.0f}"
-        if v >= 10:
-            return f"{v:.1f}"
-        return f"{v:.2f}"
+    if kind == "traintime":
+        # v is training runs per 2-month window; report the time for one run.
+        return _fmt_duration_days(_DAYS_2MO / v) if v > 0 else "—"
     return f"{v:g}"
 
 
@@ -6469,14 +6500,46 @@ def _dc_log_ticks(y_range):
     return vals, text
 
 
+# Round durations (in days) used as axis ticks for the 'traintime' metrics.
+_DC_DURATION_TICK_DAYS = [
+    1 / 24, 2 / 24, 6 / 24, 12 / 24,          # 1h, 2h, 6h, 12h
+    1, 2, 4, 7, 14, 30.4375, 60, 91.3125,     # 1d … 3mo
+    182.625, 365.25, 730.5, 1826.25,          # 6mo, 1y, 2y, 5y
+]
+
+
+def _dc_duration_ticks(y_range, log_scale):
+    """Axis ticks labelled as durations for the 'traintime' metrics.
+
+    The plotted number is runs-per-2mo, so the tick *text* has to be converted
+    the same way `_dc_fmt_value` converts a value. Fewer ticks per decade than
+    `_dc_log_ticks` because duration labels are much wider than bare numbers.
+    """
+    if y_range is None:
+        return None
+    vmin, vmax = ((10.0 ** y_range[0], 10.0 ** y_range[1]) if log_scale
+                  else (max(y_range[0], 0.0), y_range[1]))
+    # Tick at round durations (1 hour, 1 day, 1 week, …) rather than round
+    # run-counts, so the labels read cleanly.
+    vals = sorted(_DAYS_2MO / d for d in _DC_DURATION_TICK_DAYS)
+    vals = [v for v in vals if vmin * 0.999 <= v <= vmax * 1.001]
+    if not vals:
+        return None
+    return vals, [_dc_fmt_value(v, 'traintime') for v in vals]
+
+
 def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
-               height=440, show_legend=False):
+               height=440, show_legend=False, kind=None):
     yaxis = dict(title_text=y_title,
                  type='log' if log_scale else 'linear',
                  range=y_range,
                  gridcolor='rgba(0,0,0,0.12)',
                  tickfont=dict(color='#222222'), title_font=dict(color='#222222'))
-    if log_scale and y_range is not None:
+    if kind == 'traintime':
+        ticks = _dc_duration_ticks(y_range, log_scale)
+        if ticks is not None:
+            yaxis.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
+    elif log_scale and y_range is not None:
         tvals, ttext = _dc_log_ticks(y_range)
         yaxis.update(tickmode='array', tickvals=tvals, ticktext=ttext)
     return dict(
@@ -6560,13 +6623,14 @@ def render_data_centers():
             f"run × {_DC_UTILIZATION:.0%} realized utilization. Figures are "
             "order-of-magnitude estimates, not vendor-reported numbers.")
     elif key in ('gpt5s', 'mythos'):
-        scale = "2e25 FLOP (GPT-5 scale)" if key == 'gpt5s' else "1e27 FLOP (Mythos scale)"
+        target, scale = (("2e25 FLOP", "GPT-5 scale") if key == 'gpt5s'
+                         else ("1e27 FLOP", "Mythos scale"))
         st.caption(
-            f"Methodology: how many {scale} training runs each site's 2mo train "
-            f"FLOP could produce — i.e. *2mo train FLOP* ÷ {scale.split(' ')[0]}. "
-            f"2mo train FLOP = peak performance (8-bit OP/s) × a {_DAYS_2MO}-day "
-            f"run × {_DC_UTILIZATION:.0%} realized utilization. Order-of-magnitude "
-            "estimates, not vendor-reported numbers.")
+            f"Methodology: how long the site would take to train **one** "
+            f"{target} ({scale}) model if the whole site ran nothing else — "
+            f"{target} ÷ (peak performance in 8-bit OP/s × "
+            f"{_DC_UTILIZATION:.0%} realized utilization). Shorter is a bigger "
+            "site. Order-of-magnitude estimates, not vendor-reported numbers.")
 
     if not series:
         st.warning("No data available for this metric.")
@@ -6577,6 +6641,11 @@ def render_data_centers():
     # ══════════════════════════════════════════════════════════════════════
     env = _dc_envelope(series)
     st.subheader("Largest single data center")
+    if kind == 'traintime':
+        # The axis is plotted in runs-per-2mo (so "largest" stays a max) but
+        # labelled in training time, which runs the other way.
+        st.caption("Axis note: the y-axis is ordered biggest-site-first, so the "
+                   "labelled training time gets **shorter** as the line rises.")
 
     if env:
         cd, cv, cn, cco = env[-1]
@@ -6666,7 +6735,7 @@ def render_data_centers():
         ))
     fig1.update_layout(**_dc_layout(
         log_scale, metric_label, x_start, x_end,
-        y_range=_dc_yrange(_dc_visible_vals(env, x_start), log_scale)))
+        y_range=_dc_yrange(_dc_visible_vals(env, x_start), log_scale), kind=kind))
     st.plotly_chart(fig1, use_container_width=True)
 
     comp = _dc_company_series(series)
@@ -6710,15 +6779,22 @@ def render_data_centers():
         hovertext=[f"{s[0]} — {s[2]}<br>{_dc_fmt_value(s[1], kind)}" for s in snap],
         hoverinfo='text',
     ))
+    snap_xaxis = dict(title_text=f"Current {metric_label}",
+                      type='log' if log_scale else 'linear',
+                      gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222222'),
+                      title_font=dict(color='#222222'))
+    if kind == 'traintime':
+        ticks = _dc_duration_ticks(
+            _dc_yrange([s[1] for s in snap], log_scale), log_scale)
+        if ticks is not None:
+            snap_xaxis.update(tickmode='array', tickvals=ticks[0],
+                              ticktext=ticks[1])
     fig_snap.update_layout(
         height=max(300, 38 * len(snap) + 80),
         plot_bgcolor='white', paper_bgcolor='white',
         margin=dict(l=120, r=70, t=10, b=40),
         font=dict(color='#222222'), showlegend=False,
-        xaxis=dict(title_text=f"Current {metric_label}",
-                   type='log' if log_scale else 'linear',
-                   gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222222'),
-                   title_font=dict(color='#222222')),
+        xaxis=snap_xaxis,
         yaxis=dict(autorange='reversed', tickfont=dict(color='#222222')),
     )
     st.plotly_chart(fig_snap, use_container_width=True)
@@ -6785,7 +6861,7 @@ def render_data_centers():
                  for v in _dc_visible_vals(steps, x_start)]
     fig2.update_layout(**_dc_layout(log_scale, metric_label, x_start, x_end,
                                     y_range=_dc_yrange(comp_vals, log_scale),
-                                    height=500, show_legend=True))
+                                    height=500, show_legend=True, kind=kind))
     st.plotly_chart(fig2, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════════

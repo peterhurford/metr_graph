@@ -120,6 +120,15 @@ Widget defaults live in `_RESET_DEFAULTS` dicts per tab. Each tab has `_RESET_KE
 - **RLI**: Score 0-100, projected in logit space to respect bounds
 - **UK Cyber**: Success rate 0-100%, projected in logit space (same bounded treatment as RLI)
 - **Revenue**: ARR in billions USD
+- **Data Centers, "Capacity (time to GPT-5 / Mythos)"**: stored as *training runs per
+  2-month window* (`gpt5s` / `mythos`), displayed as *time to train one model*
+  (`kind='traintime'` → `_dc_fmt_value` → `_fmt_duration_days`, days = `_DAYS_2MO` / runs).
+  Storing the count keeps every "largest data center" aggregation in the tab a plain max
+  (envelope, per-company max, ranking, bar sort) — bigger count = faster site, so the
+  ordering is identical. Don't invert the stored value to make the axis read forward;
+  the axis is relabelled instead, via `_dc_duration_ticks()` (ticks at round durations,
+  passed through `_dc_layout(kind=…)`), and a caption under the first chart says the
+  labelled time shrinks as the line rises
 
 ### UK Cyber tab caveats
 

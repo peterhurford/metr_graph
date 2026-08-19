@@ -2731,3 +2731,65 @@ class TestUkCyberOpenOnlyOnTlo:
     def test_returns_none_when_suites_agree(self):
         _, tlo = self._rows()
         assert vp.ukc_open_only_on_tlo([dict(r) for r in tlo], tlo) is None
+
+
+class TestDcTrainTime:
+    """The two 'Capacity' metrics store runs-per-2mo but display time-to-train."""
+
+    def test_duration_units_scale_with_magnitude(self):
+        assert vp._fmt_duration_days(0.02) == "~29 min"
+        assert vp._fmt_duration_days(0.25) == "~6 hours"
+        assert vp._fmt_duration_days(1) == "~1 day"
+        assert vp._fmt_duration_days(7) == "~1 week"
+        assert vp._fmt_duration_days(30.4375) == "~1 month"
+        assert vp._fmt_duration_days(365.25) == "~1 year"
+
+    def test_duration_rejects_nonpositive_and_missing(self):
+        for bad in (None, 0, -3, float('nan'), float('inf')):
+            assert vp._fmt_duration_days(bad) == "—"
+
+    def test_value_is_the_time_for_one_run(self):
+        # v = runs the site fits in the 2-month window, so 1 run == 2 months
+        # and 60 runs == one day each.
+        assert vp._dc_fmt_value(1.0, 'traintime') == "~2 months"
+        assert vp._dc_fmt_value(60.0, 'traintime') == "~1 day"
+        assert vp._dc_fmt_value(0.0, 'traintime') == "—"
+        assert vp._dc_fmt_value(None, 'traintime') == "—"
+
+    def test_metrics_registry_uses_traintime(self):
+        for label in ("Capacity (time to GPT-5)", "Capacity (time to Mythos)"):
+            assert vp._DC_METRICS[label]["kind"] == "traintime"
+        assert vp._DC_METRICS["Capacity (time to GPT-5)"]["key"] == "gpt5s"
+        assert vp._DC_METRICS["Capacity (time to Mythos)"]["key"] == "mythos"
+
+    def test_bigger_site_reads_as_less_time(self):
+        """Stored values stay 'bigger = better' so every max-based aggregation
+        in the tab keeps working; only the label runs the other way."""
+        rows = sorted([0.5, 5.0, 50.0])
+        labels = [vp._dc_fmt_value(v, 'traintime') for v in rows]
+        assert labels == ["~3.9 months", "~1.7 weeks", "~1.2 days"]
+        assert max(rows) == 50.0   # the fastest site is still the max
+
+    def test_axis_ticks_are_round_durations_inside_the_range(self):
+        vals, text = vp._dc_duration_ticks([0.0, 2.0], log_scale=True)
+        assert all(1.0 <= v <= 100.0 for v in vals)
+        assert text == [vp._dc_fmt_value(v, 'traintime') for v in vals]
+        assert "~1 day" in text and "~2 months" in text
+        # Strictly increasing positions == strictly decreasing durations.
+        assert vals == sorted(vals)
+
+    def test_axis_ticks_none_without_a_range(self):
+        assert vp._dc_duration_ticks(None, log_scale=True) is None
+        assert vp._dc_duration_ticks([6.0, 8.0], log_scale=True) is None
+
+    def test_layout_labels_the_axis_in_durations(self):
+        lay = vp._dc_layout(True, "Capacity (time to Mythos)",
+                            datetime(2024, 1, 1), datetime(2028, 1, 1),
+                            y_range=[0.0, 2.0], kind='traintime')
+        assert lay['yaxis']['tickmode'] == 'array'
+        assert "~1 day" in lay['yaxis']['ticktext']
+        # Other kinds keep the plain numeric log ticks.
+        plain = vp._dc_layout(True, "2mo train FLOP",
+                              datetime(2024, 1, 1), datetime(2028, 1, 1),
+                              y_range=[0.0, 2.0])
+        assert "~1 day" not in plain['yaxis']['ticktext']
