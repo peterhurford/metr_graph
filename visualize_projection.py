@@ -2945,25 +2945,61 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
 
 
+# ── Company registry: single source of truth for BOTH ECI tabs ──────────
+#
+# The Epoch ECI tab and the ECI Company Gap tab both need to know which of
+# Epoch's `Organization` strings belong to which company. That knowledge used to
+# live twice -- as `orgs` substring lists here and as an `_ECG_ORG_MAP` keyed the
+# other way round in the gap tab -- and the two drifted: the gap tab dropped four
+# Google models because Epoch spells Google four ways and its map was keyed only
+# on "Google DeepMind". Everything both tabs need is now derived from this one
+# table, so they cannot disagree by construction.
+#
+#   orgs    -- substrings matched case-insensitively against `Organization`,
+#              which handles Epoch's comma-joined multi-org spellings. Keep them
+#              MINIMAL: substring matching makes longer variants redundant
+#              ("Google" already catches "Google DeepMind,Google"). Adding a
+#              redundant variant is harmless but adds a thing to keep in sync.
+#   country -- key into _ECG_FLAG.
+#   color   -- gap-tab highlight colour.
+#   slug    -- ?a= / ?b= deep-link slug on the ECI tab.
+#
+# Insertion order is the ECI tab's dropdown order and is load-bearing: the
+# country entities must come first so `US best` stays the index-0 default.
+#
+# Substring matching is only unambiguous while no `Organization` string contains
+# two different companies. `TestEcgOrgMatching` asserts that across every
+# distinct string in the CSV, so a future Epoch pull that breaks it fails loudly
+# rather than silently misattributing models.
+_ECI_COMPANIES = {
+    "Anthropic":         {"orgs": ["Anthropic"], "country": "US", "color": "#d4a574", "slug": "anthropic"},
+    "OpenAI":            {"orgs": ["OpenAI"],    "country": "US", "color": "#10a37f", "slug": "openai"},
+    "xAI":               {"orgs": ["xAI"],       "country": "US", "color": "#555555", "slug": "xai"},
+    "Google":            {"orgs": ["Google"],    "country": "US", "color": "#4285F4", "slug": "google"},
+    "Meta":              {"orgs": ["Meta AI"],   "country": "US", "color": "#0668E1", "slug": "meta"},
+    "Alibaba":           {"orgs": ["Alibaba"],   "country": "CN", "color": "#E74C3C", "slug": "alibaba"},
+    "Zhipu AI":          {"orgs": ["Zhipu"],     "country": "CN", "color": "#2ECC71", "slug": "zhipu"},
+    "Moonshot":          {"orgs": ["Moonshot"],  "country": "CN", "color": "#9B59B6", "slug": "moonshot"},
+    "DeepSeek":          {"orgs": ["DeepSeek"],  "country": "CN", "color": "#1e90ff", "slug": "deepseek"},
+    "Mistral":           {"orgs": ["Mistral"],   "country": "FR", "color": "#FF7000", "slug": "mistral"},
+    "MiniMax":           {"orgs": ["MiniMax"],   "country": "CN", "color": "#16A085", "slug": "minimax"},
+    "Thinking Machines": {"orgs": ["Thinking Machines"], "country": "US", "color": "#C0392B",
+                          "slug": "thinkingmachines"},
+}
+
+# The "best" aggregates are country filters, not companies, so they stay explicit.
+# `country` here is the full CSV value, unlike _ECI_COMPANIES' two-letter flag key.
+_ECI_COUNTRY_ENTITIES = {
+    "US best":    {"country": "United States of America", "slug": "us"},
+    "China best": {"country": "China", "slug": "china"},
+}
+
 # Entities selectable in the two ECI comparison dropdowns. Each label maps to a
 # filter over the ECI model list: a country for the "best" aggregates, or a list
-# of Organization substrings for an individual lab (matched case-insensitively,
-# handling the comma-joined multi-org strings in the CSV).
+# of Organization substrings for an individual lab.
 _ECI_ENTITY_SPECS = {
-    "US best":    {"country": "United States of America"},
-    "China best": {"country": "China"},
-    "Anthropic":  {"orgs": ["Anthropic"]},
-    "OpenAI":     {"orgs": ["OpenAI"]},
-    "xAI":        {"orgs": ["xAI"]},
-    "Google":     {"orgs": ["Google DeepMind", "Google"]},
-    "Meta":       {"orgs": ["Meta AI"]},
-    "Alibaba":    {"orgs": ["Alibaba"]},
-    "Zhipu AI":   {"orgs": ["Z.ai (Zhipu AI)", "Zhipu"]},
-    "Moonshot":   {"orgs": ["Moonshot"]},
-    "DeepSeek":   {"orgs": ["DeepSeek"]},
-    "Mistral":    {"orgs": ["Mistral"]},
-    "MiniMax":    {"orgs": ["MiniMax"]},
-    "Thinking Machines": {"orgs": ["Thinking Machines"]},
+    **{n: {"country": c["country"]} for n, c in _ECI_COUNTRY_ENTITIES.items()},
+    **{n: {"orgs": c["orgs"]} for n, c in _ECI_COMPANIES.items()},
 }
 _ECI_ENTITY_OPTIONS = list(_ECI_ENTITY_SPECS.keys())
 _ECI_NONE_LABEL = "—"  # em-dash: "no comparison" for the second dropdown
@@ -2974,13 +3010,10 @@ _ECI_US_MILESTONES = [
     (165, "ECI 165", '#c0392b'), (170, "ECI 170", '#8e44ad'),
 ]
 
-# Deep-link slugs for ?a= / ?b= URL params.
+# Deep-link slugs for ?a= / ?b= URL params, derived from the registry above.
 _ECI_ENTITY_SLUG = {
-    "US best": "us", "China best": "china", "Anthropic": "anthropic",
-    "OpenAI": "openai", "xAI": "xai", "Google": "google", "Meta": "meta",
-    "Alibaba": "alibaba", "Zhipu AI": "zhipu", "Moonshot": "moonshot",
-    "DeepSeek": "deepseek", "Mistral": "mistral",
-    "MiniMax": "minimax", "Thinking Machines": "thinkingmachines",
+    **{n: c["slug"] for n, c in _ECI_COUNTRY_ENTITIES.items()},
+    **{n: c["slug"] for n, c in _ECI_COMPANIES.items()},
 }
 _ECI_ENTITY_FOR_SLUG = {v: k for k, v in _ECI_ENTITY_SLUG.items()}
 
@@ -5941,26 +5974,10 @@ def render_employment():
 
 # ── ECI Company Gap ────────────────────────────────────────────────────
 
-# Maps a substring of Epoch's `Organization` field to the display name used on
-# the gap tab. Matched by SUBSTRING via _ecg_org_display(), not by exact key --
-# see that function for why. Keep these keys canonical (one per company); the
-# comma-joined and co-authored spellings Epoch emits are handled by the matcher,
-# so there is no need to enumerate them here.
-_ECG_ORG_MAP = {
-    "OpenAI": "OpenAI",
-    "Anthropic": "Anthropic",
-    "Google DeepMind": "Google",
-    "Google": "Google",
-    "Meta AI": "Meta",
-    "xAI": "xAI",
-    "Mistral AI": "Mistral",
-    "DeepSeek": "DeepSeek",
-    "Moonshot": "Moonshot",
-    "Alibaba": "Alibaba",
-    "Z.ai (Zhipu AI)": "Zhipu AI",
-    "MiniMax": "MiniMax",
-    "Thinking Machines": "Thinking Machines",
-}
+# Organization substring -> gap-tab display name, inverted from _ECI_COMPANIES
+# so this tab and the Epoch ECI tab resolve companies from one table. Edit the
+# registry, not this. Consumed by _ecg_org_display() below.
+_ECG_ORG_MAP = {o: n for n, c in _ECI_COMPANIES.items() for o in c["orgs"]}
 
 
 def _ecg_org_display(org_raw):
@@ -5979,11 +5996,12 @@ def _ecg_org_display(org_raw):
     keeps the two tabs consistent by construction, so a new spelling in a future
     Epoch pull cannot desync them again. TestEcgOrgMatching guards this.
 
-    Longest-key-first only matters for keys that are substrings of one another
-    ("Google" ⊂ "Google DeepMind"); both resolve to "Google" here, but ordering
-    keeps the result deterministic if a future key pair does not. A census of all
-    64 distinct Organization strings finds no string matching two *different*
-    display names, so the match is unambiguous.
+    Longest-key-first keeps the result deterministic when one key is a substring
+    of another. The registry keeps `orgs` minimal so that rarely applies today,
+    but it costs nothing and removes a footgun from adding a variant later. A
+    census of every distinct Organization string in the CSV finds none matching
+    two *different* companies, so the match is unambiguous; TestEcgOrgMatching
+    re-checks that on each run against the live data.
     """
     o = (org_raw or "").lower()
     for k in sorted(_ECG_ORG_MAP, key=len, reverse=True):
@@ -5992,35 +6010,12 @@ def _ecg_org_display(org_raw):
     return None
 
 
-_ECG_COLORS = {
-    "OpenAI": "#10a37f",
-    "Anthropic": "#d4a574",
-    "Google": "#4285F4",
-    "Meta": "#0668E1",
-    "xAI": "#555555",
-    "Mistral": "#FF7000",
-    "DeepSeek": "#1e90ff",
-    "Moonshot": "#9B59B6",
-    "Alibaba": "#E74C3C",
-    "Zhipu AI": "#2ECC71",
-    "MiniMax": "#16A085",
-    "Thinking Machines": "#C0392B",
-}
-
-_ECG_DASH = {
-    "OpenAI": "solid", "Anthropic": "solid", "Google": "solid",
-    "Meta": "solid", "xAI": "solid", "Mistral": "dash",
-    "DeepSeek": "dot", "Moonshot": "dashdot", "Alibaba": "dot", "Zhipu AI": "dashdot",
-    "MiniMax": "dash", "Thinking Machines": "dash",
-}
-
-_ECG_COUNTRY = {
-    "OpenAI": "US", "Anthropic": "US", "Google": "US", "Meta": "US", "xAI": "US",
-    "Thinking Machines": "US",
-    "Mistral": "FR",
-    "DeepSeek": "CN", "Moonshot": "CN", "Alibaba": "CN", "Zhipu AI": "CN",
-    "MiniMax": "CN",
-}
+# Both derived from _ECI_COMPANIES. (There was also an _ECG_DASH table of
+# per-company line styles; nothing in any render path ever read it -- the gap tab
+# styles one highlighted company at a time via _ECG_COLORS -- so it was removed
+# rather than carried as another table to keep in sync.)
+_ECG_COLORS = {n: c["color"] for n, c in _ECI_COMPANIES.items()}
+_ECG_COUNTRY = {n: c["country"] for n, c in _ECI_COMPANIES.items()}
 
 _ECG_FLAG = {"US": "\U0001f1fa\U0001f1f8", "CN": "\U0001f1e8\U0001f1f3", "FR": "\U0001f1eb\U0001f1f7"}
 

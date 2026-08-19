@@ -154,13 +154,23 @@ and the tabs silently disagreed: Epoch spells Google four ways (`Google DeepMind
 136.00 / 2025-01-21). Google's *current* gap was unaffected, which is why it went
 unnoticed — the divergence was only in the historical curve.
 
-Keep `_ECG_ORG_MAP` keys canonical (one per company); the matcher handles the
-comma-joined and co-authored spellings, so enumerating them is unnecessary.
-Substring matching is only safe while no `Organization` string contains two different
-mapped companies — `TestEcgOrgMatching` asserts that across all 64 distinct strings,
-along with tab-to-tab set equality and the presence of colour/dash/country metadata
-for every display name. Adding a company means updating `_ECG_ORG_MAP`, `_ECG_COLORS`,
-`_ECG_DASH`, `_ECG_COUNTRY`, and `_ECI_ENTITY_SPECS`/`_ECI_ENTITY_SLUG` together.
+**Adding a company is one row in `_ECI_COMPANIES`.** That registry is the single
+source of truth for both tabs; `_ECG_ORG_MAP`, `_ECG_COLORS`, `_ECG_COUNTRY`,
+`_ECI_ENTITY_SPECS`, and `_ECI_ENTITY_SLUG` are all derived from it at import, so the
+two tabs cannot hold different ideas about which models belong to whom. Don't
+hand-write those derived tables. `_ECI_COUNTRY_ENTITIES` stays separate because the
+"best" aggregates are country filters, not companies — and it must come first, since
+`_ECI_ENTITY_OPTIONS[0]` is the ECI tab's default benchmark.
+
+Keep each company's `orgs` list minimal: substring matching makes longer variants
+redundant ("Google" already catches "Google DeepMind,Google"). Matching is only
+unambiguous while no `Organization` string contains two different companies —
+`TestEcgOrgMatching` asserts that against the live CSV, along with tab-to-tab set
+equality, the four Google spellings, registry well-formedness, and slug round-tripping.
+
+There was also an `_ECG_DASH` table of per-company line styles. No render path ever
+read it — the gap tab styles one highlighted company at a time via `_ECG_COLORS` — so
+it was deleted rather than kept as another table to sync.
 
 ### Compute vs Capabilities — China's ETA to a target ECI
 

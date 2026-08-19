@@ -1902,14 +1902,38 @@ class TestEcgOrgMatching:
         assert vp._ecg_org_display("") is None
         assert vp._ecg_org_display(None) is None
 
-    def test_every_display_name_has_render_metadata(self):
-        # A company in the map but missing a colour/dash/country would blow up or
-        # render blank on the gap tab.
-        for display in set(vp._ECG_ORG_MAP.values()):
-            assert display in vp._ECG_COLORS, display
-            assert display in vp._ECG_DASH, display
-            assert display in vp._ECG_COUNTRY, display
-            assert vp._ECG_COUNTRY[display] in vp._ECG_FLAG, display
+    def test_registry_rows_are_well_formed(self):
+        # Derivation guarantees every company reaches both tabs, so what is left
+        # to check is that each registry row carries what the derivations read.
+        seen_slugs = set()
+        for name, c in vp._ECI_COMPANIES.items():
+            assert set(c) == {"orgs", "country", "color", "slug"}, name
+            assert c["orgs"] and all(o.strip() for o in c["orgs"]), name
+            assert c["country"] in vp._ECG_FLAG, name
+            assert c["color"].startswith("#"), name
+            assert c["slug"] and c["slug"] == c["slug"].lower(), name
+            assert c["slug"] not in seen_slugs, f"duplicate slug: {c['slug']}"
+            seen_slugs.add(c["slug"])
+
+    def test_derived_tables_cover_every_company(self):
+        for name in vp._ECI_COMPANIES:
+            assert name in vp._ECG_COLORS, name
+            assert name in vp._ECG_COUNTRY, name
+            assert name in vp._ECI_ENTITY_SPECS, name
+            assert name in vp._ECI_ENTITY_SLUG, name
+        assert set(vp._ECG_ORG_MAP.values()) == set(vp._ECI_COMPANIES)
+
+    def test_country_entities_lead_the_dropdown(self):
+        # _ECI_ENTITY_OPTIONS[0] is the ECI tab's default benchmark, so the
+        # country aggregates must stay ahead of the companies.
+        assert vp._ECI_ENTITY_OPTIONS[0] == "US best"
+        n = len(vp._ECI_COUNTRY_ENTITIES)
+        assert vp._ECI_ENTITY_OPTIONS[:n] == list(vp._ECI_COUNTRY_ENTITIES)
+        assert vp._ECI_ENTITY_OPTIONS[n:] == list(vp._ECI_COMPANIES)
+
+    def test_slugs_round_trip(self):
+        for label, slug in vp._ECI_ENTITY_SLUG.items():
+            assert vp._ECI_ENTITY_FOR_SLUG[slug] == label
 
 
 class TestCcTrainingFloorMatch:
