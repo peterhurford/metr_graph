@@ -25,7 +25,7 @@
 #   4. GLM-5.2 11.0 == Opus 4.5 11.0; [A] states GLM-5.2 "reaches as far as Opus 4.5".
 #   Derived lags also reproduce [A]'s prose: GLM-5.2 6.7mo ("less than 7 months"), DeepSeek-V4-Pro
 #   6.8mo ("7 months before it").
-# LAST VERIFIED 2026-08-18 (figure-unchanged check, not a re-digitization): re-fetched fig2-ranges.png
+# LAST VERIFIED 2026-08-21 (figure-unchanged check, not a re-digitization): re-fetched fig2-ranges.png
 #   from the post's current CDN URL (.../6a5a1245efc070dccfb1d56d_fig2-ranges.png). Webflow content-hashes
 #   the filename, so the unchanged URL is itself evidence the asset was not re-uploaded; CDN headers still
 #   report last-modified 2026-07-17 11:30:14 GMT, content-length 1047349, etag 62f53079...fb13.

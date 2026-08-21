@@ -484,10 +484,13 @@ _RLI_RAW = [
     {"name": "GPT-5.5",        "date": "2026-04-23", "rli_score": 6.25},
     {"name": "Opus 4.8",       "date": "2026-05-28", "rli_score": 8.33},
     {"name": "Fable 5",        "date": "2026-06-09", "rli_score": 15.83},
-    # Rechecked 2026-08-18 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
+    # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
     # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
-    # line, Kimi K3, and Claude Mythos 5 have no published RLI score anywhere.
+    # line, Kimi K3, Grok 4.6, DeepSeek V4, Qwen 3.8, and Claude Opus 5 have no published
+    # RLI score anywhere -- the dashboard.safe.ai bundle already carries model-registry
+    # entries for several of them, so their absence is a missing score, not a missing model.
+    # remotelabor.ai no longer hosts a table at all; it now just points at dashboard.safe.ai.
     # A "16.1%" for Fable 5 circulates via a third-party blog (Pebblous) citing "CAIS
     # (2026)" with no link; contradicted by all three primary surfaces (Scale 15.80,
     # CAIS blog 15.8, dashboard.safe.ai 15.83). Treated as an error, not a revision.
@@ -4626,9 +4629,13 @@ _OPENAI_REVENUE = [
     # gross-vs-net gap that makes splicing the two source classes produce fake dips.
     # Epoch's ai_companies_revenue_reports.csv carries that $40B as its newest OpenAI row;
     # we deliberately keep the alt-data line instead of switching mid-series.
-    # Rechecked 2026-08-18: TickerTrends has published nothing since the 2026-08-14 post
-    # that produced the 44.3 above, so this series is current. Greg Brockman's internal
-    # note (July run rate grew >20% MoM) states no absolute figure and is not a datapoint.
+    # Rechecked 2026-08-21: TickerTrends has published nothing with a company-wide OpenAI
+    # total since the 2026-08-14 post that produced the 44.3 above, so this series is
+    # current. Greg Brockman's internal note (July run rate grew >20% MoM) states no
+    # absolute figure and is not a datapoint. Also excluded from the 2026-08-18 TickerTrends
+    # post: Codex $8.83B tracked ARR (week ending 08-10) is product-level, not a company
+    # total. CFO Sarah Friar's 2026-08-14 closed-door investor meeting (CNBC) cited only
+    # Bloomberg's older, lower $40B; its news was the enterprise/consumer mix crossover.
     # Excluded: OpenAI CFO Sarah Friar told employees on 2026-07-29 that July ARR
     # "surpassed the company's entire second quarter" (CNBC). No dollar figure was
     # given, and it mixes ARR against a quarterly total -- not a datapoint.
@@ -4687,6 +4694,15 @@ _ANTHROPIC_REVENUE = [
     # Also excluded (2026-08-18 check): full-year 2026 guidance of $100-120B and 2028
     # guidance of $190-200B are forecasts; ARK's 2026-08-18 "Anthropic + OpenAI revenue
     # tops $115B" is a third-party combined aggregate, not a per-company run rate.
+    # Rechecked 2026-08-21: still nothing newer. anthropic.com/news has no revenue post
+    # (newest items are 08-14 text watermark, 08-07 Fable 5 safeguards, 08-04 Cuellar hire),
+    # and EDGAR still shows no Anthropic PBC registrant -- the 2026-06-01 S-1 remains a
+    # confidential submission, so no public prospectus figure exists. Epoch's
+    # ai_companies_revenue_reports.csv newest Anthropic row is the same 65.0 / 2026-07-31.
+    # All 08-17-onward coverage (CNBC, Axios, TechCrunch, Fortune) is derivative of the one
+    # Bloomberg scoop, not independent reads. TickerTrends' 2026-08-18 post gives Claude Code
+    # $15.12B tracked ARR and calls it "21.9% of Anthropic's total tracked ARR"; that implies
+    # ~$69B but TickerTrends never states the total, and it would be tracker-class anyway.
 ]
 
 

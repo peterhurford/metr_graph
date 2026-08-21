@@ -133,7 +133,7 @@ Amazon Ridgeland,171298.6356745831,228,8.637096,Amazon #confident,Anthropic #spe
 - [Backup diesel generator referenced in the permit](https://www.cat.com/en_US/products/new/power-systems/electric-power/diesel-generator-sets/117341.html)
 - [New York Times article on Project Rainier](https://www.nytimes.com/2025/06/24/technology/amazon-ai-data-centers.html)
 ",https://docs.google.com/spreadsheets/d/1WWWmkFubzXYb2RY9PZsF4BtrpmbmdcSJtVTw1kcJxVs/edit?usp=sharing,Project Rainier #speculative,Trainium2,"Trainium2,Trainium3",,,Entergy,United States,"1626 County Line Road Ridgeland, Mississippi"
-Meta Huntsville,166750.8842849924,146,5.530772,Meta #confident,Meta #confident,"- [Announcement of expansion completing in 2026 ](https://plateauexcavation.com/projects/huntsville-meta-data-center-meta-project-ferris/)
+Meta Huntsville,166760.9903991915,146,5.530772,Meta #confident,Meta #confident,"- [Announcement of expansion completing in 2026 ](https://plateauexcavation.com/projects/huntsville-meta-data-center-meta-project-ferris/)
 - [TVA solar installation announcements](https://www.prnewswire.com/news-releases/tva-announces-largest-valley-solar-installations--built-for-facebook-300743255.html)
 ",https://docs.google.com/spreadsheets/d/1Rk-yikcpmRBm2V9iwBTdad2IILaZEODw1Xzk66GYEJk/edit?gid=2010365208#gid=2010365208,,B300,B300,,,"Tennessee Valley Authority,NextEra Energy Resources,First Solar",United States,"5400 Prosperity Dr NW, Toney, AL"
 Meta Aiken,161697.82718544718,142,5.379244,Meta #confident,Meta #confident,"- [Meta Introduction to the Aiken Project](https://datacenters.atmeta.com/2024/08/hello-south-carolina/)
@@ -161,15 +161,15 @@ Meta Eagle Mountain,151354.21930267813,133,5.038306,Meta #confident,Meta #confid
 ",https://docs.google.com/spreadsheets/d/1mVv_XB56SrZcy2jAwoG6lzgeXQHp0G3adhIaChbNh4E/edit?usp=sharing,,B300,B300,,Mortenson,Williams,United States,"1275 N Community Cir, Eagle Mountain, UT 84005"
 Google Lancaster,130368.8731682668,137,5.189834,Google #confident,,"- [DCD article discussing the announcement of this site](https://www.datacenterdynamics.com/en/news/google-to-build-two-more-data-centers-in-columbus-ohio/)
 ",https://docs.google.com/spreadsheets/d/1yR7SiR5ORQCKoUzl7JOJdSSHCHZh0NHfqQ8Vxv8n2Mg/edit?usp=sharing,,"TPU v5e,TPU v5p,TPU v7,TPU v6e","TPU v5e,TPU v5p,TPU v7,TPU v6e",,,,United States,"105 Whiley Rd, Lancaster, OH 43130"
+Meta-QTS Hillsboro 2,123839,180,6.818759999999999,Meta #likely,Meta #likely,"- [QTS Hillsboro 2 data center announcement](https://q.com/data-centers/hillsboro-2/)
+- [QTS and Meta sign an agreement with PGE for a 120MWac solar installation](https://q.com/news/avangrid-and-portland-general-electric-collaborate-with-qts-and-meta-to-build-120-mwac-solar-project-in-oregon/)
+",https://docs.google.com/spreadsheets/d/1IDIlQvAa0AMeV0xAT0592dV1cV8Ptj1B4Kzyefna1fg/edit?usp=sharing,,H100,H100,,,"Portland General Electric,Avangrid",United States,"4755 NE Huffman St, Hillsboro, OR 97124"
 Google Waltham Cross,123799.89893885801,88,3.3336159999999997,Google #confident,Google DeepMind #speculative,"- [Google — Waltham Cross data centre page](https://datacenters.google/locations/waltham-cross/)
 - [Google opening announcement (Sept 2025)](https://www.googlecloudpresscorner.com/2025-09-16-Google-Opens-Waltham-Cross-Data-Centre-as-Part-of-Two-year-GBP5-Billion-Investment-in-the-UK-to-Help-Power-its-AI-Economy)
 - [Project Saracen scoping report (Broxbourne planning application ref 07/18/1181/O) ](https://www.broxbourne.gov.uk/downloads/file/51/project-saracen-scoping-report-for-submission-full-13-08-18-compressed-v2)
 - [Planning application description (CPRE Hertfordshire)](https://www.cpreherts.org.uk/resources/land-at-maxwells-farm-west-great-cambridge-road-cheshunt-hertfordshire/)
 
 ",https://docs.google.com/spreadsheets/d/1lLfeTMkuesVmRtc_RT5qVQSX9C-K-zMN-hH981ZwK1g/edit?usp=drive_link,,"TPU v6e,TPU v7","TPU v6e,TPU v7",,,"Shell Energy Europe,Engie",United Kingdom,"Land at Maxwell's Farm West, Great Cambridge Road, Cheshunt, EN8 8XH"
-Meta-QTS Hillsboro 2,123799.89893885801,180,6.818759999999999,Meta #likely,Meta #likely,"- [QTS Hillsboro 2 data center announcement](https://q.com/data-centers/hillsboro-2/)
-- [QTS and Meta sign an agreement with PGE for a 120MWac solar installation](https://q.com/news/avangrid-and-portland-general-electric-collaborate-with-qts-and-meta-to-build-120-mwac-solar-project-in-oregon/)
-",https://docs.google.com/spreadsheets/d/1IDIlQvAa0AMeV0xAT0592dV1cV8Ptj1B4Kzyefna1fg/edit?usp=sharing,,H100,H100,,,"Portland General Electric,Avangrid",United States,"4755 NE Huffman St, Hillsboro, OR 97124"
 VNET Bayin Ulanqab,122789.28751894896,221,8.371922,VNET #confident,ByteDance #speculative,"- [Official VNET resource page for data centers](https://web.archive.org/web/20260619185141/https://www.vnet.com/resource.html)
 - [Analyst report by Zhongtai Securities, citing 1-GW capacity goals](https://web.archive.org/web/20260619185224/https://stcn.com/article/detail/2241162.html)
 - [Interview with VP Gavin Shen: campus will be AI-driven](https://web.archive.org/web/2/https://www.insidermonkey.com/blog/vnet-group-inc-nasdaqvnet-q3-2024-earnings-call-transcript-1395031/)
@@ -309,6 +309,10 @@ Meta Hyperion,0,0,0,Meta #confident,Meta #confident,"- [Data center profile by M
 - [Entergy's application for generation and transmission resources](https://drive.google.com/file/d/1FLY13apaHy4hI8RNVk9n_nlJpwFHtBrB/view?usp=sharing)
 - [MISO update with 1.8 GW substation plan](https://drive.google.com/file/d/1D4eUHwEuirNi0g3IU_xGOti3PcC8fcXi/view?usp=sharing)
 ",https://docs.google.com/spreadsheets/d/1cyXcZ_jIsJDjuPKx6_J1scIWeq0-rfM3-2GcSKN4oA0/edit?usp=sharing,Hyperion #confident,,Rubin,,Mortenson,Entergy,United States,"Holly Ridge, LA 71269"
+Microsoft Narvik Norway,0,0,0,NScale #likely,Microsoft #likely,"- [NScale announcing more than 30.000 Rubin GPUs](https://www.nscale.com/press-releases/nscale-microsoft-norway)
+- [NScale announcing 230 initial MW and possibly an additional 290MW, mentioning 100.000 Nvidia GPUs](https://www.nscale.com/blog/stargate-norway-laying-the-foundation-for-the-future-of-ai)
+- [Local hydropower facilities will fulfill new demand at 4 to 5 cents per unit for electricity](https://time.com/article/2026/06/03/ai-norway-nscale-data-center/)
+",https://docs.google.com/spreadsheets/d/1S6JIRsMg8BQ6dfX1PUZM4U4zv0CWWyH0nmZ9E_BulbU/edit?usp=sharing,,,Rubin,Aker ASA,,,Norway,
 OpenAI Stargate Lordstown,0,0,0,Softbank #confident,OpenAI #confident,"- [Announcement of 5 new Stargate sites mentioning Lordstown](https://www.datacenterdynamics.com/en/news/openai-announces-five-more-us-stargate-data-centers-with-oracle-and-softbank/)
 - [Water Quality Permitting stating that “manufacturing and assembly” is the main purpose of the construction](https://drive.google.com/file/d/1VfWvb9unUXZs3u4zwBjZjQwtsu91y8i9/view?usp=drivesdk)
 - [Stormwater Permitting](https://drive.google.com/file/d/1xl4Ql2jdmKhcYFhn43ymM2TJ56Z8cInL/view?usp=drivesdk)

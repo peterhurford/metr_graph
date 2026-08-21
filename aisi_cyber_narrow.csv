@@ -7,7 +7,7 @@
 # VALIDATION: derived dates match known releases (GPT-5 2025-08-07 exact; Opus 3 off by 1d; o3 off by 1d).
 #   Derived lags reproduce AISI's printed annotations: GLM-5.2 vs Opus 4.6 = 4.30mo (chart "4.3 mo");
 #   DeepSeek-V4-Pro vs Opus 4.5 = 5.06mo (chart "5.0 mo").
-# LAST VERIFIED 2026-08-18 (figure-unchanged check, not a re-digitization): re-fetched fig1-narrow.png
+# LAST VERIFIED 2026-08-21 (figure-unchanged check, not a re-digitization): re-fetched fig1-narrow.png
 #   from the post's current CDN URL (.../6a5a119ab40ff07b1ffba031_fig1-narrow.png). Webflow content-hashes
 #   the filename, so an unchanged URL is itself evidence the asset was not re-uploaded; its CDN headers
 #   still report last-modified 2026-07-17 11:27:23 GMT, content-length 609388, etag 08de3a27...0632.
