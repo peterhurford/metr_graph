@@ -861,9 +861,13 @@ def ukc_target_eta_direct(models, target=_UKC_TARGET):
 import bisect
 
 # 2-month training run (2 × 30-day months), used to turn a site's 8-bit OP/s
-# throughput into total operations over a two-month run.
+# throughput into total operations over a two-month run. The 6-month variant
+# backs the longer-run capacity metric; it is the same arithmetic with a 3×
+# longer window, so its FLOP numbers are exactly 3× the 2-month ones.
 _DAYS_2MO = 2 * 30
 _SECONDS_2MO = _DAYS_2MO * 24 * 3600
+_DAYS_6MO = 6 * 30
+_SECONDS_6MO = _DAYS_6MO * 24 * 3600
 # A model ships ~1mo after its training run finishes (post-training, evals,
 # safety), calibrated to observed train-finish → announce gaps. Used both to
 # date model runs and to expand a buildout milestone into its DC-online /
@@ -956,6 +960,8 @@ def load_data_centers(_mtime=None):
             # realized utilization.
             train_flop = (perf * _SECONDS_2MO * _DC_UTILIZATION
                           if perf is not None else None)
+            train_flop_6mo = (perf * _SECONDS_6MO * _DC_UTILIZATION
+                              if perf is not None else None)
             series.setdefault(dname, []).append({
                 'date': d,
                 'status': r.get('Construction status', ''),
@@ -964,6 +970,7 @@ def load_data_centers(_mtime=None):
                 'power': _num(r, 'Power (MW)'),
                 'perf': perf,
                 'train_flop': train_flop,
+                'train_flop_6mo': train_flop_6mo,
                 # How many GPT-5-scale (2e25 FLOP) / Mythos-scale (1e27 FLOP)
                 # training runs the site's 2-month capacity could produce.
                 # Displayed as *time to train one* (kind 'traintime',
@@ -994,22 +1001,43 @@ _DC_METRICS = {
     "IT power (MW)": {"key": "it_power", "log": False, "kind": "mw"},
     "Capital cost ($B)": {"key": "cost", "log": False, "kind": "cost"},
     "Performance (8-bit OP/s)": {"key": "perf", "log": True, "kind": "sci"},
-    "2mo train FLOP": {"key": "train_flop", "log": True, "kind": "flop"},
+    # `run_days` is the training-run window a metric assumes; it sizes the
+    # timing shifts below. Metrics that don't depend on run length default to
+    # the 2-month convention used everywhere else in the tab.
+    "2mo train log OP": {"key": "train_flop", "log": True, "kind": "flop",
+                       "run_days": _DAYS_2MO},
+    "6mo train log OP": {"key": "train_flop_6mo", "log": True, "kind": "flop",
+                       "run_days": _DAYS_6MO},
     "Capacity (time to GPT-5)": {"key": "gpt5s", "log": True, "kind": "traintime"},
     "Capacity (time to Mythos)": {"key": "mythos", "log": True, "kind": "traintime"},
 }
 
-# Timing options for the 2mo-train-FLOP metric: label → days the DC-available
-# date is shifted forward to date the chosen milestone.
-#   • DC construction  — no shift (the site's availability date)
-#   • Training done     — +2mo (a run started at availability finishes that later)
-#   • Model release     — +2mo + ~1mo post-training/eval lag (matches the
-#                         Compute vs Capabilities tab's model-release dating)
-_DC_TRAIN_FLOP_TIMINGS = {
-    "Data center construction": 0,
-    "2mo training finished": _DAYS_2MO,
-    "Model release": _DAYS_2MO + _CC_RUN_COMPLETION_LAG.days,
-}
+# Timing options: label → days the DC-available date is shifted forward to date
+# the chosen milestone.
+#   • DC construction   — no shift (the site's availability date)
+#   • Training finished  — +one training run (the metric's `run_days`: a run
+#                          started at availability finishes that much later)
+#   • Model release      — + run + ~1mo post-training/eval lag (matches the
+#                          Compute vs Capabilities tab's model-release dating)
+_DC_TIMING_OPTIONS = (
+    "Data center construction",
+    "Training run finished",
+    "Model release",
+)
+
+
+def _dc_timing_shift(label, run_days=_DAYS_2MO):
+    """Days to shift a site's availability date to reach the chosen milestone.
+
+    `run_days` comes from the selected metric, so the 6-month FLOP metric dates
+    its models six months out rather than two.
+    """
+    if label == "Training run finished":
+        return run_days
+    if label == "Model release":
+        return run_days + _CC_RUN_COMPLETION_LAG.days
+    return 0
+
 
 # Stable colors for the most common companies; others fall back to a palette.
 _DC_COLORS = {
@@ -1024,6 +1052,44 @@ _DC_PALETTE = ["#888888", "#E377C2", "#8C564B", "#BCBD22", "#17BECF",
 
 # Companies excluded from all data-center views (colocation/neutral-host
 # providers plus others not wanted on the chart).
+# Sites that could plausibly run ONE training job together. The cross-site link
+# carries the data-parallel gradient all-reduce, so pooling needs either metro
+# fibre or a purpose-built long-haul fabric; merely sharing an owner does not
+# qualify. Entries are (cluster label, basis, site names), basis being:
+#   'proximity' — same campus or metro, read off the Address column
+#   'fabric'    — far apart, but joined by an announced training fabric
+# Anything absent is its own cluster and never pools. Addresses are too
+# irregular to cluster automatically (27 of 78 don't parse, and the Cedar Rapids
+# pair sits in two differently-named municipalities), so this is curated by
+# hand; TestDcNetworkClusters checks every name against the live CSV so a data
+# refresh that renames a site fails loudly instead of silently un-clustering it.
+#
+# Clusters are geography, not ownership, and pooling happens strictly within one
+# company — so a cluster whose sites belong to different companies, or whose
+# sites are dropped by _DC_EXCLUDE_COMPANIES, is inert until that changes. Cedar
+# Rapids, Richmond and San Antonio are inert today for exactly that reason; they
+# stay listed because the geography is real and the attribution may not be
+# (QTS Cedar Rapids has no user recorded at all).
+_DC_NETWORK_CLUSTERS = (
+    ("Memphis, TN", 'proximity', ("Colossus 1", "Colossus 2")),
+    ("Abilene, TX", 'proximity', ("OpenAI Stargate Abilene",
+                                  "Crusoe Abilene Expansion",
+                                  "OpenAI Stargate Shackelford")),
+    ("Columbus, OH", 'proximity', ("Meta Prometheus", "Google New Albany",
+                                   "Google Columbus")),
+    ("Cedar Rapids, IA", 'proximity', ("Google Cedar Rapids",
+                                       "QTS Cedar Rapids")),
+    ("Richmond, VA", 'proximity', ("QTS Richmond 1", "QTS Richmond 2",
+                                   "QTS Richmond 3")),
+    ("San Antonio, TX", 'proximity', ("Microsoft SAT14", "Microsoft SAT40",
+                                      "Vantage TX1")),
+    ("Eagle Mountain, UT", 'proximity', ("Meta Eagle Mountain",
+                                         "QTS Eagle Mountain")),
+    ("Johor, Malaysia", 'proximity', ("DayOne Nusajaya", "DayOne Kempas")),
+    ("Microsoft AI WAN", 'fabric', ("Microsoft Fairwater Wisconsin",
+                                    "Microsoft Fairwater Atlanta")),
+)
+
 _DC_EXCLUDE_COMPANIES = {
     "QTS", "DayOne", "CoreWeave", "STACK", "Stream", "Vantage", "EdgeCore",
     "Oracle", "Microsoft",
@@ -1059,6 +1125,14 @@ def _fmt_duration_days(days):
     return _u(days / 365.25, "year")
 
 
+def _log_op(v):
+    """log₁₀ of an operation count, to one decimal with a bare integer kept
+    bare: 1e28 → "28", 2e28 → "28.3"."""
+    if v is None or not np.isfinite(v) or v <= 0:
+        return "—"
+    return f"{np.log10(v):.1f}".rstrip('0').rstrip('.')
+
+
 def _dc_fmt_value(v, kind):
     if v is None:
         return "—"
@@ -1075,7 +1149,9 @@ def _dc_fmt_value(v, kind):
     if kind == "sci":
         return f"{v:.2e}"
     if kind == "flop":
-        return f"{v:.2e} FLOP"
+        # Reported as log₁₀ of the operation count (1e28 → 28, 2e28 → 28.3);
+        # the stored value stays raw so sums and maxima keep working.
+        return f"{_log_op(v)} log OP" if v > 0 else "—"
     if kind == "traintime":
         # v is training runs per 2-month window; report the time for one run.
         return _fmt_duration_days(_DAYS_2MO / v) if v > 0 else "—"
@@ -1159,41 +1235,70 @@ def _dc_company_series(series):
     return out
 
 
-def _dc_company_pooled_series(series, n_sites):
-    """Per company, the summed capacity of its `n_sites` largest data centers.
+def _dc_network_site_clusters(include_fabric=True):
+    """site name → cluster label, for sites that can share one training job.
 
-    The multi-site view of _dc_company_series(): instead of taking only the
-    single biggest site, pool the top N at each event date — what a company
-    gets by networking several data centers into one training job.
-    `n_sites=None` pools every site it has.
+    Sites absent from the map are their own cluster, so nothing pools with them.
+    `include_fabric=False` drops the purpose-built long-haul links, leaving only
+    sites that are physically near one another.
+    """
+    out = {}
+    for label, basis, names in _DC_NETWORK_CLUSTERS:
+        if basis == 'fabric' and not include_fabric:
+            continue
+        for name in names:
+            out[name] = label
+    return out
+
+
+def _dc_company_networked_series(series, cluster_of):
+    """Per company, its largest *networkable group* of sites at each event date.
+
+    The multi-site view of _dc_company_series(): instead of one site, sum the
+    sites a company could plausibly drive as a single training job, then take
+    its biggest such group. Grouping is (company, cluster), so a site with no
+    cluster stands alone and `cluster_of={}` reduces exactly to
+    _dc_company_series(). `cluster_of=None` pools every site a company has —
+    the upper bound, kept only for comparison.
 
     Summing is valid for every metric the tab offers, the 'traintime' ones
     included: those are stored as training runs per 2-month window (see
-    load_data_centers), so two equal sites sum to twice the runs, i.e. half the
+    load_data_centers), so two equal sites are twice the runs, i.e. half the
     time to train one model. Storing the count is what keeps this a plain sum.
 
-    Returns company → [(date, value, site_names), …] with site_names a tuple of
-    the pooled sites, largest first.
+    Returns company → [(date, value, site_names, cluster_label), …] with
+    site_names largest first and cluster_label None for a lone site.
     """
     companies = {}
     for name, v in series.items():
-        companies.setdefault(v['company'], []).append((name, v['pts']))
+        key = None if cluster_of is None else cluster_of.get(name, name)
+        companies.setdefault(v['company'], []).append((name, key, v['pts']))
     out = {}
     for co, members in companies.items():
-        all_dates = sorted({d for _, pts in members for d, _ in pts})
+        all_dates = sorted({d for _, _, pts in members for d, _ in pts})
         steps = []
         for d in all_dates:
-            vals = []
-            for name, pts in members:
+            groups = {}
+            for name, key, pts in members:
                 val = _dc_val_at(pts, d)
                 if val is not None:
-                    vals.append((val, name))
-            if not vals:
+                    groups.setdefault(key, []).append((val, name))
+            if not groups:
                 continue
-            vals.sort(reverse=True)
-            top = vals if n_sites is None else vals[:n_sites]
-            steps.append((d, sum(v for v, _ in top),
-                          tuple(n for _, n in top)))
+            best_key, best_total, best_vals = None, None, None
+            for gkey, vals in groups.items():
+                total = sum(v for v, _ in vals)
+                if best_total is None or total > best_total:
+                    best_key, best_total, best_vals = gkey, total, vals
+            best_vals = sorted(best_vals, reverse=True)
+            if len(best_vals) == 1:
+                label = None                      # a lone site, not a cluster
+            elif best_key is None:
+                label = "all sites"               # the unrestricted upper bound
+            else:
+                label = best_key
+            steps.append((d, best_total,
+                          tuple(n for _, n in best_vals), label))
         out[co] = steps
     return out
 
@@ -6451,7 +6556,7 @@ _DC_DEFAULTS = {
     "dc_log": True,
     "dc_future": True,
     "dc_timing": "Data center construction",
-    "dc_pool_n": "3 sites",
+    "dc_pool_n": "Nearby sites + announced fabric",
     "dc_start_year": 2025,
     "dc_end_year": 2027,
 }
@@ -6461,14 +6566,14 @@ _DC_DEFAULTS = {
 _DC_START_YEARS = [2023, 2024, 2025, 2026]
 _DC_END_YEARS = [2026, 2027, 2028, 2029]
 
-# "Data centers networked together" choices for the pooled-capacity section:
-# label → how many of a company's largest sites to sum (None = all of them).
-_DC_POOL_OPTIONS = {
-    "1 (single site)": 1,
-    "2 sites": 2,
-    "3 sites": 3,
-    "5 sites": 5,
-    "All sites": None,
+# What the networked-sites section may pool. Values name the cluster basis fed
+# to _dc_network_site_clusters(); 'none' pools nothing (each site stands alone)
+# and 'all' pools a company's whole fleet, kept only as a stated upper bound.
+_DC_NETWORK_OPTIONS = {
+    "Nearby sites + announced fabric": 'fabric',
+    "Nearby sites only": 'proximity',
+    "Single site (no networking)": 'none',
+    "Every site the company has (upper bound)": 'all',
 }
 
 # Compute vs Capabilities tab
@@ -6634,6 +6739,58 @@ def _dc_duration_ticks(y_range, log_scale):
     return vals, [_dc_fmt_value(v, 'traintime') for v in vals]
 
 
+def _dc_logop_ticks(y_range, log_scale):
+    """Axis ticks labelled in log₁₀ operations for the 'flop' metrics.
+
+    The plotted value is the raw operation count (so every aggregation in the
+    tab stays a plain max/sum); only the tick *text* is converted, the same way
+    `_dc_fmt_value` converts a value. On a log axis the ticks sit at round log
+    values (…, 27.5, 28.0, …) rather than at decade minors, which would round
+    to duplicate labels near the top of each decade.
+    """
+    if y_range is None:
+        return None
+    if not log_scale:
+        # A linear axis is evenly spaced in raw ops, so the ticks are too and
+        # only their labels are logged; consecutive labels that round the same
+        # are dropped rather than printed twice.
+        hi = float(y_range[1])
+        if hi <= 0:
+            return None
+        lo = max(float(y_range[0]), 0.0)
+        vals, text = [], []
+        for i in range(7):
+            v = lo + (hi - lo) * i / 6.0
+            lab = _log_op(v)
+            if v <= 0 or (text and lab == text[-1]):
+                continue
+            vals.append(v)
+            text.append(lab)
+        return (vals, text) if len(vals) >= 2 else None
+
+    lo, hi = float(y_range[0]), float(y_range[1])
+    span = hi - lo
+    if not np.isfinite(span) or span <= 0:
+        return None
+    # 0.25 is skipped: a tick at 27.25 would print as "27.2", labelling
+    # itself a notch below where it sits.
+    step = next((c for c in (0.1, 0.2, 0.5, 1.0, 2.0) if span / c <= 8), 5.0)
+    vals, text = [], []
+    k = int(np.ceil(lo / step - 1e-9))
+    while k * step <= hi + 1e-9:
+        t = k * step
+        v = 10.0 ** t
+        lab = _log_op(v)
+        # Whole decades keep the axis tickfont; the steps in between are
+        # shrunk, matching the plain log-tick treatment.
+        if abs(t - round(t)) > 1e-9:
+            lab = f'<span style="font-size:9px">{lab}</span>'
+        vals.append(v)
+        text.append(lab)
+        k += 1
+    return (vals, text) if len(vals) >= 2 else None
+
+
 def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
                height=440, show_legend=False, kind=None, tick_scale=1.0):
     yaxis = dict(title_text=y_title,
@@ -6643,6 +6800,10 @@ def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
                  tickfont=dict(color='#222222'), title_font=dict(color='#222222'))
     if kind == 'traintime':
         ticks = _dc_duration_ticks(y_range, log_scale)
+        if ticks is not None:
+            yaxis.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
+    elif kind == 'flop':
+        ticks = _dc_logop_ticks(y_range, log_scale)
         if ticks is not None:
             yaxis.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
     elif log_scale and y_range is not None:
@@ -6694,8 +6855,12 @@ def render_data_centers():
                                      value=True, key="dc_future")
         # Each site can be dated to any of three milestones; the choice shifts
         # every point forward by that lead time.
+        # A bookmarked URL can carry a timing label from an older build; drop
+        # it rather than letting the selectbox raise on an unknown value.
+        if st.session_state.get("dc_timing") not in _DC_TIMING_OPTIONS:
+            st.session_state.pop("dc_timing", None)
         timing_label = st.selectbox(
-            "Date points at", list(_DC_TRAIN_FLOP_TIMINGS), key="dc_timing")
+            "Date points at", list(_DC_TIMING_OPTIONS), key="dc_timing")
         with st.expander("Projection range"):
             dc_start_year = st.radio(
                 "Chart starts", _DC_START_YEARS, horizontal=True,
@@ -6728,7 +6893,7 @@ def render_data_centers():
     # Shift every data point forward from the site's availability date to the
     # chosen milestone (DC construction / training done / model release). DC
     # construction means no shift.
-    shift_days = _DC_TRAIN_FLOP_TIMINGS[timing_label]
+    shift_days = _dc_timing_shift(timing_label, cfg.get("run_days", _DAYS_2MO))
     if shift_days:
         shift = timedelta(days=shift_days)
         series = {n: {'company': v['company'],
@@ -6739,12 +6904,15 @@ def render_data_centers():
     # ── Header ──
     st.header("Frontier Data Centers Over Time")
 
-    if key == 'train_flop':
+    if key in ('train_flop', 'train_flop_6mo'):
+        run_days = cfg.get("run_days", _DAYS_2MO)
         st.caption(
-            f"Methodology: *2mo train FLOP* = each site's peak performance "
-            f"(8-bit OP/s) × a {_DAYS_2MO}-day ({_DAYS_2MO // 30}-month) training "
-            f"run × {_DC_UTILIZATION:.0%} realized utilization. Figures are "
-            "order-of-magnitude estimates, not vendor-reported numbers.")
+            f"Methodology: *{metric_label}* = each site's peak performance "
+            f"(8-bit OP/s) × a {run_days}-day ({run_days // 30}-month) training "
+            f"run × {_DC_UTILIZATION:.0%} realized utilization, reported as "
+            "log₁₀ of the resulting 8-bit operation count (1e28 ops → 28). "
+            "Figures are order-of-magnitude estimates, not vendor-reported "
+            "numbers.")
     elif key in ('gpt5s', 'mythos'):
         target, scale = (("2e25 FLOP", "GPT-5 scale") if key == 'gpt5s'
                          else ("1e27 FLOP", "Mythos scale"))
@@ -7043,21 +7211,27 @@ def render_data_centers():
                  "(including networking multiple data centers)")
     st.caption(
         "Same as the chart above, but a company may run one training job across "
-        "several of its sites at once: each line is the **sum** of its N largest "
-        "data centers rather than only the biggest one. Multi-site training is "
-        "real — Google has trained Gemini across data centers, and Microsoft "
-        "links its two Fairwater sites with a dedicated AI WAN — but it is not "
-        "free. The cross-site link carries the data-parallel gradient sync, so "
-        "pooling is most plausible for nearby or purpose-connected sites and "
-        "least plausible for a scattered fleet. Solid = actual; dashed = planned "
-        "/ under construction.")
+        "several of its sites at once — so each line is the **sum** of the "
+        "biggest group of its sites that could plausibly be networked together. "
+        "Only two things make a group: sites in the same metro (metro fibre), "
+        "and sites joined by an announced training fabric. A merely co-owned "
+        "fleet does not qualify — the cross-site link carries the data-parallel "
+        "gradient sync, so a scattered fleet cannot run one job. Solid = actual; "
+        "dashed = planned / under construction.")
 
-    pool_label = st.selectbox("Data centers networked together",
-                              list(_DC_POOL_OPTIONS), key="dc_pool_n")
-    n_sites = _DC_POOL_OPTIONS[pool_label]
-    pooled = _dc_company_pooled_series(series, n_sites)
+    net_label = st.selectbox("Data centers networked together",
+                             list(_DC_NETWORK_OPTIONS), key="dc_pool_n")
+    basis = _DC_NETWORK_OPTIONS[net_label]
+    if basis == 'all':
+        cluster_of = None
+    elif basis == 'none':
+        cluster_of = {}
+    else:
+        cluster_of = _dc_network_site_clusters(include_fabric=basis == 'fabric')
+    pooled = _dc_company_networked_series(series, cluster_of)
     pooled = {co: steps for co, steps in pooled.items() if steps}
-    pool_ranked = sorted(pooled, key=lambda c: max(v for _, v, _ in pooled[c]),
+    pool_ranked = sorted(pooled,
+                         key=lambda c: max(v for _, v, _, _ in pooled[c]),
                          reverse=True)
 
     fig_pool = go.Figure()
@@ -7078,8 +7252,8 @@ def render_data_centers():
                 line=dict(color=color, width=2.5, shape='hv', dash='dash'),
                 name=co, legendgroup=co, showlegend=False, hoverinfo='skip',
             ))
-        # One dot per capacity change; the hover names the pooled sites so it is
-        # clear which buildings the line is adding together.
+        # One dot per capacity change; the hover names the cluster and the sites
+        # in it, so it is clear which buildings the line is adding together.
         dots = [s for j, s in enumerate(steps)
                 if j == 0 or s[1] != steps[j - 1][1]]
         fig_pool.add_trace(go.Scatter(
@@ -7089,7 +7263,7 @@ def render_data_centers():
             hovertext=[
                 f"{co}{' (planned)' if s[0] > _today else ''}<br>"
                 f"{_dc_fmt_value(s[1], kind)}"
-                f"{' — ' + str(len(s[2])) + ' sites' if len(s[2]) > 1 else ''}"
+                f"{f' — {s[3]}, {len(s[2])} sites' if s[3] else ''}"
                 "<br>" + "<br>".join(f"• {n}" for n in s[2]) + "<br>"
                 f"{_dc_milestone_dates(s[0], shift_days)}"
                 for s in dots],
@@ -7102,7 +7276,16 @@ def render_data_centers():
                                         height=500, show_legend=True, kind=kind,
                                         tick_scale=tick_scale))
     st.plotly_chart(fig_pool, use_container_width=True)
+
+    _prox = ", ".join(lab for lab, basis, _ in _DC_NETWORK_CLUSTERS
+                      if basis == 'proximity')
+    _fab = ", ".join(lab for lab, basis, _ in _DC_NETWORK_CLUSTERS
+                     if basis == 'fabric')
     st.caption(
+        f"Networkable groups are curated, not inferred. By proximity: {_prox}. "
+        f"By announced fabric: {_fab}. Everything else stands alone, so most "
+        "companies show their single largest site — pooling changes the line "
+        "only where a real cluster exists. "
         "Colocation and neutral-host operators (QTS, CoreWeave, Oracle, "
         "Microsoft and similar) are excluded tab-wide, so their sites appear "
         "here only under the AI lab listed as the primary user. A company that "

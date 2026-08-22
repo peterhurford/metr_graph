@@ -687,6 +687,20 @@ class TestDataCenters:
         at.selectbox(key="dc_metric").set_value("Power (MW)").run()
         _assert_no_error(at, "Data Centers / Power (MW)")
 
+    def test_train_log_op_metrics_render(self):
+        for label in ("2mo train log OP", "6mo train log OP"):
+            at = self._dc_app()
+            at.selectbox(key="dc_metric").set_value(label).run()
+            _assert_no_error(at, f"Data Centers / {label}")
+            text = " ".join(str(c.value) for c in at.caption)
+            assert f"Methodology: *{label}*" in text
+
+    def test_train_log_op_timing_shift(self):
+        at = self._dc_app()
+        at.selectbox(key="dc_metric").set_value("6mo train log OP").run()
+        at.selectbox(key="dc_timing").set_value("Model release").run()
+        _assert_no_error(at, "Data Centers / 6mo train log OP + model release")
+
     def test_train_time_metrics_render_durations(self):
         for label in ("Capacity (time to GPT-5)", "Capacity (time to Mythos)"):
             at = self._dc_app()
