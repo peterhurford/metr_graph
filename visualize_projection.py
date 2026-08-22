@@ -6849,9 +6849,9 @@ def render_data_centers():
     ranked = sorted(peaks, key=lambda c: peaks[c], reverse=True)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 2: Largest current data center by company (snapshot bar chart)
+    # Section 2: Current largest single data center by company (snapshot bar chart)
     # ══════════════════════════════════════════════════════════════════════
-    st.subheader("Largest current data center by company")
+    st.subheader("Current largest single data center by company")
     st.caption("Each company's single biggest site as of today — not the sum of "
                "all its sites, and excluding any planned / under-construction "
                "buildout.")
@@ -6909,9 +6909,9 @@ def render_data_centers():
     st.plotly_chart(fig_snap, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 3: Largest data center by company over time
+    # Section 3: Largest single data center by company over time
     # ══════════════════════════════════════════════════════════════════════
-    st.subheader("Largest data center by company over time")
+    st.subheader("Largest single data center by company over time")
     st.caption("Each line is a company's biggest single site at that time "
                "(not the sum of all its sites). Solid = actual; dashed = planned "
                "/ under construction.")

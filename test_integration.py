@@ -679,8 +679,8 @@ class TestDataCenters:
         # Headers for both requested views are present.
         text = " ".join(str(m.value) for m in at.markdown) + \
             " ".join(str(h.value) for h in at.subheader)
-        assert "Largest single data center" in text
-        assert "Largest data center by company" in text
+        assert "Current largest single data center by company" in text
+        assert "Largest single data center by company over time" in text
 
     def test_metric_switch(self):
         at = self._dc_app()
