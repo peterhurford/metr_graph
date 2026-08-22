@@ -1004,9 +1004,9 @@ _DC_METRICS = {
     # `run_days` is the training-run window a metric assumes; it sizes the
     # timing shifts below. Metrics that don't depend on run length default to
     # the 2-month convention used everywhere else in the tab.
-    "2mo train FLOP": {"key": "train_flop", "log": True, "kind": "flop",
+    "2mo train log OP": {"key": "train_flop", "log": True, "kind": "flop",
                        "run_days": _DAYS_2MO},
-    "6mo train FLOP": {"key": "train_flop_6mo", "log": True, "kind": "flop",
+    "6mo train log OP": {"key": "train_flop_6mo", "log": True, "kind": "flop",
                        "run_days": _DAYS_6MO},
     "Capacity (time to GPT-5)": {"key": "gpt5s", "log": True, "kind": "traintime"},
     "Capacity (time to Mythos)": {"key": "mythos", "log": True, "kind": "traintime"},
@@ -1087,6 +1087,14 @@ def _fmt_duration_days(days):
     return _u(days / 365.25, "year")
 
 
+def _log_op(v):
+    """log₁₀ of an operation count, to one decimal with a bare integer kept
+    bare: 1e28 → "28", 2e28 → "28.3"."""
+    if v is None or not np.isfinite(v) or v <= 0:
+        return "—"
+    return f"{np.log10(v):.1f}".rstrip('0').rstrip('.')
+
+
 def _dc_fmt_value(v, kind):
     if v is None:
         return "—"
@@ -1103,7 +1111,9 @@ def _dc_fmt_value(v, kind):
     if kind == "sci":
         return f"{v:.2e}"
     if kind == "flop":
-        return f"{v:.2e} FLOP"
+        # Reported as log₁₀ of the operation count (1e28 → 28, 2e28 → 28.3);
+        # the stored value stays raw so sums and maxima keep working.
+        return f"{_log_op(v)} log OP" if v > 0 else "—"
     if kind == "traintime":
         # v is training runs per 2-month window; report the time for one run.
         return _fmt_duration_days(_DAYS_2MO / v) if v > 0 else "—"
@@ -6654,6 +6664,58 @@ def _dc_duration_ticks(y_range, log_scale):
     return vals, [_dc_fmt_value(v, 'traintime') for v in vals]
 
 
+def _dc_logop_ticks(y_range, log_scale):
+    """Axis ticks labelled in log₁₀ operations for the 'flop' metrics.
+
+    The plotted value is the raw operation count (so every aggregation in the
+    tab stays a plain max/sum); only the tick *text* is converted, the same way
+    `_dc_fmt_value` converts a value. On a log axis the ticks sit at round log
+    values (…, 27.5, 28.0, …) rather than at decade minors, which would round
+    to duplicate labels near the top of each decade.
+    """
+    if y_range is None:
+        return None
+    if not log_scale:
+        # A linear axis is evenly spaced in raw ops, so the ticks are too and
+        # only their labels are logged; consecutive labels that round the same
+        # are dropped rather than printed twice.
+        hi = float(y_range[1])
+        if hi <= 0:
+            return None
+        lo = max(float(y_range[0]), 0.0)
+        vals, text = [], []
+        for i in range(7):
+            v = lo + (hi - lo) * i / 6.0
+            lab = _log_op(v)
+            if v <= 0 or (text and lab == text[-1]):
+                continue
+            vals.append(v)
+            text.append(lab)
+        return (vals, text) if len(vals) >= 2 else None
+
+    lo, hi = float(y_range[0]), float(y_range[1])
+    span = hi - lo
+    if not np.isfinite(span) or span <= 0:
+        return None
+    # 0.25 is skipped: a tick at 27.25 would print as "27.2", labelling
+    # itself a notch below where it sits.
+    step = next((c for c in (0.1, 0.2, 0.5, 1.0, 2.0) if span / c <= 8), 5.0)
+    vals, text = [], []
+    k = int(np.ceil(lo / step - 1e-9))
+    while k * step <= hi + 1e-9:
+        t = k * step
+        v = 10.0 ** t
+        lab = _log_op(v)
+        # Whole decades keep the axis tickfont; the steps in between are
+        # shrunk, matching the plain log-tick treatment.
+        if abs(t - round(t)) > 1e-9:
+            lab = f'<span style="font-size:9px">{lab}</span>'
+        vals.append(v)
+        text.append(lab)
+        k += 1
+    return (vals, text) if len(vals) >= 2 else None
+
+
 def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
                height=440, show_legend=False, kind=None, tick_scale=1.0):
     yaxis = dict(title_text=y_title,
@@ -6663,6 +6725,10 @@ def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
                  tickfont=dict(color='#222222'), title_font=dict(color='#222222'))
     if kind == 'traintime':
         ticks = _dc_duration_ticks(y_range, log_scale)
+        if ticks is not None:
+            yaxis.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
+    elif kind == 'flop':
+        ticks = _dc_logop_ticks(y_range, log_scale)
         if ticks is not None:
             yaxis.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
     elif log_scale and y_range is not None:
@@ -6757,8 +6823,10 @@ def render_data_centers():
         st.caption(
             f"Methodology: *{metric_label}* = each site's peak performance "
             f"(8-bit OP/s) × a {run_days}-day ({run_days // 30}-month) training "
-            f"run × {_DC_UTILIZATION:.0%} realized utilization. Figures are "
-            "order-of-magnitude estimates, not vendor-reported numbers.")
+            f"run × {_DC_UTILIZATION:.0%} realized utilization, reported as "
+            "log₁₀ of the resulting 8-bit operation count (1e28 ops → 28). "
+            "Figures are order-of-magnitude estimates, not vendor-reported "
+            "numbers.")
     elif key in ('gpt5s', 'mythos'):
         target, scale = (("2e25 FLOP", "GPT-5 scale") if key == 'gpt5s'
                          else ("1e27 FLOP", "Mythos scale"))

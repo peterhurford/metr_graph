@@ -2897,11 +2897,11 @@ class TestDcTrainFlopWindows:
                     assert p['train_flop_6mo'] is None
 
     def test_registry_entries_carry_their_run_length(self):
-        assert vp._DC_METRICS["2mo train FLOP"]["key"] == "train_flop"
-        assert vp._DC_METRICS["6mo train FLOP"]["key"] == "train_flop_6mo"
-        assert vp._DC_METRICS["2mo train FLOP"]["run_days"] == vp._DAYS_2MO
-        assert vp._DC_METRICS["6mo train FLOP"]["run_days"] == vp._DAYS_6MO
-        for label in ("2mo train FLOP", "6mo train FLOP"):
+        assert vp._DC_METRICS["2mo train log OP"]["key"] == "train_flop"
+        assert vp._DC_METRICS["6mo train log OP"]["key"] == "train_flop_6mo"
+        assert vp._DC_METRICS["2mo train log OP"]["run_days"] == vp._DAYS_2MO
+        assert vp._DC_METRICS["6mo train log OP"]["run_days"] == vp._DAYS_6MO
+        for label in ("2mo train log OP", "6mo train log OP"):
             assert vp._DC_METRICS[label]["kind"] == "flop"
             assert vp._DC_METRICS[label]["log"] is True
 
@@ -2918,6 +2918,50 @@ class TestDcTrainFlopWindows:
 
     def test_default_timing_is_a_real_option(self):
         assert vp._DC_DEFAULTS["dc_timing"] in vp._DC_TIMING_OPTIONS
+
+    def test_value_reads_as_log10_operations(self):
+        assert vp._dc_fmt_value(1e28, 'flop') == "28 log OP"
+        assert vp._dc_fmt_value(2e28, 'flop') == "28.3 log OP"
+        assert vp._dc_fmt_value(3.16e26, 'flop') == "26.5 log OP"
+        assert vp._dc_fmt_value(0, 'flop') == "—"
+        assert vp._dc_fmt_value(None, 'flop') == "—"
+
+    def test_stored_values_stay_raw_counts(self):
+        # Only the display is logged — pooling several sites is still a plain
+        # sum of operation counts, which logging would silently break.
+        dcs = vp.load_data_centers()
+        pts = [p for dc in dcs for p in dc['points'] if p['train_flop']]
+        assert max(p['train_flop'] for p in pts) > 1e20
+
+    def test_axis_ticks_are_round_log_values(self):
+        vals, text = vp._dc_logop_ticks([27.0, 28.3], log_scale=True)
+        plain = [re.sub(r'<[^>]+>', '', t) for t in text]
+        assert plain == ["27", "27.2", "27.4", "27.6", "27.8", "28", "28.2"]
+        assert vals == pytest.approx([10.0 ** float(t) for t in plain])
+        # Whole decades keep the full tickfont; the steps between are shrunk.
+        assert text[0] == "27" and "font-size" in text[1]
+
+    def test_axis_ticks_never_repeat_a_label(self):
+        for rng, log in (([24.0, 29.0], True), ([27.9, 28.05], True),
+                         ([1e27, 3e27], False), ([0, 3e27], False)):
+            out = vp._dc_logop_ticks(rng, log_scale=log)
+            plain = [re.sub(r'<[^>]+>', '', t) for t in out[1]]
+            assert plain == sorted(plain, key=float)
+            assert len(set(plain)) == len(plain)
+
+    def test_axis_ticks_none_without_a_usable_range(self):
+        assert vp._dc_logop_ticks(None, log_scale=True) is None
+        assert vp._dc_logop_ticks([0.0, 0.0], log_scale=False) is None
+
+    def test_layout_labels_the_flop_axis_in_log_ops(self):
+        lay = vp._dc_layout(True, "6mo train log OP",
+                            datetime(2024, 1, 1), datetime(2028, 1, 1),
+                            y_range=[27.0, 28.3], kind='flop')
+        assert lay['yaxis']['tickmode'] == 'array'
+        assert "28" in [re.sub(r'<[^>]+>', '', t)
+                        for t in lay['yaxis']['ticktext']]
+        # No raw 1e+28-style label survives.
+        assert not any('e+' in t for t in lay['yaxis']['ticktext'])
 
 
 class TestDcTrainTime:
@@ -2976,7 +3020,7 @@ class TestDcTrainTime:
         assert lay['yaxis']['tickmode'] == 'array'
         assert "~1 day" in lay['yaxis']['ticktext']
         # Other kinds keep the plain numeric log ticks.
-        plain = vp._dc_layout(True, "2mo train FLOP",
+        plain = vp._dc_layout(True, "2mo train log OP",
                               datetime(2024, 1, 1), datetime(2028, 1, 1),
                               y_range=[0.0, 2.0])
         assert "~1 day" not in plain['yaxis']['ticktext']
