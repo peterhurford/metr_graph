@@ -2953,73 +2953,140 @@ class TestDcAxisScale:
         assert biggest > 1e6, "series must still hold raw H100 counts"
 
 
-class TestDcCompanyPooledSeries:
-    """Pooling the top-N sites per company (the 'networked data centers' view)."""
+class TestDcNetworkClusters:
+    """The curated map of sites that could share one training job."""
+
+    def test_every_clustered_site_exists_in_the_live_csv(self):
+        """The registry is hand-written, so a data refresh that renames a site
+        must fail here rather than silently drop it out of its cluster."""
+        known = {dc['name'] for dc in vp.dc_all}
+        for label, _basis, names in vp._DC_NETWORK_CLUSTERS:
+            for name in names:
+                assert name in known, f"{label}: unknown site {name!r}"
+
+    def test_registry_is_well_formed(self):
+        seen = set()
+        for label, basis, names in vp._DC_NETWORK_CLUSTERS:
+            assert basis in ('proximity', 'fabric'), label
+            assert len(names) >= 2, f"{label} is not a cluster"
+            assert len(set(names)) == len(names), label
+            # A site may belong to at most one cluster, or "largest group"
+            # would depend on dict ordering.
+            for name in names:
+                assert name not in seen, f"{name} is in two clusters"
+                seen.add(name)
+
+    def test_fabric_clusters_are_droppable(self):
+        with_fabric = vp._dc_network_site_clusters(include_fabric=True)
+        without = vp._dc_network_site_clusters(include_fabric=False)
+        assert set(without) < set(with_fabric)
+        assert "Microsoft Fairwater Wisconsin" in with_fabric
+        assert "Microsoft Fairwater Wisconsin" not in without
+        # Proximity clusters survive either way.
+        assert without["Colossus 2"] == with_fabric["Colossus 2"] == "Memphis, TN"
+
+    def test_network_options_registry_is_well_formed(self):
+        assert vp._DC_DEFAULTS["dc_pool_n"] in vp._DC_NETWORK_OPTIONS
+        assert "dc_pool_n" in vp._DC_RESET_KEYS
+        assert set(vp._DC_NETWORK_OPTIONS.values()) == {
+            'fabric', 'proximity', 'none', 'all'}
+
+
+class TestDcCompanyNetworkedSeries:
+    """Pooling a company's largest networkable group of sites."""
 
     @staticmethod
     def _series():
         d = datetime
         return {
-            "Big":   {"company": "LabA", "pts": [(d(2025, 1, 1), 10.0),
+            # Two sites in one cluster, one far away, plus a second company.
+            "NearA": {"company": "LabA", "pts": [(d(2025, 1, 1), 10.0),
                                                  (d(2026, 1, 1), 40.0)]},
-            "Mid":   {"company": "LabA", "pts": [(d(2025, 6, 1), 20.0)]},
-            "Small": {"company": "LabA", "pts": [(d(2025, 6, 1), 5.0)]},
+            "NearB": {"company": "LabA", "pts": [(d(2025, 6, 1), 20.0)]},
+            "Far":   {"company": "LabA", "pts": [(d(2025, 6, 1), 25.0)]},
             "Solo":  {"company": "LabB", "pts": [(d(2025, 1, 1), 7.0)]},
         }
 
-    def test_one_site_reproduces_the_single_largest_series(self):
-        """n_sites=1 must be the existing per-company chart, exactly — the two
-        sections sit next to each other and would look broken if they drifted."""
+    _CLUSTERS = {"NearA": "Metro", "NearB": "Metro"}
+
+    def test_no_clusters_reproduces_the_single_largest_series(self):
+        """cluster_of={} must be the chart directly above this one, exactly —
+        the two sit together and would look broken if they drifted."""
         ser = self._series()
-        pooled = vp._dc_company_pooled_series(ser, 1)
+        net = vp._dc_company_networked_series(ser, {})
         single = vp._dc_company_series(ser)
-        assert set(pooled) == set(single)
+        assert set(net) == set(single)
         for co in single:
-            assert ([(d, v) for d, v, _ in pooled[co]]
+            assert ([(d, v) for d, v, _, _ in net[co]]
                     == [(d, v) for d, v, _ in single[co]])
 
-    def test_pools_the_n_largest_at_each_date(self):
-        steps = vp._dc_company_pooled_series(self._series(), 2)["LabA"]
-        by_date = {d: (v, names) for d, v, names in steps}
-        # Only "Big" exists in Jan 2025.
-        assert by_date[datetime(2025, 1, 1)] == (10.0, ("Big",))
-        # Jun 2025: the two largest are Mid (20) and Big (10) — "Big" only
-        # earns its name after the 2026 scale-up — and Small (5) is dropped.
-        assert by_date[datetime(2025, 6, 1)] == (30.0, ("Mid", "Big"))
-        # Jan 2026: Big scales to 40 and takes the lead; the pool is still the
-        # two largest, so the sum rises and the name order flips.
-        assert by_date[datetime(2026, 1, 1)] == (60.0, ("Big", "Mid"))
+    def test_pools_only_within_a_cluster(self):
+        steps = vp._dc_company_networked_series(self._series(),
+                                                self._CLUSTERS)["LabA"]
+        by_date = {d: (v, names, label) for d, v, names, label in steps}
+        # Jan 2025: only NearA exists — a lone site, so no cluster label.
+        assert by_date[datetime(2025, 1, 1)] == (10.0, ("NearA",), None)
+        # Jun 2025: the clustered pair (10+20) beats the bigger lone site (25).
+        assert by_date[datetime(2025, 6, 1)] == (30.0, ("NearB", "NearA"),
+                                                 "Metro")
+        # Jan 2026: NearA scales up; "Far" is never added in.
+        assert by_date[datetime(2026, 1, 1)] == (60.0, ("NearA", "NearB"),
+                                                 "Metro")
 
-    def test_none_pools_every_site(self):
-        steps = vp._dc_company_pooled_series(self._series(), None)["LabA"]
-        last_d, last_v, names = steps[-1]
-        assert last_v == 40.0 + 20.0 + 5.0
-        assert names == ("Big", "Mid", "Small")
+    def test_a_lone_site_can_beat_a_cluster(self):
+        """The biggest *group* wins, which is sometimes a single building."""
+        ser = self._series()
+        ser["Far"]["pts"] = [(datetime(2025, 6, 1), 500.0)]
+        steps = vp._dc_company_networked_series(ser, self._CLUSTERS)["LabA"]
+        last = steps[-1]
+        assert last[1] == 500.0 and last[2] == ("Far",) and last[3] is None
 
-    def test_n_larger_than_the_fleet_is_not_an_error(self):
-        steps = vp._dc_company_pooled_series(self._series(), 99)["LabB"]
-        assert steps == [(datetime(2025, 1, 1), 7.0, ("Solo",))]
+    def test_unrestricted_pools_the_whole_fleet(self):
+        steps = vp._dc_company_networked_series(self._series(), None)["LabA"]
+        _d, val, names, label = steps[-1]
+        assert val == 40.0 + 20.0 + 25.0
+        assert names == ("NearA", "Far", "NearB") and label == "all sites"
 
-    def test_names_are_ordered_largest_first(self):
-        steps = vp._dc_company_pooled_series(self._series(), 3)["LabA"]
-        assert steps[-1][2] == ("Big", "Mid", "Small")
-
-    def test_pooling_is_monotonic_in_n_on_live_data(self):
-        """More networked sites can never mean less capacity."""
+    def test_clustering_never_reduces_capacity_on_live_data(self):
+        """Every basis is a superset of the one below it, so the lines can only
+        rise as networking is allowed."""
         ser = vp._dc_series_for_metric(vp.dc_all, 'h100')
         ser = {n: d for n, d in ser.items()
                if d['company'] not in vp._DC_EXCLUDE_COMPANIES}
-        runs = {n: vp._dc_company_pooled_series(ser, n) for n in (1, 2, 3, None)}
+        runs = [
+            vp._dc_company_networked_series(ser, {}),
+            vp._dc_company_networked_series(
+                ser, vp._dc_network_site_clusters(include_fabric=False)),
+            vp._dc_company_networked_series(
+                ser, vp._dc_network_site_clusters(include_fabric=True)),
+            vp._dc_company_networked_series(ser, None),
+        ]
         at = datetime(2027, 6, 30)
 
         def val(steps):
             cur = [s for s in steps if s[0] <= at]
             return cur[-1][1] if cur else None
 
-        for co in runs[1]:
-            vals = [val(runs[n][co]) for n in (1, 2, 3, None)]
-            vals = [v for v in vals if v is not None]
+        for co in runs[0]:
+            vals = [v for v in (val(r[co]) for r in runs) if v is not None]
             assert vals == sorted(vals), co
+
+    def test_clusters_actually_change_a_real_company(self):
+        """Guards against a registry that silently matches nothing."""
+        ser = vp._dc_series_for_metric(vp.dc_all, 'h100')
+        ser = {n: d for n, d in ser.items()
+               if d['company'] not in vp._DC_EXCLUDE_COMPANIES}
+        plain = vp._dc_company_networked_series(ser, {})
+        clustered = vp._dc_company_networked_series(
+            ser, vp._dc_network_site_clusters())
+        at = datetime(2027, 6, 30)
+
+        def val(steps):
+            cur = [s for s in steps if s[0] <= at]
+            return cur[-1][1] if cur else None
+
+        assert any(val(clustered[co]) > val(plain[co]) for co in plain
+                   if val(plain[co]) is not None)
 
     def test_traintime_metric_pools_as_a_sum(self):
         """'Capacity' metrics store runs-per-2mo, so networking sites adds runs
@@ -3027,22 +3094,15 @@ class TestDcCompanyPooledSeries:
         ser = vp._dc_series_for_metric(vp.dc_all, 'mythos')
         ser = {n: d for n, d in ser.items()
                if d['company'] not in vp._DC_EXCLUDE_COMPANIES}
-        one = vp._dc_company_pooled_series(ser, 1)
-        three = vp._dc_company_pooled_series(ser, 3)
+        one = vp._dc_company_networked_series(ser, {})
+        net = vp._dc_company_networked_series(ser,
+                                              vp._dc_network_site_clusters())
         at = datetime(2027, 6, 30)
         for co, steps in one.items():
             cur = [s for s in steps if s[0] <= at]
-            pooled = [s for s in three[co] if s[0] <= at]
+            pooled = [s for s in net[co] if s[0] <= at]
             if cur and pooled:
                 assert pooled[-1][1] >= cur[-1][1]
-
-    def test_pool_options_registry_is_well_formed(self):
-        assert vp._DC_DEFAULTS["dc_pool_n"] in vp._DC_POOL_OPTIONS
-        assert "dc_pool_n" in vp._DC_RESET_KEYS
-        counts = list(vp._DC_POOL_OPTIONS.values())
-        assert counts[0] == 1 and counts[-1] is None
-        finite = [c for c in counts if c is not None]
-        assert finite == sorted(finite)
 
 
 class TestDcTrainFlopWindows:
@@ -3064,11 +3124,11 @@ class TestDcTrainFlopWindows:
                     assert p['train_flop_6mo'] is None
 
     def test_registry_entries_carry_their_run_length(self):
-        assert vp._DC_METRICS["2mo train FLOP"]["key"] == "train_flop"
-        assert vp._DC_METRICS["6mo train FLOP"]["key"] == "train_flop_6mo"
-        assert vp._DC_METRICS["2mo train FLOP"]["run_days"] == vp._DAYS_2MO
-        assert vp._DC_METRICS["6mo train FLOP"]["run_days"] == vp._DAYS_6MO
-        for label in ("2mo train FLOP", "6mo train FLOP"):
+        assert vp._DC_METRICS["2mo train log OP"]["key"] == "train_flop"
+        assert vp._DC_METRICS["6mo train log OP"]["key"] == "train_flop_6mo"
+        assert vp._DC_METRICS["2mo train log OP"]["run_days"] == vp._DAYS_2MO
+        assert vp._DC_METRICS["6mo train log OP"]["run_days"] == vp._DAYS_6MO
+        for label in ("2mo train log OP", "6mo train log OP"):
             assert vp._DC_METRICS[label]["kind"] == "flop"
             assert vp._DC_METRICS[label]["log"] is True
 
@@ -3085,6 +3145,50 @@ class TestDcTrainFlopWindows:
 
     def test_default_timing_is_a_real_option(self):
         assert vp._DC_DEFAULTS["dc_timing"] in vp._DC_TIMING_OPTIONS
+
+    def test_value_reads_as_log10_operations(self):
+        assert vp._dc_fmt_value(1e28, 'flop') == "28 log OP"
+        assert vp._dc_fmt_value(2e28, 'flop') == "28.3 log OP"
+        assert vp._dc_fmt_value(3.16e26, 'flop') == "26.5 log OP"
+        assert vp._dc_fmt_value(0, 'flop') == "—"
+        assert vp._dc_fmt_value(None, 'flop') == "—"
+
+    def test_stored_values_stay_raw_counts(self):
+        # Only the display is logged — pooling several sites is still a plain
+        # sum of operation counts, which logging would silently break.
+        dcs = vp.load_data_centers()
+        pts = [p for dc in dcs for p in dc['points'] if p['train_flop']]
+        assert max(p['train_flop'] for p in pts) > 1e20
+
+    def test_axis_ticks_are_round_log_values(self):
+        vals, text = vp._dc_logop_ticks([27.0, 28.3], log_scale=True)
+        plain = [re.sub(r'<[^>]+>', '', t) for t in text]
+        assert plain == ["27", "27.2", "27.4", "27.6", "27.8", "28", "28.2"]
+        assert vals == pytest.approx([10.0 ** float(t) for t in plain])
+        # Whole decades keep the full tickfont; the steps between are shrunk.
+        assert text[0] == "27" and "font-size" in text[1]
+
+    def test_axis_ticks_never_repeat_a_label(self):
+        for rng, log in (([24.0, 29.0], True), ([27.9, 28.05], True),
+                         ([1e27, 3e27], False), ([0, 3e27], False)):
+            out = vp._dc_logop_ticks(rng, log_scale=log)
+            plain = [re.sub(r'<[^>]+>', '', t) for t in out[1]]
+            assert plain == sorted(plain, key=float)
+            assert len(set(plain)) == len(plain)
+
+    def test_axis_ticks_none_without_a_usable_range(self):
+        assert vp._dc_logop_ticks(None, log_scale=True) is None
+        assert vp._dc_logop_ticks([0.0, 0.0], log_scale=False) is None
+
+    def test_layout_labels_the_flop_axis_in_log_ops(self):
+        lay = vp._dc_layout(True, "6mo train log OP",
+                            datetime(2024, 1, 1), datetime(2028, 1, 1),
+                            y_range=[27.0, 28.3], kind='flop')
+        assert lay['yaxis']['tickmode'] == 'array'
+        assert "28" in [re.sub(r'<[^>]+>', '', t)
+                        for t in lay['yaxis']['ticktext']]
+        # No raw 1e+28-style label survives.
+        assert not any('e+' in t for t in lay['yaxis']['ticktext'])
 
 
 class TestDcTrainTime:
@@ -3143,7 +3247,7 @@ class TestDcTrainTime:
         assert lay['yaxis']['tickmode'] == 'array'
         assert "~1 day" in lay['yaxis']['ticktext']
         # Other kinds keep the plain numeric log ticks.
-        plain = vp._dc_layout(True, "2mo train FLOP",
+        plain = vp._dc_layout(True, "2mo train log OP",
                               datetime(2024, 1, 1), datetime(2028, 1, 1),
                               y_range=[0.0, 2.0])
         assert "~1 day" not in plain['yaxis']['ticktext']
