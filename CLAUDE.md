@@ -99,6 +99,7 @@ Line numbers below are approximate — grep for the function/table name to locat
 - Shared helpers — `pretty()`, `log2min_to_label()`, `fmt_hrs()`, `fit_line()`, `_fit_slope_p50_intercept_display()`, distribution samplers, `_ss_number_input()`, `superexp_trajectory()`, `_logit()`/`_inv_logit()`
 - Backtesting helpers — `_backtest_stats()`, `_bt_color_for()`, `_add_backtest_traces()`, `_backtest_summary()`
 - Data loading — `load_frontier()` / `load_metr_all()` (YAML), `load_eci_frontier()` and `load_eci_compute()` (ECI CSV, with dedup + running-max frontier), `load_rli_data()`, `load_data_centers()`, `load_ukcyber()`
+- Data-center aggregation — `_dc_envelope()` (largest single site overall), `_dc_company_series()` (each company's largest single site), `_dc_company_pooled_series()` (the sum of a company's N largest sites, backing the "networking multiple data centers" section; `n_sites=None` pools all). `n_sites=1` must reproduce `_dc_company_series()` exactly — the two charts sit next to each other and would look broken if they drifted; `TestDcCompanyPooledSeries` asserts it
 - UK Cyber lag helpers — `_ukc_frontier_crossing()` (interpolated crossing + bracketing models), `_ukc_frontier_match_for_score()` / `_ukc_frontier_below_for_score()` (bracket ends), `ukc_lag_rows()`, `ukc_tlo_lag_rows()` (shared TLO rows), `ukc_open_only_on_tlo()`, `ukc_target_eta()` / `ukc_target_eta_direct()`
 - Compute-vs-capabilities helpers — `_cc_pooled_decomp()`, `_cc_iso_compute_rate()`, `_cc_country_frontier()` / `_cc_country_compute_frontier()`, `_cc_frontier_eci_slope()`, and the China-ETA trio `_cc_cn_target_years()` / `_cc_release_gap_days()` / `_cc_first_reached()`
 - Data init + tab selector (`_TAB_OPTIONS`, `_TAB_SLUG`, `_SLUG_FOR_TAB`)
@@ -125,8 +126,10 @@ Widget defaults live in `_RESET_DEFAULTS` dicts per tab. Each tab has `_RESET_KE
   (`kind='traintime'` → `_dc_fmt_value` → `_fmt_duration_days`, days = `_DAYS_2MO` / runs).
   Storing the count keeps every "largest data center" aggregation in the tab a plain max
   (envelope, per-company max, ranking, bar sort) — bigger count = faster site, so the
-  ordering is identical. Don't invert the stored value to make the axis read forward;
-  the axis is relabelled instead, via `_dc_duration_ticks()` (ticks at round durations,
+  ordering is identical. It also makes the networked-sites section a plain **sum**: two
+  equal sites are two runs per window, i.e. half the time to train one model. Inverting
+  the stored value would break both. Nor should you invert it to make the axis read
+  forward; the axis is relabelled instead, via `_dc_duration_ticks()` (ticks at round durations,
   passed through `_dc_layout(kind=…)`), and a caption under the first chart says the
   labelled time shrinks as the line rises
 

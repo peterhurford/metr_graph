@@ -1156,6 +1156,45 @@ def _dc_company_series(series):
     return out
 
 
+def _dc_company_pooled_series(series, n_sites):
+    """Per company, the summed capacity of its `n_sites` largest data centers.
+
+    The multi-site view of _dc_company_series(): instead of taking only the
+    single biggest site, pool the top N at each event date — what a company
+    gets by networking several data centers into one training job.
+    `n_sites=None` pools every site it has.
+
+    Summing is valid for every metric the tab offers, the 'traintime' ones
+    included: those are stored as training runs per 2-month window (see
+    load_data_centers), so two equal sites sum to twice the runs, i.e. half the
+    time to train one model. Storing the count is what keeps this a plain sum.
+
+    Returns company → [(date, value, site_names), …] with site_names a tuple of
+    the pooled sites, largest first.
+    """
+    companies = {}
+    for name, v in series.items():
+        companies.setdefault(v['company'], []).append((name, v['pts']))
+    out = {}
+    for co, members in companies.items():
+        all_dates = sorted({d for _, pts in members for d, _ in pts})
+        steps = []
+        for d in all_dates:
+            vals = []
+            for name, pts in members:
+                val = _dc_val_at(pts, d)
+                if val is not None:
+                    vals.append((val, name))
+            if not vals:
+                continue
+            vals.sort(reverse=True)
+            top = vals if n_sites is None else vals[:n_sites]
+            steps.append((d, sum(v for v, _ in top),
+                          tuple(n for _, n in top)))
+        out[co] = steps
+    return out
+
+
 def _dc_color(company, idx):
     return _DC_COLORS.get(company, _DC_PALETTE[idx % len(_DC_PALETTE)])
 
@@ -6402,12 +6441,23 @@ def render_eci_gap():
 
 # ── Data Centers ───────────────────────────────────────────────────────────
 
-_DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing"]
+_DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing", "dc_pool_n"]
 _DC_DEFAULTS = {
     "dc_metric": "Compute (H100-equivalents)",
     "dc_log": True,
     "dc_future": True,
     "dc_timing": "Data center construction",
+    "dc_pool_n": "3 sites",
+}
+
+# "Data centers networked together" choices for the pooled-capacity section:
+# label → how many of a company's largest sites to sum (None = all of them).
+_DC_POOL_OPTIONS = {
+    "1 (single site)": 1,
+    "2 sites": 2,
+    "3 sites": 3,
+    "5 sites": 5,
+    "All sites": None,
 }
 
 # Compute vs Capabilities tab
@@ -6922,6 +6972,78 @@ def render_data_centers():
         "milestones. "
         f"{'Includes planned / under-construction buildout dated past today.' if include_future else 'Planned future buildout is excluded (toggle it in the sidebar); quarters past today repeat the latest known value.'} "
         "Data: Epoch AI, ‘Frontier Data Centers’ (epoch.ai/data/data-centers), CC-BY 4.0.")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 5: Largest company capacity when several sites are networked
+    # ══════════════════════════════════════════════════════════════════════
+    st.subheader("Largest data center by company over time "
+                 "(including networking multiple data centers)")
+    st.caption(
+        "Same as the chart above, but a company may run one training job across "
+        "several of its sites at once: each line is the **sum** of its N largest "
+        "data centers rather than only the biggest one. Multi-site training is "
+        "real — Google has trained Gemini across data centers, and Microsoft "
+        "links its two Fairwater sites with a dedicated AI WAN — but it is not "
+        "free. The cross-site link carries the data-parallel gradient sync, so "
+        "pooling is most plausible for nearby or purpose-connected sites and "
+        "least plausible for a scattered fleet. Solid = actual; dashed = planned "
+        "/ under construction.")
+
+    pool_label = st.selectbox("Data centers networked together",
+                              list(_DC_POOL_OPTIONS), key="dc_pool_n")
+    n_sites = _DC_POOL_OPTIONS[pool_label]
+    pooled = _dc_company_pooled_series(series, n_sites)
+    pooled = {co: steps for co, steps in pooled.items() if steps}
+    pool_ranked = sorted(pooled, key=lambda c: max(v for _, v, _ in pooled[c]),
+                         reverse=True)
+
+    fig_pool = go.Figure()
+    if include_future:
+        _dc_add_projection_band(fig_pool, _today, x_end)
+    for i, co in enumerate(pool_ranked):
+        color = _dc_color(co, i)
+        steps = pooled[co]
+        (a_x, a_y), (p_x, p_y) = _dc_split_at(steps, _today, end_x)
+        fig_pool.add_trace(go.Scatter(
+            x=a_x, y=a_y, mode='lines',
+            line=dict(color=color, width=2.5, shape='hv'),
+            name=co, legendgroup=co, hoverinfo='skip',
+        ))
+        if p_x is not None:
+            fig_pool.add_trace(go.Scatter(
+                x=p_x, y=p_y, mode='lines',
+                line=dict(color=color, width=2.5, shape='hv', dash='dash'),
+                name=co, legendgroup=co, showlegend=False, hoverinfo='skip',
+            ))
+        # One dot per capacity change; the hover names the pooled sites so it is
+        # clear which buildings the line is adding together.
+        dots = [s for j, s in enumerate(steps)
+                if j == 0 or s[1] != steps[j - 1][1]]
+        fig_pool.add_trace(go.Scatter(
+            x=[s[0] for s in dots], y=[s[1] for s in dots], mode='markers',
+            marker=dict(size=6, color=color, line=dict(color=color, width=1.5)),
+            name=co, legendgroup=co, showlegend=False,
+            hovertext=[
+                f"{co}{' (planned)' if s[0] > _today else ''}<br>"
+                f"{_dc_fmt_value(s[1], kind)}"
+                f"{' — ' + str(len(s[2])) + ' sites' if len(s[2]) > 1 else ''}"
+                "<br>" + "<br>".join(f"• {n}" for n in s[2]) + "<br>"
+                f"{_dc_milestone_dates(s[0], shift_days)}"
+                for s in dots],
+            hoverinfo='text',
+        ))
+    pool_vals = [v for steps in pooled.values()
+                 for v in _dc_visible_vals(steps, x_start)]
+    fig_pool.update_layout(**_dc_layout(log_scale, metric_label, x_start, x_end,
+                                        y_range=_dc_yrange(pool_vals, log_scale),
+                                        height=500, show_legend=True, kind=kind))
+    st.plotly_chart(fig_pool, use_container_width=True)
+    st.caption(
+        "Colocation and neutral-host operators (QTS, CoreWeave, Oracle, "
+        "Microsoft and similar) are excluded tab-wide, so their sites appear "
+        "here only under the AI lab listed as the primary user. A company that "
+        "leases capacity it does not own still shows it; a landlord that owns "
+        "capacity it leases out does not.")
 
     # Per-company: does the buildout predict releases?
     _cc_company_buildout(_today, cfg["key"], kind, metric_label)

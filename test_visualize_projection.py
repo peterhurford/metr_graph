@@ -2733,6 +2733,98 @@ class TestUkCyberOpenOnlyOnTlo:
         assert vp.ukc_open_only_on_tlo([dict(r) for r in tlo], tlo) is None
 
 
+class TestDcCompanyPooledSeries:
+    """Pooling the top-N sites per company (the 'networked data centers' view)."""
+
+    @staticmethod
+    def _series():
+        d = datetime
+        return {
+            "Big":   {"company": "LabA", "pts": [(d(2025, 1, 1), 10.0),
+                                                 (d(2026, 1, 1), 40.0)]},
+            "Mid":   {"company": "LabA", "pts": [(d(2025, 6, 1), 20.0)]},
+            "Small": {"company": "LabA", "pts": [(d(2025, 6, 1), 5.0)]},
+            "Solo":  {"company": "LabB", "pts": [(d(2025, 1, 1), 7.0)]},
+        }
+
+    def test_one_site_reproduces_the_single_largest_series(self):
+        """n_sites=1 must be the existing per-company chart, exactly — the two
+        sections sit next to each other and would look broken if they drifted."""
+        ser = self._series()
+        pooled = vp._dc_company_pooled_series(ser, 1)
+        single = vp._dc_company_series(ser)
+        assert set(pooled) == set(single)
+        for co in single:
+            assert ([(d, v) for d, v, _ in pooled[co]]
+                    == [(d, v) for d, v, _ in single[co]])
+
+    def test_pools_the_n_largest_at_each_date(self):
+        steps = vp._dc_company_pooled_series(self._series(), 2)["LabA"]
+        by_date = {d: (v, names) for d, v, names in steps}
+        # Only "Big" exists in Jan 2025.
+        assert by_date[datetime(2025, 1, 1)] == (10.0, ("Big",))
+        # Jun 2025: the two largest are Mid (20) and Big (10) — "Big" only
+        # earns its name after the 2026 scale-up — and Small (5) is dropped.
+        assert by_date[datetime(2025, 6, 1)] == (30.0, ("Mid", "Big"))
+        # Jan 2026: Big scales to 40 and takes the lead; the pool is still the
+        # two largest, so the sum rises and the name order flips.
+        assert by_date[datetime(2026, 1, 1)] == (60.0, ("Big", "Mid"))
+
+    def test_none_pools_every_site(self):
+        steps = vp._dc_company_pooled_series(self._series(), None)["LabA"]
+        last_d, last_v, names = steps[-1]
+        assert last_v == 40.0 + 20.0 + 5.0
+        assert names == ("Big", "Mid", "Small")
+
+    def test_n_larger_than_the_fleet_is_not_an_error(self):
+        steps = vp._dc_company_pooled_series(self._series(), 99)["LabB"]
+        assert steps == [(datetime(2025, 1, 1), 7.0, ("Solo",))]
+
+    def test_names_are_ordered_largest_first(self):
+        steps = vp._dc_company_pooled_series(self._series(), 3)["LabA"]
+        assert steps[-1][2] == ("Big", "Mid", "Small")
+
+    def test_pooling_is_monotonic_in_n_on_live_data(self):
+        """More networked sites can never mean less capacity."""
+        ser = vp._dc_series_for_metric(vp.dc_all, 'h100')
+        ser = {n: d for n, d in ser.items()
+               if d['company'] not in vp._DC_EXCLUDE_COMPANIES}
+        runs = {n: vp._dc_company_pooled_series(ser, n) for n in (1, 2, 3, None)}
+        at = datetime(2027, 6, 30)
+
+        def val(steps):
+            cur = [s for s in steps if s[0] <= at]
+            return cur[-1][1] if cur else None
+
+        for co in runs[1]:
+            vals = [val(runs[n][co]) for n in (1, 2, 3, None)]
+            vals = [v for v in vals if v is not None]
+            assert vals == sorted(vals), co
+
+    def test_traintime_metric_pools_as_a_sum(self):
+        """'Capacity' metrics store runs-per-2mo, so networking sites adds runs
+        (and therefore shortens the displayed time to train one model)."""
+        ser = vp._dc_series_for_metric(vp.dc_all, 'mythos')
+        ser = {n: d for n, d in ser.items()
+               if d['company'] not in vp._DC_EXCLUDE_COMPANIES}
+        one = vp._dc_company_pooled_series(ser, 1)
+        three = vp._dc_company_pooled_series(ser, 3)
+        at = datetime(2027, 6, 30)
+        for co, steps in one.items():
+            cur = [s for s in steps if s[0] <= at]
+            pooled = [s for s in three[co] if s[0] <= at]
+            if cur and pooled:
+                assert pooled[-1][1] >= cur[-1][1]
+
+    def test_pool_options_registry_is_well_formed(self):
+        assert vp._DC_DEFAULTS["dc_pool_n"] in vp._DC_POOL_OPTIONS
+        assert "dc_pool_n" in vp._DC_RESET_KEYS
+        counts = list(vp._DC_POOL_OPTIONS.values())
+        assert counts[0] == 1 and counts[-1] is None
+        finite = [c for c in counts if c is not None]
+        assert finite == sorted(finite)
+
+
 class TestDcTrainTime:
     """The two 'Capacity' metrics store runs-per-2mo but display time-to-train."""
 
