@@ -704,12 +704,32 @@ class TestDataCenters:
         at.checkbox(key="dc_future").set_value(True).run()
         _assert_no_error(at, "Data Centers / include future")
 
+    def test_projection_range_defaults(self):
+        at = self._dc_app()
+        assert at.radio(key="dc_start_year").value == 2025
+        assert at.radio(key="dc_end_year").value == 2027
+        # The quarterly table spans exactly the chosen window.
+        table = " ".join(str(m.value) for m in at.markdown)
+        assert "| 2025Q1 |" in table and "| 2027Q4 |" in table
+        assert "| 2024Q4 |" not in table and "| 2028Q1 |" not in table
+
+    def test_projection_range_change(self):
+        at = self._dc_app()
+        at.radio(key="dc_end_year").set_value(2029).run()
+        _assert_no_error(at, "Data Centers / project through 2029")
+        at.radio(key="dc_start_year").set_value(2023).run()
+        _assert_no_error(at, "Data Centers / start 2023")
+        table = " ".join(str(m.value) for m in at.markdown)
+        assert "| 2023Q1 |" in table and "| 2029Q4 |" in table
+
     def test_reset(self):
         at = self._dc_app()
         at.selectbox(key="dc_metric").set_value("Capital cost ($B)").run()
+        at.radio(key="dc_end_year").set_value(2029).run()
         at.button(key="dc_reset").click().run()
         _assert_no_error(at, "after dc reset")
         assert at.selectbox(key="dc_metric").value == "Compute (x1M H100-equiv)"
+        assert at.radio(key="dc_end_year").value == 2027
 
 
 # ===========================================================================

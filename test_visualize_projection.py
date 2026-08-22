@@ -2869,6 +2869,19 @@ class TestDcCompanyPooledSeries:
             if cur and pooled:
                 assert pooled[-1][1] >= cur[-1][1]
 
+    def test_projection_range_registry_is_well_formed(self):
+        assert vp._DC_DEFAULTS["dc_start_year"] == 2025
+        assert vp._DC_DEFAULTS["dc_end_year"] == 2027
+        assert vp._DC_DEFAULTS["dc_start_year"] in vp._DC_START_YEARS
+        assert vp._DC_DEFAULTS["dc_end_year"] in vp._DC_END_YEARS
+        # No allowed pairing can invert the window.
+        assert max(vp._DC_START_YEARS) <= min(vp._DC_END_YEARS)
+        keys, defaults = vp._all_tracked()
+        for k in ("dc_start_year", "dc_end_year"):
+            assert k in vp._DC_RESET_KEYS       # reset button clears it
+            assert k in keys                    # and it round-trips through the URL
+            assert defaults[k] == vp._DC_DEFAULTS[k]
+
     def test_pool_options_registry_is_well_formed(self):
         assert vp._DC_DEFAULTS["dc_pool_n"] in vp._DC_POOL_OPTIONS
         assert "dc_pool_n" in vp._DC_RESET_KEYS

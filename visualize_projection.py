@@ -6444,14 +6444,22 @@ def render_eci_gap():
 
 # ── Data Centers ───────────────────────────────────────────────────────────
 
-_DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing", "dc_pool_n"]
+_DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing", "dc_pool_n",
+                  "dc_start_year", "dc_end_year"]
 _DC_DEFAULTS = {
     "dc_metric": "Compute (x1M H100-equiv)",
     "dc_log": True,
     "dc_future": True,
     "dc_timing": "Data center construction",
     "dc_pool_n": "3 sites",
+    "dc_start_year": 2025,
+    "dc_end_year": 2027,
 }
+
+# Chart/projection window options. The start clips the left edge of every chart
+# in the tab; the end caps how far planned buildout is carried forward.
+_DC_START_YEARS = [2023, 2024, 2025, 2026]
+_DC_END_YEARS = [2026, 2027, 2028, 2029]
 
 # "Data centers networked together" choices for the pooled-capacity section:
 # label → how many of a company's largest sites to sum (None = all of them).
@@ -6688,6 +6696,17 @@ def render_data_centers():
         # every point forward by that lead time.
         timing_label = st.selectbox(
             "Date points at", list(_DC_TRAIN_FLOP_TIMINGS), key="dc_timing")
+        with st.expander("Projection range"):
+            dc_start_year = st.radio(
+                "Chart starts", _DC_START_YEARS, horizontal=True,
+                index=_DC_START_YEARS.index(_DC_DEFAULTS["dc_start_year"]),
+                key="dc_start_year")
+            dc_end_year = st.radio(
+                "Project through", _DC_END_YEARS, horizontal=True,
+                index=_DC_END_YEARS.index(_DC_DEFAULTS["dc_end_year"]),
+                key="dc_end_year", disabled=not include_future,
+                help="Planned buildout dated past this year is dropped. "
+                     "Only applies with planned future buildout on.")
         if st.button("Reset", key="dc_reset"):
             for k in _DC_RESET_KEYS:
                 st.session_state.pop(k, None)
@@ -6699,8 +6718,8 @@ def render_data_centers():
     kind = cfg["kind"]
     # Axis-label divisor only; every stored value below stays a raw count.
     tick_scale = cfg.get("scale", 1.0)
-    # Cap projected buildout at end of 2028 when showing the future.
-    cap_date = datetime(2028, 12, 31) if include_future else _today
+    # Cap projected buildout at the end of the chosen projection year.
+    cap_date = datetime(dc_end_year, 12, 31) if include_future else _today
     series = _dc_series_for_metric(dc_all, key, cap_date=cap_date)
     # Drop colocation / neutral-host providers (not AI labs).
     series = {n: v for n, v in series.items()
@@ -6759,8 +6778,8 @@ def render_data_centers():
     end_x = cap_date if cap_date is not None else (
         env_dates[-1] if env_dates else _today)
     # Focus the view on the AI buildout era; earlier milestones (land clearing
-    # back to 2018) are off-screen but still carried forward into 2024.
-    x_start = datetime(2024, 1, 1)
+    # back to 2018) are off-screen but still carried forward into the window.
+    x_start = datetime(dc_start_year, 1, 1)
     x_end = end_x + timedelta(days=30)
 
     fig1 = go.Figure()
@@ -7001,7 +7020,7 @@ def render_data_centers():
     _col_steps = {co: _steps_for(co) for co in _table_cos}
     md = ["| Quarter | " + " | ".join(_table_cos) + " |",
           "|" + "---|" * (len(_table_cos) + 1)]
-    for yr in range(2024, 2030):
+    for yr in range(dc_start_year, dc_end_year + 1):
         for q in range(1, 5):
             mo, day = _q_ends[q]
             qd = datetime(yr, mo, day)
