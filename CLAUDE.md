@@ -184,6 +184,55 @@ There was also an `_ECG_DASH` table of per-company line styles. No render path e
 read it — the gap tab styles one highlighted company at a time via `_ECG_COLORS` — so
 it was deleted rather than kept as another table to sync.
 
+### Compute vs Capabilities — the buildout-vs-release-timing panel
+
+`_cc_company_buildout()` (bottom of the Data Centers tab) is a **pure timing
+test**: each capacity step of a lab's largest single data center, shifted
+forward `_CC_RELEASE_LAG_DAYS` (90d = 60d training + 30d release prep), against
+when that lab's models actually shipped. Capability is never compared.
+
+Two directions with two different clocks, and they must not contradict each
+other — the tables sit one above the other:
+
+- **Backward** (release → cluster), `_responsible_cluster`: the latest step
+  online at least one training run (`_CC_TRAIN_FLOOR_DAYS`, 60d) before the
+  release. The extra ~1mo release prep is compressible polish, not a gate.
+- **Forward** (cluster → release), `_cc_forward_match()`: three tiers, each
+  tried only when the one above finds nothing.
+  1. first running-max release from `pred − _CC_EARLY_GRACE_DAYS` (7d) onward;
+  2. else the earliest running-max release the *backward* match already gave
+     this exact step. Required because the two clocks differ: the 60d floor
+     admits a release up to 30d early while the forward grace is 7d, so without
+     this tier a step whose model shipped 24d early (Claude Opus 4.8 vs New
+     Carlisle) would skip to tier 3 and cite a lesser model;
+  3. else the lab's next release of any kind, from `_cc_company_all_releases()`,
+     flagged `fallback` and marked † wherever it renders.
+
+Three things are load-bearing:
+
+1. **The grace is 7d, not the 30d the 60d floor would allow.** At 30d clusters
+   start claiming the *same, earlier* model (Meta's Eagle Mountain, Temple and
+   Prometheus steps all collapse onto Muse Spark) and the forward table goes
+   degenerate. 7d changes exactly one pre-existing match — Google New Albany →
+   Gemini 2.0 Flash, 6d early — and that one moves *into* agreement with the
+   backward match.
+2. **Tier 3 exists because "frontier release" is a running max and Epoch
+   recomputes ECI live.** A real flagship can end up scored under its own
+   predecessor and vanish from the series without its release date changing:
+   the 2026-08-18 pull put GPT-5.6 Sol at 161.08 against GPT-5.5 Pro's 161.73,
+   so Fairwater Wisconsin matched nothing at all. That is a fact about
+   rescoring, not about when OpenAI shipped, and this panel compares dates only.
+   Tier-3 matches are drawn hollow, marked †, and **excluded from the headline
+   median**, which is a claim about record-setting releases.
+3. **`_cc_company_all_releases()` keys on `(Model name, Release date)`.** Model
+   name alone merges GPT-4o's May and August 2024 releases; Display name alone
+   splits the ~10 reasoning-effort rows of one model, and which suffixed variant
+   would win a dedup flips between Epoch pulls. Same-day releases sort by
+   descending ECI so a step is offered the flagship (2026-07-09 ships Sol 161.08,
+   Terra 158.78 and Luna 156.22 together).
+
+`TestCcForwardMatch` and `TestCcCompanyAllReleases` guard all of the above.
+
 ### Compute vs Capabilities — China's ETA to a target ECI
 
 The tab's last section (`_render_cc_china_target()`) answers "when does China cross
