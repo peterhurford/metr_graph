@@ -2878,6 +2878,48 @@ class TestDcCompanyPooledSeries:
         assert finite == sorted(finite)
 
 
+class TestDcTrainFlopWindows:
+    """The 2mo and 6mo train-FLOP metrics differ only in the run window."""
+
+    def test_six_month_flop_is_three_times_the_two_month_flop(self):
+        dcs = vp.load_data_centers()
+        pts = [p for dc in dcs for p in dc['points'] if p['perf'] is not None]
+        assert pts, "no data-center points carry a performance figure"
+        for p in pts:
+            assert p['train_flop_6mo'] == pytest.approx(3 * p['train_flop'])
+
+    def test_missing_performance_leaves_both_none(self):
+        dcs = vp.load_data_centers()
+        for dc in dcs:
+            for p in dc['points']:
+                if p['perf'] is None:
+                    assert p['train_flop'] is None
+                    assert p['train_flop_6mo'] is None
+
+    def test_registry_entries_carry_their_run_length(self):
+        assert vp._DC_METRICS["2mo train FLOP"]["key"] == "train_flop"
+        assert vp._DC_METRICS["6mo train FLOP"]["key"] == "train_flop_6mo"
+        assert vp._DC_METRICS["2mo train FLOP"]["run_days"] == vp._DAYS_2MO
+        assert vp._DC_METRICS["6mo train FLOP"]["run_days"] == vp._DAYS_6MO
+        for label in ("2mo train FLOP", "6mo train FLOP"):
+            assert vp._DC_METRICS[label]["kind"] == "flop"
+            assert vp._DC_METRICS[label]["log"] is True
+
+    def test_timing_shift_follows_the_metric_run_length(self):
+        # Construction is the site's own date; the other two milestones are one
+        # training run (and, for release, the post-training lag) later.
+        lag = vp._CC_RUN_COMPLETION_LAG.days
+        assert vp._dc_timing_shift("Data center construction", vp._DAYS_6MO) == 0
+        assert vp._dc_timing_shift("Training run finished") == vp._DAYS_2MO
+        assert vp._dc_timing_shift("Training run finished", vp._DAYS_6MO) == vp._DAYS_6MO
+        assert vp._dc_timing_shift("Model release") == vp._DAYS_2MO + lag
+        assert (vp._dc_timing_shift("Model release", vp._DAYS_6MO)
+                == vp._DAYS_6MO + lag)
+
+    def test_default_timing_is_a_real_option(self):
+        assert vp._DC_DEFAULTS["dc_timing"] in vp._DC_TIMING_OPTIONS
+
+
 class TestDcTrainTime:
     """The two 'Capacity' metrics store runs-per-2mo but display time-to-train."""
 

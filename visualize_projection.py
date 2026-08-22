@@ -861,9 +861,13 @@ def ukc_target_eta_direct(models, target=_UKC_TARGET):
 import bisect
 
 # 2-month training run (2 × 30-day months), used to turn a site's 8-bit OP/s
-# throughput into total operations over a two-month run.
+# throughput into total operations over a two-month run. The 6-month variant
+# backs the longer-run capacity metric; it is the same arithmetic with a 3×
+# longer window, so its FLOP numbers are exactly 3× the 2-month ones.
 _DAYS_2MO = 2 * 30
 _SECONDS_2MO = _DAYS_2MO * 24 * 3600
+_DAYS_6MO = 6 * 30
+_SECONDS_6MO = _DAYS_6MO * 24 * 3600
 # A model ships ~1mo after its training run finishes (post-training, evals,
 # safety), calibrated to observed train-finish → announce gaps. Used both to
 # date model runs and to expand a buildout milestone into its DC-online /
@@ -956,6 +960,8 @@ def load_data_centers(_mtime=None):
             # realized utilization.
             train_flop = (perf * _SECONDS_2MO * _DC_UTILIZATION
                           if perf is not None else None)
+            train_flop_6mo = (perf * _SECONDS_6MO * _DC_UTILIZATION
+                              if perf is not None else None)
             series.setdefault(dname, []).append({
                 'date': d,
                 'status': r.get('Construction status', ''),
@@ -964,6 +970,7 @@ def load_data_centers(_mtime=None):
                 'power': _num(r, 'Power (MW)'),
                 'perf': perf,
                 'train_flop': train_flop,
+                'train_flop_6mo': train_flop_6mo,
                 # How many GPT-5-scale (2e25 FLOP) / Mythos-scale (1e27 FLOP)
                 # training runs the site's 2-month capacity could produce.
                 # Displayed as *time to train one* (kind 'traintime',
@@ -994,22 +1001,43 @@ _DC_METRICS = {
     "IT power (MW)": {"key": "it_power", "log": False, "kind": "mw"},
     "Capital cost ($B)": {"key": "cost", "log": False, "kind": "cost"},
     "Performance (8-bit OP/s)": {"key": "perf", "log": True, "kind": "sci"},
-    "2mo train FLOP": {"key": "train_flop", "log": True, "kind": "flop"},
+    # `run_days` is the training-run window a metric assumes; it sizes the
+    # timing shifts below. Metrics that don't depend on run length default to
+    # the 2-month convention used everywhere else in the tab.
+    "2mo train FLOP": {"key": "train_flop", "log": True, "kind": "flop",
+                       "run_days": _DAYS_2MO},
+    "6mo train FLOP": {"key": "train_flop_6mo", "log": True, "kind": "flop",
+                       "run_days": _DAYS_6MO},
     "Capacity (time to GPT-5)": {"key": "gpt5s", "log": True, "kind": "traintime"},
     "Capacity (time to Mythos)": {"key": "mythos", "log": True, "kind": "traintime"},
 }
 
-# Timing options for the 2mo-train-FLOP metric: label → days the DC-available
-# date is shifted forward to date the chosen milestone.
-#   • DC construction  — no shift (the site's availability date)
-#   • Training done     — +2mo (a run started at availability finishes that later)
-#   • Model release     — +2mo + ~1mo post-training/eval lag (matches the
-#                         Compute vs Capabilities tab's model-release dating)
-_DC_TRAIN_FLOP_TIMINGS = {
-    "Data center construction": 0,
-    "2mo training finished": _DAYS_2MO,
-    "Model release": _DAYS_2MO + _CC_RUN_COMPLETION_LAG.days,
-}
+# Timing options: label → days the DC-available date is shifted forward to date
+# the chosen milestone.
+#   • DC construction   — no shift (the site's availability date)
+#   • Training finished  — +one training run (the metric's `run_days`: a run
+#                          started at availability finishes that much later)
+#   • Model release      — + run + ~1mo post-training/eval lag (matches the
+#                          Compute vs Capabilities tab's model-release dating)
+_DC_TIMING_OPTIONS = (
+    "Data center construction",
+    "Training run finished",
+    "Model release",
+)
+
+
+def _dc_timing_shift(label, run_days=_DAYS_2MO):
+    """Days to shift a site's availability date to reach the chosen milestone.
+
+    `run_days` comes from the selected metric, so the 6-month FLOP metric dates
+    its models six months out rather than two.
+    """
+    if label == "Training run finished":
+        return run_days
+    if label == "Model release":
+        return run_days + _CC_RUN_COMPLETION_LAG.days
+    return 0
+
 
 # Stable colors for the most common companies; others fall back to a palette.
 _DC_COLORS = {
@@ -6686,8 +6714,12 @@ def render_data_centers():
                                      value=True, key="dc_future")
         # Each site can be dated to any of three milestones; the choice shifts
         # every point forward by that lead time.
+        # A bookmarked URL can carry a timing label from an older build; drop
+        # it rather than letting the selectbox raise on an unknown value.
+        if st.session_state.get("dc_timing") not in _DC_TIMING_OPTIONS:
+            st.session_state.pop("dc_timing", None)
         timing_label = st.selectbox(
-            "Date points at", list(_DC_TRAIN_FLOP_TIMINGS), key="dc_timing")
+            "Date points at", list(_DC_TIMING_OPTIONS), key="dc_timing")
         if st.button("Reset", key="dc_reset"):
             for k in _DC_RESET_KEYS:
                 st.session_state.pop(k, None)
@@ -6709,7 +6741,7 @@ def render_data_centers():
     # Shift every data point forward from the site's availability date to the
     # chosen milestone (DC construction / training done / model release). DC
     # construction means no shift.
-    shift_days = _DC_TRAIN_FLOP_TIMINGS[timing_label]
+    shift_days = _dc_timing_shift(timing_label, cfg.get("run_days", _DAYS_2MO))
     if shift_days:
         shift = timedelta(days=shift_days)
         series = {n: {'company': v['company'],
@@ -6720,10 +6752,11 @@ def render_data_centers():
     # ── Header ──
     st.header("Frontier Data Centers Over Time")
 
-    if key == 'train_flop':
+    if key in ('train_flop', 'train_flop_6mo'):
+        run_days = cfg.get("run_days", _DAYS_2MO)
         st.caption(
-            f"Methodology: *2mo train FLOP* = each site's peak performance "
-            f"(8-bit OP/s) × a {_DAYS_2MO}-day ({_DAYS_2MO // 30}-month) training "
+            f"Methodology: *{metric_label}* = each site's peak performance "
+            f"(8-bit OP/s) × a {run_days}-day ({run_days // 30}-month) training "
             f"run × {_DC_UTILIZATION:.0%} realized utilization. Figures are "
             "order-of-magnitude estimates, not vendor-reported numbers.")
     elif key in ('gpt5s', 'mythos'):
