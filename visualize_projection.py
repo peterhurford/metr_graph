@@ -986,7 +986,10 @@ def load_data_centers(_mtime=None):
 
 # Metric options for the data-center tab: label → (point key, log-scale default, formatter kind)
 _DC_METRICS = {
-    "Compute (H100-equivalents)": {"key": "h100", "log": True, "kind": "h100"},
+    # `scale` divides only the *axis tick labels*, so the axis reads in
+    # millions while stored values, hovers and tables stay raw counts.
+    "Compute (x1M H100-equiv)": {"key": "h100", "log": True, "kind": "h100",
+                                 "scale": 1e6},
     "Power (MW)": {"key": "power", "log": False, "kind": "mw"},
     "IT power (MW)": {"key": "it_power", "log": False, "kind": "mw"},
     "Capital cost ($B)": {"key": "cost", "log": False, "kind": "cost"},
@@ -6443,7 +6446,7 @@ def render_eci_gap():
 
 _DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing", "dc_pool_n"]
 _DC_DEFAULTS = {
-    "dc_metric": "Compute (H100-equivalents)",
+    "dc_metric": "Compute (x1M H100-equiv)",
     "dc_log": True,
     "dc_future": True,
     "dc_timing": "Data center construction",
@@ -6542,10 +6545,13 @@ def _dc_yrange(values, log_scale):
     return [0, vmax * 1.1]
 
 
-def _dc_log_ticks(y_range):
+def _dc_log_ticks(y_range, tick_scale=1.0):
     """Explicit log-axis ticks that label every minor tick with its full value
     (e.g. 20, 30, … in the 10-100 decade rather than Plotly's default 2, 3, …),
-    while keeping the powers of ten larger so the decade hierarchy stays clear."""
+    while keeping the powers of ten larger so the decade hierarchy stays clear.
+
+    `tick_scale` divides the *label* only (the tick still sits at the raw value),
+    so a metric can be plotted in raw units but read in millions."""
     lo = int(np.floor(y_range[0]))
     hi = int(np.ceil(y_range[1]))
     vmin = 10.0 ** y_range[0]
@@ -6557,13 +6563,39 @@ def _dc_log_ticks(y_range):
             v = m * base
             if v < vmin * 0.999 or v > vmax * 1.001:
                 continue
-            label = f"{v:g}"
+            label = f"{v / tick_scale:g}"
             if m == 1:
                 text.append(label)  # decade label at the axis tickfont size
             else:
                 text.append(f"<span style=\"font-size:9px\">{label}</span>")
             vals.append(v)
     return vals, text
+
+
+def _dc_linear_ticks(y_range, tick_scale):
+    """Round linear-axis ticks labelled in units of `tick_scale`.
+
+    The log path relabels ticks itself; this is the same idea for a linear axis,
+    where Plotly would otherwise print the raw counts under a scaled axis title.
+    Returns None when there is nothing to rescale.
+    """
+    if not y_range or not tick_scale or tick_scale == 1.0:
+        return None
+    lo, hi = y_range
+    span = (hi - lo) / tick_scale
+    if span <= 0:
+        return None
+    raw = span / 6.0
+    mag = 10.0 ** float(np.floor(np.log10(raw)))
+    step = next((m * mag for m in (1, 2, 2.5, 5) if m * mag >= raw), 10 * mag)
+    vals, text = [], []
+    i = int(np.ceil(lo / (step * tick_scale)))
+    while i * step * tick_scale <= hi * (1 + 1e-9):
+        v = i * step * tick_scale
+        vals.append(v)
+        text.append(f"{v / tick_scale:g}")
+        i += 1
+    return (vals, text) if len(vals) >= 2 else None
 
 
 # Round durations (in days) used as axis ticks for the 'traintime' metrics.
@@ -6595,7 +6627,7 @@ def _dc_duration_ticks(y_range, log_scale):
 
 
 def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
-               height=440, show_legend=False, kind=None):
+               height=440, show_legend=False, kind=None, tick_scale=1.0):
     yaxis = dict(title_text=y_title,
                  type='log' if log_scale else 'linear',
                  range=y_range,
@@ -6606,8 +6638,12 @@ def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
         if ticks is not None:
             yaxis.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
     elif log_scale and y_range is not None:
-        tvals, ttext = _dc_log_ticks(y_range)
+        tvals, ttext = _dc_log_ticks(y_range, tick_scale)
         yaxis.update(tickmode='array', tickvals=tvals, ticktext=ttext)
+    else:
+        ticks = _dc_linear_ticks(y_range, tick_scale)
+        if ticks is not None:
+            yaxis.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
     return dict(
         height=height,
         plot_bgcolor='white', paper_bgcolor='white',
@@ -6661,6 +6697,8 @@ def render_data_centers():
 
     key = cfg["key"]
     kind = cfg["kind"]
+    # Axis-label divisor only; every stored value below stays a raw count.
+    tick_scale = cfg.get("scale", 1.0)
     # Cap projected buildout at end of 2028 when showing the future.
     cap_date = datetime(2028, 12, 31) if include_future else _today
     series = _dc_series_for_metric(dc_all, key, cap_date=cap_date)
@@ -6801,7 +6839,8 @@ def render_data_centers():
         ))
     fig1.update_layout(**_dc_layout(
         log_scale, metric_label, x_start, x_end,
-        y_range=_dc_yrange(_dc_visible_vals(env, x_start), log_scale), kind=kind))
+        y_range=_dc_yrange(_dc_visible_vals(env, x_start), log_scale), kind=kind,
+        tick_scale=tick_scale))
     st.plotly_chart(fig1, use_container_width=True)
 
     comp = _dc_company_series(series)
@@ -6849,12 +6888,16 @@ def render_data_centers():
                       type='log' if log_scale else 'linear',
                       gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222222'),
                       title_font=dict(color='#222222'))
+    snap_range = _dc_yrange([s[1] for s in snap], log_scale)
     if kind == 'traintime':
-        ticks = _dc_duration_ticks(
-            _dc_yrange([s[1] for s in snap], log_scale), log_scale)
-        if ticks is not None:
-            snap_xaxis.update(tickmode='array', tickvals=ticks[0],
-                              ticktext=ticks[1])
+        ticks = _dc_duration_ticks(snap_range, log_scale)
+    elif log_scale and snap_range is not None:
+        ticks = _dc_log_ticks(snap_range, tick_scale)
+    else:
+        ticks = _dc_linear_ticks(snap_range, tick_scale)
+    if ticks is not None:
+        snap_xaxis.update(tickmode='array', tickvals=ticks[0],
+                          ticktext=ticks[1])
     fig_snap.update_layout(
         height=max(300, 38 * len(snap) + 80),
         plot_bgcolor='white', paper_bgcolor='white',
@@ -6927,7 +6970,8 @@ def render_data_centers():
                  for v in _dc_visible_vals(steps, x_start)]
     fig2.update_layout(**_dc_layout(log_scale, metric_label, x_start, x_end,
                                     y_range=_dc_yrange(comp_vals, log_scale),
-                                    height=500, show_legend=True, kind=kind))
+                                    height=500, show_legend=True, kind=kind,
+                                    tick_scale=tick_scale))
     st.plotly_chart(fig2, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -7036,7 +7080,8 @@ def render_data_centers():
                  for v in _dc_visible_vals(steps, x_start)]
     fig_pool.update_layout(**_dc_layout(log_scale, metric_label, x_start, x_end,
                                         y_range=_dc_yrange(pool_vals, log_scale),
-                                        height=500, show_legend=True, kind=kind))
+                                        height=500, show_legend=True, kind=kind,
+                                        tick_scale=tick_scale))
     st.plotly_chart(fig_pool, use_container_width=True)
     st.caption(
         "Colocation and neutral-host operators (QTS, CoreWeave, Oracle, "

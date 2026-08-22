@@ -709,7 +709,7 @@ class TestDataCenters:
         at.selectbox(key="dc_metric").set_value("Capital cost ($B)").run()
         at.button(key="dc_reset").click().run()
         _assert_no_error(at, "after dc reset")
-        assert at.selectbox(key="dc_metric").value == "Compute (H100-equivalents)"
+        assert at.selectbox(key="dc_metric").value == "Compute (x1M H100-equiv)"
 
 
 # ===========================================================================

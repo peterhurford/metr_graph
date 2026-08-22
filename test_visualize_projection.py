@@ -5,6 +5,7 @@ Run: pytest test_visualize_projection.py -v
 """
 
 import numpy as np
+import re
 import pytest
 from datetime import datetime, timedelta
 import csv
@@ -2731,6 +2732,58 @@ class TestUkCyberOpenOnlyOnTlo:
     def test_returns_none_when_suites_agree(self):
         _, tlo = self._rows()
         assert vp.ukc_open_only_on_tlo([dict(r) for r in tlo], tlo) is None
+
+
+class TestDcAxisScale:
+    """The H100 metric is stored raw but read in millions on the axis."""
+
+    @staticmethod
+    def _plain(texts):
+        return [re.sub(r"<[^>]+>", "", t) for t in texts]
+
+    def test_metric_declares_the_scale(self):
+        cfg = vp._DC_METRICS["Compute (x1M H100-equiv)"]
+        assert cfg["key"] == "h100" and cfg["scale"] == 1e6
+        assert vp._DC_DEFAULTS["dc_metric"] == "Compute (x1M H100-equiv)"
+
+    def test_log_ticks_scale_the_label_not_the_position(self):
+        vals, text = vp._dc_log_ticks([5.0, 7.0], tick_scale=1e6)
+        assert self._plain(text)[:3] == ["0.1", "0.2", "0.3"]
+        assert vals[0] == 1e5            # tick still sits at the raw value
+        assert self._plain(text)[vals.index(1e6)] == "1"
+
+    def test_log_ticks_unchanged_without_a_scale(self):
+        _, text = vp._dc_log_ticks([5.0, 6.0])
+        assert self._plain(text)[0] == "100000"
+
+    def test_linear_ticks_scale_and_stay_round(self):
+        vals, text = vp._dc_linear_ticks([0, 5.5e6], 1e6)
+        assert text == ["0", "1", "2", "3", "4", "5"]
+        assert vals[-1] == 5e6
+
+    def test_linear_ticks_absent_when_nothing_to_rescale(self):
+        assert vp._dc_linear_ticks([0, 5e6], 1.0) is None
+        assert vp._dc_linear_ticks(None, 1e6) is None
+        assert vp._dc_linear_ticks([3.0, 3.0], 1e6) is None
+
+    def test_layout_applies_the_scale_on_both_axis_types(self):
+        log = vp._dc_layout(True, "Compute (x1M H100-equiv)",
+                            datetime(2024, 1, 1), datetime(2028, 1, 1),
+                            y_range=[5.0, 7.0], tick_scale=1e6)
+        assert self._plain(log['yaxis']['ticktext'])[0] == "0.1"
+        lin = vp._dc_layout(False, "Compute (x1M H100-equiv)",
+                            datetime(2024, 1, 1), datetime(2028, 1, 1),
+                            y_range=[0, 5.5e6], tick_scale=1e6)
+        assert lin['yaxis']['ticktext'] == ["0", "1", "2", "3", "4", "5"]
+
+    def test_values_and_hovers_stay_raw_counts(self):
+        """Only the axis is rescaled — _dc_fmt_value still takes raw counts, so
+        the tables, hovers and _cc_company_buildout keep working unchanged."""
+        assert vp._dc_fmt_value(1824153.6, 'h100') == "1.82M"
+        assert vp._dc_fmt_value(816321, 'h100') == "816k"
+        ser = vp._dc_series_for_metric(vp.dc_all, 'h100')
+        biggest = max(v for d in ser.values() for _, v in d['pts'])
+        assert biggest > 1e6, "series must still hold raw H100 counts"
 
 
 class TestDcCompanyPooledSeries:
