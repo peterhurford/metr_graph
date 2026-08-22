@@ -99,7 +99,7 @@ Line numbers below are approximate — grep for the function/table name to locat
 - Shared helpers — `pretty()`, `log2min_to_label()`, `fmt_hrs()`, `fit_line()`, `_fit_slope_p50_intercept_display()`, distribution samplers, `_ss_number_input()`, `superexp_trajectory()`, `_logit()`/`_inv_logit()`
 - Backtesting helpers — `_backtest_stats()`, `_bt_color_for()`, `_add_backtest_traces()`, `_backtest_summary()`
 - Data loading — `load_frontier()` / `load_metr_all()` (YAML), `load_eci_frontier()` and `load_eci_compute()` (ECI CSV, with dedup + running-max frontier), `load_rli_data()`, `load_data_centers()`, `load_ukcyber()`
-- Data-center aggregation — `_dc_envelope()` (largest single site overall), `_dc_company_series()` (each company's largest single site), `_dc_company_pooled_series()` (the sum of a company's N largest sites, backing the "networking multiple data centers" section; `n_sites=None` pools all). `n_sites=1` must reproduce `_dc_company_series()` exactly — the two charts sit next to each other and would look broken if they drifted; `TestDcCompanyPooledSeries` asserts it
+- Data-center aggregation — `_dc_envelope()` (largest single site overall), `_dc_company_series()` (each company's largest single site), `_dc_company_networked_series()` (each company's largest *networkable group* of sites, backing the "networking multiple data centers" section). See "Networkable data-center clusters" below
 - UK Cyber lag helpers — `_ukc_frontier_crossing()` (interpolated crossing + bracketing models), `_ukc_frontier_match_for_score()` / `_ukc_frontier_below_for_score()` (bracket ends), `ukc_lag_rows()`, `ukc_tlo_lag_rows()` (shared TLO rows), `ukc_open_only_on_tlo()`, `ukc_target_eta()` / `ukc_target_eta_direct()`
 - Compute-vs-capabilities helpers — `_cc_pooled_decomp()`, `_cc_iso_compute_rate()`, `_cc_country_frontier()` / `_cc_country_compute_frontier()`, `_cc_frontier_eci_slope()`, and the China-ETA trio `_cc_cn_target_years()` / `_cc_release_gap_days()` / `_cc_first_reached()`
 - Data init + tab selector (`_TAB_OPTIONS`, `_TAB_SLUG`, `_SLUG_FOR_TAB`)
@@ -132,6 +132,39 @@ Widget defaults live in `_RESET_DEFAULTS` dicts per tab. Each tab has `_RESET_KE
   forward; the axis is relabelled instead, via `_dc_duration_ticks()` (ticks at round durations,
   passed through `_dc_layout(kind=…)`), and a caption under the first chart says the
   labelled time shrinks as the line rises
+
+### Networkable data-center clusters
+
+The Data Centers tab's last chart sums the sites a company could plausibly drive
+as **one** training job. What may be summed is `_DC_NETWORK_CLUSTERS`, a curated
+tuple of `(label, basis, site names)` with basis `'proximity'` (same campus or
+metro, read off the `Address` column) or `'fabric'` (far apart, but joined by an
+announced training fabric — currently only Microsoft's AI WAN pair). Anything
+absent is its own cluster and never pools.
+
+Four things are load-bearing:
+
+1. **It is curated on purpose.** Address parsing was tried and is not viable:
+   27 of 78 rows don't yield a `(city, state)` (blank, non-US, or free-form),
+   and the two Cedar Rapids sites sit in differently-named municipalities
+   (Cedar Rapids vs Fairfax) while QTS's "Fairfax IA" row would have paired with
+   nothing. A silent mis-grouping here invents capacity, so the map is explicit
+   and `TestDcNetworkClusters` re-checks every name against the live CSV.
+2. **Clusters are geography; pooling is per company.** A cluster spanning two
+   companies never merges them, and sites dropped by `_DC_EXCLUDE_COMPANIES`
+   take their cluster with them. Cedar Rapids, Richmond and San Antonio are
+   inert today for that reason — kept because the geography is real and the
+   tenant attribution may not be (QTS Cedar Rapids has no recorded user).
+3. **`cluster_of={}` must reproduce `_dc_company_series()` exactly.** That chart
+   sits directly above this one; drift between them would read as a bug.
+   `cluster_of=None` is the opposite extreme — pool the entire fleet — offered
+   in the selector only as an explicitly-labelled upper bound.
+4. **A site may appear in at most one cluster.** "Largest group" would otherwise
+   depend on dict iteration order.
+
+Don't widen a cluster to "same company, same region" — the point of the section
+is that the cross-site link carries the data-parallel gradient all-reduce, so
+metro fibre or a purpose-built fabric is the whole criterion.
 
 ### UK Cyber tab caveats
 
