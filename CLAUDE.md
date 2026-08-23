@@ -452,26 +452,17 @@ Four contracts, each guarded:
    and the China-accessible fit is a from-zero ramp the DC tab itself flags as hot. If a
    refresh breaks either test, retarget the constants deliberately.
 
-The tab states the derivation to the reader too: provenance and cross-check captions
-deep-linking `?tab=datacenters` (the compute frontier itself is deliberately not
-charted — the tab is about the exchange rate, not the buildout) —
-`test_dc_derivation_is_stated` (integration) asserts they render. The lab-only
-exclusion contract is unchanged (`test_compute_capabilities_frontier_stays_lab_only`).
-A *Projection range* expander holds a *Project through* year radio (`cc_end_year`,
-`_CC_END_YEARS`, default 2029, DC-tab pattern) driving the horizon of the ECI
-forecast, the US-vs-China section and their year-labelled cards/captions. It moves
-the projections only, never the rates: the catalogue cap follows the horizon but
-never drops below end-2028, and every fit era ends by Jan 2029, so the segment fits
-are identical whatever year is selected (`test_project_through_horizon`,
-integration). The China-ETA panel keeps its own adaptive horizon — it charts a
-crossing date, not a range. A *Run length* selectbox (`cc_run`, reusing
-`_PC_RUN_OPTIONS` verbatim, default 2-month) switches the frontier to the loader's
-`train_flop_6mo` column with the matching one-run shift — a constant scale and
-slide, so the frontier's leaders never change (`test_run_window_scales_levels_only`);
-China's Chart-A capacity band scales by the window ratio too, keeping both
-countries' ceilings on one assumption, and the window-labelled captions follow.
-`_cc_country_pace_check` stays on the 2-month column — its fitted paces are
-identical either way.
+Provenance is stated in captions deep-linking `?tab=datacenters`; the frontier
+itself is deliberately not charted (`test_dc_derivation_is_stated`). Lab-only
+exclusion unchanged (`test_compute_capabilities_frontier_stays_lab_only`).
+Sidebar: *Project through* (`cc_end_year`, default 2029) moves the projection
+horizon only — the catalogue cap never drops below end-2028 and every fit era ends
+by Jan 2029, so segment fits never change (`test_project_through_horizon`); the
+China-ETA panel keeps its own adaptive horizon. *Run length* (`cc_run`,
+`_PC_RUN_OPTIONS`, default 2-month) switches to `train_flop_6mo` + one-run shift —
+a constant scale-and-slide, same leaders (`test_run_window_scales_levels_only`);
+China's capacity band scales by the window ratio; `_cc_country_pace_check` stays
+on 2-month (paces identical).
 
 ### Compute vs Capabilities — China's ETA to a target ECI
 

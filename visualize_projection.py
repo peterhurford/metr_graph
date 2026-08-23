@@ -9015,13 +9015,9 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     us_cap_lf = next(lf for d, lf, n, sd in reversed(us_cap_hist) if d <= today)
     us_cap_end_lf = us_cap_hist[-1][1]
     # China capacity = its largest *demonstrated* run + modest single-cluster
-    # headroom (compute-constrained; the sparse catalogued Chinese sites are
-    # cross-checked below, not fitted). Anchored at the last run so the fan
-    # connects to the data: lower edge = the run, upper = +headroom. Under a
-    # longer run window the same cluster yields proportionally more OPs, so the
-    # band scales by the window ratio — keeping both countries' ceilings on the
-    # same assumption (zero at the 2-month default, where it still touches the
-    # last red dot).
+    # headroom, anchored at the last run so the fan connects to the data.
+    # run_extra scales the band by the run-window ratio so both countries'
+    # ceilings share the assumption (zero at the 2-month default).
     g_cn_lo, g_cn_hi = _CC_CN_COMPUTE_LO, _CC_CN_COMPUTE_HI
     run_extra = float(np.log10(run_days / _DAYS_2MO))
     cn_cap_d = cn_cf[-1][0] - _CC_RUN_COMPLETION_LAG
