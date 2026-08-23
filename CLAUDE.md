@@ -289,11 +289,13 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    rather than copied, and the caption says the campus has other tenants. Assuming tenancy is the
    strong claim here, same as for the networked-clusters `'plausible'` level; don't add
    sites to the tuple without a citation of the same standard.
-3. **Pooling nests.** `_dc_country_steps()` offers largest single site, largest networked
-   group per company (the section-5 selector's `cluster_of`, so the China line reads in the
-   same units as the company chart), or every site in the country summed — the Pacing-tab
-   state-direction claim, an upper bound for the US. `test_pooling_modes_nest` holds
-   site ≤ company ≤ country and that `cluster_of={}` reproduces the envelope.
+3. **Pooling follows the sidebar's one networking selector** (`dc_pool_n`), shared with
+   the networked-sites chart so the China line reads in that chart's units: `'site'` mode
+   when nothing pools, else the largest networked group per company. `_dc_country_steps()`
+   also has a `'country'` mode (every site summed — the Pacing-tab state-direction claim)
+   that no control exposes yet; `test_pooling_modes_nest` holds site ≤ company ≤ country
+   and that `cluster_of={}` reproduces the envelope. The three projection controls (pace,
+   fit-since, horizon) live in the sidebar's *Country projection* expander.
 4. **The extrapolation is a log-linear OLS on monthly samples, anchored at the last
    recorded step.** `_dc_cty_fit()` samples the forward-filled step series monthly (not at
    event dates, which would weight dense periods), fits from the *Fit trend since* year,

@@ -1243,11 +1243,6 @@ _DC_CTY_MIN_FIT_POINTS = 6        # monthly samples; fewer → borrow the US pac
 _DC_CTY_HORIZONS = [2028, 2029, 2030, 2031]
 _DC_CTY_SINCE_YEARS = [2023, 2024, 2025, 2026]
 _DC_CTY_CN_DOMESTIC = "China (domestic only)"
-_DC_CTY_POOL_OPTIONS = {
-    "Largest networkable group per company (selector above)": 'company',
-    "Largest single site": 'site',
-    "Every site in the country, pooled (upper bound)": 'country',
-}
 _DC_CTY_PACE_OPTIONS = {
     "The US trend for every country (a follower tracks the leader)": 'us',
     "Each country's own fitted trend": 'own',
@@ -7029,7 +7024,8 @@ def render_eci_gap():
 # ── Data Centers ───────────────────────────────────────────────────────────
 
 _DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing", "dc_pool_n",
-                  "dc_start_year", "dc_end_year", "dc_cty_pool", "dc_cty_pace", "dc_cty_since", "dc_cty_horizon"]
+                  "dc_start_year", "dc_end_year", "dc_cty_pace", "dc_cty_since",
+                  "dc_cty_horizon"]
 _DC_DEFAULTS = {
     "dc_metric": "Compute (H100-equiv)",
     "dc_log": True,
@@ -7038,7 +7034,6 @@ _DC_DEFAULTS = {
     "dc_pool_n": "Nearby sites + announced fabric",
     "dc_start_year": 2025,
     "dc_end_year": 2027,
-    "dc_cty_pool": "Largest networkable group per company (selector above)",
     "dc_cty_pace": "The US trend for every country (a follower tracks the leader)",
     "dc_cty_since": 2024,
     "dc_cty_horizon": 2030,
@@ -7374,7 +7369,8 @@ def _dc_cty_band(arr, kind):
 
 def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
                              x_start, metric_label, kind, log_scale,
-                             shift_days, include_future, run_days=None):
+                             shift_days, include_future, pace_mode, since,
+                             horizon, run_days=None):
     """Buildout by country — US vs China, with each country's largest training
     run extrapolated past the end of its recorded data under a cone.
 
@@ -7387,21 +7383,10 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
         "dashed = planned, dotted + cone = extrapolated (50% / 80%). "
         "*China-accessible* adds DayOne Johor (FT: Alibaba, ByteDance train there).")
 
-    c1, c2 = st.columns(2)
-    pool_label = c1.selectbox("Within a country, count", list(_DC_CTY_POOL_OPTIONS),
-                              key="dc_cty_pool")
-    pace_label = c2.radio("Extrapolate along", list(_DC_CTY_PACE_OPTIONS),
-                          key="dc_cty_pace")
-    since = c2.radio("Fit trend since", _DC_CTY_SINCE_YEARS, horizontal=True,
-                     index=_DC_CTY_SINCE_YEARS.index(_DC_DEFAULTS["dc_cty_since"]),
-                     key="dc_cty_since",
-                     help="Early windows run hot (ramp from zero); late ones "
-                          "run cool (under-catalogued).")
-    horizon = c2.radio("Extrapolate through", _DC_CTY_HORIZONS, horizontal=True,
-                       index=_DC_CTY_HORIZONS.index(_DC_DEFAULTS["dc_cty_horizon"]),
-                       key="dc_cty_horizon")
-    mode = _DC_CTY_POOL_OPTIONS[pool_label]
-    pace_mode = _DC_CTY_PACE_OPTIONS[pace_label]
+    # Pooling follows the sidebar's networking selector, exactly as the
+    # company chart above does: a lone site when nothing pools, else the
+    # largest networkable group per company.
+    mode = 'site' if cluster_of == {} else 'company'
     # China is drawn twice: the mainland alone, and with the Chinese labs'
     # sites abroad (_DC_CN_ACCESS_ABROAD). Both are projected and tabulated.
     cn_scope = 'abroad'
@@ -7550,9 +7535,6 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
         "Pace — " + "; ".join(_pace_text(c) for c in cone_for) + ". "
         "Chinese fits rest on a handful of sites; cones follow Epoch's "
         "catalogue, not policy.")
-    if mode == 'country':
-        st.caption("*Every site pooled* assumes a state directs all its "
-                   "operators onto one job.")
 
     # ── Readout: year-end values, ratio and lag ──
     if cn_key not in traj:
@@ -7640,6 +7622,24 @@ def render_data_centers():
             st.session_state.pop("dc_timing", None)
         timing_label = st.selectbox(
             "Date points at", list(_DC_TIMING_OPTIONS), key="dc_timing")
+        # A bookmarked label from an older build must not raise.
+        if st.session_state.get("dc_pool_n") not in _DC_NETWORK_OPTIONS:
+            st.session_state.pop("dc_pool_n", None)
+        net_label = st.selectbox("Data centers networked together",
+                                 list(_DC_NETWORK_OPTIONS), key="dc_pool_n")
+        with st.expander("Country projection"):
+            pace_label = st.radio("Extrapolate along", list(_DC_CTY_PACE_OPTIONS),
+                                  key="dc_cty_pace")
+            cty_since = st.radio(
+                "Fit trend since", _DC_CTY_SINCE_YEARS, horizontal=True,
+                index=_DC_CTY_SINCE_YEARS.index(_DC_DEFAULTS["dc_cty_since"]),
+                key="dc_cty_since",
+                help="Early windows run hot (ramp from zero); late ones run "
+                     "cool (under-catalogued).")
+            cty_horizon = st.radio(
+                "Extrapolate through", _DC_CTY_HORIZONS, horizontal=True,
+                index=_DC_CTY_HORIZONS.index(_DC_DEFAULTS["dc_cty_horizon"]),
+                key="dc_cty_horizon")
         with st.expander("Projection range"):
             dc_start_year = st.radio(
                 "Chart starts", _DC_START_YEARS, horizontal=True,
@@ -8001,8 +8001,6 @@ def render_data_centers():
         "could be networked into one training job; the selector sets what "
         "counts as a group. Solid = actual; dashed = planned.")
 
-    net_label = st.selectbox("Data centers networked together",
-                             list(_DC_NETWORK_OPTIONS), key="dc_pool_n")
     basis = _DC_NETWORK_OPTIONS[net_label]
     if basis == 'all':
         cluster_of = None
@@ -8081,9 +8079,6 @@ def render_data_centers():
         "Sites pool under Epoch's first-listed user, else the landlord (†), "
         "whose line treats unnamed tenants' halls as one tenant's.")
 
-    # Per-company: does the buildout predict releases?
-    _cc_company_buildout(_today, cfg["key"], kind)
-
     # By country: US vs China, extrapolated past the end of the recorded data.
     # Rebuilt without the host filter — country is about buildings, not tenants.
     _cty_series = _dc_series_for_metric(
@@ -8098,7 +8093,11 @@ def render_data_centers():
         cluster_of, today=_today, cap_date=cap_date, x_start=x_start,
         metric_label=metric_label, kind=kind, log_scale=log_scale,
         shift_days=shift_days, include_future=include_future,
-        run_days=hover_run_days)
+        pace_mode=_DC_CTY_PACE_OPTIONS[pace_label], since=cty_since,
+        horizon=cty_horizon, run_days=hover_run_days)
+
+    # Per-company: does the buildout predict releases?
+    _cc_company_buildout(_today, cfg["key"], kind)
 
 
 # ══════════════════════════════════════════════════════════════════════════

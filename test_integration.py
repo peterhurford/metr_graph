@@ -958,11 +958,25 @@ class TestDataCentersByCountry:
         assert at.radio(key="dc_cty_horizon").value == 2030
         assert at.radio(key="dc_cty_since").value == 2024
 
+    def test_sits_above_the_buildout_panel_and_shares_the_sidebar_selector(self):
+        at = self._dc_app()
+        heads = [str(h.value) for h in at.subheader]
+        assert heads.index("Buildout by country: US vs China") < \
+            heads.index("Per-company: does the buildout predict release timing?")
+        assert heads.index("Buildout by country: US vs China") > heads.index(
+            "Largest data center by company over time "
+            "(including networking multiple data centers)")
+        # One networking selector, in the sidebar, drives both sections.
+        assert len([sb for sb in at.selectbox if sb.key == "dc_pool_n"]) == 1
+        assert at.sidebar.selectbox(key="dc_pool_n") is not None
+        assert at.sidebar.radio(key="dc_cty_horizon") is not None
+
     def test_every_control_renders(self):
         at = self._dc_app()
-        for label in at.selectbox(key="dc_cty_pool").options:
-            at.selectbox(key="dc_cty_pool").set_value(label).run()
+        for label in at.selectbox(key="dc_pool_n").options:
+            at.selectbox(key="dc_pool_n").set_value(label).run()
             _assert_no_error(at, f"by country / {label}")
+            assert self._headline(at), label
         for label in at.radio(key="dc_cty_pace").options:
             at.radio(key="dc_cty_pace").set_value(label).run()
             _assert_no_error(at, f"by country / {label}")
