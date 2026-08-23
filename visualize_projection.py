@@ -7689,21 +7689,16 @@ def render_data_centers():
     if key in ('train_flop', 'train_flop_6mo'):
         run_days = cfg.get("run_days", _DAYS_2MO)
         st.caption(
-            f"Methodology: *{metric_label}* = each site's peak performance "
-            f"(8-bit OP/s) × a {run_days}-day ({run_days // 30}-month) training "
-            f"run × {_DC_UTILIZATION:.0%} realized utilization, reported as "
-            "log₁₀ of the resulting 8-bit operation count (1e28 ops → 28). "
-            "Figures are order-of-magnitude estimates, not vendor-reported "
-            "numbers.")
+            f"Methodology: *{metric_label}* = log₁₀(peak 8-bit OP/s × "
+            f"{run_days // 30}-month run × {_DC_UTILIZATION:.0%} utilization). "
+            "Order-of-magnitude estimates.")
     elif key in ('gpt5s', 'mythos'):
         target, scale = (("2e25 FLOP", "GPT-5 scale") if key == 'gpt5s'
                          else ("1e27 FLOP", "Mythos scale"))
         st.caption(
-            f"Methodology: how long the site would take to train **one** "
-            f"{target} ({scale}) model if the whole site ran nothing else — "
-            f"{target} ÷ (peak performance in 8-bit OP/s × "
-            f"{_DC_UTILIZATION:.0%} realized utilization). Shorter is a bigger "
-            "site. Order-of-magnitude estimates, not vendor-reported numbers.")
+            f"Methodology: time to train one {target} ({scale}) model = {target} "
+            f"÷ (peak 8-bit OP/s × {_DC_UTILIZATION:.0%} utilization). Shorter = "
+            "bigger site.")
 
     if not series:
         st.warning("No data available for this metric.")
@@ -7718,22 +7713,12 @@ def render_data_centers():
     _shown_unattr = [c for c in _shown_hosts if c in unattributed]
     if _shown_hosts:
         _note = (
-            "Scope: AI labs, plus colocation and neutral-host operators big "
-            "enough to move the frontier — "
-            f"{_dc_fmt_value(_DC_EXCLUDE_MIN_H100, 'h100')} "
-            "H100-equivalents at a single site within a year. That currently "
-            f"adds {_and_list([_dc_co_label(c, unattributed) for c in _shown_hosts])}"
-            ". Smaller hosts are left off.")
+            "Scope: AI labs, plus colocation hosts with a "
+            f"{_dc_fmt_value(_DC_EXCLUDE_MIN_H100, 'h100')}-H100e site within a "
+            f"year ({_and_list([_dc_co_label(c, unattributed) for c in _shown_hosts])}).")
         if _shown_unattr:
-            _note += (
-                f" **†** marks a company Epoch records no user or owner for "
-                f"({_and_list(_shown_unattr)}): the capacity is real, but the "
-                "name is the building's landlord and whoever trains on the "
-                "hardware is unknown, so the line is not a lab's compute.")
-        _note += (
-            " The Compute vs Capabilities tab leaves all of them out — its "
-            "frontier has to be attributable to a lab that ships models, so "
-            "the two tabs' largest-site lines differ on purpose.")
+            _note += " **†** = no recorded tenant; the landlord is named, not a lab."
+        _note += " The Compute vs Capabilities tab excludes all hosts."
         st.caption(_note)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -8012,14 +7997,9 @@ def render_data_centers():
     st.subheader("Largest data center by company over time "
                  "(including networking multiple data centers)")
     st.caption(
-        "Same as the chart above, but a company may run one training job across "
-        "several of its sites at once — so each line is the **sum** of the "
-        "biggest group of its sites that could plausibly be networked together. "
-        "What counts as a group is set by the selector below, from same-metro "
-        "fibre only up to the whole fleet. The cross-site link has to carry the "
-        "data-parallel gradient sync, so distance and an actual fibre path are "
-        "what make a group — sharing an owner never is. Solid = actual; "
-        "dashed = planned / under construction.")
+        "Each line is the **sum** of a company's biggest group of sites that "
+        "could be networked into one training job; the selector sets what "
+        "counts as a group. Solid = actual; dashed = planned.")
 
     net_label = st.selectbox("Data centers networked together",
                              list(_DC_NETWORK_OPTIONS), key="dc_pool_n")
@@ -8084,39 +8064,22 @@ def render_data_centers():
         return ", ".join(lab for lab, b, _ in _DC_NETWORK_CLUSTERS if b == basis)
 
     if basis == 'none':
-        scope = ("Every site stands alone here, so this line is the chart above, "
-                 "redrawn. ")
+        scope = "No pooling: the chart above, redrawn. "
     elif basis == 'all':
-        scope = ("Every site a company has is added together here, however far "
-                 "apart and whether or not any link between them exists or "
-                 "could — an upper bound to read against, not a training job "
-                 "anyone could run. ")
+        scope = "Every site a company has, summed — an upper bound, not a runnable job. "
     else:
         # List exactly the bases this level pools on, no more.
-        scope = (f"Networkable groups are curated, not inferred. By proximity: "
-                 f"{_groups('proximity')}. ")
+        scope = f"Curated groups. By proximity: {_groups('proximity')}. "
         if basis in ('fabric', 'plausible'):
             scope += f"By announced fabric: {_groups('fabric')}. "
         if basis == 'plausible':
-            scope += (
-                f"By plausible added fabric — a region whose sites all sit "
-                f"within roughly the span of that one announced fabric, but "
-                f"with no link announced between them: {_groups('plausible')}. "
-                "Those groups say what a company could wire together, not what "
-                "it can run one job across today. ")
-        scope += ("Everything else stands alone, so most companies show their "
-                  "single largest site — pooling changes the line only where a "
-                  "real cluster exists. ")
+            scope += (f"By plausible added fabric (no link announced): "
+                      f"{_groups('plausible')}. ")
+        scope += "Everything else stands alone. "
     st.caption(
         scope +
-        "A colocation or neutral-host operator pools only with itself: its "
-        "sites appear under the AI lab listed as the primary user where Epoch "
-        "records one, and under the landlord (marked †) where it does not. So "
-        "a company that leases capacity it does not own shows it here, and a "
-        "landlord's own line is a lower bound on what its unnamed tenants "
-        "could network together — it treats a hall with no recorded tenant as "
-        "one tenant's to use, which is its own assumption, present at every "
-        "setting including the narrowest.")
+        "Sites pool under Epoch's first-listed user, else the landlord (†), "
+        "whose line treats unnamed tenants' halls as one tenant's.")
 
     # Per-company: does the buildout predict releases?
     _cc_company_buildout(_today, cfg["key"], kind)
@@ -9937,31 +9900,16 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
     # once why a real flagship can turn up as a non-record.
     if any(e['fallback'] for e in expected):
         st.caption(
-            "† not an ECI record for this lab. Such a release is shown because "
-            "no record-setting one fell in its cluster's window: Epoch "
-            "recomputes ECI live, so a real flagship can end up scored under "
-            "its own predecessor and drop off the running max without its "
-            "release date changing. This panel compares dates only, so the "
-            "release still belongs here — it is just marked, drawn hollow, and "
-            "left out of the median above.")
+            "† not an ECI record for this lab (Epoch rescoring can drop a real "
+            "flagship off the running max); shown hollow, excluded from the "
+            "median.")
 
     st.caption(
-        f"Diamonds = capacity steps shifted forward {_CC_RELEASE_LAG_DAYS} days to "
-        "the release date they imply (hollow = planned/under-construction DC); "
-        "circles = actual releases (hollow † = shipped in a cluster's window without "
-        "setting an ECI record for the lab). Matching is *causal*: a release is tied "
-        f"only to a cluster online at least one training run ({_CC_TRAIN_FLOOR_DAYS}d) "
-        "before it — a cluster online less than a training run before a release "
-        "couldn't have trained it. The extra ~1mo release-prep lag isn't required, so "
-        "a model that shipped a bit faster than the full pipeline still counts: "
-        f"forward matches reach back {_CC_EARLY_GRACE_DAYS} days before the implied "
-        "date, which is how Fairwater Wisconsin claims Sol (84d after it came online, "
-        "6d ahead of the pipeline). Connector color = days from the implied "
-        "date (green ≤45, orange ≤120, red >120). Capability is "
-        "never used — only dates. The rule lands close when a model is gated by a "
-        "fresh cluster (xAI/Colossus throughout; others post-2025) and drifts when "
-        "the frontier moves algorithmically on an existing cluster (OpenAI's 2024 "
-        "reasoning wave).")
+        f"Diamonds = capacity steps + {_CC_RELEASE_LAG_DAYS}d (hollow = planned); "
+        "circles = releases. A release matches only a cluster online ≥ one "
+        f"training run ({_CC_TRAIN_FLOOR_DAYS}d) before it; forward matches allow "
+        f"{_CC_EARLY_GRACE_DAYS}d early. Connector color = days off the implied "
+        "date (green ≤45, orange ≤120, red >120). Dates only, never capability.")
 
 
 def render_compute_capabilities():

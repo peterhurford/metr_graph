@@ -731,7 +731,7 @@ class TestDataCenters:
                 " ".join(str(c.value) for c in at.caption)
             # The quarterly table cells and captions are in time units, never
             # a bare run count.
-            assert "how long the site would take to train" in text
+            assert "Methodology: time to train one" in text
             assert any(u in text for u in ("hour", "day", "week", "month"))
 
     def test_include_future(self):
