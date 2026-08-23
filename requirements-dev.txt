@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest
+pytest-mock
+pytest-xdist   # pytest.ini runs the suite with -n auto; without this, pass -n0
