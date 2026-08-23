@@ -2630,6 +2630,58 @@ class TestCcCnTargetYears:
         assert np.median(r) > 0.5 * ((8.0 + 1.9) + (12.0 + 2.1))
 
 
+class TestCcInnovationAlgoBand:
+    def test_band_is_ordered_and_below_the_measured_central(self):
+        cc = vp.load_eci_compute()
+        band = vp._cc_innovation_algo_band(cc)
+        assert band is not None
+        lo, hi = band
+        assert 0 < lo < hi
+        # The indigenous band sits at or below the distillation-inclusive
+        # central rate — the premise of the correction.
+        assert hi <= vp._cc_iso_compute(cc)['eci_per_yr'] + 1.0
+
+
+class TestCcCnCrossingSim:
+    KW = dict(a_partial=8.0, g_lo=0.15, g_hi=0.30, algo_lo=11.0,
+              algo_mid=12.5, algo_hi=13.0, pace_lo=0.9, pace_hi=1.1, n=4000)
+
+    def test_distil_saturated_matches_constant_rate(self):
+        # With the US pulling away (gap/gap0 >= 1 throughout) the decay never
+        # binds and the sim reduces to the constant-rate sampler.
+        y_sim, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, us_anchor=165.0, us_rate=25.0,
+            inno_lo=3.0, inno_hi=4.0, **self.KW)
+        y_const, _ = vp._cc_cn_target_years(
+            150.0, 160.0, 11.0, 12.5, 13.0, 8.0, 0.15, 0.30,
+            pace_lo=0.9, pace_hi=1.1, n=4000)
+        assert abs(np.nanmedian(y_sim) - np.nanmedian(y_const)) < 0.15
+
+    def test_pause_is_slower_for_the_same_bar(self):
+        # Frozen US: the gap dries up en route, distillation decays to the
+        # indigenous rate, and the same bar takes longer to cross.
+        y_pause, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, us_anchor=160.0, us_rate=0.0,
+            inno_lo=3.0, inno_hi=4.0, **self.KW)
+        y_move, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, us_anchor=160.0, us_rate=15.0,
+            inno_lo=3.0, inno_hi=4.0, **self.KW)
+        assert np.nanmedian(y_pause) > np.nanmedian(y_move)
+
+    def test_already_there_crosses_immediately(self):
+        y, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 149.0, us_anchor=160.0, us_rate=0.0,
+            inno_lo=3.0, inno_hi=4.0, **self.KW)
+        assert np.nanmedian(y) <= 1.0 / 12.0 + 1e-9
+
+    def test_traj_is_nondecreasing(self):
+        _, grid, traj = vp._cc_cn_crossing_sim(
+            150.0, 160.0, us_anchor=160.0, us_rate=0.0,
+            inno_lo=3.0, inno_hi=4.0, **self.KW)
+        assert traj.shape == (self.KW['n'], len(grid))
+        assert (np.diff(traj, axis=1) >= -1e-9).all()
+
+
 class TestCcReleaseGapDays:
     """_cc_release_gap_days: how often a frontier actually steps up."""
 

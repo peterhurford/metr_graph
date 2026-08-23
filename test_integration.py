@@ -1097,6 +1097,17 @@ class TestPacingTab:
         _switch_tab(at, "Pacing")
         return at
 
+    def test_us_pause_panel_renders(self):
+        """The US-pause counterfactual renders with its crossing metric and
+        assumption caption (or degrades to an info box, never an error)."""
+        at = self._app()
+        subs = " ".join(str(s.value) for s in at.subheader)
+        assert "If the US paused today" in subs
+        labels = " ".join(str(m.label) for m in at.metric)
+        assert "frozen US frontier" in labels
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "indigenous" in caps
+
     def test_renders_with_headline_and_table(self):
         at = self._app()
         _assert_no_error(at, "Pacing")

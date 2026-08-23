@@ -488,6 +488,12 @@ date distribution rather than the gap metrics above it. Three things are load-be
    median-crossing diamond sits *right* of where the fan meets the target line — the fan is
    the smooth capability path, the diamond and vertical band are release-inclusive. Not a
    plotting bug; don't "fix" it by aligning them.
+4. **Distillation decays as the gap closes.** The headline uses `_cc_cn_crossing_sim`:
+   the algorithmic term falls from the measured rate to an indigenous band
+   (`_cc_innovation_algo_band` — pretraining prior `_CC_PRETRAIN_ALGO_OOM`·a_partial up
+   to the top iso-compute band, the models least able to distill) as gap/gap₀ shrinks.
+   `_cc_cn_target_years` stays as the constant-rate comparison quoted in the caption.
+   `TestCcCnCrossingSim` pins the limits (saturated = constant-rate; frozen US = slower).
 
 Fan traces set `mode='lines'` explicitly: the fan spans ~6 quarters, and plotly defaults a
 Scatter under 20 points to `lines+markers`, studding the band outline with stray dots.
@@ -529,6 +535,11 @@ machinery rather than growing its own.
    series by `_dc_timing_shift(label, run_days)` before rows are built, exactly as
    the DC tab does — default is capacity-online, with the run length (and +30d for
    release) one click away; the fine print states which milestone the dates mean.
+
+The tab ends with `_pc_render_us_pause()`: the CC crossing sim with `us_rate=0` —
+today's stock stays distillable while a gap remains, then China runs on its
+indigenous algorithmic band plus its (export-control-bound, US-independent) compute
+term to the frozen US frontier.
 
 Guarded by `TestPacing` (unit) and `TestPacingTab` (integration).
 
