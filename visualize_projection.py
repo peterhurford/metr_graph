@@ -8766,18 +8766,16 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
         st.caption("Each cell shows the median with its 80% band in parentheses.")
 
     st.caption(
-        "Method: frontier ECI = today's anchor + physical-compute growth (the "
-        f"physical share of ~{obs_slope:.0f} ECI/yr, scaled to the projected "
-        "compute-frontier path so it decelerates with the buildout) + a constant "
-        "algorithmic-efficiency term. Bands sample the contested physical/algo "
-        f"mix ({s_lo*100:.0f}–{s_hi*100:.0f}%), compute delivery (×0.5–1.15 of "
-        "plan), and overall pace (±12%). METR horizons come from the org-neutral "
-        "ECI→METR fits `p50_min = 2^(0.24·ECI − 28.68)` and `p80_min = "
-        "2^(0.23·ECI − 29.95)` (the METR ranges shown are driven by the ECI 80% "
-        "band, not the fits' own ±bands). "
-        "This extrapolates the historical linear ECI trend; it assumes no "
-        "paradigm shift, no hard compute wall, and that ECI stays a meaningful "
-        "scale at these levels — order-of-magnitude, not a promise.")
+        "Method: frontier ECI = today's anchor + physical-compute growth (its "
+        f"share of ~{obs_slope:.0f} ECI/yr, scaled to the projected compute path "
+        "so it decelerates with the buildout) + a constant algorithmic term. "
+        f"Bands sample the physical/algo mix ({s_lo*100:.0f}–{s_hi*100:.0f}%), "
+        "compute delivery (×0.5–1.15 of plan) and pace (±12%). METR horizons use "
+        "the org-neutral fits `p50_min = 2^(0.24·ECI − 28.68)` and `p80_min = "
+        "2^(0.23·ECI − 29.95)`; their ranges track the ECI 80% band, not the "
+        "fits' own. Extrapolates the historical linear ECI trend, assuming no "
+        "paradigm shift, no compute wall, and that ECI still means something at "
+        "these levels — order-of-magnitude, not a promise.")
 
 
 def _cc_country_frontier(models, country):
@@ -9080,23 +9078,22 @@ def _cc_us_vs_china(cc_rows, today):
     _cc_logop_yaxis(figc, "Training compute (log₁₀ OP)")
     st.plotly_chart(figc, use_container_width=True)
     st.caption(
-        f"**Solid = grounded**: largest *actual* training runs Epoch estimates per "
-        f"model — ~{_logop_lbl(us_run_lf)} (US) vs ~{_logop_num(cn_run_lf)} (China), a "
-        f"**~{10 ** run_gap_oom:.0f}× ({run_gap_oom:.1f} OOM)** gap. Recent US "
+        f"**Solid = grounded**: largest *actual* runs Epoch estimates per model — "
+        f"~{_logop_lbl(us_run_lf)} (US) vs ~{_logop_num(cn_run_lf)} (China), a "
+        f"**~{10 ** run_gap_oom:.0f}× ({run_gap_oom:.1f} OOM)** gap; recent US "
         f"frontier models use *less* (GPT-5 ~25.8) — efficiency, not bigger runs. "
-        f"**Dashed/shaded = capacity** — the largest *single cluster's* 2-month "
-        f"run: US ~{_logop_lbl(us_cap_lf)} today rising through *announced* "
+        f"**Dashed/shaded = capacity**, the largest *single cluster's* 2-month "
+        f"run: US ~{_logop_lbl(us_cap_lf)} today, rising through *announced* "
         f"megaclusters (Stargate, Hyperion…) to ~{_logop_num(us_cap_end_lf)} by 2029 "
-        f"(Epoch buildout), China ~{_logop_num(cn_cap_lo_lf)}–{_logop_num(cn_cap_hi_lf)} "
-        f"(estimated, no Epoch data). "
-        f"China's *total* chips — mostly smuggled NVIDIA + domestic Ascend — are "
-        f"plentiful, but concentrating them into one coherent run is the bottleneck "
-        f"(dispersed chips, export-controlled networking), so single-cluster "
-        f"capacity stays near its biggest known run (~{_logop_num(cn_run_lf)}). "
-        f"Capacity grows {10 ** g_us_lo:.1f}–{10 ** g_us_hi:.1f}×/yr (US, measured) "
-        f"vs ~{10 ** g_cn_lo:.1f}–{10 ** g_cn_hi:.1f}×/yr (China), so the gap "
-        f"widens only slowly. *Run points are dated at estimated training "
-        "completion (release − ~1mo) to align with the +2mo capacity line.*")
+        f"(Epoch buildout); China ~{_logop_num(cn_cap_lo_lf)}–{_logop_num(cn_cap_hi_lf)} "
+        f"(estimated, no Epoch data) — its chips are plentiful (smuggled NVIDIA + "
+        f"domestic Ascend) but too dispersed, and its networking too export-"
+        f"controlled, to concentrate into one run, so capacity stays near its "
+        f"biggest known run (~{_logop_num(cn_run_lf)}). Capacity grows "
+        f"{10 ** g_us_lo:.1f}–{10 ** g_us_hi:.1f}×/yr (US, measured) vs "
+        f"~{10 ** g_cn_lo:.1f}–{10 ** g_cn_hi:.1f}×/yr (China), so the gap widens "
+        f"only slowly. *Run points are dated at estimated training completion "
+        "(release − ~1mo) to align with the +2mo capacity line.*")
 
     # ── Chart B: ECI derived from compute (Chart A) + shared algorithmic
     # progress — ECI(t) = ECI_now + (a_partial·g_compute + b_algo)·t. The band is
@@ -9155,24 +9152,22 @@ def _cc_us_vs_china(cc_rows, today):
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     st.plotly_chart(figf, use_container_width=True)
     st.caption(
-        f"ECI projected as **~{a_partial:.0f} pts per ×10 compute** (pooled US+China "
-        f"exchange rate) riding each country's Chart-A compute growth, **plus a "
-        f"shared ~{b_algo:.0f} pts/yr algorithmic term** (methods diffuse, so it's "
-        f"the same for both). Band = each country's compute-growth range; the "
-        f"divergence is purely the compute gap, so the ECI gap widens slowly — to "
-        f"~{gap_end:.0f} pts (~{mo_end:.0f} mo) by end-2029. The **dotted line** "
-        "under each country is the algorithmic-only climb (shared rate, no compute); "
-        "the **shaded gap** up to the dashed line is that country's compute "
-        "contribution — visibly wider for the US than for China.")
+        f"ECI = **~{a_partial:.0f} pts per ×10 compute** (pooled US+China rate) "
+        f"riding each country's Chart-A compute growth, **plus a shared "
+        f"~{b_algo:.0f} pts/yr algorithmic term** (methods diffuse). Band = each "
+        f"country's compute-growth range, so the divergence is purely the compute "
+        f"gap and the ECI gap widens slowly — ~{gap_end:.0f} pts (~{mo_end:.0f} mo) "
+        "by end-2029. **Dotted line** = the algorithmic-only climb; the **shaded "
+        "gap** up to the dashed line is that country's compute contribution, "
+        "visibly wider for the US.")
 
     st.caption(
-        "Caveats: a_partial and b_algo come from a pooled OLS where compute and "
-        "time are collinear, so the compute-vs-algorithm split is approximate; US "
-        "labs under-disclose training compute, so the compute gap is if anything "
-        "understated; and no forward data-center data exists for China (Epoch's "
-        "buildout tracking is almost entirely US sites). US = 'United States of "
-        "America', China = 'China' in Epoch's country tags; multi-country and "
-        "untagged models excluded. Order-of-magnitude, not forecasts.")
+        "Caveats: a_partial and b_algo come from a pooled OLS with collinear "
+        "compute and time, so the split is approximate; US labs under-disclose "
+        "training compute, understating the compute gap if anything; and Epoch "
+        "tracks almost no Chinese buildout. US/China are Epoch's country tags; "
+        "multi-country and untagged models excluded. Order-of-magnitude, not "
+        "forecasts.")
 
     # ── China's algorithmic edge: the distillation scenario ────────────────────
     # Chart B assumes a *shared* algorithmic term — methods diffuse, so both
@@ -9273,23 +9268,20 @@ def _cc_us_vs_china(cc_rows, today):
                        tickfont=dict(color='#222'), title_font=dict(color='#222')))
         st.plotly_chart(figd, use_container_width=True)
         st.caption(
-            f"Backdated to **Jan 2025** (China frontier ≈{cn_anchor:.0f} ECI then), "
-            "so the distillation edge accumulates over the whole period it's applied. "
-            f"Both China lines share the same compute term (~{compute_term_cn:.1f} "
-            f"ECI/yr, from {a_partial:.0f} pts/×10 compute × China's "
-            f"{10 ** g_cn_mid:.1f}×/yr capacity growth); they differ only in the "
-            "algorithmic term. The **solid dark line** uses China's own (higher) "
-            f"empirically-measured rate ({cn_algo:.1f} vs {us_algo:.1f} ECI/yr, "
-            f"a +{premium:.1f}/yr ~+{premium_pct:.0f}% edge) and is **capped at the "
-            "US frontier** — distillation closes the gap faster but can't push a "
-            "follower past the model it learns from; it tracks China's actual points, "
-            "while the dashed **US-rate** line is the counterfactual where China would "
-            "sit on the leader's algo rate alone. So the edge buys China earlier "
-            "*parity*, not a lead. "
-            f"Iso-compute fits use n={n_us_iso} US / n={n_cn_iso} China models within "
-            "±0.4 dex of each country's median compute; with so few same-budget US "
-            "models and a flat China compute axis, treat the edge as suggestive, not "
-            "established.")
+            f"Backdated to **Jan 2025** (China frontier ≈{cn_anchor:.0f} ECI then) "
+            "so the edge accumulates over the full period it applies to. Both China "
+            f"lines share a compute term (~{compute_term_cn:.1f} ECI/yr = "
+            f"{a_partial:.0f} pts/×10 compute × {10 ** g_cn_mid:.1f}×/yr capacity "
+            "growth) and differ only in the algorithmic one. The **solid dark line** "
+            f"uses China's own measured rate ({cn_algo:.1f} vs {us_algo:.1f} ECI/yr, "
+            f"a +{premium:.1f}/yr ~+{premium_pct:.0f}% edge), **capped at the US "
+            "frontier** — distillation closes a gap but can't overtake the model it "
+            "learns from — and tracks China's actual points; the dashed **US-rate** "
+            "line is the counterfactual without the edge. So the edge buys earlier "
+            f"*parity*, not a lead. Fits use n={n_us_iso} US / n={n_cn_iso} China "
+            "models within ±0.4 dex of each country's median compute; with so few "
+            "same-budget US models and a flat China compute axis, treat the edge as "
+            "suggestive.")
 
     # ── When does China cross the target ECI? ─────────────────────────────────
     _render_cc_china_target(
@@ -9391,7 +9383,7 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
     question directly, by fanning China's compute+algo rate out into a
     distribution of crossing dates.
     """
-    st.subheader(f"When does China reach ECI {target:.0f}?")
+    st.subheader(f"When does China reach ECI {target:.0f} (~Mythos-tier)?")
 
     cn_best = max(cn_fr, key=lambda x: x[1])
     us_best = max(us_fr, key=lambda x: x[1])
@@ -9574,29 +9566,28 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
     st.caption(
         f"China's frontier sits at **ECI {anchor_eci:.0f}** ({pretty(anchor_name)}, "
         f"{anchor_d:%b %Y}), **{target - anchor_eci:.1f} points** short of "
-        f"{target:.0f}. It closes that at a median **~{rate_med:.0f} ECI/yr**, built "
-        f"the same way as Chart B: {algo_note}, plus a compute term of "
+        f"{target:.0f}, closing at a median **~{rate_med:.0f} ECI/yr** — built like "
+        f"Chart B: {algo_note}, plus a compute term of "
         f"~{a_partial * 0.5 * (g_lo + g_hi):.1f} ECI/yr ({a_partial:.0f} pts per ×10 "
         f"compute × China's {10 ** g_lo:.1f}–{10 ** g_hi:.1f}×/yr capacity growth), "
-        f"{obs_note}. Note the compute term is the *small* one here — even doubling "
-        f"China's compute growth moves the date by weeks, because at "
-        f"{a_partial:.0f} pts per ×10 the extra {g_hi:.2f} OOM/yr is worth only ~"
-        f"{a_partial * g_hi:.1f} ECI/yr against an algorithmic ~{a_mid:.0f}. "
-        + (f"On top of the smooth path, the crossing waits for a model to actually "
-           f"ship: China's frontier has stepped up every ~{gap_d:.0f} days lately, "
-           f"drawn as an exponential wait — which is why the diamond sits right of "
-           f"where the fan meets the bar." if gap_d else ""))
+        f"{obs_note}. The compute term is the *small* one: at {a_partial:.0f} pts "
+        f"per ×10, an extra {g_hi:.2f} OOM/yr is worth ~{a_partial * g_hi:.1f} "
+        f"ECI/yr against an algorithmic ~{a_mid:.0f}, so even doubling China's "
+        f"compute growth moves the date by weeks. "
+        + (f"The crossing also waits for a model to ship: China's frontier has "
+           f"stepped every ~{gap_d:.0f} days lately, drawn as an exponential wait — "
+           f"which is why the diamond sits right of where the fan meets the bar."
+           if gap_d else ""))
     st.caption(
         f"Caveats: ECI {target:.0f} is a *fixed* bar — the US frontier as of "
-        f"{us_hit_txt} — so crossing it is China matching where the US is **now**, "
-        "not catching up; the US line keeps moving, and the gap sections above are "
-        "the ones that answer parity. The rate is constant within a trajectory, so "
-        "the fan is a straight climb; only the release-wait term models the "
-        "frontier's real step shape, and neither captures a paradigm shift, a chip "
-        "shock, or a lab simply not shipping. Rates inherit every caveat above: "
-        "collinear compute and time in the pooled fit, no Epoch buildout data for "
-        "China, and Epoch recomputing ECI as benchmarks are added — a target this "
-        "close to today's frontier can move under a rescore.")
+        f"{us_hit_txt} — so crossing it means China matching where the US is "
+        "**now**; the US line keeps moving, and the gap sections above answer "
+        "parity. The rate is constant within a trajectory, so the fan is a straight "
+        "climb; only the release-wait term models the frontier's step shape, and "
+        "neither captures a paradigm shift, a chip shock, or a lab not shipping. "
+        "Rates inherit every caveat above, and Epoch recomputes ECI as benchmarks "
+        "are added — a target this close to today's frontier can move under a "
+        "rescore.")
 
 
 # ── Per-company buildout-vs-release timing ────────────────────────────────
@@ -10380,28 +10371,27 @@ def render_compute_capabilities():
         yaxis=dict(showticklabels=False))
     st.plotly_chart(figs, use_container_width=True)
     st.caption(
-        f"The **hatched band** is the contested boundary (physical compute "
-        f"**{share_lo*100:.0f}–{share_hi*100:.0f}%** of growth: low end = iso-compute "
-        f"view, high end = iso-ECI view); the **solid line** is the central view "
-        f"(~{share_mid*100:.0f}%). Algorithms are the rest. Frontier-model compute "
-        f"growth (×{10**g_frontier:.1f}/yr) would push physical toward the high end.")
+        f"**Hatched band** = physical compute's contested share, "
+        f"**{share_lo*100:.0f}–{share_hi*100:.0f}%** (low = iso-compute fit, high = "
+        f"iso-ECI fit); **solid line** = central view (~{share_mid*100:.0f}%). "
+        f"Algorithms are the rest. Frontier-model compute growth "
+        f"(×{10**g_frontier:.1f}/yr) argues for the high end.")
 
     st.warning(
-        "**Caveats.** (1) The two engines aren't independent: algorithmic progress "
-        "is *compute-fed* — you need GPUs to run the experiments — so a physical "
-        "slowdown would likely drag the algorithmic rate too, making a stall "
-        "*worse* than the ⅓–½ shown. (2) ECI bundles post-training/RL, so the "
-        "efficiency rate is total-capability, not pretraining. (3) Labs rarely "
-        "train small models just to re-hit old capability levels, so the cheap-"
-        "model edge is sparse (Qwen, Kimi, distilled MoEs). (4) The 2mo-capacity "
-        "series is a capacity *ceiling*, not per-model training compute. Order-of-"
-        "magnitude, not forecasts.")
+        "**Caveats.** (1) The two engines aren't independent — algorithmic "
+        "progress is *compute-fed*, so a physical slowdown drags the algorithmic "
+        "rate too, making a stall *worse* than the ⅓–½ shown. (2) ECI bundles "
+        "post-training/RL, so this is total-capability efficiency, not "
+        "pretraining. (3) Cheap-model data is sparse — labs rarely retrain small "
+        "models to re-hit old levels (Qwen, Kimi, distilled MoEs). (4) The "
+        "2mo-capacity series is a *ceiling*, not per-model training compute. "
+        "Order-of-magnitude, not forecasts.")
     st.caption(
         "Data: Epoch AI Capabilities Index + Frontier Data Centers. The "
-        "efficiency band spans the iso-ECI fit (compute on ECI+time) and the "
-        "iso-compute fit (ECI on compute+time); these two OLS directions bracket "
-        "the true rate, which errors-in-variables dilution puts between them. "
-        "Frontier rates use the running-max-ECI subset.")
+        "efficiency band spans two OLS directions — iso-ECI (compute on ECI+time) "
+        "and iso-compute (ECI on compute+time) — which bracket the true rate "
+        "(errors-in-variables dilution). Frontier rates use the running-max-ECI "
+        "subset.")
 
     # ══════════════════════════════════════════════════════════════════════
     # Section 3: ECI Forecasts — quarterly frontier projection to end of 2029
