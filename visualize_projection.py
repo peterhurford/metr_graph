@@ -7195,8 +7195,9 @@ _DC_NETWORK_OPTIONS = {
 }
 
 # Compute vs Capabilities tab
-_CC_RESET_KEYS = ["cc_future", "cc_company"]
-_CC_DEFAULTS = {"cc_future": True, "cc_company": "OpenAI"}
+_CC_RESET_KEYS = ["cc_future", "cc_end_year", "cc_company"]
+_CC_DEFAULTS = {"cc_future": True, "cc_end_year": 2029, "cc_company": "OpenAI"}
+_CC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
 # Fixed segment boundaries for the frontier-compute growth breakdown. Each entry
 # is (label, start, end); the last segment is the planned/under-construction tail.
@@ -8576,8 +8577,10 @@ def _cc_quarter_ends(start, end):
 
 
 def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
-                     share_lo, share_mid, share_hi):
-    """Quarterly frontier-ECI projection to end-2029.
+                     share_lo, share_mid, share_hi,
+                     horizon=datetime(2029, 12, 31)):
+    """Quarterly frontier-ECI projection to the sidebar's *Project through*
+    year-end (default end-2029).
 
     Decomposes the frontier's ECI growth into a *physical-compute* component that
     rides the projected compute-frontier path (so it decelerates as the buildout
@@ -8594,7 +8597,6 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     calibrated so that, at today's compute slope, the physical term reproduces the
     `share` fraction of the observed frontier ECI rate.
     """
-    horizon = datetime(2029, 12, 31)
     if obs_slope is None or obs_slope <= 0:
         st.info("Not enough frontier history to project ECI.")
         return
@@ -8717,7 +8719,8 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     algo_end = float(pct[50][-1] - eci_now - phys_end)
     st.caption(
         "The median rise is split into its two engines: the **blue band** is the "
-        f"algorithmic-efficiency contribution (~{algo_end:.0f} ECI by end-2029, a "
+        f"algorithmic-efficiency contribution (~{algo_end:.0f} ECI by "
+        f"end-{horizon.year}, a "
         "straight climb at a constant per-year rate) and the **red band** on top is "
         f"the physical-compute contribution (~{phys_end:.0f} ECI), which curves as "
         "it rides the projected compute frontier and flattens as the buildout "
@@ -8725,8 +8728,9 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
         "the lifting at these horizons.")
 
     # Year-end milestone cards, each with its estimated METR p50 horizon.
-    cols = st.columns(4)
-    for col, yr in zip(cols, (2026, 2027, 2028, 2029)):
+    _ms_years = list(range(today.year, horizon.year + 1))
+    cols = st.columns(len(_ms_years))
+    for col, yr in zip(cols, _ms_years):
         target = datetime(yr, 12, 31)
         j = min(range(len(x_dates)), key=lambda i: abs((x_dates[i] - target).days))
         col.metric(f"End {yr}", f"ECI {pct[50][j]:.0f}",
@@ -8951,7 +8955,7 @@ def _cc_pooled_decomp(rows):
     return float(beta[0]), float(beta[1])
 
 
-def _cc_us_vs_china(cc_rows, today):
+def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31)):
     """Section 4: the US-China frontier read through the compute lens.
 
     The honest headline is a *mismatch of scale*: the US holds a training-compute
@@ -8978,8 +8982,6 @@ def _cc_us_vs_china(cc_rows, today):
     cn_best = max(cn_fr, key=lambda x: x[1])
     gap_now = us_best[1] - cn_best[1]
     mo_now = _eci_months_behind(us_fr, cn_best[1], cn_best[0])
-
-    horizon = datetime(2029, 12, 31)
 
     # ── Compute: largest *actual* runs (grounded, Epoch per-model) vs cluster
     # *capacity* (US measured from buildout; China estimated from its chips). ──
@@ -9033,7 +9035,8 @@ def _cc_us_vs_china(cc_rows, today):
               f"{run_gap_oom:.1f} OOM, US ahead", delta_color="off")
     c2.metric("ECI gap today", f"{gap_now:.0f} pts",
               f"~{mo_now:.0f} mo behind", delta_color="off")
-    c3.metric("ECI gap end-2029 (compute + algo)", f"~{gap_end:.0f} pts",
+    c3.metric(f"ECI gap end-{horizon.year} (compute + algo)",
+              f"~{gap_end:.0f} pts",
               f"~{mo_end:.0f} mo behind", delta_color="off")
 
     # ── Chart A: actual training runs (grounded) vs cluster capacity (est.) ────
@@ -9115,7 +9118,8 @@ def _cc_us_vs_china(cc_rows, today):
         f"frontier models use *less* (GPT-5 ~25.8) — efficiency, not bigger runs. "
         f"**Dashed/shaded = capacity**, the largest single cluster's 2-month run: "
         f"US ~{_logop_lbl(us_cap_lf)} today, riding announced megaclusters "
-        f"(Stargate, Hyperion…) to ~{_logop_num(us_cap_end_lf)} by 2029; China "
+        f"(Stargate, Hyperion…) to ~{_logop_num(us_cap_end_lf)} by "
+        f"{horizon.year}; China "
         f"~{_logop_num(cn_cap_lo_lf)}–{_logop_num(cn_cap_hi_lf)} (estimated) — "
         "plenty of chips (smuggled NVIDIA + domestic Ascend), but too dispersed "
         "and its networking too export-controlled to fuse into one run. Capacity "
@@ -9206,7 +9210,8 @@ def _cc_us_vs_china(cc_rows, today):
         f"country's Chart-A compute growth, **plus a shared ~{b_algo:.0f} pts/yr "
         "algorithmic term** (methods diffuse). Bands = compute-growth ranges, so "
         f"the divergence is purely the compute gap — ~{gap_end:.0f} pts "
-        f"(~{mo_end:.0f} mo) by end-2029. **Dotted** = algorithmic-only; the "
+        f"(~{mo_end:.0f} mo) by end-{horizon.year}. **Dotted** = "
+        "algorithmic-only; the "
         "**shaded gap** to the dashed line is compute's contribution, wider for "
         "the US.")
 
@@ -9271,7 +9276,7 @@ def _cc_us_vs_china(cc_rows, today):
 
         st.markdown(
             "| Scenario | China algo rate | China ECI/yr (algo+compute) | "
-            "China ECI end-2029 | Behind US |\n"
+            f"China ECI end-{horizon.year} | Behind US |\n"
             "|---|---|---|---|---|\n"
             f"| **US algo growth** (shared) | {us_algo:.1f} pts/yr | "
             f"{slope_usalgo:.1f} pts/yr | ~{cn_end_us:.0f} | ~{mo_us:.0f} mo |\n"
@@ -10107,10 +10112,11 @@ def render_compute_capabilities():
         st.header("Compute vs Capabilities")
         include_future = st.checkbox("Include planned future buildout",
                                      value=True, key="cc_future")
-        st.caption(
-            "Compute inputs come from the Data Centers tab's series (largest "
-            "AI-lab site, 2-month train FLOP), with planned buildout through "
-            "2028.")
+        with st.expander("Projection range"):
+            cc_end_year = st.radio(
+                "Project through", _CC_END_YEARS, horizontal=True,
+                index=_CC_END_YEARS.index(_CC_DEFAULTS["cc_end_year"]),
+                key="cc_end_year")
         if st.button("Reset", key="cc_reset"):
             for k in _CC_RESET_KEYS:
                 st.session_state.pop(k, None)
@@ -10118,9 +10124,14 @@ def render_compute_capabilities():
             st.rerun()
 
     st.header("Compute vs Capabilities")
+    horizon = datetime(cc_end_year, 12, 31)
     # Shift capacity dates to the "Training run finished" milestone (the DC
     # tab's selector wording): a site online at D has trained a model by D+2mo.
-    cap_date = ((datetime(2028, 12, 31) if include_future else _today)
+    # The catalogue cap follows the horizon but never drops below end-2028, so
+    # the segment fits (whose eras all end by Jan 2029) are identical whatever
+    # year is selected — "Project through" moves the projections, not the rates.
+    cap_date = ((datetime(max(2028, cc_end_year), 12, 31) if include_future
+                 else _today)
                 + timedelta(days=_dc_timing_shift("Training run finished")))
     frontier = _cc_trainflop_frontier(dc_all, cap_date)
     if not frontier:
@@ -10420,12 +10431,12 @@ def render_compute_capabilities():
     # ══════════════════════════════════════════════════════════════════════
     st.subheader("ECI Forecasts")
     _cc_eci_forecast(cc_rows, frontier, _today, obs_slope, g_recent, g_planned,
-                     share_lo, share_mid, share_hi)
+                     share_lo, share_mid, share_hi, horizon=horizon)
 
     # ══════════════════════════════════════════════════════════════════════
     # Section 3: US vs. China — the same decomposition read by country
     # ══════════════════════════════════════════════════════════════════════
-    _cc_us_vs_china(cc_rows, _today)
+    _cc_us_vs_china(cc_rows, _today, horizon=horizon)
 
 
 # ── URL parameter persistence ────────────────────────────────────────────

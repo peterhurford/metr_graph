@@ -844,15 +844,30 @@ class TestComputeVsCapabilities:
         _assert_no_error(at, "Compute vs Capabilities / no future")
 
     def test_dc_derivation_is_stated(self):
-        """The tab says where its compute inputs come from: the sidebar note
-        and the US-vs-China cross-check caption both name the Data Centers
-        tab, and the China band is quoted against the catalogued paces rather
-        than asserted in a vacuum."""
+        """The tab says where its compute inputs come from: the
+        Physical-compute provenance caption and the US-vs-China cross-check
+        caption both name the Data Centers tab, and the China band is quoted
+        against the catalogued paces rather than asserted in a vacuum."""
         at = self._cc_app()
         caps = " ".join(str(c.value) for c in at.caption).lower()
         assert "data centers tab" in caps
         assert "cross-check" in caps
         assert "china-accessible" in caps
+
+    def test_project_through_horizon(self):
+        """The Projection range expander's 'Project through' year moves the
+        forecast horizon: milestone cards, the end-year gap metric and the
+        captions all follow it, at both ends of the offered range."""
+        at = self._cc_app()
+        at.radio(key="cc_end_year").set_value(2031).run()
+        _assert_no_error(at, "Compute vs Capabilities / through 2031")
+        labels = " ".join(str(m.label) for m in at.metric)
+        assert "End 2031" in labels
+        assert "ECI gap end-2031" in labels
+        at.radio(key="cc_end_year").set_value(2027).run()
+        _assert_no_error(at, "Compute vs Capabilities / through 2027")
+        labels = " ".join(str(m.label) for m in at.metric)
+        assert "End 2027" in labels and "End 2029" not in labels
 
     def test_reset(self):
         at = self._cc_app()

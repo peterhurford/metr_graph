@@ -452,11 +452,19 @@ Four contracts, each guarded:
    and the China-accessible fit is a from-zero ramp the DC tab itself flags as hot. If a
    refresh breaks either test, retarget the constants deliberately.
 
-The tab states the derivation to the reader too: a sidebar note and cross-check
-captions deep-linking `?tab=datacenters` (the compute frontier itself is deliberately
-not charted — the tab is about the exchange rate, not the buildout) —
+The tab states the derivation to the reader too: provenance and cross-check captions
+deep-linking `?tab=datacenters` (the compute frontier itself is deliberately not
+charted — the tab is about the exchange rate, not the buildout) —
 `test_dc_derivation_is_stated` (integration) asserts they render. The lab-only
 exclusion contract is unchanged (`test_compute_capabilities_frontier_stays_lab_only`).
+A *Projection range* expander holds a *Project through* year radio (`cc_end_year`,
+`_CC_END_YEARS`, default 2029, DC-tab pattern) driving the horizon of the ECI
+forecast, the US-vs-China section and their year-labelled cards/captions. It moves
+the projections only, never the rates: the catalogue cap follows the horizon but
+never drops below end-2028, and every fit era ends by Jan 2029, so the segment fits
+are identical whatever year is selected (`test_project_through_horizon`,
+integration). The China-ETA panel keeps its own adaptive horizon — it charts a
+crossing date, not a range.
 
 ### Compute vs Capabilities — China's ETA to a target ECI
 
