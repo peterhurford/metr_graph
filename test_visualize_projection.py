@@ -2991,6 +2991,83 @@ class TestDcAxisScale:
         assert biggest > 1e6, "series must still hold raw H100 counts"
 
 
+class TestDcCompanyAliases:
+    """Distinct Epoch labels that presentation treats as one company.
+
+    Google is the case that motivated the map: every Google site is
+    Owner="Google", but only some carry Users="Google DeepMind #speculative",
+    and company_for() is user-first — so one TPU fleet split in two on nothing
+    but whether Epoch filled an optional cell. The split drew two Google lines
+    (Google blue landing on the smaller one), made the pooled Columbus cluster
+    depend on both its Google sites happening to share a tag, and left the
+    quarterly table reporting the minority series."""
+
+    def _dc_meta_rows(self):
+        return list(csv.DictReader(open(
+            os.path.join(os.path.dirname(vp.__file__), "data_centers.csv"))))
+
+    def test_no_aliased_label_survives_into_company_labels(self):
+        labels = {dc['company'] for dc in vp.dc_all}
+        for alias, target in vp._DC_COMPANY_ALIASES.items():
+            assert alias not in labels, f"{alias!r} was not merged into {target!r}"
+            assert target in labels, f"alias target {target!r} matches no site"
+
+    def test_every_google_owned_site_is_one_company(self):
+        """Against the live CSV, so a refresh that tags (or untags) a site's
+        Users cell can't re-split the fleet."""
+        by_name = {dc['name']: dc['company'] for dc in vp.dc_all}
+        owned = {(r.get('Name') or '').strip()
+                 for r in self._dc_meta_rows()
+                 if vp._dc_clean_owner(r.get('Owner', '')).startswith('Google')}
+        assert len(owned) > 1
+        labelled = {by_name[n] for n in owned if n in by_name}
+        assert labelled == {'Google'}, labelled
+
+    def test_merge_is_load_bearing(self):
+        """Both spellings are actually present upstream — if Epoch ever stops
+        emitting the DeepMind tag the map is dead weight and can go."""
+        users = {vp._dc_clean_owner((r.get('Users', '') or '').split(',')[0])
+                 for r in self._dc_meta_rows()}
+        assert 'Google DeepMind' in users
+        assert 'Google' in {vp._dc_clean_owner(r.get('Owner', ''))
+                            for r in self._dc_meta_rows()}
+
+    def test_no_company_label_is_a_qualified_form_of_another(self):
+        """Catches the next "Meta AI" vs "Meta" style split before it ships."""
+        labels = {dc['company'] for dc in vp.dc_all}
+        for a in labels:
+            for b in labels:
+                if a != b and b.startswith(a + ' '):
+                    pytest.fail(f"{b!r} looks like a split-off of {a!r}; "
+                                "add it to _DC_COMPANY_ALIASES")
+
+    def test_alias_targets_keep_their_brand_colour(self):
+        """The merged label is the one that draws, so it's the one that needs
+        the colour — under the split, Google blue went to the smaller line."""
+        for target in set(vp._DC_COMPANY_ALIASES.values()):
+            assert target in vp._DC_COLORS
+
+    def test_quarterly_table_companies_resolve_without_aliasing(self):
+        """The table's column keys index _dc_company_series() directly now; it
+        used to carry its own alias tuple and take the first spelling that
+        existed, which silently picked the minority series."""
+        series = {n: v for n, v in
+                  vp._dc_series_for_metric(vp.dc_all, 'h100').items()
+                  if v['company'] not in vp._DC_EXCLUDE_COMPANIES}
+        comp = vp._dc_company_series(series)
+        for co in ["OpenAI", "Anthropic", "Google", "Meta", "SpaceXAI", "Alibaba"]:
+            assert comp.get(co), f"table column {co!r} has no series"
+        # Compared against every Google-*owned* site in the CSV, not just the
+        # ones currently labelled Google, so the column can't quietly fall back
+        # to a subset of the fleet the way the old alias tuple did.
+        owned = {(r.get('Name') or '').strip()
+                 for r in self._dc_meta_rows()
+                 if vp._dc_clean_owner(r.get('Owner', '')).startswith('Google')}
+        pts = [val for n in owned if n in series
+               for _d, val in series[n]['pts']]
+        assert max(v for _d, v, _n in comp['Google']) == max(pts)
+
+
 class TestDcNetworkClusters:
     """The curated map of sites that could share one training job."""
 

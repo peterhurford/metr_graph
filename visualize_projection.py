@@ -910,13 +910,33 @@ def _dc_clean_owner(s):
     return (s or '').split('#')[0].strip()
 
 
+# Distinct Epoch labels that are one company for presentation. Applied to the
+# derived company label, never to the CSVs.
+#
+# Google is the load-bearing case: every Google site is Owner="Google", but only
+# some also carry Users="Google DeepMind #speculative" and the rest leave Users
+# blank, so company_for() (user-first, owner-fallback) split one fleet in two on
+# but whether Epoch filled an optional, self-tagged-speculative cell — Lancaster,
+# with Users blank, lists the same TPU v5e/v5p/v6e/v7 as the tagged sites. The
+# split put Google blue on the smaller of two lines, made the pooled Columbus
+# cluster depend on both its Google sites happening to share a tag, and had the
+# quarterly table reporting the minority series (2.6x low by 2027Q4). The rest of
+# the app already merges them: _cc_lab_for_site() maps owner "Google*" to Google,
+# and the ECI tabs substring-match "Google" for the same reason.
+_DC_COMPANY_ALIASES = {
+    "Google DeepMind": "Google",
+}
+
+
 @st.cache_data
 def load_data_centers(_mtime=None):
     """Load Epoch's per-data-center capacity timelines plus an owner→company map.
 
-    Returns a list of dicts: {name, company, points:[{date, status, h100,
-    it_power, power, perf, cost}, ...]} with points sorted by date. Metric values
-    are floats or None when missing.
+    Returns a list of dicts: {name, company, attributed, points:[{date, status,
+    h100, it_power, power, perf, cost}, ...]} with points sorted by date. Metric
+    values are floats or None when missing. `attributed` is False when the
+    company label came from the site-name fallback rather than a recorded user
+    or owner.
     """
     base = os.path.dirname(__file__)
 
@@ -938,11 +958,22 @@ def load_data_centers(_mtime=None):
                 user_by_dc[name] = _dc_clean_owner(primary_user)
 
     def company_for(dc_name):
-        return (user_by_dc.get(dc_name, '')
-                or owner_by_dc.get(dc_name, '')
-                # Fallback for colocation sites with no listed user/owner:
-                # use the first token of the site name (QTS, DayOne, EdgeCore…).
-                or (dc_name.split()[0] if dc_name.split() else dc_name))
+        label = (user_by_dc.get(dc_name, '')
+                 or owner_by_dc.get(dc_name, '')
+                 # Fallback for colocation sites with no listed user/owner:
+                 # use the first token of the site name (QTS, DayOne, EdgeCore…).
+                 or (dc_name.split()[0] if dc_name.split() else dc_name))
+        return _DC_COMPANY_ALIASES.get(label, label)
+
+    def attributed_for(dc_name):
+        """True when Epoch actually records who uses or owns the site.
+
+        False means company_for() fell through to the site-name token, so the
+        label is a landlord read off the building's name and the tenant actually
+        training on the hardware is unknown. The charts mark those companies —
+        see _dc_unattributed_companies().
+        """
+        return bool(user_by_dc.get(dc_name, '') or owner_by_dc.get(dc_name, ''))
 
     def _num(r, key):
         v = (r.get(key, '') or '').strip().replace(',', '')
@@ -995,7 +1026,8 @@ def load_data_centers(_mtime=None):
     dcs = []
     for name, pts in series.items():
         pts.sort(key=lambda p: p['date'])
-        dcs.append({'name': name, 'company': company_for(name), 'points': pts})
+        dcs.append({'name': name, 'company': company_for(name),
+                    'attributed': attributed_for(name), 'points': pts})
     dcs.sort(key=lambda dc: dc['name'])
     return dcs
 
@@ -1103,6 +1135,75 @@ _DC_EXCLUDE_COMPANIES = {
     "QTS", "DayOne", "CoreWeave", "STACK", "Stream", "Vantage", "EdgeCore",
     "Oracle", "Microsoft",
 }
+
+# …but only while they stay small. Peak single-site H100-equivalents at or above
+# this and the company is charted anyway. See _dc_hidden_companies().
+_DC_EXCLUDE_MIN_H100 = 100_000
+
+
+def _dc_company_peak_h100(dcs):
+    """company → its largest single site's peak H100-equivalents (uncapped)."""
+    peak = {}
+    for dc in dcs:
+        vals = [p['h100'] for p in dc['points'] if p.get('h100') is not None]
+        if vals:
+            peak[dc['company']] = max(peak.get(dc['company'], 0.0), max(vals))
+    return peak
+
+
+def _dc_hidden_companies(dcs):
+    """The subset of _DC_EXCLUDE_COMPANIES small enough to leave off the tab.
+
+    The exclude list names companies that aren't AI labs — colocation and
+    neutral-host operators whose recorded "company" is a landlord rather than
+    whoever trains on the hardware. Hiding them unconditionally was fine only
+    while they were small, and they are not: QTS Cedar Rapids is the single
+    largest site in Epoch's data, so dropping it made "Largest single data
+    center" understate the frontier by naming a smaller site as the record
+    holder. Size now gates the exclusion — a listed company disappears only
+    while its biggest site stays under _DC_EXCLUDE_MIN_H100.
+
+    The threshold is deliberately read off peak **uncapped H100-equivalents**,
+    not off the metric and date window currently selected:
+
+      • Who appears is a property of the company, not of the chart controls. A
+        roster that changed when the user moved the projection-year slider or
+        toggled planned buildout would read as sites blinking in and out.
+      • H100-equivalents are the only metric the threshold is meaningful in —
+        the same number in megawatts or dollars means something else entirely,
+        and two of the metrics are inverted (bigger site = smaller value).
+
+    Companies not on the exclude list are unaffected; this only ever un-hides.
+    """
+    peak = _dc_company_peak_h100(dcs)
+    return {co for co in _DC_EXCLUDE_COMPANIES
+            if peak.get(co, 0.0) < _DC_EXCLUDE_MIN_H100}
+
+
+def _dc_unattributed_companies(dcs):
+    """Companies whose every site's label is a guess from the building's name.
+
+    Epoch records no user and no owner for these, so load_data_centers() falls
+    back to the first token of the site name: the capacity is real but the
+    tenant is unknown, and "QTS" on a chart means a landlord, not an AI lab
+    running 1.7M H100-equivalents. Rendered with a † and a footnote wherever the
+    company is named. A company with even one properly attributed site is left
+    alone — Microsoft is listed as its own sites' user, so it is not marked.
+    """
+    seen, attributed = set(), set()
+    for dc in dcs:
+        seen.add(dc['company'])
+        if dc.get('attributed'):
+            attributed.add(dc['company'])
+    return seen - attributed
+
+
+_DC_UNATTRIBUTED_MARK = " †"
+
+
+def _dc_co_label(co, unattributed):
+    """Company name for display, marked when nobody is recorded as using it."""
+    return co + _DC_UNATTRIBUTED_MARK if co in unattributed else co
 
 
 def _fmt_duration_days(days):
@@ -7189,15 +7290,7 @@ def render_data_centers():
     # Section 4: Quarterly capacity-by-company table
     # ══════════════════════════════════════════════════════════════════════
     _table_cos = ["OpenAI", "Anthropic", "Google", "Meta", "SpaceXAI", "Alibaba"]
-    # Epoch's operator names don't always match the display label.
-    _co_aliases = {"Google": ("Google", "Google DeepMind")}
     _q_ends = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}
-
-    def _steps_for(co):
-        for k in _co_aliases.get(co, (co,)):
-            if k in comp:
-                return comp[k]
-        return []
 
     def _co_val_at(steps, t):
         """Forward-filled company value at date t (latest step on/before t)."""
@@ -7209,7 +7302,7 @@ def render_data_centers():
                 break
         return cur
 
-    _col_steps = {co: _steps_for(co) for co in _table_cos}
+    _col_steps = {co: comp.get(co, []) for co in _table_cos}
     md = ["| Quarter | " + " | ".join(_table_cos) + " |",
           "|" + "---|" * (len(_table_cos) + 1)]
     for yr in range(dc_start_year, dc_end_year + 1):

@@ -109,6 +109,28 @@ Widget defaults live in per-tab `_RESET_DEFAULTS`; each tab's `_RESET_KEYS` list
   forward either — the axis is relabelled via `_dc_duration_ticks()` through
   `_dc_layout(kind=…)`, with a caption noting the labelled time shrinks as the line rises
 
+### Data-center company labels
+
+`load_data_centers()` attributes a site to its primary listed `Users` value, falling back to
+`Owner`, then to the first token of the site name. `_DC_COMPANY_ALIASES` then folds distinct
+Epoch labels that are one company for presentation — currently just `Google DeepMind` →
+`Google`. It applies to the derived label only; the CSVs keep Epoch's spellings.
+
+Google is why it exists. Every Google site is `Owner="Google"`, but only some also carry
+`Users="Google DeepMind #speculative"`, so a user-first rule split one TPU fleet in two on
+nothing but whether Epoch filled an optional cell (Lancaster, `Users` blank, lists the same
+TPU v5e/v5p/v6e/v7 as the tagged sites). That split drew two Google lines with Google blue on
+the smaller one, left the pooled Columbus cluster dependent on both its Google sites
+happening to share a tag, and had the quarterly table reporting the minority series — 2.6x
+low by 2027Q4, contradicting the chart directly above it. The rest of the app already merged
+them: `_cc_lab_for_site()` maps owner `Google*` to `Google`, and the ECI tabs substring-match
+`"Google"` for the same reason.
+
+`TestDcCompanyAliases` checks against the live CSV that every Google-owned site resolves to
+one company, that both spellings are still present upstream (so the map isn't dead weight),
+and that no label is a qualified form of another — the guard that would catch the next
+`Meta AI`-vs-`Meta` style split.
+
 ### Networkable data-center clusters
 
 The Data Centers tab's last chart sums the sites a company could plausibly drive as **one**
