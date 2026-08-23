@@ -425,14 +425,17 @@ length (`_PC_RUN_OPTIONS`, reusing the loader's `train_flop*` columns — 30%
 utilization, Epoch 8-bit OP/s). Deliberately thin: it reuses the Data Centers tab's
 machinery rather than growing its own.
 
-1. **Entities are the DC tab's, at fixed defaults.** Companies via
-   `_dc_company_networked_series` at the `'fabric'` pooling level with
+1. **Entities are the DC tab's, under two extra axes.** Companies via
+   `_dc_company_networked_series` at the sidebar's pooling level (`pc_pool` reuses
+   `_DC_NETWORK_OPTIONS` verbatim; 'none' → `cluster_of={}`, 'all' → `None`) with
    `_dc_hidden_companies` applied and † from `_dc_unattributed_companies`; then three
    country aggregates (US, China-accessible, China domestic) via `_dc_country_steps`
-   mode `'company'` on the **unfiltered** site list. Tenant-first attribution means
-   Colossus 1/2 count under Anthropic, not SpaceXAI — same as the DC tab; a
-   tenant/operator toggle is a candidate next iteration (see `pacing-tab-wip` for a
-   parked version).
+   (mode `'site'` when nothing pools, else `'company'`) on the **unfiltered** site
+   list. `pc_party` picks the attribution: the loader now carries both `tenant`
+   (= its `company` label: first-listed user → owner → name token) and `operator`
+   (owner → token), and `_dc_with_party()` re-points `company` at the chosen one —
+   under 'operator', Colossus flips from Anthropic to SpaceXAI and Stargate Abilene
+   to Oracle, and the hidden/unattributed sets are recomputed on that view.
 2. **The projection is the by-country model, unchanged.** `_pc_projection()` calls
    `_dc_cty_fit` (since=`_DC_DEFAULTS["dc_cty_since"]`, plan horizon anchored) and
    `_dc_cty_trajectories` (plan slip by `_dc_plan_quality`); non-US entities borrow

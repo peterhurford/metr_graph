@@ -1034,8 +1034,15 @@ def load_data_centers(_mtime=None):
     dcs = []
     for name, pts in series.items():
         pts.sort(key=lambda p: p['date'])
+        token = name.split()[0] if name.split() else name
+        # Raw attribution, for tabs that show who owns the building separately
+        # from who trains in it. Both fall through to the site-name token like
+        # company_for(); 'tenant' is exactly company_for()'s label.
+        operator = owner_by_dc.get(name, '') or token
         dcs.append({'name': name, 'company': company_for(name),
                     'attributed': attributed_for(name), 'points': pts,
+                    'operator': _DC_COMPANY_ALIASES.get(operator, operator),
+                    'tenant': company_for(name),
                     'country': country_by_dc.get(name, '')})
     dcs.sort(key=lambda dc: dc['name'])
     return dcs
@@ -1448,6 +1455,16 @@ def _dc_fmt_value(v, kind):
         # v is training runs per 2-month window; report the time for one run.
         return _fmt_duration_days(_DAYS_2MO / v) if v > 0 else "—"
     return f"{v:g}"
+
+
+def _dc_with_party(dcs, party):
+    """The site list with `company` re-pointed at `party` ('tenant' or
+    'operator'). 'tenant' reproduces load_data_centers() exactly; 'operator'
+    credits a leased cluster to its owner instead of its first-listed user —
+    Colossus flips from Anthropic to SpaceXAI, Stargate Abilene to Oracle."""
+    if party == 'tenant':
+        return dcs
+    return [dict(dc, company=dc[party]) for dc in dcs]
 
 
 def _dc_series_for_metric(dcs, key, cap_date=None):
@@ -10495,8 +10512,12 @@ def _sync_session_to_url():
 _PC_THRESHOLDS = ("1e27", "3e27", "5e27", "1e28", "2e28", "5e28", "1e29")
 _PC_RUN_OPTIONS = {"6-month run": "train_flop_6mo", "2-month run": "train_flop"}
 _PC_HORIZON = datetime(2033, 12, 1)   # crossing-search grid end
-_PC_RESET_KEYS = ["pc_threshold", "pc_run"]
-_PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run"}
+_PC_PARTY_OPTIONS = {"Tenant (who trains there)": 'tenant',
+                     "Operator (who owns the building)": 'operator'}
+_PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party"]
+_PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run",
+                "pc_pool": "Nearby + announced fabric",
+                "pc_party": "Tenant (who trains there)"}
 
 
 def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
@@ -10524,7 +10545,8 @@ def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
     for label, names in [(_DC_CTY_US, groups.get(_DC_CTY_US, [])),
                          (_DC_CTY_CN_ACCESS, groups.get(_DC_CTY_CN_ACCESS, [])),
                          (_DC_CTY_CN_DOMESTIC, dom)]:
-        steps = _dc_country_steps(series_all, names, 'company', cluster_of)
+        mode = 'site' if cluster_of == {} else 'company'
+        steps = _dc_country_steps(series_all, names, mode, cluster_of)
         s2 = [(d, v) for d, v, _ in steps]
         if s2 and any(v > 0 for _, v in s2):
             rows.append((label, 'country', s2, tuple(names)))
@@ -10624,6 +10646,24 @@ def render_pacing():
             key="pc_run",
             help="How long the job occupies the cluster; a longer run clears "
                  "the bar on less hardware.")
+        if st.session_state.get("pc_pool") not in _DC_NETWORK_OPTIONS:
+            st.session_state.pop("pc_pool", None)
+        net_label = st.selectbox(
+            "Data centers networked together", list(_DC_NETWORK_OPTIONS),
+            index=list(_DC_NETWORK_OPTIONS).index(_PC_DEFAULTS["pc_pool"]),
+            key="pc_pool",
+            help="Same levels as the Data Centers tab: how many sites one "
+                 "entity can drive as a single training job.")
+        if st.session_state.get("pc_party") not in _PC_PARTY_OPTIONS:
+            st.session_state.pop("pc_party", None)
+        party_label = st.radio(
+            "Attribute each site to", list(_PC_PARTY_OPTIONS),
+            index=list(_PC_PARTY_OPTIONS).index(_PC_DEFAULTS["pc_party"]),
+            key="pc_party",
+            help="Tenant is Epoch's first-listed user, falling back to the "
+                 "owner; operator is the owner. They differ where a cluster "
+                 "is leased out — Colossus (SpaceXAI's building; Anthropic "
+                 "trains there) and Stargate Abilene (Oracle's; OpenAI).")
         if st.button("Reset", key="pc_reset"):
             for k in _PC_RESET_KEYS:
                 st.session_state.pop(k, None)
@@ -10632,23 +10672,29 @@ def render_pacing():
 
     threshold = float(threshold_label)
     key = _PC_RUN_OPTIONS[run_label]
+    basis = _DC_NETWORK_OPTIONS[net_label]
+    party = _PC_PARTY_OPTIONS[party_label]
 
     st.header("Pacing")
     st.caption(
         f"When each entity can first mount **one ≥{threshold_label}-op training "
         f"job** ({run_label.lower()}, {_DC_UTILIZATION:.0%} utilization, Epoch "
-        "8-bit OP/s ratings), from the Frontier Data Centers catalogue.")
+        "8-bit OP/s ratings), from the Frontier Data Centers catalogue. "
+        f"Sites pooled at *{net_label.lower()}*, attributed to the "
+        f"{party}.")
 
     # ── Entities and projections ──
-    series_all = _dc_series_for_metric(dc_all, key, cap_date=None)
-    hidden = _dc_hidden_companies(dc_all, now=_today)
+    dc_view = _dc_with_party(dc_all, party)
+    series_all = _dc_series_for_metric(dc_view, key, cap_date=None)
+    hidden = _dc_hidden_companies(dc_view, now=_today)
     series_shown = {n: v for n, v in series_all.items()
                     if v['company'] not in hidden}
-    cluster_of = _dc_network_site_clusters('fabric')
-    country_of = {dc['name']: _dc_site_country(dc) for dc in dc_all}
+    cluster_of = ({} if basis == 'none' else None if basis == 'all'
+                  else _dc_network_site_clusters(basis))
+    country_of = {dc['name']: _dc_site_country(dc) for dc in dc_view}
     rows = _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
-                           unattributed=_dc_unattributed_companies(dc_all))
-    grid, traj = _pc_projection(rows, dc_all, _today,
+                           unattributed=_dc_unattributed_companies(dc_view))
+    grid, traj = _pc_projection(rows, dc_view, _today,
                                 since=_DC_DEFAULTS["dc_cty_since"])
 
     recs = []
@@ -10699,7 +10745,7 @@ def render_pacing():
                 marker=dict(color=color, size=10, symbol='circle'),
                 showlegend=False, hoverinfo='text',
                 hovertext=[f"<b>{r['label']}</b><br>crossed "
-                           f"{r['plan']:%b %Y} (in the catalogue)"]))
+                           f"{r['plan']:%b %Y}"]))
             continue
         lo, hi = r['lo'], r['hi']
         if lo is not None:

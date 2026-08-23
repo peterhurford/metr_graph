@@ -3934,6 +3934,43 @@ class TestPacing:
         idx = vp._pc_crossing_idx(us, 1e27)
         assert (idx == 0).all()
 
+    def test_party_attribution_carried_by_loader(self):
+        """Every site carries both attributions; 'tenant' is exactly the
+        loader's company label, 'operator' the building's owner."""
+        by = {dc['name']: dc for dc in vp.dc_all}
+        assert all(dc['tenant'] == dc['company'] for dc in vp.dc_all)
+        assert by['Colossus 2']['tenant'] == 'Anthropic'
+        assert by['Colossus 2']['operator'] == 'SpaceXAI'
+        assert by['OpenAI Stargate Abilene']['tenant'] == 'OpenAI'
+        assert by['OpenAI Stargate Abilene']['operator'] == 'Oracle'
+        assert set(vp._PC_PARTY_OPTIONS.values()) == {'tenant', 'operator'}
+
+    def test_with_party_relabels_only_the_company(self):
+        assert vp._dc_with_party(vp.dc_all, 'tenant') is vp.dc_all
+        view = vp._dc_with_party(vp.dc_all, 'operator')
+        for dc, v in zip(vp.dc_all, view):
+            assert v['company'] == dc['operator']
+            assert v['name'] == dc['name'] and v['points'] is dc['points']
+
+    def test_pool_menu_is_the_dc_tabs_and_nests(self):
+        """The pacing pooling selector reuses _DC_NETWORK_OPTIONS, and a wider
+        basis never shrinks an entity's final capacity."""
+        assert vp._PC_DEFAULTS["pc_pool"] in vp._DC_NETWORK_OPTIONS
+        assert vp._DC_NETWORK_OPTIONS[vp._PC_DEFAULTS["pc_pool"]] == 'fabric'
+        series_all = vp._dc_series_for_metric(vp.dc_all, 'train_flop_6mo',
+                                              cap_date=None)
+        country_of = {dc['name']: vp._dc_site_country(dc) for dc in vp.dc_all}
+        prev = {}
+        for basis in ('none', 'proximity', 'fabric', 'plausible', 'all'):
+            cluster_of = ({} if basis == 'none' else None if basis == 'all'
+                          else vp._dc_network_site_clusters(basis))
+            rows = vp._pc_entity_rows(series_all, series_all, country_of,
+                                      cluster_of)
+            finals = {l: s[-1][1] for l, _, s, _ in rows}
+            for l, v in prev.items():
+                assert finals.get(l, 0) >= v * (1 - 1e-9), (basis, l)
+            prev = finals
+
     def test_projection_crossing_orders_by_threshold_on_live_data(self):
         rows = self._rows()
         grid, traj = vp._pc_projection(rows, vp.dc_all, datetime(2026, 8, 1),

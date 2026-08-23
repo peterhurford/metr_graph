@@ -1060,9 +1060,33 @@ class TestPacingTab:
         at.radio(key="pc_run").set_value("2-month run").run()
         _assert_no_error(at, "Pacing / 2-month run")
 
+    def test_every_pooling_option_renders(self):
+        at = self._app()
+        for label in ["Single site (no networking)", "Nearby only",
+                      "Nearby + plausible fabric", "Every site (implausible)"]:
+            at.selectbox(key="pc_pool").set_value(label).run()
+            _assert_no_error(at, f"Pacing / {label}")
+
+    def test_operator_attribution_changes_the_roster(self):
+        at = self._app()
+        tenant_ents = set(at.table[-1].value["Entity"])
+        at.radio(key="pc_party").set_value(
+            "Operator (who owns the building)").run()
+        _assert_no_error(at, "Pacing / operator")
+        op_ents = set(at.table[-1].value["Entity"])
+        # Anthropic's biggest clusters are leased (Colossus, Lake Mariner);
+        # under operator attribution the landlords appear instead.
+        assert op_ents != tenant_ents
+        assert "Oracle" in op_ents
+
     def test_reset_restores_defaults(self):
         at = self._app()
         at.selectbox(key="pc_threshold").set_value("1e27").run()
+        at.radio(key="pc_party").set_value(
+            "Operator (who owns the building)").run()
         [b for b in at.button if b.key == "pc_reset"][0].click().run()
         _assert_no_error(at, "Pacing / reset")
         assert at.selectbox(key="pc_threshold").value == "1e28"
+        assert at.radio(key="pc_party").value == "Tenant (who trains there)"
+        assert at.selectbox(key="pc_pool").value == \
+            "Nearby + announced fabric"
