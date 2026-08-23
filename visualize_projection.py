@@ -1240,7 +1240,6 @@ _DC_CTY_FIT_SINCE = 2023
 _DC_CTY_FIT_WINDOWS = (2023, 2024, 2025, 2026)
 _DC_CTY_SIGMA_G_FLOOR = 0.10      # OOM/yr, 1σ
 _DC_CTY_MIN_FIT_POINTS = 6        # monthly samples; fewer → borrow the US pace
-_DC_CTY_HORIZONS = [2028, 2029, 2030, 2031]
 _DC_CTY_SINCE_YEARS = [2023, 2024, 2025, 2026]
 _DC_CTY_CN_DOMESTIC = "China (domestic only)"
 _DC_CTY_PACE_OPTIONS = {
@@ -7024,8 +7023,7 @@ def render_eci_gap():
 # ── Data Centers ───────────────────────────────────────────────────────────
 
 _DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing", "dc_pool_n",
-                  "dc_start_year", "dc_end_year", "dc_cty_pace", "dc_cty_since",
-                  "dc_cty_horizon"]
+                  "dc_start_year", "dc_end_year", "dc_cty_pace", "dc_cty_since"]
 _DC_DEFAULTS = {
     "dc_metric": "Compute (H100-equiv)",
     "dc_log": True,
@@ -7036,13 +7034,12 @@ _DC_DEFAULTS = {
     "dc_end_year": 2027,
     "dc_cty_pace": "The US trend for every country (a follower tracks the leader)",
     "dc_cty_since": 2024,
-    "dc_cty_horizon": 2030,
 }
 
 # Chart/projection window options. The start clips the left edge of every chart
 # in the tab; the end caps how far planned buildout is carried forward.
 _DC_START_YEARS = [2023, 2024, 2025, 2026]
-_DC_END_YEARS = [2026, 2027, 2028, 2029]
+_DC_END_YEARS = [2026, 2027, 2028, 2029, 2030, 2031]
 
 # What the networked-sites section may pool, ordered weakest-claim first after
 # the default. Values name the cluster level fed to _dc_network_site_clusters();
@@ -7636,10 +7633,6 @@ def render_data_centers():
                 key="dc_cty_since",
                 help="Early windows run hot (ramp from zero); late ones run "
                      "cool (under-catalogued).")
-            cty_horizon = st.radio(
-                "Extrapolate through", _DC_CTY_HORIZONS, horizontal=True,
-                index=_DC_CTY_HORIZONS.index(_DC_DEFAULTS["dc_cty_horizon"]),
-                key="dc_cty_horizon")
         with st.expander("Projection range"):
             dc_start_year = st.radio(
                 "Chart starts", _DC_START_YEARS, horizontal=True,
@@ -7649,8 +7642,8 @@ def render_data_centers():
                 "Project through", _DC_END_YEARS, horizontal=True,
                 index=_DC_END_YEARS.index(_DC_DEFAULTS["dc_end_year"]),
                 key="dc_end_year", disabled=not include_future,
-                help="Planned buildout dated past this year is dropped. "
-                     "Only applies with planned future buildout on.")
+                help="Planned buildout dated past this year is dropped, and "
+                     "the by-country extrapolation runs to its end.")
         if st.button("Reset", key="dc_reset"):
             for k in _DC_RESET_KEYS:
                 st.session_state.pop(k, None)
@@ -8062,7 +8055,7 @@ def render_data_centers():
         metric_label=metric_label, kind=kind, log_scale=log_scale,
         shift_days=shift_days, include_future=include_future,
         pace_mode=_DC_CTY_PACE_OPTIONS[pace_label], since=cty_since,
-        horizon=cty_horizon, run_days=hover_run_days)
+        horizon=dc_end_year, run_days=hover_run_days)
 
     # Per-company: does the buildout predict releases?
     _cc_company_buildout(_today, cfg["key"], kind)

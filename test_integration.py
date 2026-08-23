@@ -942,13 +942,13 @@ class TestDataCentersByCountry:
             " ".join(str(h.value) for h in at.subheader)
         head = self._headline(at)
         assert len(head) == 1 and "China-accessible" in head[0] \
-            and "end-2030" in head[0]
+            and "end-2027" in head[0]
         table = at.table[-1].value
-        assert list(table["Year end"]) == ["2026", "2027", "2028", "2029", "2030"]
+        # The panel runs to the sidebar's "Project through" year.
+        assert list(table["Year end"]) == ["2026", "2027"]
         assert "China-accessible" in table.columns
         assert "China (domestic only)" in table.columns
         assert "Mainland China alone" in head[0]
-        assert at.radio(key="dc_cty_horizon").value == 2030
         assert at.radio(key="dc_cty_since").value == 2024
 
     def test_sits_above_the_buildout_panel_and_shares_the_sidebar_selector(self):
@@ -962,7 +962,7 @@ class TestDataCentersByCountry:
         # One networking selector, in the sidebar, drives both sections.
         assert len([sb for sb in at.selectbox if sb.key == "dc_pool_n"]) == 1
         assert at.sidebar.selectbox(key="dc_pool_n") is not None
-        assert at.sidebar.radio(key="dc_cty_horizon") is not None
+        assert at.sidebar.radio(key="dc_cty_since") is not None
 
     def test_every_control_renders(self):
         at = self._dc_app()
@@ -977,13 +977,16 @@ class TestDataCentersByCountry:
             at.radio(key="dc_cty_since").set_value(yr).run()
             _assert_no_error(at, f"by country / since {yr}")
 
-    def test_horizon(self):
+    def test_follows_the_projection_range(self):
         at = self._dc_app()
-        at.radio(key="dc_cty_horizon").set_value(2028).run()
-        _assert_no_error(at, "by country / 2028")
+        at.radio(key="dc_end_year").set_value(2030).run()
+        _assert_no_error(at, "by country / through 2030")
         head = self._headline(at)
-        assert "training run by end-2028" in head[0]
-        assert list(at.table[-1].value["Year end"]) == ["2026", "2027", "2028"]
+        assert "training run by end-2030" in head[0]
+        assert list(at.table[-1].value["Year end"]) == \
+            ["2026", "2027", "2028", "2029", "2030"]
+        at.radio(key="dc_start_year").set_value(2023).run()
+        _assert_no_error(at, "by country / from 2023")
 
     def test_trend_only_when_planned_buildout_is_off(self):
         at = self._dc_app()
@@ -1000,9 +1003,7 @@ class TestDataCentersByCountry:
 
     def test_reset_restores_panel_defaults(self):
         at = self._dc_app()
-        at.radio(key="dc_cty_horizon").set_value(2031)
         at.radio(key="dc_cty_since").set_value(2026).run()
         at.button(key="dc_reset").click().run()
         _assert_no_error(at, "by country / reset")
-        assert at.radio(key="dc_cty_horizon").value == 2030
         assert at.radio(key="dc_cty_since").value == 2024

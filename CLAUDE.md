@@ -294,8 +294,10 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    when nothing pools, else the largest networked group per company. `_dc_country_steps()`
    also has a `'country'` mode (every site summed — the Pacing-tab state-direction claim)
    that no control exposes yet; `test_pooling_modes_nest` holds site ≤ company ≤ country
-   and that `cluster_of={}` reproduces the envelope. The three projection controls (pace,
-   fit-since, horizon) live in the sidebar's *Country projection* expander.
+   and that `cluster_of={}` reproduces the envelope. The pace and fit-since controls live
+   in the sidebar's *Country projection* expander; the horizon is the tab's *Project
+   through* year (now offered to 2031), so the panel follows the sidebar's projection
+   range like every other chart on the tab.
 4. **The extrapolation is a log-linear OLS on monthly samples, anchored at the last
    recorded step.** `_dc_cty_fit()` samples the forward-filled step series monthly (not at
    event dates, which would weight dense periods), fits from the *Fit trend since* year,

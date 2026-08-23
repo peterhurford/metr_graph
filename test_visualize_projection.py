@@ -3720,11 +3720,9 @@ class TestDcByCountry:
         assert lag[0, 11] == -1 and unresolved[0, 11]
 
     def test_defaults_and_reset_keys(self):
-        for k in ("dc_cty_pace", "dc_cty_since",
-                  "dc_cty_horizon"):
+        for k in ("dc_cty_pace", "dc_cty_since"):
             assert k in vp._DC_RESET_KEYS and k in vp._DC_DEFAULTS
         assert vp._DC_DEFAULTS["dc_cty_pace"] in vp._DC_CTY_PACE_OPTIONS
-        assert vp._DC_DEFAULTS["dc_cty_horizon"] in vp._DC_CTY_HORIZONS
         assert vp._DC_DEFAULTS["dc_cty_since"] in vp._DC_CTY_SINCE_YEARS
         # The selectboxes have no index= so their first option must be the
         # default, and the borrowed-pace reading is the default on purpose.
