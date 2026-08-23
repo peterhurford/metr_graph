@@ -844,15 +844,25 @@ class TestComputeVsCapabilities:
         _assert_no_error(at, "Compute vs Capabilities / no future")
 
     def test_dc_derivation_is_stated(self):
-        """The tab says where its compute inputs come from: the sidebar note
-        and the US-vs-China cross-check caption both name the Data Centers
-        tab, and the China band is quoted against the catalogued paces rather
-        than asserted in a vacuum."""
+        """The tab says where its compute inputs come from: the
+        Physical-compute provenance caption and the US-vs-China cross-check
+        caption both name the Data Centers tab, and the China band is quoted
+        against the catalogued paces rather than asserted in a vacuum."""
         at = self._cc_app()
         caps = " ".join(str(c.value) for c in at.caption).lower()
         assert "data centers tab" in caps
         assert "cross-check" in caps
         assert "china-accessible" in caps
+
+    def test_project_as_of_backtest(self):
+        """Backdating the vantage reruns every fit on the pre-vantage models
+        and says so in a banner; the earliest offered quarter must render
+        clean (it is chosen so the '2025 H2 – today' segment still fits)."""
+        at = self._cc_app()
+        first = at.selectbox(key="cc_as_of").options[0]
+        at.selectbox(key="cc_as_of").set_value(first).run()
+        _assert_no_error(at, "Compute vs Capabilities / as-of backtest")
+        assert any("Projecting as of" in str(i.value) for i in at.info)
 
     def test_reset(self):
         at = self._cc_app()

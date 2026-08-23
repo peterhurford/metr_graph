@@ -7195,8 +7195,8 @@ _DC_NETWORK_OPTIONS = {
 }
 
 # Compute vs Capabilities tab
-_CC_RESET_KEYS = ["cc_future", "cc_company"]
-_CC_DEFAULTS = {"cc_future": True, "cc_company": "OpenAI"}
+_CC_RESET_KEYS = ["cc_future", "cc_as_of", "cc_company"]
+_CC_DEFAULTS = {"cc_future": True, "cc_as_of": "Today", "cc_company": "OpenAI"}
 
 # Fixed segment boundaries for the frontier-compute growth breakdown. Each entry
 # is (label, start, end); the last segment is the planned/under-construction tail.
@@ -8603,7 +8603,10 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     # Current frontier anchor: the true running-max ECI across *all* models, not
     # just the compute-having subset (the newest frontier models rarely disclose
     # training FLOP, so cc_rows would anchor on a stale model like GPT-5).
-    eci_all = load_eci_frontier(_mtime=_eci_mtime())
+    # Filtered to the vantage so a backdated projection anchors on what had
+    # shipped by then.
+    eci_all = [m for m in load_eci_frontier(_mtime=_eci_mtime())
+               if m['date'] <= today]
     anchor = max(eci_all, key=lambda m: m['eci_score']) if eci_all \
         else max(cc_rows, key=lambda m: m['eci'])
     anchor_name = anchor.get('display_name') or anchor.get('name', '')
@@ -8965,7 +8968,9 @@ def _cc_us_vs_china(cc_rows, today):
     """
     st.subheader("US vs. China")
 
-    eci_all = load_eci_frontier(_mtime=_eci_mtime())
+    # `cc_rows` arrives vantage-filtered; cut the frontier list the same way.
+    eci_all = [m for m in load_eci_frontier(_mtime=_eci_mtime())
+               if m['date'] <= today]
     us_fr = _cc_country_frontier(eci_all, 'United States of America')
     cn_fr = _cc_country_frontier(eci_all, 'China')
     us_cf, g_us = _cc_country_compute_frontier(cc_rows, 'United States of America')
@@ -10101,16 +10106,29 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
 
 
 def render_compute_capabilities():
-    _today = datetime.now()
+    _now = datetime.now()
+
+    # "Project as of" vantage — recent quarter-ends plus today, read from
+    # session state before the sidebar renders (the Revenue-tab pattern) so
+    # everything below can filter on it. Options start at 2025 Q3 so the
+    # "2025 H2 – today" capacity segment always has points to fit.
+    _vt_dates = _cc_quarter_ends(datetime(2025, 6, 30), _now)
+    _vt_labels = [f"{d:%b %d, %Y}" for d in _vt_dates] + ["Today"]
+    _vt_label = st.session_state.get("cc_as_of", "Today")
+    if _vt_label not in _vt_labels:
+        _vt_label = "Today"
+    _today = _now if _vt_label == "Today" else _vt_dates[_vt_labels.index(_vt_label)]
 
     with st.sidebar:
         st.header("Compute vs Capabilities")
         include_future = st.checkbox("Include planned future buildout",
                                      value=True, key="cc_future")
-        st.caption(
-            "Compute inputs come from the Data Centers tab's series (largest "
-            "AI-lab site, 2-month train FLOP), with planned buildout through "
-            "2028.")
+        st.selectbox(
+            "Project as of", _vt_labels, index=_vt_labels.index(_vt_label),
+            key="cc_as_of",
+            help="Backtest: run the tab from an earlier quarter's vantage — "
+                 "ECI releases after that date are hidden. The data-center "
+                 "catalogue stays today's knowledge either way.")
         if st.button("Reset", key="cc_reset"):
             for k in _CC_RESET_KEYS:
                 st.session_state.pop(k, None)
@@ -10118,6 +10136,11 @@ def render_compute_capabilities():
             st.rerun()
 
     st.header("Compute vs Capabilities")
+    if _today < _now:
+        st.info(f"Projecting as of **{_today:%b %d, %Y}** — models released "
+                "after this date are excluded from every fit and chart below; "
+                "the data-center catalogue (and its planned buildout) is "
+                "today's knowledge.")
     # Shift capacity dates to the "Training run finished" milestone (the DC
     # tab's selector wording): a site online at D has trained a model by D+2mo.
     cap_date = ((datetime(2028, 12, 31) if include_future else _today)
@@ -10136,7 +10159,10 @@ def render_compute_capabilities():
     # that exchange rate improves (algorithmic efficiency / iso-ECI)
     # ══════════════════════════════════════════════════════════════════════
     st.subheader("Compute ⟷ ECI")
-    cc_rows = load_eci_compute(_mtime=_eci_mtime())
+    # The vantage cutoff. Running-max flags are prefix-stable, so the
+    # loader-computed is_eci_frontier stays correct on the filtered list.
+    cc_rows = [m for m in load_eci_compute(_mtime=_eci_mtime())
+               if m['date'] <= _today]
     dec = _cc_decomp(cc_rows)
     eff = _cc_efficiency(cc_rows)
     if dec is None or eff is None:

@@ -452,11 +452,16 @@ Four contracts, each guarded:
    and the China-accessible fit is a from-zero ramp the DC tab itself flags as hot. If a
    refresh breaks either test, retarget the constants deliberately.
 
-The tab states the derivation to the reader too: a sidebar note and cross-check
-captions deep-linking `?tab=datacenters` (the compute frontier itself is deliberately
-not charted — the tab is about the exchange rate, not the buildout) —
+The tab states the derivation to the reader too: provenance and cross-check captions
+deep-linking `?tab=datacenters` (the compute frontier itself is deliberately not
+charted — the tab is about the exchange rate, not the buildout) —
 `test_dc_derivation_is_stated` (integration) asserts they render. The lab-only
 exclusion contract is unchanged (`test_compute_capabilities_frontier_stays_lab_only`).
+A *Project as of* selectbox (`cc_as_of`, Revenue-tab pattern) backdates the vantage to
+a recent quarter-end: ECI releases after it are filtered from every fit, chart and
+anchor, while the DC catalogue stays today's knowledge (there is no historical
+catalogue to rewind to) — a banner states both. Options start at 2025 Q3 so the
+"2025 H2 – today" capacity segment always has points to fit.
 
 ### Compute vs Capabilities — China's ETA to a target ECI
 
