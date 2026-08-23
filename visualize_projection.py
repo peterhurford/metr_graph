@@ -8626,6 +8626,17 @@ _CC_RELEASE_LAG_DAYS = _DAYS_2MO + _CC_RUN_COMPLETION_LAG.days   # 90d, expected
 # the full 90d pipeline (e.g. Sol, 84d after Fairwater Wisconsin). Anything shorter
 # than one training run (e.g. a model out ~2 weeks after a DC) still can't.
 _CC_TRAIN_FLOOR_DAYS = _DAYS_2MO   # 60d
+# Forward-direction counterpart of the floor. "First release on/after step + 90d"
+# misses a model that beat the pipeline by a few days — Sol shipped 84d after
+# Fairwater Wisconsin, so the strict rule left Wisconsin with no release at all
+# while the backward match happily tied Sol to it. A small grace window lets the
+# two directions agree. Deliberately *not* the full 30d that the 60d training
+# floor would allow: at 30d several clusters start claiming the same, earlier
+# model (Meta's Eagle Mountain, Temple and Prometheus steps would all match Muse
+# Spark), which makes the forward table degenerate. 7d changes exactly one
+# existing match (Google New Albany → Gemini 2.0 Flash, 6d early) and that one
+# moves *into* agreement with the backward match.
+_CC_EARLY_GRACE_DAYS = 7
 
 # Match a DC site to one of the 5 labs, owner-first for self-built clusters
 # (xAI/Meta/Google) then primary-user for labs that rent (OpenAI on
@@ -8743,6 +8754,106 @@ def _cc_company_frontier_models(_mtime=None):
     return out
 
 
+@st.cache_data
+def _cc_company_all_releases(_mtime=None):
+    """Every release per lab, record-setting or not — the fallback pool.
+
+    A cluster step whose window contains no running-max release still gets a
+    row from this list, so a real flagship that Epoch's live rescore pushed
+    under its predecessor doesn't leave the step blank. GPT-5.6 Sol is the
+    motivating case: the 2026-08-18 pull put it at 161.08, below GPT-5.5 Pro's
+    161.73, so it dropped out of _cc_company_frontier_models entirely and
+    Fairwater Wisconsin matched nothing.
+
+    Keyed on `(Model name, Release date)`, not `Display name`: the ~10
+    reasoning-effort rows of one model share a name and a date and must collapse
+    to one release (which suffixed variant wins a dedup is arbitrary and flips
+    between Epoch pulls), while a redated revision of the same name is a
+    separate release and must not (GPT-4o shipped 2024-05-13 and again
+    2024-08-06, and Epoch keeps both). Returns {lab: [(date, eci, name), …]}
+    sorted by date then descending ECI, so same-day releases are offered
+    strongest first (2026-07-09 ships Sol 161.08, Terra 158.78 and Luna 156.22
+    together). Labels are the bare model name; every caller prints the date
+    beside it, so two same-named revisions stay distinguishable.
+    """
+    base = os.path.dirname(__file__)
+    rows = list(csv.DictReader(open(os.path.join(base, 'epoch_capabilities_index.csv'))))
+    out = {}
+    for lab, match in _CC_LAB_ORG_MATCH.items():
+        by_name = {}
+        for r in rows:
+            if not match((r.get('Organization', '') or '').strip()):
+                continue
+            nm = (r.get('Model name', '') or '').strip()
+            ds = (r.get('Release date', '') or '').strip()
+            if not nm or not ds:
+                continue
+            try:
+                d = datetime.strptime(ds, '%Y-%m-%d')
+            except (ValueError, TypeError):
+                continue
+            try:
+                sc = float((r.get('ECI Score', '') or '').strip())
+            except (ValueError, TypeError):
+                sc = None
+            by_name.setdefault((nm, d), []).append(sc)
+        rel = []
+        for (nm, d), scores in by_name.items():
+            known = [x for x in scores if x is not None]
+            rel.append((d, max(known) if known else None, nm))
+        out[lab] = sorted(rel, key=lambda t: (t[0], -(t[1] or 0)))
+    return out
+
+
+def _cc_forward_match(step, frontier, all_rel, fm_resp, today):
+    """Forward (cluster step → release it enables) match, in three tiers.
+
+    `step` is a `(date, capacity, site)` milestone; `frontier` the lab's
+    running-max releases and `all_rel` every release, both `(date, eci, name)`
+    sorted by date; `fm_resp` maps a frontier release's `(date, name)` to the
+    milestone the *backward* match gave it. Returns `(release, is_fallback)`,
+    `(None, False)` when nothing qualifies.
+
+    A step only falls through when the tier above finds nothing:
+
+    1. the first frontier release from `_CC_EARLY_GRACE_DAYS` before the step's
+       implied date (step + 90d) onward;
+    2. failing that, the earliest frontier release the backward match already
+       assigned to this exact step. The backward floor (60d) is looser than the
+       forward grace (7d), so a release can be tied to a cluster and still sit
+       before its window — Claude Opus 4.8 shipped 24d ahead of New Carlisle's
+       implied date. Without this tier the step drops to tier 3 and cites a
+       lesser model the backward table doesn't associate with it at all;
+    3. failing that, the lab's next release of any kind, so the step renders
+       something rather than nothing. Epoch recomputes ECI live, so a real
+       flagship can end up scored under its own predecessor and vanish from the
+       running max (Sol, 161.08 vs GPT-5.5 Pro's 161.73) — a fact about
+       rescoring, not about when the lab shipped, and this panel compares dates
+       only. Tier 3 is the only one that reports `is_fallback`; those matches are
+       labelled wherever they appear and stay out of the headline median, which
+       is a claim about *frontier* releases.
+
+    Tier 3 is skipped for a step that is not yet online: a planned DC has no
+    releases to explain.
+    """
+    pred = step[0] + timedelta(days=_CC_RELEASE_LAG_DAYS)
+    floor = pred - timedelta(days=_CC_EARLY_GRACE_DAYS)
+
+    def _first_from(pool):
+        return next((t for t in pool if t[0] >= floor), None)
+
+    nm = _first_from(frontier)
+    if nm is not None:
+        return nm, False
+    if step[0] > today:
+        return None, False
+    own = [t for t in frontier if fm_resp.get((t[0], t[2])) == step]
+    if own:
+        return min(own, key=lambda t: t[0]), False
+    nm = _first_from(all_rel)
+    return (nm, True) if nm is not None else (None, False)
+
+
 # The frontier-model series start in early 2024; before that Epoch's DC tracking
 # is too sparse to time releases against.
 _CC_PANEL_START = datetime(2024, 1, 1)
@@ -8762,12 +8873,15 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
         f"({_DAYS_2MO}d training + {_CC_RUN_COMPLETION_LAG.days}d release lag) to the "
         "release date it implies, then lined up against when the lab's frontier "
         "models actually shipped. The only thing compared is *when* — not how good "
-        "the model is. 2024 onward.")
+        "the model is. A cluster whose window holds no record-setting release "
+        "falls back to the lab's next release of any kind (marked †) rather than "
+        "showing nothing. 2024 onward.")
 
     lab = st.selectbox("Company", _CC_PANEL_LABS, key="cc_company")
     attribution = _cc_lab_attribution(_mtime=_dc_meta_mtime())
     milestones = _cc_lab_dc_milestones(lab, attribution, key=metric_key)
     fmodels = _cc_company_frontier_models(_mtime=_eci_mtime()).get(lab, [])
+    all_rel = _cc_company_all_releases(_mtime=_eci_mtime()).get(lab, [])
 
     lag = timedelta(days=_CC_RELEASE_LAG_DAYS)
     ms_vis = [m for m in milestones if m[0] >= _CC_PANEL_START]
@@ -8782,7 +8896,9 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
     # Match *causally*, not by nearest date. Two complementary matches use two
     # different clocks:
     #   • forward  — each DC step → the first frontier release on/after its
-    #                *expected* date (step + 90d = train + release-prep lag).
+    #                *expected* date (step + 90d = train + release-prep lag),
+    #                minus a 7d grace so a model that beat the pipeline by a few
+    #                days still counts (see _CC_EARLY_GRACE_DAYS).
     #   • backward — each release → the most recent cluster that could have
     #                *trained* it: the latest step online at least one training
     #                run (60d) before the release. The extra ~1mo release lag
@@ -8793,33 +8909,44 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
     # after the implied date; slightly negative = shipped faster than the pipeline.
     train_floor = timedelta(days=_CC_TRAIN_FLOOR_DAYS)
     act_sorted = sorted(fmodels, key=lambda t: t[0])
-
-    def _first_release_after(pred):
-        for t in act_sorted:
-            if t[0] >= pred:
-                return t
-        return None
+    fm_keys = {(t[0], t[2]) for t in fmodels}
 
     def _responsible_cluster(release):
         cand = [m for m in milestones if (m[0] + train_floor) <= release]
         return cand[-1] if cand else None   # milestones are date-sorted
 
+    # Which cluster the backward match hands each frontier release to.
+    # _cc_forward_match consults it so the two tables can't name different
+    # releases for the same cluster.
+    fm_resp = {(d, n): _responsible_cluster(d) for d, _e, n in fm_vis}
+
     expected = []
-    for md, mp, mn in ms_vis:
+    for step in ms_vis:
+        md, mp, mn = step
         pred = md + lag
-        nm = _first_release_after(pred)
+        nm, fb = _cc_forward_match(step, act_sorted, all_rel, fm_resp, today)
         expected.append({
             'name': mn, 'step': md, 'perf': mp, 'pred': pred,
-            'future': md > today, 'model': nm,
+            'future': md > today, 'model': nm, 'fallback': fb,
             'err': (nm[0] - pred).days if nm else None})
+
+    # Releases shown on the actual-release row: every frontier release, plus any
+    # fallback a step pulled in. Both tables and the chart read this one list, so
+    # they can't disagree about which releases exist.
+    shown = list(fm_vis)
+    for e in expected:
+        if e['fallback'] and (e['model'][0], e['model'][2]) not in {(d, n) for d, _s, n in shown}:
+            shown.append(e['model'])
+    shown.sort(key=lambda t: t[0])
 
     # Per-release backward match (drives the connectors and the recall table).
     model_match = []
-    for d, _e, n in fm_vis:
+    for d, _e, n in shown:
         resp = _responsible_cluster(d)
         pred = (resp[0] + lag) if resp else None
         model_match.append({
             'date': d, 'name': n, 'resp': resp, 'pred': pred,
+            'frontier': (d, n) in fm_keys,
             'err': (d - pred).days if pred else None})
 
     # ── Timeline: predicted release dates (top) vs actual releases (bottom) ──
@@ -8851,7 +8978,9 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
                        f"online {e['step']:%b %d, %Y} → predicts release "
                        f"~{e['pred']:%b %d, %Y}"
                        + (f"<br>first release after: {e['model'][2]} "
-                          f"{e['model'][0]:%b %d, %Y} (+{e['err']}d)"
+                          f"{e['model'][0]:%b %d, %Y} ({e['err']:+d}d)"
+                          + ("<br><i>not an ECI record for this lab</i>"
+                             if e['fallback'] else "")
                           if e['model'] else "<br>no release yet")
                        for e in pa],
             hoverinfo='text', showlegend=True))
@@ -8866,19 +8995,30 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
                        f"~{e['pred']:%b %d, %Y}" for e in pf],
             hoverinfo='text', showlegend=True))
 
-    fig.add_trace(go.Scatter(
-        x=[m['date'] for m in model_match], y=[Y_ACT] * len(model_match),
-        mode='markers', name='Actual release',
-        marker=dict(symbol='circle', size=10, color='#2CA02C',
-                    line=dict(color='white', width=1)),
-        hovertext=[f"{m['name']}<br>released {m['date']:%b %d, %Y}"
-                   + (f"<br>trained on {m['resp'][2]} "
-                      f"({_dc_fmt_value(m['resp'][1], kind)}, online "
-                      f"{m['resp'][0]:%b %d, %Y})<br>{m['err']:+d}d after implied "
-                      f"{m['pred']:%b %d, %Y}"
-                      if m['resp'] else "<br>predates any tracked cluster")
-                   for m in model_match],
-        hoverinfo='text', showlegend=True))
+    def _rel_hover(m):
+        return (f"{m['name']}<br>released {m['date']:%b %d, %Y}"
+                + ("" if m['frontier'] else
+                   "<br><i>not an ECI record for this lab — shown because its "
+                   "cluster had no record-setting release</i>")
+                + (f"<br>trained on {m['resp'][2]} "
+                   f"({_dc_fmt_value(m['resp'][1], kind)}, online "
+                   f"{m['resp'][0]:%b %d, %Y})<br>{m['err']:+d}d after implied "
+                   f"{m['pred']:%b %d, %Y}"
+                   if m['resp'] else "<br>predates any tracked cluster"))
+
+    for is_front, nm, sym in ((True, 'Actual release', 'circle'),
+                              (False, 'Release (no ECI record)', 'circle-open')):
+        grp = [m for m in model_match if m['frontier'] is is_front]
+        if not grp:
+            continue
+        fig.add_trace(go.Scatter(
+            x=[m['date'] for m in grp], y=[Y_ACT] * len(grp),
+            mode='markers', name=nm,
+            marker=dict(symbol=sym, size=10, color='#2CA02C',
+                        line=dict(color='white' if is_front else '#2CA02C',
+                                  width=1 if is_front else 1.8)),
+            hovertext=[_rel_hover(m) for m in grp],
+            hoverinfo='text', showlegend=True))
 
     fig.update_layout(
         height=300, plot_bgcolor='white', paper_bgcolor='white',
@@ -8892,8 +9032,12 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
     st.plotly_chart(fig, use_container_width=True)
 
     # ── Verdict line ──
-    errs = [m['err'] for m in model_match if m['err'] is not None]
-    n_orphan = sum(1 for m in model_match if m['resp'] is None)
+    # Frontier releases only: the sentence is a claim about record-setting
+    # models, and the fallbacks are in the panel precisely because they aren't
+    # one. They get their own count instead of being averaged in.
+    errs = [m['err'] for m in model_match if m['err'] is not None and m['frontier']]
+    n_orphan = sum(1 for m in model_match if m['resp'] is None and m['frontier'])
+    n_fb = sum(1 for m in model_match if not m['frontier'])
     if not milestones:
         st.info(f"Epoch tracks no {lab} data center, so its releases can't be "
                 "timed against a buildout.")
@@ -8902,58 +9046,74 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
         within = sum(1 for x in errs if abs(x) <= 60)
         orphan_note = (f" {n_orphan} release(s) predate any tracked {lab} cluster."
                        if n_orphan else "")
+        fb_note = (f" {n_fb} further release(s) shown (hollow) for clusters that "
+                   "set no ECI record — not counted here."
+                   if n_fb else "")
         st.markdown(
             f"**{lab}: frontier models ship a median {med:+d} days from the date "
             f"their largest cluster's capacity implies (online + {_CC_RELEASE_LAG_DAYS}d)** "
             f"— {within}/{len(errs)} within 60 days of that implied date "
             "(capacity-gated); large positive gaps mean the model was limited by "
-            f"something other than compute.{orphan_note}")
+            f"something other than compute.{orphan_note}{fb_note}")
 
     # ── Both directions as date-only tables ──
     st.markdown("**Cluster → release it enables** "
                 "(each step, the earliest release it could have trained)")
     rowsA = [f"| Largest DC ({metric_label}) | Online | "
-             f"Predicts (+{_CC_RELEASE_LAG_DAYS}d) | First release on/after | "
-             "Gap |", "|---|---|---|---|---|"]
+             f"Predicts (+{_CC_RELEASE_LAG_DAYS}d) | Earliest release it "
+             "enables | Gap |",
+             "|---|---|---|---|---|"]
     for e in expected:
         dc = f"{e['name']} — {_dc_fmt_value(e['perf'], kind)}"
         if e['future']:
             rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | "
                          f"{e['pred']:%Y-%m-%d} | *(DC still future)* | — |")
         elif e['model']:
+            mark = " †" if e['fallback'] else ""
             rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | {e['pred']:%Y-%m-%d} | "
-                         f"{e['model'][2]} ({e['model'][0]:%Y-%m-%d}) | "
-                         f"+{e['err']}d |")
+                         f"{e['model'][2]} ({e['model'][0]:%Y-%m-%d}){mark} | "
+                         f"{e['err']:+d}d |")
         else:
             rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | "
                          f"{e['pred']:%Y-%m-%d} | *(no release yet)* | — |")
     st.markdown("\n".join(rowsA))
+    if any(e['fallback'] for e in expected):
+        st.caption(
+            "† not an ECI record for this lab. Shown because no record-setting "
+            "release fell in the window: Epoch recomputes ECI live, so a real "
+            "flagship can end up scored under its own predecessor and drop off "
+            "the running max without its release date changing. This panel "
+            "compares dates only, so the release still belongs here — it is "
+            "just marked, drawn hollow, and left out of the median above.")
 
     st.markdown("**Release → cluster it came from** "
                 "(the most recent cluster online early enough to have trained it)")
-    rowsB = [f"| Frontier release | Trained on (largest cluster, {metric_label}) | "
+    rowsB = [f"| Release | Trained on (largest cluster, {metric_label}) | "
              f"Implies (+{_CC_RELEASE_LAG_DAYS}d) | Shipped vs implied |",
              "|---|---|---|---|"]
     for m in model_match:
+        nm = f"{m['name']} ({m['date']:%Y-%m-%d})" + ("" if m['frontier'] else " †")
         if m['resp']:
             r = m['resp']
-            rowsB.append(f"| {m['name']} ({m['date']:%Y-%m-%d}) | "
+            rowsB.append(f"| {nm} | "
                          f"{r[2]} — {_dc_fmt_value(r[1], kind)} ({r[0]:%Y-%m-%d}) | "
                          f"{m['pred']:%Y-%m-%d} | {m['err']:+d}d |")
         else:
-            rowsB.append(f"| {m['name']} ({m['date']:%Y-%m-%d}) | "
-                         "*(predates any tracked cluster)* | — | — |")
+            rowsB.append(f"| {nm} | *(predates any tracked cluster)* | — | — |")
     st.markdown("\n".join(rowsB))
 
     st.caption(
         f"Diamonds = capacity steps shifted forward {_CC_RELEASE_LAG_DAYS} days to "
         "the release date they imply (hollow = planned/under-construction DC); "
-        "circles = actual frontier releases. Matching is *causal*: a release is tied "
+        "circles = actual releases (hollow † = shipped in a cluster's window without "
+        "setting an ECI record for the lab). Matching is *causal*: a release is tied "
         f"only to a cluster online at least one training run ({_CC_TRAIN_FLOOR_DAYS}d) "
         "before it — a cluster online less than a training run before a release "
         "couldn't have trained it. The extra ~1mo release-prep lag isn't required, so "
-        "a model that shipped a bit faster than the full pipeline still counts (e.g. "
-        "Sol, 84d after Fairwater Wisconsin). Connector color = days from the implied "
+        "a model that shipped a bit faster than the full pipeline still counts: "
+        f"forward matches reach back {_CC_EARLY_GRACE_DAYS} days before the implied "
+        "date, which is how Fairwater Wisconsin claims Sol (84d after it came online, "
+        "6d ahead of the pipeline). Connector color = days from the implied "
         "date (green ≤45, orange ≤120, red >120). Capability is "
         "never used — only dates. The rule lands close when a model is gated by a "
         "fresh cluster (xAI/Colossus throughout; others post-2025) and drifts when "
