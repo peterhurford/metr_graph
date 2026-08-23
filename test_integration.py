@@ -1105,6 +1105,7 @@ class TestPacingTab:
         assert "If the US paused today" in subs
         labels = " ".join(str(m.label) for m in at.metric)
         assert "frozen US frontier" in labels
+        assert "losing distillation" in labels
         caps = " ".join(str(c.value) for c in at.caption)
         assert "indigenous" in caps
 

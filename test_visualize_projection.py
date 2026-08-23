@@ -2642,6 +2642,35 @@ class TestCcInnovationAlgoBand:
         assert hi <= vp._cc_iso_compute(cc)['eci_per_yr'] + 1.0
 
 
+class TestCcFrontierGradeAlgo:
+    def test_rate_falls_as_the_frontier_margin_tightens(self):
+        """The distillation fingerprint: the nearer to the frontier the
+        subset, the slower its measured algo rate."""
+        cc = vp.load_eci_compute()
+        eci = vp.load_eci_frontier()
+        rates = {}
+        for m in (3, 5, 8):
+            r = vp._cc_frontier_grade_algo(cc, eci, margin=m)
+            assert r is not None and r[1] >= 20, f"margin {m} too thin"
+            rates[m] = r[0]
+        assert rates[3] <= rates[5] <= rates[8] + 0.5
+        all_rate = vp._cc_decomp(cc)['b_time']
+        assert rates[5] <= all_rate + 0.5
+
+
+class TestCcCnPaceBand:
+    def test_band_brackets_unity_and_reports_observations(self):
+        eci = vp.load_eci_frontier()
+        cn_fr = vp._cc_country_frontier(eci, 'China')
+        lo, hi, obs = vp._cc_cn_pace_band(cn_fr, 14.0)
+        assert lo <= 0.85 and hi >= 1.15
+        assert obs is None or len(obs) >= 1
+
+    def test_degenerate_input_falls_back(self):
+        lo, hi, obs = vp._cc_cn_pace_band([], 14.0)
+        assert (lo, hi, obs) == (0.85, 1.15, None)
+
+
 class TestCcCnCrossingSim:
     KW = dict(a_partial=8.0, g_lo=0.15, g_hi=0.30, algo_lo=11.0,
               algo_mid=12.5, algo_hi=13.0, pace_lo=0.9, pace_hi=1.1, n=4000)
@@ -2673,6 +2702,36 @@ class TestCcCnCrossingSim:
             150.0, 149.0, us_anchor=160.0, us_rate=0.0,
             inno_lo=3.0, inno_hi=4.0, **self.KW)
         assert np.nanmedian(y) <= 1.0 / 12.0 + 1e-9
+
+    def test_pause_to_frozen_bar_lands_after_161_with_us_moving(self):
+        """The tab-level ordering on live data: the Pacing pause panel (frozen
+        US best, distillation drying up) must cross later than the CC section's
+        161 bar (US moving, distillation active) — same anchor, same pace band."""
+        cc = vp.load_eci_compute()
+        eci = vp.load_eci_frontier()
+        us_fr = vp._cc_country_frontier(eci, 'United States of America')
+        cn_fr = vp._cc_country_frontier(eci, 'China')
+        us_best = max(us_fr, key=lambda x: x[1])
+        cn_best = max(cn_fr, key=lambda x: x[1])
+        if cn_best[1] >= vp._CC_CN_TARGET_ECI:
+            pytest.skip("China already past the CC target")
+        a_partial, b_algo = vp._cc_pooled_decomp(cc)
+        us_algo, _, _ = vp._cc_iso_compute_rate(cc, 'United States of America')
+        cn_algo, _, _ = vp._cc_iso_compute_rate(cc, 'China')
+        inno = vp._cc_innovation_algo_band(cc)
+        a_lo, a_hi = min(us_algo, cn_algo), max(us_algo, cn_algo)
+        g_mid = 0.5 * (vp._CC_CN_COMPUTE_LO + vp._CC_CN_COMPUTE_HI)
+        pace_lo, pace_hi, _ = vp._cc_cn_pace_band(cn_fr, cn_algo + a_partial * g_mid)
+        kw = dict(a_partial=a_partial, g_lo=vp._CC_CN_COMPUTE_LO,
+                  g_hi=vp._CC_CN_COMPUTE_HI, algo_lo=a_lo, algo_mid=cn_algo,
+                  algo_hi=a_hi, inno_lo=inno[0], inno_hi=inno[1],
+                  pace_lo=pace_lo, pace_hi=pace_hi, n=4000)
+        y_cc, _, _ = vp._cc_cn_crossing_sim(
+            cn_best[1], vp._CC_CN_TARGET_ECI, us_anchor=us_best[1],
+            us_rate=15.0, **kw)
+        y_pause, _, _ = vp._cc_cn_crossing_sim(
+            cn_best[1], us_best[1], us_anchor=us_best[1], us_rate=0.0, **kw)
+        assert np.nanmedian(y_pause) >= np.nanmedian(y_cc)
 
     def test_traj_is_nondecreasing(self):
         _, grid, traj = vp._cc_cn_crossing_sim(
