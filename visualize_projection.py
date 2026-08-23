@@ -11030,16 +11030,14 @@ def _pc_render_us_pause(today, thr_ops):
     # Months from the pause moment (floored at today) to the crossing,
     # matched per sample so both uncertainties propagate.
     _floor = np.maximum(t_pause_s * 365.25, (today - anchor_d).days)
-    surpass_mo = float(np.nanmedian(years * 365.25 - _floor)) / 30.44
+    _delta_mo = (years * 365.25 - _floor)[np.isfinite(years)] / 30.44
+    s10, s50, s90 = (float(np.percentile(_delta_mo, p)) for p in (10, 50, 90))
     m1, m2 = st.columns(2)
     m1.metric(f"China reaches the paused US frontier (ECI {threshold:.0f})",
               f"{d50:%b %Y}", f"{d10:%b %Y} – {d90:%b %Y} (80%)",
               delta_color="off")
     m2.metric("Time for China to surpass after US pause",
-              f"~{surpass_mo:.0f} mo",
-              (f"US pauses ~{dp50:%b %Y} (80%: {dp10:%b %Y} – {dp90:%b %Y})"
-               if d_pause > today else
-               f"from {pretty(anchor_name)} at {anchor_eci:.0f}"),
+              f"~{s50:.0f} mo", f"{s10:.0f} – {s90:.0f} mo (80%)",
               delta_color="off")
 
     # ── The race, in ECI: US climbs to the bar and freezes; China's fan
