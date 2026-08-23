@@ -284,9 +284,9 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    names_sites_epoch_left_blank` retires a fallback the moment Epoch fills the cell.
 2. **"China-accessible" = China + `_DC_CN_ACCESS_ABROAD`** (DayOne Johor). Epoch's own
    source notes on Nusajaya cite the FT on Alibaba and ByteDance training in Southeast Asia.
-   The scope is a selector (default on, help text says it is an upper bound — DayOne has
-   other tenants), the sites are *moved* out of Malaysia rather than copied, and the
-   mainland-only series is drawn alongside as a thin reference line. Assuming tenancy is the
+   Both lines are always drawn and projected — mainland alone and accessible — with no
+   selector (one was tried and removed as redundant); the sites are *moved* out of Malaysia
+   rather than copied, and the caption says the campus has other tenants. Assuming tenancy is the
    strong claim here, same as for the networked-clusters `'plausible'` level; don't add
    sites to the tuple without a citation of the same standard.
 3. **Pooling nests.** `_dc_country_steps()` offers largest single site, largest networked

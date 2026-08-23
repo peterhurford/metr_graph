@@ -1248,10 +1248,6 @@ _DC_CTY_POOL_OPTIONS = {
     "Largest single site": 'site',
     "Every site in the country, pooled (upper bound)": 'country',
 }
-_DC_CTY_CN_OPTIONS = {
-    "Sites in China + Chinese labs' sites abroad (DayOne Johor)": 'abroad',
-    "Sites in China only": 'domestic',
-}
 _DC_CTY_PACE_OPTIONS = {
     "The US trend for every country (a follower tracks the leader)": 'us',
     "Each country's own fitted trend": 'own',
@@ -7033,8 +7029,7 @@ def render_eci_gap():
 # ── Data Centers ───────────────────────────────────────────────────────────
 
 _DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing", "dc_pool_n",
-                  "dc_start_year", "dc_end_year", "dc_cty_pool", "dc_cty_cn",
-                  "dc_cty_pace", "dc_cty_since", "dc_cty_horizon"]
+                  "dc_start_year", "dc_end_year", "dc_cty_pool", "dc_cty_pace", "dc_cty_since", "dc_cty_horizon"]
 _DC_DEFAULTS = {
     "dc_metric": "Compute (H100-equiv)",
     "dc_log": True,
@@ -7044,7 +7039,6 @@ _DC_DEFAULTS = {
     "dc_start_year": 2025,
     "dc_end_year": 2027,
     "dc_cty_pool": "Largest networkable group per company (selector above)",
-    "dc_cty_cn": "Sites in China + Chinese labs' sites abroad (DayOne Johor)",
     "dc_cty_pace": "The US trend for every country (a follower tracks the leader)",
     "dc_cty_since": 2024,
     "dc_cty_horizon": 2030,
@@ -7389,53 +7383,41 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
     """
     st.subheader("Buildout by country: US vs China")
     st.caption(
-        "Each line is the biggest training run one party in that country "
-        "could mount, by the pooling rule below, so the US and China lines "
-        "read in the same units as the company charts above. Recorded "
-        "buildout (solid actual, dashed planned) runs to the tab's *Project "
-        "through* year, or to wherever Epoch's data for the country stops if "
-        "that is sooner — for China it stops at 2027 — and past that point "
-        "each line is extrapolated along its fitted log-linear trend, with a "
-        "50% / 80% cone. No colocation host is hidden here, unlike the charts "
-        "above: a landlord's hall in a country is capacity in that country "
-        "whoever trains in it.")
+        "Biggest training run one party in each country could mount. Solid = "
+        "actual, dashed = planned, dotted + cone (50% / 80%) = log-linear "
+        "extrapolation past the end of Epoch's data (2027 for China). "
+        "*China-accessible* adds DayOne Johor, where Epoch cites the FT on "
+        "Alibaba and ByteDance training — an upper bound, the campus has other "
+        "tenants. Colocation hosts are not hidden here.")
 
     c1, c2 = st.columns(2)
     pool_label = c1.selectbox("Within a country, count", list(_DC_CTY_POOL_OPTIONS),
                               key="dc_cty_pool")
-    cn_label = c1.radio("China's compute", list(_DC_CTY_CN_OPTIONS), key="dc_cty_cn",
-                        help="Epoch's source notes on DayOne Nusajaya cite FT "
-                             "reporting that Alibaba and ByteDance train models "
-                             "in Southeast Asia; DayOne is the GDS Holdings "
-                             "spin-off. Counting the whole campus is an upper "
-                             "bound — it has other tenants.")
     pace_label = c2.radio("Extrapolate along", list(_DC_CTY_PACE_OPTIONS),
                           key="dc_cty_pace")
     since = c2.radio("Fit trend since", _DC_CTY_SINCE_YEARS, horizontal=True,
                      index=_DC_CTY_SINCE_YEARS.index(_DC_DEFAULTS["dc_cty_since"]),
                      key="dc_cty_since",
-                     help="A log-linear fit from a country's first site "
-                          "go-live runs hot — the early ramp from nothing is "
-                          "steeper than the steady state — and one that runs "
-                          "to the edge of the planned data runs cool, because "
-                          "the far future is under-catalogued. The pace "
-                          "readout below gives every window.")
+                     help="Fits from a country's first go-live run hot (ramp "
+                          "from nothing); fits to the edge of planned data run "
+                          "cool (under-catalogued). Every window is listed "
+                          "below.")
     horizon = c2.radio("Extrapolate through", _DC_CTY_HORIZONS, horizontal=True,
                        index=_DC_CTY_HORIZONS.index(_DC_DEFAULTS["dc_cty_horizon"]),
                        key="dc_cty_horizon")
     mode = _DC_CTY_POOL_OPTIONS[pool_label]
-    cn_scope = _DC_CTY_CN_OPTIONS[cn_label]
     pace_mode = _DC_CTY_PACE_OPTIONS[pace_label]
-    cn_key = _DC_CTY_CN_ACCESS if cn_scope == 'abroad' else _DC_CTY_CN
+    # China is drawn twice: the mainland alone, and with the Chinese labs'
+    # sites abroad (_DC_CN_ACCESS_ABROAD). Both are projected and tabulated.
+    cn_scope = 'abroad'
+    cn_key = _DC_CTY_CN_ACCESS
 
     groups = _dc_country_groups(series, country_of, cn_scope)
     steps_by = {c: _dc_country_steps(series, names, mode, cluster_of)
                 for c, names in groups.items()}
-    if cn_scope == 'abroad':
-        # The mainland alone, for reference against the wider scope.
-        dom = [n for n in series if country_of.get(n) == _DC_CTY_CN]
-        steps_by[_DC_CTY_CN_DOMESTIC] = _dc_country_steps(series, dom, mode,
-                                                          cluster_of)
+    dom = [n for n in series if country_of.get(n) == _DC_CTY_CN]
+    steps_by[_DC_CTY_CN_DOMESTIC] = _dc_country_steps(series, dom, mode,
+                                                      cluster_of)
     steps_by = {c: s for c, s in steps_by.items()
                 if s and any(v and v > 0 for _, v, _ in s)}
     if _DC_CTY_US not in steps_by:
@@ -7563,29 +7545,22 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
         if p is None:
             return f"{c}: no trend to extrapolate"
         dbl = 12 * np.log10(2) / p['g'] if p['g'] > 0 else float('inf')
-        src = ("US trend borrowed, cone widened to cover its own fit"
-               if c in borrowed and fit else "US trend borrowed" if c in borrowed
-               else f"own trend, {fit['n']} monthly samples")
-        win = ", ".join(f"since {y}: ×{10 ** g:.1f}/yr" for y, g in
+        src = ("US pace, cone widened to its own fit" if c in borrowed and fit
+               else "US pace" if c in borrowed else "own fit")
+        win = ", ".join(f"'{y % 100}: ×{10 ** g:.1f}" for y, g in
                         sorted(fit['windows'].items())) if fit else ""
-        return (f"**{c}**: ×{10 ** p['g']:.1f}/yr (doubling every {dbl:.0f}mo; "
-                f"±{p['sigma_g']:.2f} OOM/yr 1σ), {src}"
-                f"{' — ' + win if win else ''}")
+        return (f"**{c}** ×{10 ** p['g']:.1f}/yr, doubling {dbl:.0f}mo, "
+                f"±{p['sigma_g']:.2f} OOM/yr ({src}"
+                f"{'; by window ' + win if win else ''})")
     st.caption(
-        "Fitted pace — " + "; ".join(_pace_text(c) for c in cone_for) + ". "
-        "Mainland China's catalogue ends in 2027 and its wider scope is mostly "
-        "one Johor campus ramping from nothing, so both Chinese fits are a "
-        "handful of steps from a handful of sites. "
-        f"Pace uncertainty is the larger of the fit's standard error, the "
-        f"spread across lookback windows and a {_DC_CTY_SIGMA_G_FLOOR:.2f} OOM/yr "
-        "floor; the recorded series' scatter around its trend is added in over "
-        "the first year. The cone starts at the country's last recorded step, "
-        "so it is a trend through Epoch's site list — a site Epoch has not "
-        "catalogued, or an export-control shock, moves the line off it.")
+        "Pace — " + "; ".join(_pace_text(c) for c in cone_for) + ". "
+        f"Uncertainty = max(fit s.e., window spread, {_DC_CTY_SIGMA_G_FLOOR:.2f} "
+        "OOM/yr) plus the series' own scatter. Chinese fits rest on a handful "
+        "of sites; the cone is a trend through Epoch's catalogue, not a policy "
+        "forecast.")
     if mode == 'country':
-        st.caption("*Every site pooled* assumes a government can direct all of "
-                   "a country's operators onto one job — the Pacing tab's China "
-                   "argument. For the US it is an upper bound nobody can run.")
+        st.caption("*Every site pooled* assumes a state can direct all its "
+                   "operators onto one job; for the US it is an upper bound.")
 
     # ── Readout: year-end values, ratio and lag ──
     if cn_key not in traj:
@@ -7649,18 +7624,10 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
                    if dom is not None and not np.isnan(dom[:, j]).all() else ""))
         st.table(rows)
         st.caption(
-            "Median with the 10th–90th percentile in brackets; *US ÷ China* is "
-            "the per-sample ratio, *lag* the months since the US line (running "
-            "max) first reached China's value — negative means China ahead; a "
-            "sample where the US never gets there inside the chart is floored "
-            "at a month past its end, and once most samples are such the cell "
-            "says so instead. "
-            "Where the year end falls inside recorded data the brackets "
-            "collapse to the recorded value; for an inverted metric (time to "
-            "train) the ratio and lag still read US-ahead-positive, since both "
-            "are computed on the stored runs-per-window. The selected metric "
-            "is what is tabulated — choose *6mo train log OP* to read the "
-            "answer in training-run operations.")
+            "Median (10th–90th pct). *Lag* = months since the US first reached "
+            "China's value; negative = China ahead. Ratio and lag stay "
+            "US-ahead-positive on the time-to-train metrics. Pick *6mo train "
+            "log OP* to read this in training-run operations.")
 
 
 def render_data_centers():

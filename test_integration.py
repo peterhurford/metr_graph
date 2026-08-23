@@ -970,13 +970,12 @@ class TestDataCentersByCountry:
             at.radio(key="dc_cty_since").set_value(yr).run()
             _assert_no_error(at, f"by country / since {yr}")
 
-    def test_domestic_scope_and_horizon(self):
+    def test_horizon(self):
         at = self._dc_app()
-        at.radio(key="dc_cty_cn").set_value("Sites in China only")
         at.radio(key="dc_cty_horizon").set_value(2028).run()
-        _assert_no_error(at, "by country / domestic 2028")
+        _assert_no_error(at, "by country / 2028")
         head = self._headline(at)
-        assert "Largest China training run by end-2028" in head[0]
+        assert "training run by end-2028" in head[0]
         assert list(at.table[-1].value["Year end"]) == ["2026", "2027", "2028"]
 
     def test_trend_only_when_planned_buildout_is_off(self):
@@ -995,8 +994,8 @@ class TestDataCentersByCountry:
     def test_reset_restores_panel_defaults(self):
         at = self._dc_app()
         at.radio(key="dc_cty_horizon").set_value(2031)
-        at.radio(key="dc_cty_cn").set_value("Sites in China only").run()
+        at.radio(key="dc_cty_since").set_value(2026).run()
         at.button(key="dc_reset").click().run()
         _assert_no_error(at, "by country / reset")
         assert at.radio(key="dc_cty_horizon").value == 2030
-        assert at.radio(key="dc_cty_cn").value.startswith("Sites in China +")
+        assert at.radio(key="dc_cty_since").value == 2024
