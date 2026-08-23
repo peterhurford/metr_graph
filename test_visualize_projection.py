@@ -3863,11 +3863,25 @@ class TestPacing:
         assert "pc_threshold" in keys and "pc_run" in keys
 
     def test_plan_crossing_is_first_step_at_or_above(self):
-        steps = [(datetime(2025, 1, 1), 5e26), (datetime(2026, 1, 1), 2e27),
-                 (datetime(2027, 1, 1), 8e27)]
-        assert vp._pc_plan_crossing(steps, 1e27) == datetime(2026, 1, 1)
-        assert vp._pc_plan_crossing(steps, 2e27) == datetime(2026, 1, 1)
-        assert vp._pc_plan_crossing(steps, 1e29) is None
+        steps = [(datetime(2025, 1, 1), 5e26, "Site A"),
+                 (datetime(2026, 1, 1), 2e27, "Cluster B (2 sites)"),
+                 (datetime(2027, 1, 1), 8e27, "Cluster B (3 sites)")]
+        assert vp._pc_plan_crossing(steps, 1e27) == \
+            (datetime(2026, 1, 1), "Cluster B (2 sites)")
+        assert vp._pc_plan_crossing(steps, 2e27) == \
+            (datetime(2026, 1, 1), "Cluster B (2 sites)")
+        assert vp._pc_plan_crossing(steps, 1e29) == (None, None)
+        # Bare (date, value) steps still work, with no facility.
+        assert vp._pc_plan_crossing([(datetime(2025, 1, 1), 5e26)], 1e26) == \
+            (datetime(2025, 1, 1), None)
+
+    def test_entity_steps_carry_the_facility(self):
+        rows = self._rows()
+        by = {l: s for l, _, s, _ in rows}
+        d, via = vp._pc_plan_crossing(by['Anthropic'], 1e27)
+        assert d is not None and via and 'Colossus' in via
+        d, via = vp._pc_plan_crossing(by[vp._DC_CTY_US], 1e27)
+        assert d is not None and via
 
     def test_crossing_idx_sentinel_and_nan(self):
         traj = np.array([[np.nan, 1.0, 5.0, 5.0],     # crosses at 2

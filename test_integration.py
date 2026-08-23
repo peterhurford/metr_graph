@@ -1075,6 +1075,10 @@ class TestPacingTab:
         assert "China-accessible" in ents
         assert "China (domestic only)" in ents
         assert "Plan crosses" in table.columns
+        # Country aggregates are labelled as such, not as companies.
+        scope = dict(zip(table["Entity"], table["Scope"]))
+        assert scope["United States"] == "country"
+        assert scope["China-accessible"] == "country"
 
     def test_threshold_drives_the_headline(self):
         at = self._app()

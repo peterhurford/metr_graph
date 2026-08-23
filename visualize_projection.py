@@ -10575,10 +10575,16 @@ def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
     for name, v in series_shown.items():
         for co in v.get('companies', [v['company']]):
             sites_of.setdefault(co, []).append(name)
+    def _facility(names, lab):
+        if lab is None:
+            return names[0]
+        return (f"all {len(names)} sites" if lab == "all sites"
+                else f"{lab} ({len(names)} sites)")
+
     per_co = _dc_company_networked_series(series_shown, cluster_of)
     for co in sorted(per_co):
-        s2 = [(d, v) for d, v, *_ in per_co[co]]
-        if s2 and any(v > 0 for _, v in s2):
+        s2 = [(d, v, _facility(ns, lab)) for d, v, ns, lab in per_co[co]]
+        if s2 and any(s[1] > 0 for s in s2):
             label = co + " †" if co in unattributed else co
             rows.append((label, 'company', s2, tuple(sites_of.get(co, ()))))
     groups = _dc_country_groups(series_all, country_of, 'abroad')
@@ -10588,15 +10594,21 @@ def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
                          (_DC_CTY_CN_DOMESTIC, dom)]:
         mode = 'site' if cluster_of == {} else 'company'
         steps = _dc_country_steps(series_all, names, mode, cluster_of)
-        s2 = [(d, v) for d, v, _ in steps]
-        if s2 and any(v > 0 for _, v in s2):
+        s2 = [(d, v, detail) for d, v, detail in steps]
+        if s2 and any(s[1] > 0 for s in s2):
             rows.append((label, 'country', s2, tuple(names)))
     return rows
 
 
 def _pc_plan_crossing(steps, threshold):
-    """The first recorded or catalogued step at or above `threshold`, or None."""
-    return next((d for d, v in steps if v is not None and v >= threshold), None)
+    """(date, facility) of the first recorded or catalogued step at or above
+    `threshold` — facility is the step's detail element (the site or pooled
+    group that cleared the bar), None on bare (date, value) steps. (None,
+    None) when the catalogue never crosses."""
+    for s in steps:
+        if s[1] is not None and s[1] >= threshold:
+            return s[0], (s[2] if len(s) > 2 else None)
+    return None, None
 
 
 def _pc_crossing_idx(traj, threshold):
@@ -10639,7 +10651,7 @@ def _pc_projection(rows, dcs, today, since=None):
             # Too little history for a fit of its own: re-anchor the US pace
             # at the entity's own last step.
             t0 = min(steps[-1][0], plan_end)
-            v0 = _dc_val_at(steps, t0)
+            v0 = _dc_val_at([(s[0], s[1]) for s in steps], t0)
             anchor = dict(us_fit, t0=t0, v0=v0) if v0 and v0 > 0 else None
         if label == _DC_CTY_US or us_fit is None:
             pace = own
@@ -10740,10 +10752,10 @@ def render_pacing():
 
     recs = []
     for label, kind, steps, names in rows:
-        plan_d = _pc_plan_crossing(steps, threshold)
+        plan_d, plan_via = _pc_plan_crossing(steps, threshold)
         idx = _pc_crossing_idx(traj[label], threshold)
         recs.append({
-            'label': label, 'kind': kind, 'plan': plan_d,
+            'label': label, 'kind': kind, 'plan': plan_d, 'via': plan_via,
             'crossed': plan_d is not None and plan_d <= _today,
             'med': _pc_idx_date(idx, grid, 50),
             'lo': _pc_idx_date(idx, grid, 10),
@@ -10786,7 +10798,8 @@ def render_pacing():
                 marker=dict(color=color, size=10, symbol='circle'),
                 showlegend=False, hoverinfo='text',
                 hovertext=[f"<b>{r['label']}</b><br>crossed "
-                           f"{r['plan']:%b %Y}"]))
+                           f"{r['plan']:%b %Y}"
+                           + (f" with {r['via']}" if r['via'] else "")]))
             continue
         lo, hi = r['lo'], r['hi']
         if lo is not None:
@@ -10817,8 +10830,9 @@ def render_pacing():
                 x=[r['plan']], y=y, mode='markers',
                 marker=dict(color=color, size=9, symbol='circle-open'),
                 showlegend=False, hoverinfo='text',
-                hovertext=[f"<b>{r['label']}</b><br>catalogued plan first "
-                           f"clears the bar {r['plan']:%b %Y}"]))
+                hovertext=[f"<b>{r['label']}</b><br>plan first "
+                           f"clears the bar {r['plan']:%b %Y}"
+                           + (f" with {r['via']}" if r['via'] else "")]))
     fig.add_shape(type='line', x0=_today, x1=_today, yref='paper', y0=0, y1=1,
                   line=dict(color='gray', dash='dot', width=1))
     fig.add_annotation(x=_today, yref='paper', y=1.04, text="today",
@@ -10837,7 +10851,7 @@ def render_pacing():
                                       "entity", font=dict(size=15)))
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
-        "Filled dot = already crossed; open dot = the catalogued plan's "
+        "Filled dot = already crossed; open dot = the plan's "
         "crossing; diamond + band = projected median and 80% range (plan "
         "slip + trend past ~18 months, the Data Centers tab's model — "
         "non-US entities borrow the US pace, widened by any disagreement "
@@ -10851,7 +10865,9 @@ def render_pacing():
     table = []
     for r in recs:
         if r['crossed']:
-            med, rng = f"crossed {_fmt(r['plan'])}", "—"
+            med = (f"crossed {_fmt(r['plan'])}"
+                   + (f" with {r['via']}" if r['via'] else ""))
+            rng = "—"
         else:
             med = _fmt(r['med'], f">{_PC_HORIZON.year}")
             rng = (f"{_fmt(r['lo'])} – "
@@ -10859,6 +10875,7 @@ def render_pacing():
                    if r['lo'] is not None else "—")
         table.append({
             "Entity": r['label'],
+            "Scope": "country" if r['kind'] == 'country' else "company",
             "Plan crosses": _fmt(r['plan'], "not in catalogue"),
             "Projected (median)": med,
             "80% range": rng,
