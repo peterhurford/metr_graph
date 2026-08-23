@@ -1099,11 +1099,22 @@ _DC_PALETTE = ["#888888", "#E377C2", "#8C564B", "#BCBD22", "#17BECF",
 # qualify. Entries are (cluster label, basis, site names), basis being:
 #   'proximity' — same campus or metro, read off the Address column
 #   'fabric'    — far apart, but joined by an announced training fabric
-# Anything absent is its own cluster and never pools. Addresses are too
-# irregular to cluster automatically (27 of 78 don't parse, and the Cedar Rapids
+#   'plausible' — one region, every pair of sites in it within about the span
+#                 of that announced fabric, but no link announced: what a
+#                 company could wire together if it chose to
+# The bases are nested, weakest first, and the tab picks how far down the list
+# to go — see _dc_network_site_clusters(). A 'plausible' region therefore has to
+# *contain* any proximity or fabric cluster it touches, or turning it on would
+# split an already-pooled group instead of widening it; TestDcNetworkClusters
+# checks that. Anything absent is its own cluster and never pools. Addresses
+# are too irregular to cluster automatically (27 of 78 don't parse, and the Cedar Rapids
 # pair sits in two differently-named municipalities), so this is curated by
 # hand; TestDcNetworkClusters checks every name against the live CSV so a data
 # refresh that renames a site fails loudly instead of silently un-clustering it.
+#
+# A cluster label names the geography or the fabric, never the tenant — the
+# Fairwater pair pools under OpenAI, Epoch's first-listed user for both sites,
+# not under Microsoft who owns them.
 #
 # Clusters are geography, not ownership, and pooling happens strictly within one
 # company — so a cluster whose sites belong to different companies, or whose
@@ -1130,9 +1141,69 @@ _DC_NETWORK_CLUSTERS = (
     ("Eagle Mountain, UT", 'proximity', ("Meta Eagle Mountain",
                                          "QTS Eagle Mountain")),
     ("Johor, Malaysia", 'proximity', ("DayOne Nusajaya", "DayOne Kempas")),
-    ("Microsoft AI WAN", 'fabric', ("Microsoft Fairwater Wisconsin",
+    ("Fairwater AI WAN", 'fabric', ("Microsoft Fairwater Wisconsin",
                                     "Microsoft Fairwater Atlanta")),
+    # Regional groups: no link announced, but every pair inside a group sits
+    # within roughly the ~1,200 km span of the AI WAN above — the one fabric
+    # anyone has actually announced, and therefore the evidence that a link that
+    # long is buildable. Refusing a shorter unannounced hop than one already
+    # being built would be the inconsistent choice; crediting it as *usable*
+    # today would be the wrong one, hence a separate, non-default level.
+    #
+    # Listed only where the group changes something: at least one company must
+    # have two sites in it. An inert regional group pools nothing, unlike the
+    # metro clusters above, which are kept for the geography even when inert.
+    # Where a site is in range of two groups it goes to the one its own company
+    # already occupies (Anthropic-Amazon New Carlisle joins the Mid-South rather
+    # than the Great Lakes for that reason) — except when it sits in a
+    # proximity or fabric cluster, which pins it and everything else in that
+    # cluster to one group (Meta Prometheus stays in the Great Lakes with the
+    # two Google sites it shares Columbus with). Left out for being at or past
+    # the radius from every group that would use them: OpenAI Stargate New
+    # Mexico, and the Phoenix sites.
+    ("Great Lakes", 'plausible', ("Google Columbus", "Google New Albany",
+                                  "Google Lancaster", "Google Fort Wayne",
+                                  "Meta Prometheus", "OpenAI Stargate Michigan",
+                                  "OpenAI Stargate Lordstown",
+                                  "OpenAI Stargate Wisconsin")),
+    ("Mid-South", 'plausible', ("Colossus 1", "Colossus 2", "Amazon Ridgeland",
+                                "Amazon Madison Mega Site",
+                                "Anthropic-Amazon New Carlisle",
+                                "Meta Hyperion", "Meta Gallatin",
+                                "Meta Huntsville", "Meta Montgomery",
+                                "Meta Aiken", "Meta Jeffersonville")),
+    ("Great Plains", 'plausible', ("Google Omaha", "Google Papillion",
+                                   "Google Council Bluffs (East)",
+                                   "Google Lincoln", "Google Kansas City East",
+                                   "Google Cedar Rapids", "QTS Cedar Rapids",
+                                   "Meta Sarpy", "Meta Rosemount",
+                                   "Microsoft Project Osmium")),
+    ("Mid-Atlantic", 'plausible', ("Google Bristow", "Google Arcola",
+                                   "STACK Infrastructure NVA02",
+                                   "QTS Richmond 1", "QTS Richmond 2",
+                                   "QTS Richmond 3", "CoreWeave Chester VA",
+                                   "AWS Berwick", "Anthropic Lake Mariner",
+                                   "Microsoft-Nebius New Jersey")),
+    ("Texas & Oklahoma", 'plausible', ("Google Midlothian", "Google Red Oak",
+                                       "Google Pryor (North)", "Goodnight",
+                                       "CoreWeave Denton TX",
+                                       "CoreWeave Muskogee OK",
+                                       "Coreweave Helios",
+                                       "OpenAI Stargate Abilene",
+                                       "OpenAI Stargate Shackelford",
+                                       "Crusoe Abilene Expansion",
+                                       "OpenAI Stargate Milam", "Meta Temple",
+                                       "Microsoft SAT14", "Microsoft SAT40",
+                                       "Vantage TX1")),
+    ("Mountain West", 'plausible', ("Meta Eagle Mountain", "QTS Eagle Mountain",
+                                    "Meta Kuna", "Meta Cheyenne")),
+    ("Pacific Northwest", 'plausible', ("Google The Dalles",
+                                        "Google Storey County",
+                                        "Meta-QTS Hillsboro 2")),
 )
+
+# The cluster bases, weakest first; each level admits every basis before it.
+_DC_NETWORK_LEVELS = ('proximity', 'fabric', 'plausible')
 
 _DC_EXCLUDE_COMPANIES = {
     "QTS", "DayOne", "CoreWeave", "STACK", "Stream", "Vantage", "EdgeCore",
@@ -1385,19 +1456,29 @@ def _dc_company_series(series):
     return out
 
 
-def _dc_network_site_clusters(include_fabric=True):
+def _dc_network_site_clusters(level='fabric'):
     """site name → cluster label, for sites that can share one training job.
 
     Sites absent from the map are their own cluster, so nothing pools with them.
-    `include_fabric=False` drops the purpose-built long-haul links, leaving only
-    sites that are physically near one another.
+    `level` is the weakest basis admitted, in increasing order of speculation
+    (_DC_NETWORK_LEVELS): 'proximity' keeps only sites physically near one
+    another, 'fabric' adds the purpose-built long-haul links someone has
+    announced, 'plausible' adds regional groups nobody has announced.
+
+    Bases are applied weakest-first and a later one overwrites the sites it
+    names, so a regional group subsumes the metro clusters inside it. That is a
+    merge rather than a re-cut only because every 'plausible' entry contains any
+    lower cluster it touches whole; TestDcNetworkClusters holds that invariant,
+    which is what makes each level a superset of the one before it.
     """
+    keep = _DC_NETWORK_LEVELS[:_DC_NETWORK_LEVELS.index(level) + 1]
     out = {}
-    for label, basis, names in _DC_NETWORK_CLUSTERS:
-        if basis == 'fabric' and not include_fabric:
-            continue
-        for name in names:
-            out[name] = label
+    for basis in keep:
+        for label, b, names in _DC_NETWORK_CLUSTERS:
+            if b != basis:
+                continue
+            for name in names:
+                out[name] = label
     return out
 
 
@@ -6718,11 +6799,13 @@ _DC_DEFAULTS = {
 _DC_START_YEARS = [2023, 2024, 2025, 2026]
 _DC_END_YEARS = [2026, 2027, 2028, 2029]
 
-# What the networked-sites section may pool. Values name the cluster basis fed
-# to _dc_network_site_clusters(); 'none' pools nothing (each site stands alone)
-# and 'all' pools a company's whole fleet, kept only as a stated upper bound.
+# What the networked-sites section may pool, ordered weakest-claim first after
+# the default. Values name the cluster level fed to _dc_network_site_clusters();
+# 'none' pools nothing (each site stands alone) and 'all' pools a company's
+# whole fleet regardless of distance, kept only as a stated upper bound.
 _DC_NETWORK_OPTIONS = {
     "Nearby sites + announced fabric": 'fabric',
+    "Nearby sites + plausible added fabric": 'plausible',
     "Nearby sites only": 'proximity',
     "Single site (no networking)": 'none',
     "Every site the company has (upper bound)": 'all',
@@ -7393,10 +7476,10 @@ def render_data_centers():
         "Same as the chart above, but a company may run one training job across "
         "several of its sites at once — so each line is the **sum** of the "
         "biggest group of its sites that could plausibly be networked together. "
-        "Only two things make a group: sites in the same metro (metro fibre), "
-        "and sites joined by an announced training fabric. A merely co-owned "
-        "fleet does not qualify — the cross-site link carries the data-parallel "
-        "gradient sync, so a scattered fleet cannot run one job. Solid = actual; "
+        "What counts as a group is set by the selector below, from same-metro "
+        "fibre only up to the whole fleet. The cross-site link has to carry the "
+        "data-parallel gradient sync, so distance and an actual fibre path are "
+        "what make a group — sharing an owner never is. Solid = actual; "
         "dashed = planned / under construction.")
 
     net_label = st.selectbox("Data centers networked together",
@@ -7407,7 +7490,7 @@ def render_data_centers():
     elif basis == 'none':
         cluster_of = {}
     else:
-        cluster_of = _dc_network_site_clusters(include_fabric=basis == 'fabric')
+        cluster_of = _dc_network_site_clusters(level=basis)
     pooled = _dc_company_networked_series(series, cluster_of)
     pooled = {co: steps for co, steps in pooled.items() if steps}
     pool_ranked = sorted(pooled,
@@ -7459,24 +7542,46 @@ def render_data_centers():
                                         tick_scale=tick_scale))
     st.plotly_chart(fig_pool, use_container_width=True)
 
-    _prox = ", ".join(lab for lab, basis, _ in _DC_NETWORK_CLUSTERS
-                      if basis == 'proximity')
-    _fab = ", ".join(lab for lab, basis, _ in _DC_NETWORK_CLUSTERS
-                     if basis == 'fabric')
+    def _groups(basis):
+        return ", ".join(lab for lab, b, _ in _DC_NETWORK_CLUSTERS if b == basis)
+
+    if basis == 'none':
+        scope = ("Every site stands alone here, so this line is the chart above, "
+                 "redrawn. ")
+    elif basis == 'all':
+        scope = ("Every site a company has is added together here, however far "
+                 "apart and whether or not any link between them exists or "
+                 "could — an upper bound to read against, not a training job "
+                 "anyone could run. ")
+    else:
+        # List exactly the bases this level pools on, no more.
+        scope = (f"Networkable groups are curated, not inferred. By proximity: "
+                 f"{_groups('proximity')}. ")
+        if basis in ('fabric', 'plausible'):
+            scope += f"By announced fabric: {_groups('fabric')}. "
+        if basis == 'plausible':
+            scope += (
+                f"By plausible added fabric — a region whose sites all sit "
+                f"within roughly the span of that one announced fabric, but "
+                f"with no link announced between them: {_groups('plausible')}. "
+                "Those groups say what a company could wire together, not what "
+                "it can run one job across today. ")
+        scope += ("Everything else stands alone, so most companies show their "
+                  "single largest site — pooling changes the line only where a "
+                  "real cluster exists. ")
     st.caption(
-        f"Networkable groups are curated, not inferred. By proximity: {_prox}. "
-        f"By announced fabric: {_fab}. Everything else stands alone, so most "
-        "companies show their single largest site — pooling changes the line "
-        "only where a real cluster exists. "
+        scope +
         "A colocation or neutral-host operator pools only with itself: its "
         "sites appear under the AI lab listed as the primary user where Epoch "
         "records one, and under the landlord (marked †) where it does not. So "
         "a company that leases capacity it does not own shows it here, and a "
         "landlord's own line is a lower bound on what its unnamed tenants "
-        "could network together.")
+        "could network together — it treats a hall with no recorded tenant as "
+        "one tenant's to use, which is its own assumption, present at every "
+        "setting including the narrowest.")
 
     # Per-company: does the buildout predict releases?
-    _cc_company_buildout(_today, cfg["key"], kind, metric_label)
+    _cc_company_buildout(_today, cfg["key"], kind)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -8851,7 +8956,7 @@ _CC_TRAIN_FLOOR_DAYS = _DAYS_2MO   # 60d
 # two directions agree. Deliberately *not* the full 30d that the 60d training
 # floor would allow: at 30d several clusters start claiming the same, earlier
 # model (Meta's Eagle Mountain, Temple and Prometheus steps would all match Muse
-# Spark), which makes the forward table degenerate. 7d changes exactly one
+# Spark), which makes the forward match degenerate. 7d changes exactly one
 # existing match (Google New Albany → Gemini 2.0 Flash, 6d early) and that one
 # moves *into* agreement with the backward match.
 _CC_EARLY_GRACE_DAYS = 7
@@ -9077,12 +9182,12 @@ def _cc_forward_match(step, frontier, all_rel, fm_resp, today):
 _CC_PANEL_START = datetime(2024, 1, 1)
 
 
-def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Performance (8-bit OP/s)'):
+def _cc_company_buildout(today, metric_key='perf', kind='sci'):
     """Per-company data-center buildout vs frontier model timing.
 
-    Rendered at the bottom of the Data Centers tab. `metric_key`/`kind`/
-    `metric_label` come from the tab's capacity-metric selector and drive which
-    metric defines (and labels) each "largest DC" capacity step.
+    Rendered at the bottom of the Data Centers tab. `metric_key`/`kind` come
+    from the tab's capacity-metric selector and drive which metric defines (and
+    formats) each "largest DC" capacity step.
     """
     st.subheader("Per-company: does the buildout predict release timing?")
     st.caption(
@@ -9134,7 +9239,7 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
         return cand[-1] if cand else None   # milestones are date-sorted
 
     # Which cluster the backward match hands each frontier release to.
-    # _cc_forward_match consults it so the two tables can't name different
+    # _cc_forward_match consults it so the two directions can't name different
     # releases for the same cluster.
     fm_resp = {(d, n): _responsible_cluster(d) for d, _e, n in fm_vis}
 
@@ -9274,51 +9379,17 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
             "(capacity-gated); large positive gaps mean the model was limited by "
             f"something other than compute.{orphan_note}{fb_note}")
 
-    # ── Both directions as date-only tables ──
-    st.markdown("**Cluster → release it enables** "
-                "(each step, the earliest release it could have trained)")
-    rowsA = [f"| Largest DC ({metric_label}) | Online | "
-             f"Predicts (+{_CC_RELEASE_LAG_DAYS}d) | Earliest release it "
-             "enables | Gap |",
-             "|---|---|---|---|---|"]
-    for e in expected:
-        dc = f"{e['name']} — {_dc_fmt_value(e['perf'], kind)}"
-        if e['future']:
-            rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | "
-                         f"{e['pred']:%Y-%m-%d} | *(DC still future)* | — |")
-        elif e['model']:
-            mark = " †" if e['fallback'] else ""
-            rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | {e['pred']:%Y-%m-%d} | "
-                         f"{e['model'][2]} ({e['model'][0]:%Y-%m-%d}){mark} | "
-                         f"{e['err']:+d}d |")
-        else:
-            rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | "
-                         f"{e['pred']:%Y-%m-%d} | *(no release yet)* | — |")
-    st.markdown("\n".join(rowsA))
+    # The fallback releases are drawn hollow and marked † on the chart; say
+    # once why a real flagship can turn up as a non-record.
     if any(e['fallback'] for e in expected):
         st.caption(
-            "† not an ECI record for this lab. Shown because no record-setting "
-            "release fell in the window: Epoch recomputes ECI live, so a real "
-            "flagship can end up scored under its own predecessor and drop off "
-            "the running max without its release date changing. This panel "
-            "compares dates only, so the release still belongs here — it is "
-            "just marked, drawn hollow, and left out of the median above.")
-
-    st.markdown("**Release → cluster it came from** "
-                "(the most recent cluster online early enough to have trained it)")
-    rowsB = [f"| Release | Trained on (largest cluster, {metric_label}) | "
-             f"Implies (+{_CC_RELEASE_LAG_DAYS}d) | Shipped vs implied |",
-             "|---|---|---|---|"]
-    for m in model_match:
-        nm = f"{m['name']} ({m['date']:%Y-%m-%d})" + ("" if m['frontier'] else " †")
-        if m['resp']:
-            r = m['resp']
-            rowsB.append(f"| {nm} | "
-                         f"{r[2]} — {_dc_fmt_value(r[1], kind)} ({r[0]:%Y-%m-%d}) | "
-                         f"{m['pred']:%Y-%m-%d} | {m['err']:+d}d |")
-        else:
-            rowsB.append(f"| {nm} | *(predates any tracked cluster)* | — | — |")
-    st.markdown("\n".join(rowsB))
+            "† not an ECI record for this lab. Such a release is shown because "
+            "no record-setting one fell in its cluster's window: Epoch "
+            "recomputes ECI live, so a real flagship can end up scored under "
+            "its own predecessor and drop off the running max without its "
+            "release date changing. This panel compares dates only, so the "
+            "release still belongs here — it is just marked, drawn hollow, and "
+            "left out of the median above.")
 
     st.caption(
         f"Diamonds = capacity steps shifted forward {_CC_RELEASE_LAG_DAYS} days to "

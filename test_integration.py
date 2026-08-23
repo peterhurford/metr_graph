@@ -695,6 +695,27 @@ class TestDataCenters:
             text = " ".join(str(c.value) for c in at.caption)
             assert f"Methodology: *{label}*" in text
 
+    def test_every_networking_option_renders(self):
+        """Each pooling level draws, and the caption follows the selection —
+        it describes the curated groups only where the level uses them."""
+        at = self._dc_app()
+        labels = list(at.selectbox(key="dc_pool_n").options)
+        assert labels[0] == "Nearby sites + announced fabric", "default moved"
+        assert "Nearby sites + plausible added fabric" in labels
+        for label in labels:
+            at = self._dc_app()
+            at.selectbox(key="dc_pool_n").set_value(label).run()
+            _assert_no_error(at, f"Data Centers / {label}")
+            text = " ".join(str(c.value) for c in at.caption)
+            assert ("By proximity" in text) == label.startswith("Nearby"), label
+            assert ("By announced fabric" in text) == ("fabric" in label), label
+            assert ("plausible added fabric" in text) == ("plausible" in label), \
+                label
+            if "plausible" in label:
+                # The speculative regions are named, so the reader can see what
+                # is being assumed rather than just a bigger number.
+                assert "Mid-South" in text and "Texas & Oklahoma" in text
+
     def test_train_log_op_timing_shift(self):
         at = self._dc_app()
         at.selectbox(key="dc_metric").set_value("6mo train log OP").run()

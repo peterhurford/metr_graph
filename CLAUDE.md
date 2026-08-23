@@ -177,28 +177,52 @@ Guarded by `TestDcHiddenCompanies` and `TestDcUnattributedCompanies`.
 ### Networkable data-center clusters
 
 The Data Centers tab's last chart sums the sites a company could plausibly drive as **one**
-training job. `_DC_NETWORK_CLUSTERS` is a curated tuple of `(label, basis, site names)`,
-basis `'proximity'` (same campus or metro, read off `Address`) or `'fabric'` (far apart but
-joined by an announced training fabric — currently only Microsoft's AI WAN pair). Anything
-absent is its own cluster and never pools. Four things are load-bearing:
+training job. `_DC_NETWORK_CLUSTERS` is a curated tuple of `(label, basis, site names)`, with
+basis one of `_DC_NETWORK_LEVELS` — `'proximity'` (same campus or metro, read off `Address`),
+`'fabric'` (far apart but joined by an announced training fabric — currently only the
+Fairwater AI WAN pair), or `'plausible'` (a region with no link announced at all). The tab's selector
+picks how far down that list to go; `_dc_network_site_clusters(level=…)` admits every basis
+up to and including the one named, and the default stays `'fabric'`. Anything absent is its
+own cluster and never pools. Six things are load-bearing:
 
 1. **Curated on purpose.** Address parsing was tried and isn't viable — a third of rows
    yield no `(city, state)`, and the two Cedar Rapids sites sit in differently-named
    municipalities. Mis-grouping invents capacity, so `TestDcNetworkClusters` re-checks every
    name against the live CSV.
-2. **Clusters are geography; pooling is per company.** A cluster spanning two companies
-   never merges them, and sites hidden by `_dc_hidden_companies()` take their cluster with
+2. **Clusters are geography; pooling is per company.** A label names the geography or the
+   fabric, not the tenant: the Fairwater pair pools under *OpenAI*, Epoch's first-listed user
+   for both sites, which is why it isn't called "Microsoft AI WAN". A cluster spanning two
+   companies never merges them, and sites hidden by `_dc_hidden_companies()` take their cluster with
    them — only Cedar Rapids is inert today, for the first reason (a Google site and an
    unattributed QTS one). Richmond and San Antonio were inert for the second reason until
    their hosts cleared the size gate. Kept either way: the geography is real even where
-   tenant attribution isn't.
+   tenant attribution isn't. Note what this means for the `'plausible'` level: it is a
+   *fabric* assumption only. It cannot rescue Cedar Rapids, whose two sites are already
+   clustered and fail to pool because Epoch records no tenant for the QTS one. Assuming
+   tenancy is a much stronger claim than assuming a link, and is deliberately not on this
+   axis.
 3. **`cluster_of={}` must reproduce `_dc_company_series()` exactly** — that chart sits
    directly above, so drift reads as a bug. `cluster_of=None` pools the whole fleet and is
    offered only as an explicitly-labelled upper bound.
-4. **A site appears in at most one cluster**, else "largest group" depends on dict order.
+4. **A site appears in at most one cluster _per basis_**, else "largest group" depends on
+   dict order.
+5. **A wider basis must contain any cluster it touches whole.** Levels nest by overwriting,
+   weakest first, so a region that named only *some* of a metro cluster's sites would re-cut
+   that cluster rather than widen it, and the wider setting could then show *less* capacity.
+   `test_a_wider_basis_subsumes_the_clusters_it_touches` holds the invariant; the
+   monotonicity test on live data is what it buys.
+6. **The `'plausible'` radius is set by the announced fabric, not below it.** Every pair
+   inside a `'plausible'` region sits within roughly the ~1,200 km of the Fairwater AI WAN:
+   refusing a shorter unannounced hop than one already being built is the inconsistent
+   position, so the tier exists — but it is off by default and its caption says the groups
+   are what a company *could* wire together. Regions are listed only where at least one
+   company has two sites in them (an inert one pools nothing, unlike the metro clusters,
+   which are kept for the geography), a site in range of two regions goes where its own
+   company already is, and rule 5 pins anything that sits in a metro cluster.
 
-Don't widen a cluster to "same company, same region": the cross-site link has to carry the
-data-parallel gradient all-reduce, so metro fibre or a purpose-built fabric is the criterion.
+Don't widen a `'proximity'` or `'fabric'` cluster to "same company, same region": the
+cross-site link has to carry the data-parallel gradient all-reduce, so metro fibre or a
+purpose-built fabric is the criterion for the levels that claim a link exists.
 
 ### UK Cyber tab caveats
 
@@ -240,8 +264,10 @@ CSV, plus tab-to-tab set equality, the Google spellings, and slug round-tripping
 `_cc_company_buildout()` (bottom of the Data Centers tab) is a **pure timing test**: each
 capacity step of a lab's largest single data center, shifted forward `_CC_RELEASE_LAG_DAYS`
 (90d = 60d training + 30d release prep), against when that lab's models actually shipped.
-Capability is never compared. Two directions with two different clocks, tabled one above the
-other, so they must not contradict each other:
+Capability is never compared. Two directions with two different clocks — both now read out
+through the one timeline chart (forward in the predicted-row hovers, backward in the
+connectors and the headline median; the two date tables that used to sit under it were
+removed as redundant) — so they must not contradict each other:
 
 - **Backward** (release → cluster), `_responsible_cluster`: the latest step online at least
   one training run (`_CC_TRAIN_FLOOR_DAYS`, 60d) before the release. The extra ~1mo release
@@ -258,7 +284,7 @@ other, so they must not contradict each other:
 Load-bearing:
 
 1. **The grace is 7d, not the 30d the 60d floor would allow.** At 30d, clusters start
-   claiming the *same, earlier* model and the forward table goes degenerate. 7d changes
+   claiming the *same, earlier* model and the forward match goes degenerate. 7d changes
    exactly one pre-existing match, moving it *into* agreement with the backward match.
 2. **Tier 3 exists because "frontier release" is a running max while Epoch recomputes ECI
    live.** A real flagship can be rescored under its own predecessor and vanish from the
