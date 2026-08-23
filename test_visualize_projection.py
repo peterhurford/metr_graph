@@ -3068,6 +3068,139 @@ class TestDcCompanyAliases:
         assert max(v for _d, v, _n in comp['Google']) == max(pts)
 
 
+class TestDcHiddenCompanies:
+    """Size gates the colocation/neutral-host exclusion.
+
+    _DC_EXCLUDE_COMPANIES names companies that aren't AI labs, and they used to
+    be hidden unconditionally. That understated the tab's headline chart once
+    one of them got big: QTS Cedar Rapids is the largest single site in Epoch's
+    data, so "Largest single data center" was naming a smaller site as the
+    record holder."""
+
+    def _peak(self, co, cap=None):
+        return vp._dc_company_peak_h100(vp.dc_all, cap_date=cap).get(co, 0.0)
+
+    def test_hidden_is_a_subset_of_the_exclude_list(self):
+        """The size gate only ever un-hides — it must never drop an AI lab."""
+        hidden = vp._dc_hidden_companies(vp.dc_all)
+        assert hidden <= vp._DC_EXCLUDE_COMPANIES
+
+    def test_a_big_host_is_charted_and_a_small_one_is_not(self):
+        hidden = vp._dc_hidden_companies(vp.dc_all)
+        cap = datetime.now() + timedelta(days=vp._DC_EXCLUDE_HORIZON_DAYS)
+        for co in vp._DC_EXCLUDE_COMPANIES:
+            big = self._peak(co, cap) >= vp._DC_EXCLUDE_MIN_H100
+            assert (co not in hidden) == big, (
+                f"{co!r} peak {self._peak(co, cap):,.0f} vs threshold "
+                f"{vp._DC_EXCLUDE_MIN_H100:,}")
+
+    def test_the_largest_site_in_the_data_is_actually_charted(self):
+        """The bug that motivated the change: whoever owns the biggest site,
+        the envelope has to end on it."""
+        series = {n: v for n, v in
+                  vp._dc_series_for_metric(vp.dc_all, 'h100').items()
+                  if v['company'] not in vp._dc_hidden_companies(vp.dc_all)}
+        env = vp._dc_envelope(series)
+        biggest = max((p['h100'], dc['name']) for dc in vp.dc_all
+                      for p in dc['points'] if p.get('h100') is not None)
+        assert max(v for _d, v, _n, _c in env) == biggest[0]
+        assert biggest[1] in {n for _d, _v, n, _c in env}
+
+    def test_current_roster_is_what_the_tab_says_it_is(self):
+        """The calibration guard. The tab's scope caption names who the rule
+        adds, so an Epoch refresh that moves the roster has to be looked at
+        rather than absorbed silently. Oracle is the nearest miss at ~84k
+        against a 100k bar, so it is the one to expect here first; if it
+        crosses, retarget _DC_EXCLUDE_MIN_H100 deliberately (or accept Oracle)
+        instead of loosening this test."""
+        charted = vp._DC_EXCLUDE_COMPANIES - vp._dc_hidden_companies(vp.dc_all)
+        assert charted == {'QTS', 'DayOne', 'Microsoft'}, charted
+
+    def test_roster_is_stable_across_the_horizon(self):
+        """Who appears must not hinge on the exact horizon. Nothing may change
+        between 6 and 12 months out — the docstring's claim, asserted."""
+        now = datetime.now()
+        at_6mo = vp._dc_hidden_companies(
+            vp.dc_all, now=now - timedelta(days=183))
+        assert at_6mo == vp._dc_hidden_companies(vp.dc_all, now=now)
+
+    def test_roster_ignores_the_users_projection_window(self):
+        """dc_end_year caps the charts, never the roster — otherwise sites blink
+        in and out as the slider moves."""
+        rosters = {frozenset(vp._dc_hidden_companies(vp.dc_all))}
+        assert len(rosters) == 1
+        # And the function takes no metric/window argument that could vary it.
+        import inspect
+        params = set(inspect.signature(vp._dc_hidden_companies).parameters)
+        assert params == {'dcs', 'now'}
+
+    def test_uncapped_peaks_would_defeat_the_exclusion(self):
+        """Why the horizon exists: on buildout announced for 2028+, nearly
+        every listed host clears the bar and the list stops meaning anything."""
+        uncapped = vp._dc_company_peak_h100(vp.dc_all)
+        clears = {co for co in vp._DC_EXCLUDE_COMPANIES
+                  if uncapped.get(co, 0.0) >= vp._DC_EXCLUDE_MIN_H100}
+        assert clears > (vp._DC_EXCLUDE_COMPANIES
+                         - vp._dc_hidden_companies(vp.dc_all))
+
+    def test_compute_capabilities_frontier_stays_lab_only(self):
+        """The two tabs differ on purpose: a compute-vs-capability frontier
+        needs every point attributable to a lab that ships models, so it keeps
+        the unconditional exclusion even for the hosts the DC tab now charts."""
+        cap = datetime.now() + timedelta(days=365)
+        front = vp._cc_trainflop_frontier(vp.dc_all, cap, with_names=True)
+        by_name = {dc['name']: dc['company'] for dc in vp.dc_all}
+        leaders = {name for _d, _v, name, _sd in front}
+        assert leaders
+        for site in leaders:
+            assert by_name.get(site) not in vp._DC_EXCLUDE_COMPANIES, site
+        # And the DC tab's own envelope over the same window *does* reach one
+        # of them — otherwise this test passes for the wrong reason.
+        series = {n: v for n, v in
+                  vp._dc_series_for_metric(vp.dc_all, 'h100', cap_date=cap).items()
+                  if v['company'] not in vp._dc_hidden_companies(vp.dc_all)}
+        dc_leaders = {by_name.get(n) for _d, _v, n, _c in vp._dc_envelope(series)}
+        assert dc_leaders & vp._DC_EXCLUDE_COMPANIES
+
+
+class TestDcUnattributedCompanies:
+    """The † mark: capacity Epoch records no tenant for."""
+
+    def test_marks_exactly_the_name_token_fallbacks(self):
+        un = vp._dc_unattributed_companies(vp.dc_all)
+        for dc in vp.dc_all:
+            if dc['company'] in un:
+                assert not dc['attributed'], (
+                    f"{dc['name']} has a recorded user/owner but its company "
+                    f"{dc['company']!r} is marked unattributed")
+
+    def test_one_attributed_site_clears_the_whole_company(self):
+        """Microsoft is listed as its own sites' user, so it is charted plain
+        even though it shares the exclude list with the landlords."""
+        un = vp._dc_unattributed_companies(vp.dc_all)
+        assert 'Microsoft' not in un
+        assert vp._dc_co_label('Microsoft', un) == 'Microsoft'
+
+    def test_landlord_labels_carry_the_mark(self):
+        un = vp._dc_unattributed_companies(vp.dc_all)
+        charted = vp._DC_EXCLUDE_COMPANIES - vp._dc_hidden_companies(vp.dc_all)
+        marked = [c for c in charted if c in un]
+        assert marked, "no charted host is unattributed — is the mark dead?"
+        for co in marked:
+            assert vp._dc_co_label(co, un) == co + vp._DC_UNATTRIBUTED_MARK
+
+    def test_labs_are_never_marked(self):
+        un = vp._dc_unattributed_companies(vp.dc_all)
+        for co in ["OpenAI", "Anthropic", "Google", "Meta"]:
+            assert co not in un
+
+    def test_and_list_reads_as_prose(self):
+        assert vp._and_list([]) == ""
+        assert vp._and_list(["a"]) == "a"
+        assert vp._and_list(["a", "b"]) == "a and b"
+        assert vp._and_list(["a", "b", "c"]) == "a, b and c"
+
+
 class TestDcNetworkClusters:
     """The curated map of sites that could share one training job."""
 

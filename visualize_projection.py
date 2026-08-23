@@ -1107,10 +1107,13 @@ _DC_PALETTE = ["#888888", "#E377C2", "#8C564B", "#BCBD22", "#17BECF",
 #
 # Clusters are geography, not ownership, and pooling happens strictly within one
 # company — so a cluster whose sites belong to different companies, or whose
-# sites are dropped by _DC_EXCLUDE_COMPANIES, is inert until that changes. Cedar
-# Rapids, Richmond and San Antonio are inert today for exactly that reason; they
-# stay listed because the geography is real and the attribution may not be
-# (QTS Cedar Rapids has no user recorded at all).
+# sites are hidden by _dc_hidden_companies(), is inert until that changes. Only
+# Cedar Rapids is inert today, and for the first reason: its two sites are a
+# Google one and a QTS one with no recorded user, so they never merge. Richmond
+# (three QTS sites) and San Antonio (two Microsoft ones) used to be inert for
+# the second reason and now pool, since those hosts cleared the size threshold
+# and are charted. A cluster stays listed either way — the geography is real
+# even where the attribution is not.
 _DC_NETWORK_CLUSTERS = (
     ("Memphis, TN", 'proximity', ("Colossus 1", "Colossus 2")),
     ("Abilene, TX", 'proximity', ("OpenAI Stargate Abilene",
@@ -1136,22 +1139,29 @@ _DC_EXCLUDE_COMPANIES = {
     "Oracle", "Microsoft",
 }
 
-# …but only while they stay small. Peak single-site H100-equivalents at or above
-# this and the company is charted anyway. See _dc_hidden_companies().
+# …but only while they stay small. A listed company whose biggest site reaches
+# this within _DC_EXCLUDE_HORIZON_DAYS is charted anyway. See
+# _dc_hidden_companies() for why the test is framed this way.
 _DC_EXCLUDE_MIN_H100 = 100_000
+_DC_EXCLUDE_HORIZON_DAYS = 365
 
 
-def _dc_company_peak_h100(dcs):
-    """company → its largest single site's peak H100-equivalents (uncapped)."""
+def _dc_company_peak_h100(dcs, cap_date=None):
+    """company → its largest single site's peak H100-equivalents.
+
+    Points dated after `cap_date` are ignored when one is given.
+    """
     peak = {}
     for dc in dcs:
-        vals = [p['h100'] for p in dc['points'] if p.get('h100') is not None]
+        vals = [p['h100'] for p in dc['points']
+                if p.get('h100') is not None
+                and (cap_date is None or p['date'] <= cap_date)]
         if vals:
             peak[dc['company']] = max(peak.get(dc['company'], 0.0), max(vals))
     return peak
 
 
-def _dc_hidden_companies(dcs):
+def _dc_hidden_companies(dcs, now=None):
     """The subset of _DC_EXCLUDE_COMPANIES small enough to leave off the tab.
 
     The exclude list names companies that aren't AI labs — colocation and
@@ -1159,23 +1169,32 @@ def _dc_hidden_companies(dcs):
     whoever trains on the hardware. Hiding them unconditionally was fine only
     while they were small, and they are not: QTS Cedar Rapids is the single
     largest site in Epoch's data, so dropping it made "Largest single data
-    center" understate the frontier by naming a smaller site as the record
-    holder. Size now gates the exclusion — a listed company disappears only
-    while its biggest site stays under _DC_EXCLUDE_MIN_H100.
+    center" understate the frontier and name a smaller site as record holder.
+    Size now gates the exclusion — a listed company disappears only while its
+    biggest site stays under _DC_EXCLUDE_MIN_H100.
 
-    The threshold is deliberately read off peak **uncapped H100-equivalents**,
-    not off the metric and date window currently selected:
+    Three things about how the test is framed:
 
-      • Who appears is a property of the company, not of the chart controls. A
-        roster that changed when the user moved the projection-year slider or
-        toggled planned buildout would read as sites blinking in and out.
-      • H100-equivalents are the only metric the threshold is meaningful in —
-        the same number in megawatts or dollars means something else entirely,
-        and two of the metrics are inverted (bigger site = smaller value).
+    1. **H100-equivalents, always** — never the metric currently selected. The
+       same number in megawatts or dollars means something else entirely, and
+       two of the tab's metrics are inverted (bigger site = smaller value), so a
+       ">= threshold" test would read backwards on them.
+    2. **A rolling `_DC_EXCLUDE_HORIZON_DAYS` horizon, not the uncapped peak.**
+       Uncapped, every listed company eventually clears 100k on buildout
+       announced for 2028 and later, and the exclusion stops meaning anything.
+       A year out is the span where the plans are firm enough to chart. The
+       roster is stable well either side of it: nothing changes between a
+       6-month and a 12-month horizon, and the next company to qualify does so
+       only at ~18 months.
+    3. **Not the user's projection window.** dc_end_year caps the *charts*, but
+       who appears on the tab is a property of the company, not of a slider —
+       a roster that changed with the controls would read as sites blinking in
+       and out of existence.
 
     Companies not on the exclude list are unaffected; this only ever un-hides.
     """
-    peak = _dc_company_peak_h100(dcs)
+    cap = (now or datetime.now()) + timedelta(days=_DC_EXCLUDE_HORIZON_DAYS)
+    peak = _dc_company_peak_h100(dcs, cap_date=cap)
     return {co for co in _DC_EXCLUDE_COMPANIES
             if peak.get(co, 0.0) < _DC_EXCLUDE_MIN_H100}
 
@@ -1186,7 +1205,7 @@ def _dc_unattributed_companies(dcs):
     Epoch records no user and no owner for these, so load_data_centers() falls
     back to the first token of the site name: the capacity is real but the
     tenant is unknown, and "QTS" on a chart means a landlord, not an AI lab
-    running 1.7M H100-equivalents. Rendered with a † and a footnote wherever the
+    running 3.7M H100-equivalents. Rendered with a † and a footnote wherever the
     company is named. A company with even one properly attributed site is left
     alone — Microsoft is listed as its own sites' user, so it is not marked.
     """
@@ -1254,6 +1273,14 @@ def _log_op(v):
     if v is None or not np.isfinite(v) or v <= 0:
         return "—"
     return _logop_num(np.log10(v))
+
+
+def _and_list(items):
+    """['a','b','c'] → "a, b and c" — for naming companies in prose captions."""
+    items = list(items)
+    if len(items) <= 1:
+        return items[0] if items else ""
+    return f"{', '.join(items[:-1])} and {items[-1]}"
 
 
 def _dc_fmt_value(v, kind):
@@ -7011,9 +7038,11 @@ def render_data_centers():
     # Cap projected buildout at the end of the chosen projection year.
     cap_date = datetime(dc_end_year, 12, 31) if include_future else _today
     series = _dc_series_for_metric(dc_all, key, cap_date=cap_date)
-    # Drop colocation / neutral-host providers (not AI labs).
-    series = {n: v for n, v in series.items()
-              if v['company'] not in _DC_EXCLUDE_COMPANIES}
+    # Drop the colocation / neutral-host providers too small to matter; the big
+    # ones are charted and marked instead (see _dc_hidden_companies).
+    hidden = _dc_hidden_companies(dc_all, now=_today)
+    unattributed = _dc_unattributed_companies(dc_all)
+    series = {n: v for n, v in series.items() if v['company'] not in hidden}
 
     # Shift every data point forward from the site's availability date to the
     # chosen milestone (DC construction / training done / model release). DC
@@ -7051,6 +7080,33 @@ def render_data_centers():
     if not series:
         st.warning("No data available for this metric.")
         return
+
+    # Who is on the charts, and how sure we are whose hardware it is. Built from
+    # the companies actually plotted, so it stays true as the data moves.
+    _peak_h100 = _dc_company_peak_h100(dc_all)
+    _shown_hosts = sorted(
+        {v['company'] for v in series.values()} & _DC_EXCLUDE_COMPANIES,
+        key=lambda c: -_peak_h100.get(c, 0.0))
+    _shown_unattr = [c for c in _shown_hosts if c in unattributed]
+    if _shown_hosts:
+        _note = (
+            "Scope: AI labs, plus colocation and neutral-host operators big "
+            "enough to move the frontier — "
+            f"{_dc_fmt_value(_DC_EXCLUDE_MIN_H100, 'h100')} "
+            "H100-equivalents at a single site within a year. That currently "
+            f"adds {_and_list([_dc_co_label(c, unattributed) for c in _shown_hosts])}"
+            ". Smaller hosts are left off.")
+        if _shown_unattr:
+            _note += (
+                f" **†** marks a company Epoch records no user or owner for "
+                f"({_and_list(_shown_unattr)}): the capacity is real, but the "
+                "name is the building's landlord and whoever trains on the "
+                "hardware is unknown, so the line is not a lab's compute.")
+        _note += (
+            " The Compute vs Capabilities tab leaves all of them out — its "
+            "frontier has to be attributable to a lab that ships models, so "
+            "the two tabs' largest-site lines differ on purpose.")
+        st.caption(_note)
 
     # ══════════════════════════════════════════════════════════════════════
     # Section 1: Largest single data center over time
@@ -7113,7 +7169,8 @@ def render_data_centers():
                         line=dict(color='#1F77B4', width=1.5)),
             text=[p[2] for p in pts], textposition='top center',
             textfont=dict(size=9, color='#1F77B4'),
-            hovertext=[f"{p[2]} ({p[3]}){' — planned' if projected else ''}<br>"
+            hovertext=[f"{p[2]} ({_dc_co_label(p[3], unattributed)})"
+                       f"{' — planned' if projected else ''}<br>"
                        f"{_dc_fmt_value(p[1], kind)}<br>{_dc_milestone_dates(p[0], shift_days)}"
                        for p in pts],
             hoverinfo='text', showlegend=False,
@@ -7127,7 +7184,8 @@ def render_data_centers():
             mode='markers',
             marker=dict(color='white', size=7,
                         line=dict(color='#1F77B4', width=1.5)),
-            hovertext=[f"{p[2]} ({p[3]}) — scale-up"
+            hovertext=[f"{p[2]} ({_dc_co_label(p[3], unattributed)})"
+                       f" — scale-up"
                        f"{' — planned' if p[0] > _today else ''}<br>"
                        f"{_dc_fmt_value(p[1], kind)}<br>"
                        f"{_dc_milestone_dates(p[0], shift_days)}"
@@ -7145,7 +7203,8 @@ def render_data_centers():
             marker=dict(color='white' if _peak_projected else '#1F77B4', size=13,
                         symbol='diamond', line=dict(color='#1F77B4', width=1.5)),
             hovertext=[f"{'Planned peak' if _peak_projected else 'Current'}: "
-                       f"{cn} ({cco})<br>{_dc_fmt_value(cv, kind)}<br>"
+                       f"{cn} ({_dc_co_label(cco, unattributed)})<br>"
+                       f"{_dc_fmt_value(cv, kind)}<br>"
                        f"{_dc_milestone_dates(cd, shift_days)}"],
             hoverinfo='text', showlegend=False,
         ))
@@ -7188,12 +7247,13 @@ def render_data_centers():
     fig_snap = go.Figure()
     fig_snap.add_trace(go.Bar(
         x=[s[1] for s in snap],
-        y=[s[0] for s in snap],
+        y=[_dc_co_label(s[0], unattributed) for s in snap],
         orientation='h',
         marker=dict(color=[_dc_color(s[0], i) for i, s in enumerate(snap)]),
         text=[_dc_fmt_value(s[1], kind) for s in snap],
         textposition='outside',
-        hovertext=[f"{s[0]} — {s[2]}<br>{_dc_fmt_value(s[1], kind)}" for s in snap],
+        hovertext=[f"{_dc_co_label(s[0], unattributed)} — {s[2]}<br>"
+                   f"{_dc_fmt_value(s[1], kind)}" for s in snap],
         hoverinfo='text',
     ))
     snap_xaxis = dict(title_text=f"Current {metric_label}",
@@ -7233,19 +7293,22 @@ def render_data_centers():
         _dc_add_projection_band(fig2, _today, x_end)
     for i, co in enumerate(ranked):
         color = _dc_color(co, i)
+        # The legend shows the marked label; grouping stays on the raw name.
+        co_label = _dc_co_label(co, unattributed)
         steps = comp[co]
         (a_x, a_y), (p_x, p_y) = _dc_split_at(steps, _today, end_x)
         # Solid actual / dashed projected lines (hover handled by the dots).
         fig2.add_trace(go.Scatter(
             x=a_x, y=a_y, mode='lines',
             line=dict(color=color, width=2.5, shape='hv'),
-            name=co, legendgroup=co, hoverinfo='skip',
+            name=co_label, legendgroup=co, hoverinfo='skip',
         ))
         if p_x is not None:
             fig2.add_trace(go.Scatter(
                 x=p_x, y=p_y, mode='lines',
                 line=dict(color=color, width=2.5, shape='hv', dash='dash'),
-                name=co, legendgroup=co, showlegend=False, hoverinfo='skip',
+                name=co_label, legendgroup=co, showlegend=False,
+                hoverinfo='skip',
             ))
         # Filled dots where a *new* data center becomes the company's largest;
         # hollow dots where the same leading site scales up to a new capacity.
@@ -7267,9 +7330,9 @@ def render_data_centers():
                 marker=dict(size=6,
                             color='white' if hollow else color,
                             line=dict(color=color, width=1.5)),
-                name=co, legendgroup=co, showlegend=False,
+                name=co_label, legendgroup=co, showlegend=False,
                 hovertext=[
-                    f"{co} — {s[2]} ({label})"
+                    f"{co_label} — {s[2]} ({label})"
                     f"{' (planned)' if s[0] > _today else ''}<br>"
                     f"{_dc_fmt_value(s[1], kind)}<br>{_dc_milestone_dates(s[0], shift_days)}"
                     for s in pts],
@@ -7356,18 +7419,20 @@ def render_data_centers():
         _dc_add_projection_band(fig_pool, _today, x_end)
     for i, co in enumerate(pool_ranked):
         color = _dc_color(co, i)
+        co_label = _dc_co_label(co, unattributed)
         steps = pooled[co]
         (a_x, a_y), (p_x, p_y) = _dc_split_at(steps, _today, end_x)
         fig_pool.add_trace(go.Scatter(
             x=a_x, y=a_y, mode='lines',
             line=dict(color=color, width=2.5, shape='hv'),
-            name=co, legendgroup=co, hoverinfo='skip',
+            name=co_label, legendgroup=co, hoverinfo='skip',
         ))
         if p_x is not None:
             fig_pool.add_trace(go.Scatter(
                 x=p_x, y=p_y, mode='lines',
                 line=dict(color=color, width=2.5, shape='hv', dash='dash'),
-                name=co, legendgroup=co, showlegend=False, hoverinfo='skip',
+                name=co_label, legendgroup=co, showlegend=False,
+                hoverinfo='skip',
             ))
         # One dot per capacity change; the hover names the cluster and the sites
         # in it, so it is clear which buildings the line is adding together.
@@ -7376,9 +7441,9 @@ def render_data_centers():
         fig_pool.add_trace(go.Scatter(
             x=[s[0] for s in dots], y=[s[1] for s in dots], mode='markers',
             marker=dict(size=6, color=color, line=dict(color=color, width=1.5)),
-            name=co, legendgroup=co, showlegend=False,
+            name=co_label, legendgroup=co, showlegend=False,
             hovertext=[
-                f"{co}{' (planned)' if s[0] > _today else ''}<br>"
+                f"{co_label}{' (planned)' if s[0] > _today else ''}<br>"
                 f"{_dc_fmt_value(s[1], kind)}"
                 f"{f' — {s[3]}, {len(s[2])} sites' if s[3] else ''}"
                 "<br>" + "<br>".join(f"• {n}" for n in s[2]) + "<br>"
@@ -7403,11 +7468,12 @@ def render_data_centers():
         f"By announced fabric: {_fab}. Everything else stands alone, so most "
         "companies show their single largest site — pooling changes the line "
         "only where a real cluster exists. "
-        "Colocation and neutral-host operators (QTS, CoreWeave, Oracle, "
-        "Microsoft and similar) are excluded tab-wide, so their sites appear "
-        "here only under the AI lab listed as the primary user. A company that "
-        "leases capacity it does not own still shows it; a landlord that owns "
-        "capacity it leases out does not.")
+        "A colocation or neutral-host operator pools only with itself: its "
+        "sites appear under the AI lab listed as the primary user where Epoch "
+        "records one, and under the landlord (marked †) where it does not. So "
+        "a company that leases capacity it does not own shows it here, and a "
+        "landlord's own line is a lower bound on what its unnamed tenants "
+        "could network together.")
 
     # Per-company: does the buildout predict releases?
     _cc_company_buildout(_today, cfg["key"], kind, metric_label)
@@ -7446,8 +7512,18 @@ def _cc_trainflop_frontier(dcs, cap_date, with_names=False):
 
     Returns [(date, flop), …] sorted by date, with every point shifted forward
     by the 2-month training lead time (a run on a site available at D only
-    finishes at D+2mo), matching the Data Centers tab. Colocation/neutral-host
-    providers are excluded. Monotonic non-decreasing.
+    finishes at D+2mo), matching the Data Centers tab. Monotonic non-decreasing.
+
+    Every company in _DC_EXCLUDE_COMPANIES is dropped here **unconditionally**,
+    which is deliberately stricter than the Data Centers tab: that tab now
+    charts the big neutral hosts (_dc_hidden_companies), because a chart of
+    where the compute is should show a 3.7M-H100 site whoever the landlord is.
+    This frontier is not that. It is the compute half of a compute-vs-capability
+    comparison, so every point has to be attributable to a lab that ships
+    models — and QTS and DayOne sites have no recorded tenant at all. Crediting
+    their capacity to nobody would raise the frontier without any capability to
+    match it, distorting the fitted rates and China's ETA downstream. The two
+    frontiers therefore differ on purpose; the Data Centers tab says so.
     """
     series = _dc_series_for_metric(dcs, 'train_flop', cap_date=cap_date)
     series = {n: v for n, v in series.items()

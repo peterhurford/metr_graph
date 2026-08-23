@@ -131,6 +131,49 @@ one company, that both spellings are still present upstream (so the map isn't de
 and that no label is a qualified form of another — the guard that would catch the next
 `Meta AI`-vs-`Meta` style split.
 
+### Who appears on the Data Centers tab
+
+`_DC_EXCLUDE_COMPANIES` lists companies that aren't AI labs — colocation and neutral-host
+operators whose recorded "company" is the landlord, not whoever trains on the hardware. The
+list is no longer an unconditional hide. `_dc_hidden_companies()` drops a listed company
+only while its largest single site stays under `_DC_EXCLUDE_MIN_H100` (100k H100-equiv)
+within `_DC_EXCLUDE_HORIZON_DAYS` (365d). Hiding them all was wrong once one got big: QTS
+Cedar Rapids is the largest single site in Epoch's data, so the tab's headline chart was
+naming a smaller site as the record holder. Today the rule adds QTS, DayOne and Microsoft
+and still hides Oracle, STACK, Stream, Vantage, EdgeCore and CoreWeave.
+
+Four things are load-bearing:
+
+1. **The threshold reads H100-equivalents, always** — never the metric currently selected.
+   The same number in megawatts or dollars means something else, and two of the tab's
+   metrics are inverted (bigger site = smaller value), so `>=` would read backwards.
+2. **A rolling horizon, not the uncapped peak, and not `dc_end_year`.** Uncapped, every
+   listed host eventually clears 100k on 2028+ buildout and the list stops meaning anything
+   (`test_uncapped_peaks_would_defeat_the_exclusion`). And the roster is a property of the
+   company, not of a slider — keying it to the user's projection window would make sites
+   blink in and out as the window moves. The roster is stable well either side of a year:
+   nothing changes between a 6- and 12-month horizon, and the next company to qualify does
+   so only at ~18 months. Oracle is the nearest miss (~84k against the 100k bar); if an
+   Epoch refresh crosses it, retarget the constant deliberately rather than loosening
+   `test_current_roster_is_what_the_tab_says_it_is`.
+3. **`†` marks capacity with no recorded tenant.** `load_data_centers()` sets `attributed`
+   False when the company label came from the site-name fallback rather than Epoch's `Users`
+   or `Owner`; `_dc_unattributed_companies()` marks a company only when *every* one of its
+   sites is such a fallback, so Microsoft (listed as its own sites' user) draws plain while
+   QTS and DayOne carry the mark. Solid-vs-dashed is already actual-vs-planned, hence a
+   glyph rather than a line style. The scope caption is built from the companies actually
+   plotted, so it can't drift from the data.
+4. **The Compute vs Capabilities tab keeps the unconditional exclusion.** `_cc_trainflop_
+   frontier()` still drops every name in `_DC_EXCLUDE_COMPANIES`: it is the compute half of
+   a compute-vs-capability comparison, so each point has to be attributable to a lab that
+   ships models, and QTS/DayOne sites have no recorded tenant at all. Crediting their
+   capacity to nobody would raise the frontier with no capability to match it, distorting
+   the fitted rates and China's ETA downstream. The two tabs' largest-site lines therefore
+   differ on purpose and the DC tab's caption says so;
+   `test_compute_capabilities_frontier_stays_lab_only` asserts both halves.
+
+Guarded by `TestDcHiddenCompanies` and `TestDcUnattributedCompanies`.
+
 ### Networkable data-center clusters
 
 The Data Centers tab's last chart sums the sites a company could plausibly drive as **one**
@@ -144,9 +187,11 @@ absent is its own cluster and never pools. Four things are load-bearing:
    municipalities. Mis-grouping invents capacity, so `TestDcNetworkClusters` re-checks every
    name against the live CSV.
 2. **Clusters are geography; pooling is per company.** A cluster spanning two companies
-   never merges them, and sites dropped by `_DC_EXCLUDE_COMPANIES` take their cluster with
-   them — why Cedar Rapids, Richmond and San Antonio are inert today. Kept because the
-   geography is real even where tenant attribution isn't.
+   never merges them, and sites hidden by `_dc_hidden_companies()` take their cluster with
+   them — only Cedar Rapids is inert today, for the first reason (a Google site and an
+   unattributed QTS one). Richmond and San Antonio were inert for the second reason until
+   their hosts cleared the size gate. Kept either way: the geography is real even where
+   tenant attribution isn't.
 3. **`cluster_of={}` must reproduce `_dc_company_series()` exactly** — that chart sits
    directly above, so drift reads as a bug. `cluster_of=None` pools the whole fleet and is
    offered only as an explicitly-labelled upper bound.
