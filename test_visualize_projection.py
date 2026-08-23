@@ -3213,31 +3213,71 @@ class TestDcNetworkClusters:
                 assert name in known, f"{label}: unknown site {name!r}"
 
     def test_registry_is_well_formed(self):
-        seen = set()
+        labels = set()
         for label, basis, names in vp._DC_NETWORK_CLUSTERS:
-            assert basis in ('proximity', 'fabric'), label
+            assert basis in vp._DC_NETWORK_LEVELS, label
             assert len(names) >= 2, f"{label} is not a cluster"
             assert len(set(names)) == len(names), label
-            # A site may belong to at most one cluster, or "largest group"
-            # would depend on dict ordering.
-            for name in names:
-                assert name not in seen, f"{name} is in two clusters"
-                seen.add(name)
+            assert label not in labels, f"{label} is used twice"
+            labels.add(label)
+        # Within one basis a site may belong to at most one cluster, or
+        # "largest group" would depend on dict ordering.
+        for basis in vp._DC_NETWORK_LEVELS:
+            seen = set()
+            for label, b, names in vp._DC_NETWORK_CLUSTERS:
+                if b != basis:
+                    continue
+                for name in names:
+                    assert name not in seen, f"{name} is in two {basis} clusters"
+                    seen.add(name)
 
-    def test_fabric_clusters_are_droppable(self):
-        with_fabric = vp._dc_network_site_clusters(include_fabric=True)
-        without = vp._dc_network_site_clusters(include_fabric=False)
-        assert set(without) < set(with_fabric)
-        assert "Microsoft Fairwater Wisconsin" in with_fabric
-        assert "Microsoft Fairwater Wisconsin" not in without
-        # Proximity clusters survive either way.
-        assert without["Colossus 2"] == with_fabric["Colossus 2"] == "Memphis, TN"
+    def test_a_wider_basis_subsumes_the_clusters_it_touches(self):
+        """The levels are nested by overwriting, so a 'plausible' region that
+        names *some* of a metro cluster's sites would re-cut that cluster rather
+        than widen it — and the wider setting could then show less capacity."""
+        by_basis = {}
+        for label, basis, names in vp._DC_NETWORK_CLUSTERS:
+            by_basis.setdefault(basis, []).append((label, set(names)))
+        for i, basis in enumerate(vp._DC_NETWORK_LEVELS):
+            for label, names in by_basis.get(basis, []):
+                for lower in vp._DC_NETWORK_LEVELS[:i]:
+                    for lo_label, lo_names in by_basis.get(lower, []):
+                        if names & lo_names:
+                            assert lo_names <= names, (
+                                f"{label} splits {lo_label}: missing "
+                                f"{sorted(lo_names - names)}")
+
+    def test_each_level_is_a_superset_of_the_one_before(self):
+        prox = vp._dc_network_site_clusters('proximity')
+        fab = vp._dc_network_site_clusters('fabric')
+        plaus = vp._dc_network_site_clusters('plausible')
+        assert set(prox) < set(fab) < set(plaus)
+        assert vp._dc_network_site_clusters() == fab, "default is 'fabric'"
+        assert "Microsoft Fairwater Wisconsin" in fab
+        assert "Microsoft Fairwater Wisconsin" not in prox
+        # Proximity clusters survive as themselves until a wider basis absorbs
+        # them: Memphis becomes part of the Mid-South region, Johor never does.
+        assert prox["Colossus 2"] == fab["Colossus 2"] == "Memphis, TN"
+        assert plaus["Colossus 2"] == "Mid-South"
+        assert plaus["DayOne Kempas"] == "Johor, Malaysia"
+
+    def test_every_plausible_region_pools_something(self):
+        """A region where every site belongs to a different company pools
+        nothing — the speculative level lists only groups that act."""
+        companies = {dc['name']: dc['company'] for dc in vp.dc_all}
+        for label, basis, names in vp._DC_NETWORK_CLUSTERS:
+            if basis != 'plausible':
+                continue
+            cos = [companies[n] for n in names]
+            assert len(cos) > len(set(cos)), f"{label} pools nothing"
 
     def test_network_options_registry_is_well_formed(self):
         assert vp._DC_DEFAULTS["dc_pool_n"] in vp._DC_NETWORK_OPTIONS
+        assert vp._DC_DEFAULTS["dc_pool_n"] == "Nearby sites + announced fabric"
         assert "dc_pool_n" in vp._DC_RESET_KEYS
         assert set(vp._DC_NETWORK_OPTIONS.values()) == {
-            'fabric', 'proximity', 'none', 'all'}
+            'fabric', 'plausible', 'proximity', 'none', 'all'}
+        assert set(vp._DC_NETWORK_LEVELS) <= set(vp._DC_NETWORK_OPTIONS.values())
 
 
 class TestDcCompanyNetworkedSeries:
@@ -3303,10 +3343,9 @@ class TestDcCompanyNetworkedSeries:
                if d['company'] not in vp._DC_EXCLUDE_COMPANIES}
         runs = [
             vp._dc_company_networked_series(ser, {}),
-            vp._dc_company_networked_series(
-                ser, vp._dc_network_site_clusters(include_fabric=False)),
-            vp._dc_company_networked_series(
-                ser, vp._dc_network_site_clusters(include_fabric=True)),
+            *[vp._dc_company_networked_series(
+                ser, vp._dc_network_site_clusters(level))
+              for level in vp._DC_NETWORK_LEVELS],
             vp._dc_company_networked_series(ser, None),
         ]
         at = datetime(2027, 6, 30)
