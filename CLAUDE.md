@@ -548,7 +548,11 @@ pace) to the sidebar threshold's ECI equivalent (today's frontier + a_partial pe
 OOM above the largest actual US run, floored at the frontier), freezes, and China
 races the paused frontier in an ECI chart (US kink + China fan + crossing diamond);
 the paused stock stays distillable while a gap remains, then China runs on its
-indigenous band plus its export-control-bound compute term.
+indigenous band plus its export-control-bound compute term. The pause date is the
+later of capability arrival and the first *completed* threshold run of the sidebar's
+run length on the same (sigma-sampled) capacity fit — run length moves it. A
+*Projection range* expander (`pc_end_year`, default 2033) sets the crossing-search
+horizon.
 
 Guarded by `TestPacing` (unit) and `TestPacingTab` (integration).
 

@@ -1109,6 +1109,25 @@ class TestPacingTab:
         caps = " ".join(str(c.value) for c in at.caption)
         assert "indigenous" in caps
 
+    def test_pause_date_respects_run_length(self):
+        """The pause waits for hardware able to complete the run: the caption
+        names the selected run length, and the 2-month setting renders clean."""
+        at = self._app()
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "6-month" in caps and "-op run" in caps
+        at.radio(key="pc_run").set_value("2-month run").run()
+        _assert_no_error(at, "Pacing / pause with 2-month run")
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "2-month" in caps and "-op run" in caps
+
+    def test_projection_range(self):
+        """'Project through' moves the crossing-search horizon."""
+        at = self._app()
+        at.radio(key="pc_end_year").set_value(2029).run()
+        _assert_no_error(at, "Pacing / through 2029")
+        at.radio(key="pc_end_year").set_value(2035).run()
+        _assert_no_error(at, "Pacing / through 2035")
+
     def test_us_pause_bar_syncs_with_sidebar_threshold(self):
         """The pause bar follows the sidebar's training-run threshold: a
         bigger run maps to a higher ECI bar via the exchange rate."""

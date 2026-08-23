@@ -10813,11 +10813,13 @@ _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
 _PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party",
-                  "pc_timing"]
+                  "pc_timing", "pc_end_year"]
 _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run",
                 "pc_pool": "Nearby + announced fabric",
                 "pc_party": "Tenant (who trains there)",
-                "pc_timing": "Data center construction"}
+                "pc_timing": "Data center construction",
+                "pc_end_year": _PC_HORIZON.year}
+_PC_END_YEARS = [2029, 2031, 2033, 2035]
 
 
 def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
@@ -10894,7 +10896,8 @@ def _pc_idx_date(idx, grid, q):
     return grid[j] if j < len(grid) else None
 
 
-def _pc_projection(rows, dcs, today, since=None, ref_steps=None):
+def _pc_projection(rows, dcs, today, since=None, ref_steps=None,
+                   horizon=None):
     """(grid, label → sampled paths) for each entity, projected exactly as the
     by-country panel does it: recorded steps, then catalogued plans under
     quality-dependent slip, then — past the ~18-month plan horizon — the US
@@ -10903,7 +10906,8 @@ def _pc_projection(rows, dcs, today, since=None, ref_steps=None):
     extrapolates on its own fit.
     """
     plan_end = today + timedelta(days=_DC_CTY_PLAN_HORIZON_DAYS)
-    grid = _dc_cty_month_grid(datetime(today.year, today.month, 1), _PC_HORIZON)
+    grid = _dc_cty_month_grid(datetime(today.year, today.month, 1),
+                              horizon or _PC_HORIZON)
     fits = {label: _dc_cty_fit(steps, since=since, t_end=plan_end)
             for label, _, steps, _ in rows}
     # The reference pace: the US country row when it is among the rows
@@ -10936,16 +10940,16 @@ def _pc_projection(rows, dcs, today, since=None, ref_steps=None):
     return grid, out
 
 
-def _pc_when(rec):
+def _pc_when(rec, horizon=None):
     """One phrase for when an entity crosses, whatever its state."""
     if rec['crossed']:
         return f"already there (since {rec['plan']:%b %Y})"
     if rec['med'] is None:
-        return f"not by {_PC_HORIZON.year} in most samples"
+        return f"not by {(horizon or _PC_HORIZON).year} in most samples"
     return f"~{rec['med']:%b %Y}"
 
 
-def _pc_render_us_pause(today, thr_ops):
+def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
     """If the US paused: China's catch-up to the paused frontier, in ECI.
 
     The pause bar syncs with the sidebar's training-run threshold: `thr_ops`
@@ -10955,6 +10959,8 @@ def _pc_render_us_pause(today, thr_ops):
     compute-derived rate to that bar and freeze; the paused stock stays
     distillable while a gap remains, then China runs on its indigenous
     algorithmic rate (_cc_innovation_algo_band) plus its compute term alone.
+    The pause *date* also waits for hardware able to complete a `thr_ops`
+    run of `run_days` (the sidebar's run length), on the same DC fit.
     """
     st.subheader("If the US paused: when does China catch up?")
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
@@ -10998,11 +11004,12 @@ def _pc_render_us_pause(today, thr_ops):
     chk_us = _cc_country_pace_check(today).get(_DC_CTY_US)
     n_s = N_SAMPLES
     if chk_us:
+        g_s = np.maximum(
+            np.random.normal(chk_us['g'], chk_us['sigma_g'], n_s), 0.05)
         us_rate = b_algo + a_partial * chk_us['g']
-        us_rate_s = np.maximum(
-            b_algo + a_partial * np.random.normal(chk_us['g'],
-                                                  chk_us['sigma_g'], n_s), 1.0)
+        us_rate_s = np.maximum(b_algo + a_partial * g_s, 1.0)
     else:
+        g_s = None
         us_rate = _cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1)) or 15.0
         us_rate_s = np.full(n_s, us_rate)
     gap_d = _cc_release_gap_days(cn_fr, since=today - timedelta(days=730))
@@ -11021,12 +11028,27 @@ def _pc_render_us_pause(today, thr_ops):
         return
     d10, d50, d90 = (anchor_d + timedelta(days=float(np.percentile(yr_ok, p))
                                           * 365.25) for p in (10, 50, 90))
-    # Pause-date distribution from the sampled climb rates (faster pace →
-    # earlier pause); the kink and annotation use the median.
-    t_pause_s = np.maximum((threshold - us_best[1]) / us_rate_s, 0.0)
-    dp10, dp50, dp90 = (anchor_d + timedelta(days=float(np.percentile(
-        t_pause_s, p)) * 365.25) for p in (10, 50, 90))
-    d_pause = dp50
+    # Capability arrival at the bar, per sample.
+    t_eci_s = np.maximum((threshold - us_best[1]) / us_rate_s, 0.0)
+    # Hardware feasibility: a thr_ops job of this run length needs 2-month
+    # capacity of thr_ops × (2mo/run) on the same (sampled) DC fit, and
+    # completing the run adds the run itself. Run length is what moves this —
+    # a shorter run needs proportionally more cluster.
+    if g_s is not None:
+        need_lf = np.log10(thr_ops * _DAYS_2MO / run_days)
+        t0_yrs = (chk_us['t0'] - anchor_d).days / 365.25
+        t_feas_s = (np.maximum(
+            t0_yrs + (need_lf - np.log10(chk_us['v0'])) / g_s, 0.0)
+            + run_days / 365.25)
+    else:
+        t_feas_s = 0.0
+    # The US pauses when it first *completes* a thr_ops run: the later of
+    # capability arrival and hardware feasibility.
+    t_pause_s = np.maximum(t_eci_s, t_feas_s)
+    d_pause = anchor_d + timedelta(
+        days=float(np.percentile(t_pause_s, 50)) * 365.25)
+    d_kink = anchor_d + timedelta(
+        days=float(np.percentile(t_eci_s, 50)) * 365.25)
     # Months from the pause moment (floored at today) to the crossing,
     # matched per sample so both uncertainties propagate.
     _floor = np.maximum(t_pause_s * 365.25, (today - anchor_d).days)
@@ -11061,13 +11083,13 @@ def _pc_render_us_pause(today, thr_ops):
     # Two visually distinct segments: the projected climb (dashed, like every
     # projection) and the frozen bar after the pause (thick translucent level).
     t0_us = max(us_best[0], anchor_d)
-    if d_pause > t0_us:
+    if d_kink > t0_us:
         fig.add_trace(go.Scatter(
-            x=[t0_us, d_pause], y=[us_best[1], threshold], mode='lines',
+            x=[t0_us, d_kink], y=[us_best[1], threshold], mode='lines',
             line=dict(color='#1F77B4', width=2, dash='dash'),
             name='US climb (projected)', hoverinfo='skip'))
     fig.add_trace(go.Scatter(
-        x=[max(d_pause, t0_us), x_end], y=[threshold, threshold], mode='lines',
+        x=[max(d_kink, t0_us), x_end], y=[threshold, threshold], mode='lines',
         line=dict(color='#1F77B4', width=4.5), opacity=0.4,
         name=f'US paused at {threshold:.0f}', hoverinfo='skip'))
     if d_pause > anchor_d:
@@ -11129,7 +11151,11 @@ def _pc_render_us_pause(today, thr_ops):
         f"({_CC_CN_COMPUTE_LO * a_partial:.1f}–"
         f"{_CC_CN_COMPUTE_HI * a_partial:.1f} ECI/yr — export-control-bound), "
         "plus the release-cadence wait (the diamond sits right of where the "
-        "fan meets the bar). Same sim and pace band as the Compute vs "
+        "fan meets the bar). The pause date is the later of capability "
+        f"arrival and the first *completed* {run_days // 30}-month {_ops}-op "
+        "run on the same capacity fit — a shorter run needs proportionally "
+        "more cluster, so it can pause later. Same sim and pace band as the "
+        "Compute vs "
         "Capabilities crossing section — which lands *earlier*: its bar is "
         f"lower ({_CC_CN_TARGET_ECI:.0f}) and distillation never dries up "
         "there.")
@@ -11188,6 +11214,11 @@ def render_pacing():
                  "Country races countries instead, with China shown both "
                  "as the mainland alone and as China-accessible (mainland "
                  "+ Chinese labs' sites abroad).")
+        with st.expander("Projection range"):
+            pc_end_year = st.radio(
+                "Project through", _PC_END_YEARS, horizontal=True,
+                index=_PC_END_YEARS.index(_PC_DEFAULTS["pc_end_year"]),
+                key="pc_end_year")
         if st.button("Reset", key="pc_reset"):
             for k in _PC_RESET_KEYS:
                 st.session_state.pop(k, None)
@@ -11198,6 +11229,7 @@ def render_pacing():
     key = _PC_RUN_OPTIONS[run_label]
     basis = _DC_NETWORK_OPTIONS[net_label]
     party = _PC_PARTY_OPTIONS[party_label]
+    pc_horizon = datetime(pc_end_year, 12, 1)
 
     st.header("Pacing")
     st.caption(
@@ -11232,7 +11264,7 @@ def render_pacing():
         cluster_of)
     grid, traj = _pc_projection(rows, dc_view, _today,
                                 since=_DC_DEFAULTS["dc_cty_since"],
-                                ref_steps=ref_steps)
+                                ref_steps=ref_steps, horizon=pc_horizon)
 
     recs = []
     for label, kind, steps, names in rows:
@@ -11251,7 +11283,7 @@ def render_pacing():
         })
     recs.sort(key=lambda r: (
         (0, r['plan']) if r['crossed'] else
-        (1, r['med'] or _PC_HORIZON + timedelta(days=1)), -r['share']))
+        (1, r['med'] or pc_horizon + timedelta(days=1)), -r['share']))
 
     # ── Headline ──
     us = next((r for r in recs if r['label'] == _DC_CTY_US), None)
@@ -11259,10 +11291,10 @@ def render_pacing():
     first = recs[0] if recs else None
     if first is not None:
         head = (f"**First over {threshold_label}: {first['label']}, "
-                f"{_pc_when(first)}.**")
+                f"{_pc_when(first, pc_horizon)}.**")
         if us is not None and cn is not None:
-            head += (f" United States {_pc_when(us)}; "
-                     f"China-accessible {_pc_when(cn)}")
+            head += (f" United States {_pc_when(us, pc_horizon)}; "
+                     f"China-accessible {_pc_when(cn, pc_horizon)}")
             d_us = us['plan'] if us['crossed'] else us['med']
             d_cn = cn['plan'] if cn['crossed'] else cn['med']
             if d_us is not None and d_cn is not None:
@@ -11300,13 +11332,13 @@ def render_pacing():
                 showlegend=False, hoverinfo='skip'))
         if r['med'] is not None:
             rng = (f"{lo:%b %Y} – " + (f"{hi:%b %Y}" if hi else
-                                       f">{_PC_HORIZON.year}")) if lo else "—"
+                                       f">{pc_horizon.year}")) if lo else "—"
             fig.add_trace(go.Scatter(
                 x=[r['med']], y=y, mode='markers',
                 marker=dict(color=color, size=11, symbol='diamond'),
                 showlegend=False, hoverinfo='text',
                 hovertext=[f"<b>{r['label']}</b><br>median {r['med']:%b %Y} · "
-                           f"80%: {rng}<br>P(cross by {_PC_HORIZON.year}) = "
+                           f"80%: {rng}<br>P(cross by {pc_horizon.year}) = "
                            f"{r['share']:.0%}"]))
         else:
             fig.add_trace(go.Scatter(
@@ -11314,8 +11346,8 @@ def render_pacing():
                 marker=dict(color=color, size=10, symbol='triangle-right-open'),
                 showlegend=False, hoverinfo='text',
                 hovertext=[f"<b>{r['label']}</b><br>median beyond "
-                           f"{_PC_HORIZON.year} · P(cross by "
-                           f"{_PC_HORIZON.year}) = {r['share']:.0%}"]))
+                           f"{pc_horizon.year} · P(cross by "
+                           f"{pc_horizon.year}) = {r['share']:.0%}"]))
         if r['plan'] is not None:
             fig.add_trace(go.Scatter(
                 x=[r['plan']], y=y, mode='markers',
@@ -11363,9 +11395,9 @@ def render_pacing():
                    + (f" with {r['via']}" if r['via'] else ""))
             rng = "—"
         else:
-            med = _fmt(r['med'], f">{_PC_HORIZON.year}")
+            med = _fmt(r['med'], f">{pc_horizon.year}")
             rng = (f"{_fmt(r['lo'])} – "
-                   f"{_fmt(r['hi'], f'>{_PC_HORIZON.year}')}"
+                   f"{_fmt(r['hi'], f'>{pc_horizon.year}')}"
                    if r['lo'] is not None else "—")
         table.append({
             "Entity": r['label'],
@@ -11392,7 +11424,7 @@ def render_pacing():
         "[Epoch AI, Frontier Data Centers](https://epoch.ai/data/data-centers) "
         "(CC-BY).")
 
-    _pc_render_us_pause(_today, float(threshold_label))
+    _pc_render_us_pause(_today, float(threshold_label), run_days)
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
