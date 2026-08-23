@@ -1252,7 +1252,11 @@ _DC_CTY_PACE_OPTIONS = {
     "Each country's own fitted trend": 'own',
 }
 _DC_CTY_COLORS = {_DC_CTY_US: "#1F77B4", _DC_CTY_CN: "#D62728",
-                  _DC_CTY_CN_ACCESS: "#D62728", _DC_CTY_CN_DOMESTIC: "#8B1A1A"}
+                  _DC_CTY_CN_ACCESS: "#D62728", _DC_CTY_CN_DOMESTIC: "#E07B00"}
+# Reference countries draw from a palette with no reds or blues, so nothing
+# reads as the US or China.
+_DC_CTY_OTHER_COLORS = ("#2CA02C", "#9467BD", "#8C564B", "#7F7F7F", "#17BECF",
+                        "#BCBD22", "#E377C2", "#4B6B3A")
 
 _DC_EXCLUDE_COMPANIES = {
     "QTS", "DayOne", "CoreWeave", "STACK", "Stream", "Vantage", "EdgeCore",
@@ -7465,7 +7469,8 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
             return None
         return dict(us_fit, t0=s[-1][0], v0=s[-1][1])
 
-    cone_for = [_DC_CTY_US] + ([cn_key] if cn_key in steps_by else [])
+    cone_for = [_DC_CTY_US] + [c for c in (cn_key, _DC_CTY_CN_DOMESTIC)
+                               if c in steps_by]
     traj = {}
     for c in cone_for:
         fit = _anchor(c)
@@ -7479,7 +7484,7 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
     others = sorted((c for c in steps_by if c not in cone_for),
                     key=lambda c: -max(v for _, v, _ in steps_by[c] if v))
     for i, c in enumerate(others):
-        color = _DC_CTY_COLORS.get(c, _DC_PALETTE[(i + 3) % len(_DC_PALETTE)])
+        color = _DC_CTY_OTHER_COLORS[i % len(_DC_CTY_OTHER_COLORS)]
         s = steps_by[c]
         (a_x, a_y), (p_x, p_y) = _dc_split_at(s, today, cap_date)
         fig.add_trace(go.Scatter(
@@ -7563,6 +7568,9 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
                 f"{' — ' + win if win else ''}")
     st.caption(
         "Fitted pace — " + "; ".join(_pace_text(c) for c in cone_for) + ". "
+        "Mainland China's catalogue ends in 2027 and its wider scope is mostly "
+        "one Johor campus ramping from nothing, so both Chinese fits are a "
+        "handful of steps from a handful of sites. "
         f"Pace uncertainty is the larger of the fit's standard error, the "
         f"spread across lookback windows and a {_DC_CTY_SIGMA_G_FLOOR:.2f} OOM/yr "
         "floor; the recorded series' scatter around its trend is added in over "
@@ -7579,6 +7587,7 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
         st.info("No Chinese site has a value for this metric.")
         return
     us, cn = traj[_DC_CTY_US], traj[cn_key]
+    dom = traj.get(_DC_CTY_CN_DOMESTIC)
     lag, unresolved = _dc_cty_lag_months(cn, us, grid)
     rows = []
     first_year = max(today.year, grid[0].year)
@@ -7600,6 +7609,8 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
             "Year end": str(yr),
             "US": _dc_cty_band(u, kind),
             cn_key: _dc_cty_band(c, kind),
+            **({_DC_CTY_CN_DOMESTIC: "—" if np.isnan(dom[:, j]).all()
+                else _dc_cty_band(dom[:, j], kind)} if dom is not None else {}),
             "US ÷ China": _num_band(ratio, lambda x: f"{x:.1f}×"),
             "China lag (months)": (
                 "—" if np.isnan(lg).all() else
@@ -7625,7 +7636,12 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
                 f"{_dc_fmt_value(np.nanpercentile(cn[:, j], 90), kind)}), "
                 f"against a US {last['US'].split(' (')[0]} — the US at "
                 f"{last['US ÷ China'].split(' (')[0]} China's size, "
-                f"{lag_phrase}.")
+                f"{lag_phrase}."
+                + (f" Mainland China alone: "
+                   f"**{_dc_fmt_value(np.nanmedian(dom[:, j]), kind)}** "
+                   f"(80%: {_dc_fmt_value(np.nanpercentile(dom[:, j], 10), kind)}–"
+                   f"{_dc_fmt_value(np.nanpercentile(dom[:, j], 90), kind)})."
+                   if dom is not None and not np.isnan(dom[:, j]).all() else ""))
         st.table(rows)
         st.caption(
             "Median with the 10th–90th percentile in brackets; *US ÷ China* is "

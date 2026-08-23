@@ -953,6 +953,8 @@ class TestDataCentersByCountry:
         table = at.table[-1].value
         assert list(table["Year end"]) == ["2026", "2027", "2028", "2029", "2030"]
         assert "China-accessible" in table.columns
+        assert "China (domestic only)" in table.columns
+        assert "Mainland China alone" in head[0]
         assert at.radio(key="dc_cty_horizon").value == 2030
         assert at.radio(key="dc_cty_since").value == 2024
 
