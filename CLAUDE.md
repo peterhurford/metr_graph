@@ -19,7 +19,43 @@ pytest test_integration.py -v                # integration tests (slower, uses S
 pytest test_visualize_projection.py::TestPretty::test_known_name -v  # single test
 ```
 
+```bash
+pytest -v -n0                                # serial — needed for --pdb / live output
+_VP_SAMPLES=5000 pytest -v                   # production sample count (see below)
+```
+
+Install test deps with `pip install -r requirements-dev.txt` (adds `pytest-xdist`).
+
 Unit tests use a fake Streamlit module (`_FakeStreamlit` / `_Noop`) so the app can be imported without a running server. The env var `_VP_TESTING=1` skips rendering at module level. Integration tests use Streamlit's `AppTest` headless runtime (30s timeout).
+
+### Why the suite is fast (and how to not un-fast it)
+
+The whole suite runs in ~8s. It used to take 3m20s, essentially all of it in the
+75 `AppTest` cases. Three things buy that back; the first two live in `conftest.py`.
+
+1. **One shared bytecode cache.** Streamlit builds a fresh `ScriptCache` on every
+   `AppTest.run()` — once in `AppTest._run()` and again in
+   `LocalScriptRunner.__init__` — so the 9k-line app was re-read, AST-rewritten by
+   `magic.add_magic` and recompiled ~300 times per suite, ~0.5s of the ~0.7s a run
+   cost. `conftest.py` patches **both** construction sites to one process-wide
+   cache. Patching only one leaves the other recompiling and the win disappears.
+   Isolation is unaffected: the bytecode is still exec'd into a fresh module each
+   run.
+2. **A smaller Monte Carlo.** `N_SAMPLES` (top of `visualize_projection.py`) reads
+   `_VP_SAMPLES`, and `conftest.py` sets it to 400. Sampling the 5000 fan-chart
+   trajectories was most of what a render cost. Nothing the tests assert on depends
+   on the count — the CI defaults they check come from the OLS fits, which are
+   deterministic, and the app never seeds its RNG anyway. `_VP_SAMPLES=5000 pytest`
+   runs at production fidelity (~16s) as a check. Don't lower the *default*: the
+   band edges are percentiles and go visibly ragged well before 5000.
+3. **Parallelism.** `pytest.ini` passes `-n auto`. The cases are independent, so
+   this is a straight ~3.5x. It costs the unit-test-only run ~1.5s of worker
+   startup, which is why `-n0` exists.
+
+Adding an `AppTest` case is cheap now (~0.1s per `.run()`), so prefer adding one to
+skipping coverage. What is *not* cheap is anything that defeats the shared cache —
+e.g. a test that mutates `visualize_projection.py` on disk, or one that reaches into
+`streamlit.testing` internals to build its own runner.
 
 ## Project Structure
 

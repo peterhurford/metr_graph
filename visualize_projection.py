@@ -17,6 +17,15 @@ st.set_page_config(page_title="AI Capability Projections", layout="wide")
 
 PROJ_DISCLAIMER = " These are projections assuming current progress continues, they are not forecasts - forecasts would involve some chance of larger-scale trend changes."
 
+# Trajectories drawn per fan chart. Every tab samples this many paths, and that
+# sampling is most of what a render costs — so the test suite turns it down via
+# _VP_SAMPLES. Nothing the tests assert on depends on the count (the CI defaults
+# they check come from the OLS fits, which are deterministic), and the app is
+# already unseeded, so a smaller sample is only a noisier version of the same
+# picture. Don't lower the default: the band edges are percentiles and get
+# visibly ragged well before 5000.
+N_SAMPLES = int(os.environ.get("_VP_SAMPLES", "5000"))
+
 # Tighten default Streamlit padding
 st.markdown("""<style>
     .block-container { padding-top: 2rem !important; }
@@ -1678,7 +1687,7 @@ def render_metr():
         _cu_fitted_hrs = 2**_cu_fitted_pos / 60
         _eff_dt_lo = custom_dt_lo
         _eff_dt_hi = custom_dt_hi
-        n_custom = 5000
+        n_custom = N_SAMPLES
         # Trend: sample doubling times from chosen distribution, centered on OLS slope
         if custom_dt_dist == "Log-log":
             proj_dt = _log_lognormal_from_ci(_eff_dt_lo, _eff_dt_hi, n_custom)
@@ -1720,7 +1729,7 @@ def render_metr():
             superexp_dt_fitted = superexp_halflife / (_se_K * np.log(2) * 2 ** (_se_current_day / superexp_halflife))
         else:
             superexp_dt_fitted = float('inf')
-        n_superexp = 5000
+        n_superexp = N_SAMPLES
         proj_dt = _lognormal_from_ci(superexp_dt_ci_lo, superexp_dt_ci_hi, n_superexp)
         # Position: lognormal noise centered on fitted trend position
         _se_fitted_hrs = 2**_se_fitted_pos / 60
@@ -2525,7 +2534,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         _eci_eff_dpp_lo = eci_custom_dpp_lo
         _eci_eff_dpp_hi = eci_custom_dpp_hi
 
-        n_eci = 5000
+        n_eci = N_SAMPLES
         if eci_custom_dpp_dist == "Log-log":
             eci_proj_dpp = _log_lognormal_from_ci(_eci_eff_dpp_lo, _eci_eff_dpp_hi, n_eci)
         elif eci_custom_dpp_dist == "Lognormal":
@@ -2560,7 +2569,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         else:
             eci_superexp_dpp_fitted = float('inf')
 
-        n_eci = 5000
+        n_eci = N_SAMPLES
         eci_proj_dpp = _lognormal_from_ci(eci_superexp_dpp_ci_lo, eci_superexp_dpp_ci_hi, n_eci)
 
         # Position: normal noise centered on fitted trend position
@@ -3599,7 +3608,7 @@ def render_rli():
         _rli_intercept = np.mean(_rli_seg_y - _rli_params[1] * _rli_seg_d)
         _rli_fitted_logit = _rli_intercept + _rli_params[1] * _rli_current_day
 
-        n_rli = 5000
+        n_rli = N_SAMPLES
         if rli_custom_dt_dist == "Log-log":
             rli_proj_dt = _log_lognormal_from_ci(rli_custom_dt_lo, rli_custom_dt_hi, n_rli)
         elif rli_custom_dt_dist == "Lognormal":
@@ -3642,7 +3651,7 @@ def render_rli():
         else:
             rli_superexp_dt_fitted = float('inf')
 
-        n_rli = 5000
+        n_rli = N_SAMPLES
         rli_proj_dt = _lognormal_from_ci(rli_superexp_dt_ci_lo, rli_superexp_dt_ci_hi, n_rli)
         rli_proj_logit_slope = np.log(2) / rli_proj_dt
 
@@ -4269,7 +4278,7 @@ def render_ukcyber():
     base_date = ukc_frontier_all[0]['date']
     days_used = np.array([(m['date'] - base_date).days for m in frontier_used], dtype=float)
     logit_used = _logit(np.array([m['cyber_score'] / 100 for m in frontier_used]))
-    n_samples = 5000
+    n_samples = N_SAMPLES
 
     _names_used = [m['name'] for m in frontier_used]
     _break_idxs = [_names_used.index(b) for b in ukc_bps if b in _names_used]
@@ -4859,10 +4868,12 @@ def _parse_revenue(data):
     return dates, values
 
 
-def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=5000,
+def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=None,
                           dt_lo_override=None, dt_hi_override=None):
     """Fit exponential (OLS in log-space) to last n_recent points,
     sample doubling-time fan chart, return (proj_dates, percentiles_dict, ols_dt, ols_dates, ols_vals)."""
+    if n_samples is None:
+        n_samples = N_SAMPLES
     log_vals = np.log2(np.array(vals))
     base = dates[0]
     days = np.array([(d - base).days for d in dates], dtype=float)
@@ -5658,7 +5669,7 @@ def render_employment():
     logit_used = logit_all[:_emp_fit_end]
     n_used = len(emp_frontier_used)
 
-    n_emp = 5000
+    n_emp = N_SAMPLES
     if emp_proj_basis in ("Linear (logit)", "Piecewise linear (logit)"):
         if emp_piecewise_n_segments >= 2:
             _emp_bp_names_used = [m['name'] for m in emp_frontier_used]
@@ -7627,7 +7638,7 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
         s_lo, s_hi = s_lo - 0.05, s_hi + 0.05
     s_mid = min(max(s_mid, s_lo), s_hi)
 
-    N = 5000
+    N = N_SAMPLES
     share = np.random.triangular(s_lo, s_mid, s_hi, N)          # physical/algo mix
     pace = np.clip(np.random.normal(1.0, 0.12, N), 0.65, 1.35)  # overall pace
     cmult = np.random.triangular(0.5, 1.0, 1.15, N)             # compute delivery
@@ -8303,7 +8314,7 @@ _CC_CN_TARGET_ECI = 161.0
 
 def _cc_cn_target_years(anchor_eci, target, algo_lo, algo_mid, algo_hi,
                         a_partial, g_lo, g_hi, pace_lo=0.85, pace_hi=1.15,
-                        release_gap_days=None, n=5000):
+                        release_gap_days=None, n=None):
     """Monte-Carlo years-from-anchor for China's ECI frontier to reach `target`.
 
     Uses the same two-engine model as Chart B above — a constant algorithmic term
@@ -8331,6 +8342,8 @@ def _cc_cn_target_years(anchor_eci, target, algo_lo, algo_mid, algo_hi,
     Returns (years, rates) as length-n arrays; `years` is NaN wherever the sampled
     rate came out non-positive.
     """
+    if n is None:
+        n = N_SAMPLES
     lo, hi = min(algo_lo, algo_hi), max(algo_lo, algo_hi)
     if hi - lo < 1e-6:                      # single estimate: give it a little width
         pad = max(0.05 * abs(lo), 0.05)
