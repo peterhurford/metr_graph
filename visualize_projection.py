@@ -10065,10 +10065,8 @@ def render_compute_capabilities():
             st.rerun()
 
     st.header("Compute vs Capabilities")
-    # ══════════════════════════════════════════════════════════════════════
-    # Section 1: Frontier compute growth, segmented
-    # ══════════════════════════════════════════════════════════════════════
-    st.subheader("Is compute slowing?")
+    # The compute frontier itself is no longer charted, but its segment fits
+    # still supply the capacity growth rates the later sections project on.
     cap_date = (datetime(2028, 12, 31) if include_future else _today) + timedelta(days=_DAYS_2MO)
     frontier = _cc_trainflop_frontier(dc_all, cap_date)
     if not frontier:
@@ -10076,47 +10074,8 @@ def render_compute_capabilities():
         return
     fits = _cc_segment_fits(frontier, _today)
 
-    end_x = frontier[-1][0] + timedelta(days=30)
-    x_start = datetime(2021, 1, 1)
-    fig1 = go.Figure()
-    if include_future:
-        _dc_add_projection_band(fig1, _today, end_x)
-    (a_x, a_y), (p_x, p_y) = _dc_split_at(frontier, _today, end_x)
-    fig1.add_trace(go.Scatter(x=a_x, y=a_y, mode='lines',
-                              line=dict(color='#1F77B4', width=3, shape='hv'),
-                              hoverinfo='skip', showlegend=False))
-    if p_x is not None:
-        fig1.add_trace(go.Scatter(x=p_x, y=p_y, mode='lines',
-                                  line=dict(color='#1F77B4', width=3, shape='hv', dash='dash'),
-                                  hoverinfo='skip', showlegend=False))
-    # Overlay each segment's log-linear fit to make the slope changes visible.
-    seg_colors = ['#9467BD', '#2CA02C', '#D62728', '#FF7F0E']
-    for i, fseg in enumerate(fits):
-        c = seg_colors[i % len(seg_colors)]
-        fig1.add_trace(go.Scatter(
-            x=fseg['fit_x'], y=fseg['fit_y'], mode='lines',
-            line=dict(color=c, width=2, dash='dot'),
-            name=f"{fseg['label']}: ×{fseg['mult']:.1f}/yr",
-            hovertext=[f"{fseg['label']}<br>×{fseg['mult']:.1f}/yr "
-                       f"({fseg['doubling_mo']:.0f}-mo doubling)"] * 2,
-            hoverinfo='text', showlegend=True))
-    fig1.update_layout(**_dc_layout(
-        True, "2mo train log OP", x_start, end_x,
-        y_range=_dc_yrange([v for _, v in frontier], True),
-        kind='flop', show_legend=True))
-    st.plotly_chart(fig1, use_container_width=True)
-
-    # Segment growth table.
-    rows_md = ["| Period | Growth | Doubling time | Milestones |",
-               "|---|---|---|---|"]
-    for fseg in fits:
-        dbl = "—" if fseg['doubling_mo'] == float('inf') else f"{fseg['doubling_mo']:.1f} mo"
-        rows_md.append(f"| {fseg['label']} | ×{fseg['mult']:.1f}/yr "
-                       f"({fseg['slope_oom']:.2f} OOM/yr) | {dbl} | {fseg['n']} |")
-    st.markdown("\n".join(rows_md))
-
     # ══════════════════════════════════════════════════════════════════════
-    # Section 2: The exchange rate — how much capability per FLOP, and how fast
+    # Section 1: The exchange rate — how much capability per FLOP, and how fast
     # that exchange rate improves (algorithmic efficiency / iso-ECI)
     # ══════════════════════════════════════════════════════════════════════
     st.subheader("Compute ⟷ ECI")
@@ -10394,14 +10353,14 @@ def render_compute_capabilities():
         "subset.")
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 3: ECI Forecasts — quarterly frontier projection to end of 2029
+    # Section 2: ECI Forecasts — quarterly frontier projection to end of 2029
     # ══════════════════════════════════════════════════════════════════════
     st.subheader("ECI Forecasts")
     _cc_eci_forecast(cc_rows, frontier, _today, obs_slope, g_recent, g_planned,
                      share_lo, share_mid, share_hi)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 4: US vs. China — the same decomposition read by country
+    # Section 3: US vs. China — the same decomposition read by country
     # ══════════════════════════════════════════════════════════════════════
     _cc_us_vs_china(cc_rows, _today)
 

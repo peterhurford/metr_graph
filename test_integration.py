@@ -814,9 +814,8 @@ class TestComputeVsCapabilities:
         text = (" ".join(str(m.value) for m in at.markdown) +
                 " ".join(str(h.value) for h in at.subheader) +
                 " ".join(str(w.value) for w in at.warning)).lower()
-        # All four sections render: 1 (compute slowing?), 2 (exchange rate +
-        # two-engine flow), 3 (ECI forecasts), 4 (US vs. China).
-        assert "is compute slowing" in text
+        # All three sections render: 1 (exchange rate + two-engine flow),
+        # 2 (ECI forecasts), 3 (US vs. China).
         assert "exchange rate" in text
         assert "two engines" in text
         assert "eci forecasts" in text
@@ -824,7 +823,7 @@ class TestComputeVsCapabilities:
 
     def test_forecast_section_renders_milestones(self):
         at = self._cc_app()
-        # Section 3 projects to end-2029 with year-end milestone cards and a
+        # Section 2 projects to end-2029 with year-end milestone cards and a
         # China distillation-scenario table.
         labels = " ".join(str(m.label) for m in at.metric)
         assert "End 2029" in labels
