@@ -700,8 +700,8 @@ class TestDataCenters:
         it describes the curated groups only where the level uses them."""
         at = self._dc_app()
         labels = list(at.selectbox(key="dc_pool_n").options)
-        assert labels[0] == "Nearby sites + announced fabric", "default moved"
-        assert "Nearby sites + plausible added fabric" in labels
+        assert labels[0] == "Nearby + announced fabric", "default moved"
+        assert "Nearby + plausible fabric" in labels
         for label in labels:
             at = self._dc_app()
             at.selectbox(key="dc_pool_n").set_value(label).run()
@@ -709,7 +709,7 @@ class TestDataCenters:
             text = " ".join(str(c.value) for c in at.caption)
             assert ("By proximity" in text) == label.startswith("Nearby"), label
             assert ("By announced fabric" in text) == ("fabric" in label), label
-            assert ("plausible added fabric" in text) == ("plausible" in label), \
+            assert ("plausible fabric" in text) == ("plausible" in label), \
                 label
             if "plausible" in label:
                 # The speculative regions are named, so the reader can see what

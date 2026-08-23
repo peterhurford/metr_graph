@@ -7101,7 +7101,7 @@ _DC_DEFAULTS = {
     "dc_log": True,
     "dc_future": True,
     "dc_timing": "Data center construction",
-    "dc_pool_n": "Nearby sites + announced fabric",
+    "dc_pool_n": "Nearby + announced fabric",
     "dc_start_year": 2025,
     "dc_end_year": 2027,
     "dc_cty_pace": "The US trend for every country (a follower tracks the leader)",
@@ -7118,11 +7118,11 @@ _DC_END_YEARS = [2026, 2027, 2028, 2029, 2030, 2031]
 # 'none' pools nothing (each site stands alone) and 'all' pools a company's
 # whole fleet regardless of distance, kept only as a stated upper bound.
 _DC_NETWORK_OPTIONS = {
-    "Nearby sites + announced fabric": 'fabric',
-    "Nearby sites + plausible added fabric": 'plausible',
-    "Nearby sites only": 'proximity',
+    "Nearby + announced fabric": 'fabric',
+    "Nearby + plausible fabric": 'plausible',
+    "Nearby only": 'proximity',
     "Single site (no networking)": 'none',
-    "Every site the company has (upper bound)": 'all',
+    "Every site (implausible)": 'all',
 }
 
 # Compute vs Capabilities tab
@@ -8125,7 +8125,7 @@ def render_data_centers():
         if basis in ('fabric', 'plausible'):
             scope += f"By announced fabric: {_groups('fabric')}. "
         if basis == 'plausible':
-            scope += (f"By plausible added fabric (no link announced): "
+            scope += (f"By plausible fabric (no link announced): "
                       f"{_groups('plausible')}. ")
         scope += "Everything else stands alone. "
     st.caption(

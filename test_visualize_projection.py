@@ -3303,7 +3303,7 @@ class TestDcNetworkClusters:
 
     def test_network_options_registry_is_well_formed(self):
         assert vp._DC_DEFAULTS["dc_pool_n"] in vp._DC_NETWORK_OPTIONS
-        assert vp._DC_DEFAULTS["dc_pool_n"] == "Nearby sites + announced fabric"
+        assert vp._DC_DEFAULTS["dc_pool_n"] == "Nearby + announced fabric"
         assert "dc_pool_n" in vp._DC_RESET_KEYS
         assert set(vp._DC_NETWORK_OPTIONS.values()) == {
             'fabric', 'plausible', 'proximity', 'none', 'all'}
