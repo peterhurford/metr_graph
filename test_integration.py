@@ -1071,14 +1071,21 @@ class TestPacingTab:
         assert at.radio(key="pc_run").value == "6-month run"
         table = at.table[-1].value
         ents = list(table["Entity"])
+        # The default roster is companies only; countries live under the
+        # 'Country' attribution instead.
+        assert "Anthropic" in ents and "OpenAI" in ents
+        assert "United States" not in ents
+        assert "Plan crosses" in table.columns
+
+    def test_country_attribution_races_countries(self):
+        at = self._app()
+        at.radio(key="pc_party").set_value("Country").run()
+        _assert_no_error(at, "Pacing / country")
+        ents = list(at.table[-1].value["Entity"])
         assert "United States" in ents
         assert "China-accessible" in ents
         assert "China (domestic only)" in ents
-        assert "Plan crosses" in table.columns
-        # Country aggregates are labelled as such, not as companies.
-        scope = dict(zip(table["Entity"], table["Scope"]))
-        assert scope["United States"] == "country"
-        assert scope["China-accessible"] == "country"
+        assert "Anthropic" not in ents
 
     def test_threshold_drives_the_headline(self):
         at = self._app()

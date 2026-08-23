@@ -10553,7 +10553,9 @@ def _sync_session_to_url():
 _PC_THRESHOLDS = ("1e27", "3e27", "5e27", "1e28", "2e28", "5e28", "1e29")
 _PC_RUN_OPTIONS = {"6-month run": "train_flop_6mo", "2-month run": "train_flop"}
 _PC_HORIZON = datetime(2033, 12, 1)   # crossing-search grid end
-_PC_PARTY_OPTIONS = _DC_PARTY_OPTIONS
+# The Pacing tab adds a third attribution: entities are countries, with China
+# listed twice (mainland alone, and with Chinese labs' sites abroad).
+_PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
 _PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party"]
 _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run",
                 "pc_pool": "Nearby + announced fabric",
@@ -10561,16 +10563,30 @@ _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run",
 
 
 def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
-                    unattributed=frozenset()):
+                    unattributed=frozenset(), party='tenant'):
     """The entities racing to a threshold: [(label, kind, steps, site_names)].
 
-    Companies first — each one's largest networkable group, pooled exactly as
-    the Data Centers tab does it, hosts in `unattributed` marked with † — then
-    the three country aggregates (largest group any one company there has).
-    Country rows use the unfiltered site list: capacity in a country counts
-    whoever Epoch lists in the building. `steps` is [(date, value)].
+    For 'tenant'/'operator', the charted companies — each one's largest
+    networkable group, pooled exactly as the Data Centers tab does it, hosts
+    in `unattributed` marked with †. For 'country', every country instead,
+    each the largest group any one company there has, on the **unfiltered**
+    site list (capacity in a country counts whoever Epoch lists in the
+    building) — with China listed twice: _DC_CTY_CN_ACCESS (mainland +
+    Chinese labs' sites abroad) and _DC_CTY_CN_DOMESTIC (mainland alone).
+    `steps` entries are (date, value, facility).
     """
+    mode = 'site' if cluster_of == {} else 'company'
     rows = []
+    if party == 'country':
+        entries = sorted(_dc_country_groups(series_all, country_of,
+                                            'abroad').items())
+        dom = [n for n in series_all if country_of.get(n) == _DC_CTY_CN]
+        entries.append((_DC_CTY_CN_DOMESTIC, dom))
+        for label, names in entries:
+            steps = _dc_country_steps(series_all, names, mode, cluster_of)
+            if steps and any(s[1] > 0 for s in steps):
+                rows.append((label, 'country', steps, tuple(names)))
+        return rows
     sites_of = {}
     for name, v in series_shown.items():
         for co in v.get('companies', [v['company']]):
@@ -10587,16 +10603,6 @@ def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
         if s2 and any(s[1] > 0 for s in s2):
             label = co + " †" if co in unattributed else co
             rows.append((label, 'company', s2, tuple(sites_of.get(co, ()))))
-    groups = _dc_country_groups(series_all, country_of, 'abroad')
-    dom = [n for n in series_all if country_of.get(n) == _DC_CTY_CN]
-    for label, names in [(_DC_CTY_US, groups.get(_DC_CTY_US, [])),
-                         (_DC_CTY_CN_ACCESS, groups.get(_DC_CTY_CN_ACCESS, [])),
-                         (_DC_CTY_CN_DOMESTIC, dom)]:
-        mode = 'site' if cluster_of == {} else 'company'
-        steps = _dc_country_steps(series_all, names, mode, cluster_of)
-        s2 = [(d, v, detail) for d, v, detail in steps]
-        if s2 and any(s[1] > 0 for s in s2):
-            rows.append((label, 'country', s2, tuple(names)))
     return rows
 
 
@@ -10630,7 +10636,7 @@ def _pc_idx_date(idx, grid, q):
     return grid[j] if j < len(grid) else None
 
 
-def _pc_projection(rows, dcs, today, since=None):
+def _pc_projection(rows, dcs, today, since=None, ref_steps=None):
     """(grid, label → sampled paths) for each entity, projected exactly as the
     by-country panel does it: recorded steps, then catalogued plans under
     quality-dependent slip, then — past the ~18-month plan horizon — the US
@@ -10642,7 +10648,12 @@ def _pc_projection(rows, dcs, today, since=None):
     grid = _dc_cty_month_grid(datetime(today.year, today.month, 1), _PC_HORIZON)
     fits = {label: _dc_cty_fit(steps, since=since, t_end=plan_end)
             for label, _, steps, _ in rows}
+    # The reference pace: the US country row when it is among the rows
+    # (country attribution), else the fit of `ref_steps` — the US country
+    # series the caller builds, so company entities borrow the same trend.
     us_fit = fits.get(_DC_CTY_US)
+    if us_fit is None and ref_steps:
+        us_fit = _dc_cty_fit(ref_steps, since=since, t_end=plan_end)
     out = {}
     for label, kind, steps, names in rows:
         own = fits[label]
@@ -10716,7 +10727,10 @@ def render_pacing():
             help="Tenant credits a site to every user Epoch lists — "
                  "Colossus 2 counts for Anthropic, Cursor and SpaceXAI "
                  "alike — falling back to the owner; operator credits the "
-                 "owner alone (Colossus → SpaceXAI, Stargate → Oracle).")
+                 "owner alone (Colossus → SpaceXAI, Stargate → Oracle). "
+                 "Country races countries instead, with China shown both "
+                 "as the mainland alone and as China-accessible (mainland "
+                 "+ Chinese labs' sites abroad).")
         if st.button("Reset", key="pc_reset"):
             for k in _PC_RESET_KEYS:
                 st.session_state.pop(k, None)
@@ -10746,9 +10760,16 @@ def render_pacing():
                   else _dc_network_site_clusters(basis))
     country_of = {dc['name']: _dc_site_country(dc) for dc in dc_view}
     rows = _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
-                           unattributed=_dc_unattributed_companies(dc_view))
+                           unattributed=_dc_unattributed_companies(dc_view),
+                           party=party)
+    _us_names = _dc_country_groups(series_all, country_of,
+                                   'abroad').get(_DC_CTY_US, [])
+    ref_steps = _dc_country_steps(
+        series_all, _us_names, 'site' if cluster_of == {} else 'company',
+        cluster_of)
     grid, traj = _pc_projection(rows, dc_view, _today,
-                                since=_DC_DEFAULTS["dc_cty_since"])
+                                since=_DC_DEFAULTS["dc_cty_since"],
+                                ref_steps=ref_steps)
 
     recs = []
     for label, kind, steps, names in rows:
@@ -10769,7 +10790,7 @@ def render_pacing():
     # ── Headline ──
     us = next((r for r in recs if r['label'] == _DC_CTY_US), None)
     cn = next((r for r in recs if r['label'] == _DC_CTY_CN_ACCESS), None)
-    first = next((r for r in recs if r['kind'] == 'company'), None)
+    first = recs[0] if recs else None
     if first is not None:
         head = (f"**First over {threshold_label}: {first['label']}, "
                 f"{_pc_when(first)}.**")
@@ -10790,7 +10811,11 @@ def render_pacing():
     fig = go.Figure()
     order = [r['label'] for r in recs]
     for i, r in enumerate(recs):
-        color = _DC_CTY_COLORS.get(r['label'], _dc_color(r['label'], i))
+        if r['kind'] == 'country':
+            color = _DC_CTY_COLORS.get(
+                r['label'], _DC_CTY_OTHER_COLORS[i % len(_DC_CTY_OTHER_COLORS)])
+        else:
+            color = _dc_color(r['label'], i)
         y = [r['label']]
         if r['crossed']:
             fig.add_trace(go.Scatter(
@@ -10855,8 +10880,11 @@ def render_pacing():
         "crossing; diamond + band = projected median and 80% range (plan "
         "slip + trend past ~18 months, the Data Centers tab's model — "
         "non-US entities borrow the US pace, widened by any disagreement "
-        "with their own). † = no recorded tenant. Country rows: the largest "
-        "group any one company there has, unfiltered by host.")
+        "with their own). "
+        + ("Each country is the largest group any one company there could "
+           "run, unfiltered by host; *China-accessible* adds Chinese labs' "
+           "sites abroad (DayOne Johor), *domestic only* is the mainland "
+           "alone." if party == 'country' else "† = no recorded tenant."))
 
     # ── Table ──
     def _fmt(d, alt="—"):
@@ -10875,7 +10903,6 @@ def render_pacing():
                    if r['lo'] is not None else "—")
         table.append({
             "Entity": r['label'],
-            "Scope": "country" if r['kind'] == 'country' else "company",
             "Plan crosses": _fmt(r['plan'], "not in catalogue"),
             "Projected (median)": med,
             "80% range": rng,

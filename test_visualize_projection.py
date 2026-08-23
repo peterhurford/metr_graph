@@ -3876,12 +3876,22 @@ class TestPacing:
             (datetime(2025, 1, 1), None)
 
     def test_entity_steps_carry_the_facility(self):
-        rows = self._rows()
-        by = {l: s for l, _, s, _ in rows}
+        by = {l: s for l, _, s, _ in self._rows()}
         d, via = vp._pc_plan_crossing(by['Anthropic'], 1e27)
         assert d is not None and via and 'Colossus' in via
+        by = {l: s for l, _, s, _ in self._rows(party='country')}
         d, via = vp._pc_plan_crossing(by[vp._DC_CTY_US], 1e27)
         assert d is not None and via
+
+    def test_company_projection_borrows_the_us_reference_pace(self):
+        """Company rosters have no US row, so the borrowed pace comes from
+        ref_steps; without it a short-history company would have no fit."""
+        rows = self._rows()
+        today = datetime(2026, 8, 1)
+        grid, traj = vp._pc_projection(rows, vp.dc_all, today, since=2024,
+                                       ref_steps=self._us_ref_steps())
+        for label, _, _, _ in rows:
+            assert traj[label].shape == (vp.N_SAMPLES, len(grid))
 
     def test_crossing_idx_sentinel_and_nan(self):
         traj = np.array([[np.nan, 1.0, 5.0, 5.0],     # crosses at 2
@@ -3907,7 +3917,7 @@ class TestPacing:
 
     # ── Live-data roster and projection ──
 
-    def _rows(self, today=datetime(2026, 8, 1)):
+    def _rows(self, today=datetime(2026, 8, 1), party='tenant'):
         series_all = vp._dc_series_for_metric(vp.dc_all, 'train_flop_6mo',
                                               cap_date=None)
         hidden = vp._dc_hidden_companies(vp.dc_all, now=today)
@@ -3917,25 +3927,43 @@ class TestPacing:
         country_of = {dc['name']: vp._dc_site_country(dc) for dc in vp.dc_all}
         return vp._pc_entity_rows(
             shown, series_all, country_of, cluster_of,
-            unattributed=vp._dc_unattributed_companies(vp.dc_all))
+            unattributed=vp._dc_unattributed_companies(vp.dc_all),
+            party=party)
 
-    def test_entity_roster_covers_companies_then_countries(self):
-        rows = self._rows()
-        labels = [l for l, *_ in rows]
+    def _us_ref_steps(self):
+        series_all = vp._dc_series_for_metric(vp.dc_all, 'train_flop_6mo',
+                                              cap_date=None)
+        country_of = {dc['name']: vp._dc_site_country(dc) for dc in vp.dc_all}
+        cluster_of = vp._dc_network_site_clusters('fabric')
+        names = vp._dc_country_groups(series_all, country_of,
+                                      'abroad').get(vp._DC_CTY_US, [])
+        return vp._dc_country_steps(series_all, names, 'company', cluster_of)
+
+    def test_rosters_are_one_kind_per_party(self):
+        """Tenant/operator rosters are companies only; the 'country' party
+        races countries instead, with China differentiated into accessible
+        and domestic-only."""
+        company_rows = self._rows()
+        assert all(k == 'company' for _, k, _, _ in company_rows)
+        labels = [l for l, *_ in company_rows]
+        for country in (vp._DC_CTY_US, vp._DC_CTY_CN_ACCESS,
+                        vp._DC_CTY_CN_DOMESTIC):
+            assert country not in labels
+        unattr = vp._dc_unattributed_companies(vp.dc_all)
+        for l, k, _, _ in company_rows:
+            if l.endswith('†'):
+                assert l[:-2].rstrip() in unattr, l
+        country_rows = self._rows(party='country')
+        assert all(k == 'country' for _, k, _, _ in country_rows)
+        clabels = [l for l, *_ in country_rows]
         for want in (vp._DC_CTY_US, vp._DC_CTY_CN_ACCESS,
                      vp._DC_CTY_CN_DOMESTIC):
-            assert want in labels, want
-        kinds = [k for _, k, _, _ in rows]
-        first_country = kinds.index('country')
-        assert 'company' not in kinds[first_country:], \
-            "companies must come before the country aggregates"
-        unattr = vp._dc_unattributed_companies(vp.dc_all)
-        for l, k, _, _ in rows:
-            if l.endswith('†'):
-                assert k == 'company' and l[:-2].rstrip() in unattr, l
+            assert want in clabels, want
+        assert vp._DC_CTY_CN not in clabels, \
+            "the plain-China group must be split into accessible/domestic"
 
     def test_projection_grid_runs_to_the_horizon(self):
-        rows = self._rows()
+        rows = self._rows(party='country')
         today = datetime(2026, 8, 1)
         grid, traj = vp._pc_projection(rows, vp.dc_all, today, since=2024)
         assert grid[0] == datetime(2026, 8, 1)
@@ -3957,7 +3985,9 @@ class TestPacing:
         assert by['Colossus 2']['operator'] == 'SpaceXAI'
         assert by['OpenAI Stargate Abilene']['tenant'] == 'OpenAI'
         assert by['OpenAI Stargate Abilene']['operator'] == 'Oracle'
-        assert set(vp._PC_PARTY_OPTIONS.values()) == {'tenant', 'operator'}
+        assert set(vp._DC_PARTY_OPTIONS.values()) == {'tenant', 'operator'}
+        assert set(vp._PC_PARTY_OPTIONS.values()) == \
+            {'tenant', 'operator', 'country'}
 
     def test_with_party_sets_the_membership_list(self):
         """Tenant view: `company` stays the primary label but `companies` is
@@ -4014,7 +4044,7 @@ class TestPacing:
             prev = finals
 
     def test_projection_crossing_orders_by_threshold_on_live_data(self):
-        rows = self._rows()
+        rows = self._rows(party='country')
         grid, traj = vp._pc_projection(rows, vp.dc_all, datetime(2026, 8, 1),
                                        since=2024)
         for label in (vp._DC_CTY_US, vp._DC_CTY_CN_ACCESS):

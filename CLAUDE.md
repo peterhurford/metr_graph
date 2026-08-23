@@ -456,15 +456,18 @@ length (`_PC_RUN_OPTIONS`, reusing the loader's `train_flop*` columns — 30%
 utilization, Epoch 8-bit OP/s). Deliberately thin: it reuses the Data Centers tab's
 machinery rather than growing its own.
 
-1. **Entities are the DC tab's, under two extra axes.** Companies via
-   `_dc_company_networked_series` at the sidebar's pooling level (`pc_pool` reuses
-   `_DC_NETWORK_OPTIONS` verbatim; 'none' → `cluster_of={}`, 'all' → `None`) with
-   `_dc_hidden_companies` applied and † from `_dc_unattributed_companies`; then three
-   country aggregates (US, China-accessible, China domestic) via `_dc_country_steps`
-   (mode `'site'` when nothing pools, else `'company'`) on the **unfiltered** site
-   list. `pc_party` picks the attribution via `_dc_with_party()` — see *Tenant vs
-   operator, and shared tenancy* above: tenant view credits shared sites to every
-   listed user, operator view to the owner alone.
+1. **One roster per attribution, never mixed.** `pc_party` (`_PC_PARTY_OPTIONS` =
+   `_DC_PARTY_OPTIONS` + `Country`) picks the entity kind. Tenant/operator race the
+   charted companies via `_dc_company_networked_series` at the sidebar's pooling
+   level (`pc_pool` reuses `_DC_NETWORK_OPTIONS` verbatim; 'none' → `cluster_of={}`,
+   'all' → `None`), with `_dc_hidden_companies` applied and † from
+   `_dc_unattributed_companies` — see *Tenant vs operator, and shared tenancy* above.
+   'Country' races **every** country instead via `_dc_country_steps` (mode `'site'`
+   when nothing pools, else `'company'`) on the **unfiltered** site list, China
+   listed twice (China-accessible and domestic-only, never plain "China"). Countries
+   used to be appended after the companies; that read as the US being a tenant, so
+   they were split out. The US reference pace for the borrowed trend is passed as
+   `ref_steps` (the US country series) since company rosters no longer contain it.
 2. **The projection is the by-country model, unchanged.** `_pc_projection()` calls
    `_dc_cty_fit` (since=`_DC_DEFAULTS["dc_cty_since"]`, plan horizon anchored) and
    `_dc_cty_trajectories` (plan slip by `_dc_plan_quality`); non-US entities borrow
