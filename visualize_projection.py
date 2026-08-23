@@ -1034,10 +1034,10 @@ def load_data_centers(_mtime=None):
 
 # Metric options for the data-center tab: label → (point key, log-scale default, formatter kind)
 _DC_METRICS = {
-    # `scale` divides only the *axis tick labels*, so the axis reads in
-    # millions while stored values, hovers and tables stay raw counts.
-    "Compute (x1M H100-equiv)": {"key": "h100", "log": True, "kind": "h100",
-                                 "scale": 1e6},
+    # Every metric is stored, plotted, hovered and tabulated in raw units; the
+    # axis ticks are labelled by `_dc_axis_ticks` the same way `_dc_fmt_value`
+    # labels a value, so no chart can read in different units than its labels.
+    "Compute (H100-equiv)": {"key": "h100", "log": True, "kind": "h100"},
     "Power (MW)": {"key": "power", "log": False, "kind": "mw"},
     "IT power (MW)": {"key": "it_power", "log": False, "kind": "mw"},
     "Capital cost ($B)": {"key": "cost", "log": False, "kind": "cost"},
@@ -6785,7 +6785,7 @@ def render_eci_gap():
 _DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing", "dc_pool_n",
                   "dc_start_year", "dc_end_year"]
 _DC_DEFAULTS = {
-    "dc_metric": "Compute (x1M H100-equiv)",
+    "dc_metric": "Compute (H100-equiv)",
     "dc_log": True,
     "dc_future": True,
     "dc_timing": "Data center construction",
@@ -6893,13 +6893,28 @@ def _dc_yrange(values, log_scale):
     return [0, vmax * 1.1]
 
 
-def _dc_log_ticks(y_range, tick_scale=1.0):
+def _dc_tick_label(v, kind):
+    """A tick's text, in the same units the value itself is reported in.
+
+    Counts wide enough to need a suffix get one (`_dc_fmt_value`'s k/M), but
+    trimmed for an axis: "2M", not "2.00M". Every other kind prints plainly.
+    Never rescale a tick against its axis title instead — the H100 axis used to
+    divide its labels by a million while the bar text, hovers and the quarterly
+    table stayed raw, so a bar reading "1.11M" sat under a "1" tick.
+    """
+    if kind == 'h100':
+        if abs(v) >= 1e6:
+            return f"{v / 1e6:g}M"
+        if abs(v) >= 1e3:
+            return f"{v / 1e3:g}k"
+    return f"{v:g}"
+
+
+def _dc_log_ticks(y_range, kind=None):
     """Explicit log-axis ticks that label every minor tick with its full value
     (e.g. 20, 30, … in the 10-100 decade rather than Plotly's default 2, 3, …),
     while keeping the powers of ten larger so the decade hierarchy stays clear.
-
-    `tick_scale` divides the *label* only (the tick still sits at the raw value),
-    so a metric can be plotted in raw units but read in millions."""
+    """
     lo = int(np.floor(y_range[0]))
     hi = int(np.ceil(y_range[1]))
     vmin = 10.0 ** y_range[0]
@@ -6911,7 +6926,7 @@ def _dc_log_ticks(y_range, tick_scale=1.0):
             v = m * base
             if v < vmin * 0.999 or v > vmax * 1.001:
                 continue
-            label = f"{v / tick_scale:g}"
+            label = _dc_tick_label(v, kind)
             if m == 1:
                 text.append(label)  # decade label at the axis tickfont size
             else:
@@ -6920,28 +6935,27 @@ def _dc_log_ticks(y_range, tick_scale=1.0):
     return vals, text
 
 
-def _dc_linear_ticks(y_range, tick_scale):
-    """Round linear-axis ticks labelled in units of `tick_scale`.
+def _dc_linear_ticks(y_range, kind=None):
+    """Round linear-axis ticks with compact labels, for the kinds whose raw
+    counts are too wide to print under a linear axis (H100-equivalents).
 
-    The log path relabels ticks itself; this is the same idea for a linear axis,
-    where Plotly would otherwise print the raw counts under a scaled axis title.
-    Returns None when there is nothing to rescale.
+    Returns None for every other kind, leaving Plotly's own ticks alone.
     """
-    if not y_range or not tick_scale or tick_scale == 1.0:
+    if kind != 'h100' or not y_range:
         return None
     lo, hi = y_range
-    span = (hi - lo) / tick_scale
+    span = hi - lo
     if span <= 0:
         return None
     raw = span / 6.0
     mag = 10.0 ** float(np.floor(np.log10(raw)))
     step = next((m * mag for m in (1, 2, 2.5, 5) if m * mag >= raw), 10 * mag)
     vals, text = [], []
-    i = int(np.ceil(lo / (step * tick_scale)))
-    while i * step * tick_scale <= hi * (1 + 1e-9):
-        v = i * step * tick_scale
+    i = int(np.ceil(lo / step))
+    while i * step <= hi * (1 + 1e-9):
+        v = i * step
         vals.append(v)
-        text.append(f"{v / tick_scale:g}")
+        text.append(_dc_tick_label(v, kind))
         i += 1
     return (vals, text) if len(vals) >= 2 else None
 
@@ -7026,28 +7040,34 @@ def _dc_logop_ticks(y_range, log_scale):
     return (vals, text) if len(vals) >= 2 else None
 
 
+def _dc_axis_ticks(y_range, log_scale, kind):
+    """Tick positions (raw values) and labels for a capacity axis.
+
+    One dispatcher, because the snapshot bar chart builds its own axis rather
+    than going through `_dc_layout`: when the two branched separately the bars
+    ended up under a differently-labelled axis than the chart above them.
+    """
+    if kind == 'traintime':
+        ticks = _dc_duration_ticks(y_range, log_scale)
+    elif kind == 'flop':
+        ticks = _dc_logop_ticks(y_range, log_scale)
+    elif log_scale and y_range is not None:
+        ticks = _dc_log_ticks(y_range, kind)
+    else:
+        ticks = _dc_linear_ticks(y_range, kind)
+    return ticks if ticks and ticks[0] else None
+
+
 def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
-               height=440, show_legend=False, kind=None, tick_scale=1.0):
+               height=440, show_legend=False, kind=None):
     yaxis = dict(title_text=y_title,
                  type='log' if log_scale else 'linear',
                  range=y_range,
                  gridcolor='rgba(0,0,0,0.12)',
                  tickfont=dict(color='#222222'), title_font=dict(color='#222222'))
-    if kind == 'traintime':
-        ticks = _dc_duration_ticks(y_range, log_scale)
-        if ticks is not None:
-            yaxis.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
-    elif kind == 'flop':
-        ticks = _dc_logop_ticks(y_range, log_scale)
-        if ticks is not None:
-            yaxis.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
-    elif log_scale and y_range is not None:
-        tvals, ttext = _dc_log_ticks(y_range, tick_scale)
-        yaxis.update(tickmode='array', tickvals=tvals, ticktext=ttext)
-    else:
-        ticks = _dc_linear_ticks(y_range, tick_scale)
-        if ticks is not None:
-            yaxis.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
+    ticks = _dc_axis_ticks(y_range, log_scale, kind)
+    if ticks is not None:
+        yaxis.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
     return dict(
         height=height,
         plot_bgcolor='white', paper_bgcolor='white',
@@ -7116,8 +7136,6 @@ def render_data_centers():
 
     key = cfg["key"]
     kind = cfg["kind"]
-    # Axis-label divisor only; every stored value below stays a raw count.
-    tick_scale = cfg.get("scale", 1.0)
     # Cap projected buildout at the end of the chosen projection year.
     cap_date = datetime(dc_end_year, 12, 31) if include_future else _today
     series = _dc_series_for_metric(dc_all, key, cap_date=cap_date)
@@ -7293,8 +7311,8 @@ def render_data_centers():
         ))
     fig1.update_layout(**_dc_layout(
         log_scale, metric_label, x_start, x_end,
-        y_range=_dc_yrange(_dc_visible_vals(env, x_start), log_scale), kind=kind,
-        tick_scale=tick_scale))
+        y_range=_dc_yrange(_dc_visible_vals(env, x_start), log_scale),
+        kind=kind))
     st.plotly_chart(fig1, use_container_width=True)
 
     comp = _dc_company_series(series)
@@ -7344,12 +7362,7 @@ def render_data_centers():
                       gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222222'),
                       title_font=dict(color='#222222'))
     snap_range = _dc_yrange([s[1] for s in snap], log_scale)
-    if kind == 'traintime':
-        ticks = _dc_duration_ticks(snap_range, log_scale)
-    elif log_scale and snap_range is not None:
-        ticks = _dc_log_ticks(snap_range, tick_scale)
-    else:
-        ticks = _dc_linear_ticks(snap_range, tick_scale)
+    ticks = _dc_axis_ticks(snap_range, log_scale, kind)
     if ticks is not None:
         snap_xaxis.update(tickmode='array', tickvals=ticks[0],
                           ticktext=ticks[1])
@@ -7428,8 +7441,7 @@ def render_data_centers():
                  for v in _dc_visible_vals(steps, x_start)]
     fig2.update_layout(**_dc_layout(log_scale, metric_label, x_start, x_end,
                                     y_range=_dc_yrange(comp_vals, log_scale),
-                                    height=500, show_legend=True, kind=kind,
-                                    tick_scale=tick_scale))
+                                    height=500, show_legend=True, kind=kind))
     st.plotly_chart(fig2, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -7538,8 +7550,7 @@ def render_data_centers():
                  for v in _dc_visible_vals(steps, x_start)]
     fig_pool.update_layout(**_dc_layout(log_scale, metric_label, x_start, x_end,
                                         y_range=_dc_yrange(pool_vals, log_scale),
-                                        height=500, show_legend=True, kind=kind,
-                                        tick_scale=tick_scale))
+                                        height=500, show_legend=True, kind=kind))
     st.plotly_chart(fig_pool, use_container_width=True)
 
     def _groups(basis):

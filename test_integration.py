@@ -763,7 +763,7 @@ class TestDataCenters:
         at.radio(key="dc_end_year").set_value(2029).run()
         at.button(key="dc_reset").click().run()
         _assert_no_error(at, "after dc reset")
-        assert at.selectbox(key="dc_metric").value == "Compute (x1M H100-equiv)"
+        assert at.selectbox(key="dc_metric").value == "Compute (H100-equiv)"
         assert at.radio(key="dc_end_year").value == 2027
 
 

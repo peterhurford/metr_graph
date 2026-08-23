@@ -2939,51 +2939,81 @@ class TestUkCyberOpenOnlyOnTlo:
         assert vp.ukc_open_only_on_tlo([dict(r) for r in tlo], tlo) is None
 
 
-class TestDcAxisScale:
-    """The H100 metric is stored raw but read in millions on the axis."""
+class TestDcAxisTicks:
+    """Ticks and value labels have to read in the same units.
+
+    They didn't: the H100 metric was called "Compute (x1M H100-equiv)" and its
+    ticks were divided by a million, while `_dc_fmt_value` kept feeding the bar
+    text, hovers and the quarterly table raw counts — so a bar labelled "1.11M"
+    sat under a tick labelled "1". The divisor is gone; ticks now carry the same
+    k/M suffixes the values do.
+    """
 
     @staticmethod
     def _plain(texts):
         return [re.sub(r"<[^>]+>", "", t) for t in texts]
 
-    def test_metric_declares_the_scale(self):
-        cfg = vp._DC_METRICS["Compute (x1M H100-equiv)"]
-        assert cfg["key"] == "h100" and cfg["scale"] == 1e6
-        assert vp._DC_DEFAULTS["dc_metric"] == "Compute (x1M H100-equiv)"
+    def test_metric_declares_no_divisor(self):
+        cfg = vp._DC_METRICS["Compute (H100-equiv)"]
+        assert cfg["key"] == "h100" and "scale" not in cfg
+        assert vp._DC_DEFAULTS["dc_metric"] == "Compute (H100-equiv)"
+        assert not any("scale" in c for c in vp._DC_METRICS.values()), \
+            "a per-metric axis divisor is what desynced the labels"
 
-    def test_log_ticks_scale_the_label_not_the_position(self):
-        vals, text = vp._dc_log_ticks([5.0, 7.0], tick_scale=1e6)
-        assert self._plain(text)[:3] == ["0.1", "0.2", "0.3"]
-        assert vals[0] == 1e5            # tick still sits at the raw value
-        assert self._plain(text)[vals.index(1e6)] == "1"
+    def test_log_ticks_label_the_value_they_sit_at(self):
+        vals, text = vp._dc_log_ticks([5.0, 7.0], 'h100')
+        plain = self._plain(text)
+        assert vals[0] == 1e5 and plain[0] == "100k"
+        assert plain[vals.index(1e6)] == "1M"
+        assert plain[vals.index(2e6)] == "2M"   # trimmed, not "2.00M"
 
-    def test_log_ticks_unchanged_without_a_scale(self):
+    def test_log_ticks_stay_plain_for_other_kinds(self):
         _, text = vp._dc_log_ticks([5.0, 6.0])
         assert self._plain(text)[0] == "100000"
 
-    def test_linear_ticks_scale_and_stay_round(self):
-        vals, text = vp._dc_linear_ticks([0, 5.5e6], 1e6)
-        assert text == ["0", "1", "2", "3", "4", "5"]
+    def test_linear_ticks_are_round_and_suffixed(self):
+        vals, text = vp._dc_linear_ticks([0, 5.5e6], 'h100')
+        assert text == ["0", "1M", "2M", "3M", "4M", "5M"]
         assert vals[-1] == 5e6
 
-    def test_linear_ticks_absent_when_nothing_to_rescale(self):
-        assert vp._dc_linear_ticks([0, 5e6], 1.0) is None
-        assert vp._dc_linear_ticks(None, 1e6) is None
-        assert vp._dc_linear_ticks([3.0, 3.0], 1e6) is None
+    def test_linear_ticks_absent_where_plotly_reads_fine(self):
+        assert vp._dc_linear_ticks([0, 5e6], 'mw') is None
+        assert vp._dc_linear_ticks(None, 'h100') is None
+        assert vp._dc_linear_ticks([3.0, 3.0], 'h100') is None
 
-    def test_layout_applies_the_scale_on_both_axis_types(self):
-        log = vp._dc_layout(True, "Compute (x1M H100-equiv)",
+    def test_a_tick_and_a_value_agree_at_the_same_number(self):
+        """The invariant the old divisor broke, stated directly."""
+        for v in (11470.0, 768769.0, 1111673.0):
+            tick = vp._dc_tick_label(v, 'h100')
+            val = vp._dc_fmt_value(v, 'h100')
+            # Same magnitude suffix, so a bar's text can't contradict its axis.
+            assert tick[-1] == val[-1] and tick[-1] in "kM"
+
+    def test_layout_labels_both_axis_types(self):
+        log = vp._dc_layout(True, "Compute (H100-equiv)",
                             datetime(2024, 1, 1), datetime(2028, 1, 1),
-                            y_range=[5.0, 7.0], tick_scale=1e6)
-        assert self._plain(log['yaxis']['ticktext'])[0] == "0.1"
-        lin = vp._dc_layout(False, "Compute (x1M H100-equiv)",
+                            y_range=[5.0, 7.0], kind='h100')
+        assert self._plain(log['yaxis']['ticktext'])[0] == "100k"
+        lin = vp._dc_layout(False, "Compute (H100-equiv)",
                             datetime(2024, 1, 1), datetime(2028, 1, 1),
-                            y_range=[0, 5.5e6], tick_scale=1e6)
-        assert lin['yaxis']['ticktext'] == ["0", "1", "2", "3", "4", "5"]
+                            y_range=[0, 5.5e6], kind='h100')
+        assert lin['yaxis']['ticktext'] == ["0", "1M", "2M", "3M", "4M", "5M"]
+
+    def test_dispatcher_covers_every_metric_kind(self):
+        """The snapshot bar chart builds its own axis through `_dc_axis_ticks`,
+        so the dispatcher — not `_dc_layout` — is what keeps it in step. It used
+        to hand-roll the same branching and had no 'flop' case, printing raw
+        operation counts under bars labelled in log OP."""
+        assert self._plain(vp._dc_axis_ticks([27.0, 28.5], True, 'flop')[1])[0] \
+            == "27"
+        assert "month" in vp._dc_axis_ticks([0.0, 2.0], True, 'traintime')[1][0]
+        assert self._plain(vp._dc_axis_ticks([4.0, 7.0], True, 'h100')[1])[0] \
+            == "10k"
+        assert vp._dc_axis_ticks(None, False, 'h100') is None
 
     def test_values_and_hovers_stay_raw_counts(self):
-        """Only the axis is rescaled — _dc_fmt_value still takes raw counts, so
-        the hovers and _cc_company_buildout keep working unchanged."""
+        """Nothing downstream is rescaled — _dc_fmt_value still takes raw
+        counts, so the hovers and _cc_company_buildout keep working."""
         assert vp._dc_fmt_value(1824153.6, 'h100') == "1.82M"
         assert vp._dc_fmt_value(816321, 'h100') == "816k"
         ser = vp._dc_series_for_metric(vp.dc_all, 'h100')

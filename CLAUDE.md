@@ -108,6 +108,17 @@ Widget defaults live in per-tab `_RESET_DEFAULTS`; each tab's `_RESET_KEYS` list
   time to train one model); inverting it breaks both. Don't invert it to make the axis read
   forward either — the axis is relabelled via `_dc_duration_ticks()` through
   `_dc_layout(kind=…)`, with a caption noting the labelled time shrinks as the line rises
+- **Data-center axis labels**: every metric is stored, plotted, hovered and tabulated in
+  raw units, and `_dc_axis_ticks(y_range, log_scale, kind)` is the single place a tick gets
+  its text — `_dc_tick_label` (k/M suffixes for `h100`), `_dc_logop_ticks` (`flop`) or
+  `_dc_duration_ticks` (`traintime`). Don't reintroduce a per-metric axis divisor: the H100
+  metric used to be called "Compute (x1M H100-equiv)" and divide its ticks by a million
+  while `_dc_fmt_value` kept the bar text, hovers and the quarterly table in raw counts, so
+  a bar reading "1.11M" sat under a tick reading "1". And route the snapshot bar chart's
+  x-axis through the same dispatcher — it builds its own axis instead of calling
+  `_dc_layout()`, and when it hand-rolled the branching it silently lacked the `flop` case.
+  `TestDcAxisTicks` guards both halves
+
 
 ### Data-center company labels
 
