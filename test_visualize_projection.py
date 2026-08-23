@@ -3585,3 +3585,152 @@ class TestDcTrainTime:
                               datetime(2024, 1, 1), datetime(2028, 1, 1),
                               y_range=[0.0, 2.0])
         assert "~1 day" not in plain['yaxis']['ticktext']
+
+
+class TestDcByCountry:
+    """The by-country panel at the bottom of the Data Centers tab."""
+
+    def _series(self, key='h100', cap=datetime(2027, 12, 31)):
+        return vp._dc_series_for_metric(vp.dc_all, key, cap_date=cap)
+
+    def _country_of(self):
+        return {dc['name']: vp._dc_site_country(dc) for dc in vp.dc_all}
+
+    def test_loader_carries_country(self):
+        by = {dc['name']: dc['country'] for dc in vp.dc_all}
+        assert by["VNET Bayin Ulanqab"] == "China"
+        assert by["OpenAI Stargate Abilene"] == "United States"
+
+    def test_country_fallback_only_names_sites_epoch_left_blank(self):
+        """The fallback exists for timeline-only names with no metadata row. A
+        refresh that gives them a row (or renames them) should retire it."""
+        by = {dc['name']: dc['country'] for dc in vp.dc_all}
+        for name, country in vp._DC_COUNTRY_FALLBACK.items():
+            assert name in by, f"{name!r} no longer in the timelines"
+            assert by[name] == '', f"Epoch now records a country for {name!r}"
+        assert all(vp._dc_site_country(dc) for dc in vp.dc_all), \
+            "a site has no country even after the fallback"
+
+    def test_china_abroad_sites_exist_and_are_not_in_china(self):
+        by = {dc['name']: vp._dc_site_country(dc) for dc in vp.dc_all}
+        for name in vp._DC_CN_ACCESS_ABROAD:
+            assert name in by, name
+            assert by[name] != vp._DC_CTY_CN, name
+
+    def test_abroad_scope_moves_sites_rather_than_copying_them(self):
+        series = self._series()
+        dom = vp._dc_country_groups(series, self._country_of(), 'domestic')
+        abroad = vp._dc_country_groups(series, self._country_of(), 'abroad')
+        assert set(dom[vp._DC_CTY_CN]) < set(abroad[vp._DC_CTY_CN_ACCESS])
+        moved = set(abroad[vp._DC_CTY_CN_ACCESS]) - set(dom[vp._DC_CTY_CN])
+        assert moved == set(vp._DC_CN_ACCESS_ABROAD)
+        # Nothing is counted twice: every site lands in exactly one group.
+        for groups in (dom, abroad):
+            names = [n for g in groups.values() for n in g]
+            assert len(names) == len(set(names))
+            assert set(names) == set(series)
+        assert "Malaysia" not in abroad          # Johor moved, nothing left
+        assert vp._DC_CTY_CN not in abroad
+
+    def test_pooling_modes_nest(self):
+        """Single site ≤ per-company networked group ≤ whole country, at every
+        date, for the US with the default clusters."""
+        series = self._series()
+        groups = vp._dc_country_groups(series, self._country_of(), 'abroad')
+        cl = vp._dc_network_site_clusters('fabric')
+        us = groups[vp._DC_CTY_US]
+        site = vp._dc_country_steps(series, us, 'site', cl)
+        comp = vp._dc_country_steps(series, us, 'company', cl)
+        whole = vp._dc_country_steps(series, us, 'country', cl)
+        assert site and comp and whole
+        for d in (datetime(2025, 6, 1), datetime(2026, 6, 1), datetime(2027, 12, 1)):
+            s = vp._dc_val_at([(x[0], x[1]) for x in site], d)
+            c = vp._dc_val_at([(x[0], x[1]) for x in comp], d)
+            w = vp._dc_val_at([(x[0], x[1]) for x in whole], d)
+            assert s <= c <= w, (d, s, c, w)
+        # Single site per company is the plain envelope, redrawn.
+        comp_none = vp._dc_country_steps(series, us, 'company', {})
+        assert [(x[0], x[1]) for x in comp_none] == [(x[0], x[1]) for x in site]
+
+    def test_fit_anchors_on_last_recorded_step(self):
+        series = self._series()
+        groups = vp._dc_country_groups(series, self._country_of(), 'abroad')
+        cl = vp._dc_network_site_clusters('fabric')
+        steps = vp._dc_country_steps(series, groups[vp._DC_CTY_US], 'site', cl)
+        fit = vp._dc_cty_fit(steps, since=2024)
+        assert fit['t0'] == steps[-1][0] and fit['v0'] == steps[-1][1]
+        assert 0.3 < fit['g'] < 0.7, "US largest-site pace left ×2–5/yr"
+        assert fit['sigma_g'] >= vp._DC_CTY_SIGMA_G_FLOOR
+        assert fit['sigma_g'] >= fit['se']
+        assert set(fit['windows']) <= set(vp._DC_CTY_FIT_WINDOWS)
+
+    def test_fit_refuses_a_short_history(self):
+        steps = [(datetime(2027, 1, 1), 1e5, 'x'), (datetime(2027, 3, 1), 2e5, 'x')]
+        assert vp._dc_cty_fit(steps) is None
+        assert vp._dc_cty_fit([]) is None
+        assert vp._dc_cty_fit([(datetime(2027, 1, 1), 0.0, 'x')]) is None
+
+    def test_trajectories_reproduce_the_record_then_fan_out(self):
+        steps = [(datetime(2024, 1, 1) + timedelta(days=30 * i), 1e4 * 2 ** i, 'x')
+                 for i in range(24)]
+        grid = vp._dc_cty_month_grid(datetime(2024, 1, 1), datetime(2028, 12, 1))
+        fit = vp._dc_cty_fit(steps)
+        traj = vp._dc_cty_trajectories(steps, fit, grid, 200)
+        assert traj.shape == (200, len(grid))
+        for j, d in enumerate(grid):
+            if d <= fit['t0']:
+                v = vp._dc_val_at([(s[0], s[1]) for s in steps], d)
+                assert (traj[:, j] == v).all(), d
+        last = traj[:, -1]
+        assert last.std() > 0 and (last > fit['v0']).mean() > 0.9
+        # The cone widens with horizon.
+        j1 = grid.index(datetime(2026, 6, 1))
+        spread = lambda col: np.log10(np.percentile(col, 90) / np.percentile(col, 10))
+        assert spread(traj[:, -1]) > spread(traj[:, j1])
+        # Without a fit there is no extrapolation, only the record.
+        bare = vp._dc_cty_trajectories(steps, None, grid, 3)
+        assert np.isnan(bare[:, -1]).all()
+
+    def test_borrowed_pace_reanchors(self):
+        steps = [(datetime(2024, 1, 1) + timedelta(days=30 * i), 1e4 * 2 ** i, 'x')
+                 for i in range(24)]
+        other = [(datetime(2026, 1, 1), 5e4, 'y'), (datetime(2027, 1, 1), 7e4, 'y')]
+        grid = vp._dc_cty_month_grid(datetime(2024, 1, 1), datetime(2028, 12, 1))
+        fit = vp._dc_cty_fit(steps)
+        traj = vp._dc_cty_trajectories(other, dict(fit, t0=other[-1][0],
+                                                   v0=other[-1][1]), grid, 100,
+                                       pace=fit)
+        j = grid.index(datetime(2027, 1, 1))
+        assert (traj[:, j] == 7e4).all()
+        assert np.median(traj[:, -1]) > 7e4
+
+    def test_lag_months(self):
+        grid = vp._dc_cty_month_grid(datetime(2025, 1, 1), datetime(2025, 12, 1))
+        leader = np.array([[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]],
+                          dtype=float)
+        follower = np.array([[np.nan, 10, 10, 20, 45, 200, 200, 200, 200, 200,
+                              200, 200]], dtype=float)
+        lag, unresolved = vp._dc_cty_lag_months(follower, leader, grid)
+        assert np.isnan(lag[0, 0]) and not unresolved[0, 0]
+        assert lag[0, 1] == 1 and lag[0, 2] == 2      # 10 reached at month 0
+        assert lag[0, 3] == 2                          # 20 reached at month 1
+        assert lag[0, 4] == 0                          # 45 → first ≥ is 50, month 4
+        # 200 is never reached: floored one month past the grid, and flagged.
+        assert lag[0, 5] == 5 - 12 and unresolved[0, 5]
+        assert lag[0, 11] == -1 and unresolved[0, 11]
+
+    def test_defaults_and_reset_keys(self):
+        for k in ("dc_cty_pool", "dc_cty_cn", "dc_cty_pace", "dc_cty_since",
+                  "dc_cty_horizon"):
+            assert k in vp._DC_RESET_KEYS and k in vp._DC_DEFAULTS
+        assert vp._DC_DEFAULTS["dc_cty_pool"] in vp._DC_CTY_POOL_OPTIONS
+        assert vp._DC_DEFAULTS["dc_cty_cn"] in vp._DC_CTY_CN_OPTIONS
+        assert vp._DC_DEFAULTS["dc_cty_pace"] in vp._DC_CTY_PACE_OPTIONS
+        assert vp._DC_DEFAULTS["dc_cty_horizon"] in vp._DC_CTY_HORIZONS
+        assert vp._DC_DEFAULTS["dc_cty_since"] in vp._DC_CTY_SINCE_YEARS
+        # The selectboxes have no index= so their first option must be the
+        # default, and the borrowed-pace reading is the default on purpose.
+        assert list(vp._DC_CTY_POOL_OPTIONS)[0] == vp._DC_DEFAULTS["dc_cty_pool"]
+        assert list(vp._DC_CTY_CN_OPTIONS)[0] == vp._DC_DEFAULTS["dc_cty_cn"]
+        assert list(vp._DC_CTY_PACE_OPTIONS)[0] == vp._DC_DEFAULTS["dc_cty_pace"]
+        assert vp._DC_CTY_PACE_OPTIONS[vp._DC_DEFAULTS["dc_cty_pace"]] == 'us'

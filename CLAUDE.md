@@ -47,7 +47,7 @@ Nine-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPT
 | Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` | ARR in billions |
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
-| Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost |
+| Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; ends with a US-vs-China by-country projection (`_dc_render_country_panel()`) |
 | Compute vs Capabilities | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; ends with China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) |
 
 ### Data Sources and How to Update
@@ -269,6 +269,56 @@ Keep each company's `orgs` list minimal — substring matching makes longer vari
 ("Google" already catches "Google DeepMind,Google"). Matching is unambiguous only while no
 `Organization` string names two companies; `TestEcgOrgMatching` asserts that against the live
 CSV, plus tab-to-tab set equality, the Google spellings, and slug round-tripping.
+
+### Buildout by country (bottom of the Data Centers tab)
+
+`_dc_render_country_panel()` is the US-vs-China view: each country's largest training
+run over time, extrapolated past the end of its recorded data under a 50%/80% cone, plus a
+year-end table of US, China, their ratio and China's lag in months. Load-bearing:
+
+1. **Country is a property of the building.** `load_data_centers()` carries Epoch's
+   `Country`; `_dc_site_country()` adds `_DC_COUNTRY_FALLBACK` for the two timeline-only
+   names with no metadata row (Kempas, Mesa). The panel is built from the **unfiltered**
+   site list — `_dc_hidden_companies()` is not applied, because a landlord's hall in a
+   country is capacity in that country whoever trains in it. `test_country_fallback_only_
+   names_sites_epoch_left_blank` retires a fallback the moment Epoch fills the cell.
+2. **"China-accessible" = China + `_DC_CN_ACCESS_ABROAD`** (DayOne Johor). Epoch's own
+   source notes on Nusajaya cite the FT on Alibaba and ByteDance training in Southeast Asia.
+   The scope is a selector (default on, help text says it is an upper bound — DayOne has
+   other tenants), the sites are *moved* out of Malaysia rather than copied, and the
+   mainland-only series is drawn alongside as a thin reference line. Assuming tenancy is the
+   strong claim here, same as for the networked-clusters `'plausible'` level; don't add
+   sites to the tuple without a citation of the same standard.
+3. **Pooling nests.** `_dc_country_steps()` offers largest single site, largest networked
+   group per company (the section-5 selector's `cluster_of`, so the China line reads in the
+   same units as the company chart), or every site in the country summed — the Pacing-tab
+   state-direction claim, an upper bound for the US. `test_pooling_modes_nest` holds
+   site ≤ company ≤ country and that `cluster_of={}` reproduces the envelope.
+4. **The extrapolation is a log-linear OLS on monthly samples, anchored at the last
+   recorded step.** `_dc_cty_fit()` samples the forward-filled step series monthly (not at
+   event dates, which would weight dense periods), fits from the *Fit trend since* year,
+   and reports the pace over every `_DC_CTY_FIT_WINDOWS` lookback. Pace uncertainty is
+   max(OLS se, window spread / 2.56, `_DC_CTY_SIGMA_G_FLOOR` = 0.10 OOM/yr) — the floor is
+   what carries the cone for China, whose windows all coincide. `_dc_cty_trajectories()`
+   adds the series' own residual scatter, ramped in over a year. Two biases to keep in the
+   caption: a fit from a country's first go-live runs hot (China-accessible's own trend is
+   ×5/yr, a from-zero ramp), and one to the edge of the planned data runs cool (the far
+   future is under-catalogued — the US since-2026 window is ×2.3/yr vs ×3.2 since 2024).
+5. **The default pace is the US trend borrowed** (`_DC_CTY_PACE_OPTIONS`, 'us'), with the
+   cone widened to `|g_own − g_us| / 1.28` so a country's own fit sits at the 80% edge
+   rather than vanishing. Own-trend is one click away and has China overtaking the US by
+   2029 — that is the ramp bias above, not a finding. The US always uses its own fit.
+6. **Lag never drops the samples where China leads.** `_dc_cty_lag_months()` floors an
+   unresolved sample (the US running max never reaches China's value inside the grid) at
+   one month past the grid end and returns the mask; the table prints "ahead in N% of
+   samples" once most are floored. Dropping them as NaN biased the 2030 median to "5 months
+   behind" in a row whose ratio read 0.5×.
+
+The cone starts where Epoch's catalogue ends — for China that is 2027, well inside the
+window — so it is a trend through the site list, not a forecast of export-control policy.
+The tab's *Project through* year caps the recorded data for every country alike; turning
+planned buildout off gives a trend-only projection from today. `TestDcByCountry` (unit)
+and `TestDataCentersByCountry` (integration).
 
 ### Compute vs Capabilities — the buildout-vs-release-timing panel
 

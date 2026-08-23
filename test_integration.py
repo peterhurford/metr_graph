@@ -926,3 +926,75 @@ class TestUkCyberTab:
         at.button(key="reset_ukc").click().run()
         _assert_no_error(at, "after UK Cyber reset")
         assert at.toggle(key="ukc_show_lag").value is True
+
+
+class TestDataCentersByCountry:
+    """The by-country panel: renders under every control, and its headline
+    tracks the horizon and the China scope."""
+
+    def _dc_app(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Data Centers")
+        return at
+
+    def _headline(self, at):
+        return [str(m.value) for m in at.markdown
+                if "training run by end-" in str(m.value)]
+
+    def test_renders_with_headline_and_table(self):
+        at = self._dc_app()
+        _assert_no_error(at, "Data Centers / by country")
+        assert "Buildout by country: US vs China" in \
+            " ".join(str(h.value) for h in at.subheader)
+        head = self._headline(at)
+        assert len(head) == 1 and "China-accessible" in head[0] \
+            and "end-2030" in head[0]
+        table = at.table[-1].value
+        assert list(table["Year end"]) == ["2026", "2027", "2028", "2029", "2030"]
+        assert "China-accessible" in table.columns
+        assert at.radio(key="dc_cty_horizon").value == 2030
+        assert at.radio(key="dc_cty_since").value == 2024
+
+    def test_every_control_renders(self):
+        at = self._dc_app()
+        for label in at.selectbox(key="dc_cty_pool").options:
+            at.selectbox(key="dc_cty_pool").set_value(label).run()
+            _assert_no_error(at, f"by country / {label}")
+        for label in at.radio(key="dc_cty_pace").options:
+            at.radio(key="dc_cty_pace").set_value(label).run()
+            _assert_no_error(at, f"by country / {label}")
+        for yr in at.radio(key="dc_cty_since").options:
+            at.radio(key="dc_cty_since").set_value(yr).run()
+            _assert_no_error(at, f"by country / since {yr}")
+
+    def test_domestic_scope_and_horizon(self):
+        at = self._dc_app()
+        at.radio(key="dc_cty_cn").set_value("Sites in China only")
+        at.radio(key="dc_cty_horizon").set_value(2028).run()
+        _assert_no_error(at, "by country / domestic 2028")
+        head = self._headline(at)
+        assert "Largest China training run by end-2028" in head[0]
+        assert list(at.table[-1].value["Year end"]) == ["2026", "2027", "2028"]
+
+    def test_trend_only_when_planned_buildout_is_off(self):
+        at = self._dc_app()
+        at.checkbox(key="dc_future").set_value(False).run()
+        _assert_no_error(at, "by country / no planned buildout")
+        assert self._headline(at)
+
+    def test_other_metrics(self):
+        for label in ("6mo train log OP", "Power (MW)", "Capacity (time to Mythos)"):
+            at = self._dc_app()
+            at.selectbox(key="dc_metric").set_value(label).run()
+            _assert_no_error(at, f"by country / {label}")
+            assert self._headline(at), label
+
+    def test_reset_restores_panel_defaults(self):
+        at = self._dc_app()
+        at.radio(key="dc_cty_horizon").set_value(2031)
+        at.radio(key="dc_cty_cn").set_value("Sites in China only").run()
+        at.button(key="dc_reset").click().run()
+        _assert_no_error(at, "by country / reset")
+        assert at.radio(key="dc_cty_horizon").value == 2030
+        assert at.radio(key="dc_cty_cn").value.startswith("Sites in China +")

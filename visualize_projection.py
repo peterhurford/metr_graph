@@ -932,8 +932,8 @@ _DC_COMPANY_ALIASES = {
 def load_data_centers(_mtime=None):
     """Load Epoch's per-data-center capacity timelines plus an owner→company map.
 
-    Returns a list of dicts: {name, company, attributed, points:[{date, status,
-    h100, it_power, power, perf, cost}, ...]} with points sorted by date. Metric
+    Returns a list of dicts: {name, company, attributed, country, points:[{date,
+    status, h100, it_power, power, perf, cost}, ...]} with points sorted by date. Metric
     values are floats or None when missing. `attributed` is False when the
     company label came from the site-name fallback rather than a recorded user
     or owner.
@@ -945,6 +945,7 @@ def load_data_centers(_mtime=None):
     # falling back to the facility owner, then to the site-name token.
     user_by_dc = {}
     owner_by_dc = {}
+    country_by_dc = {}
     dc_meta_path = os.path.join(base, 'data_centers.csv')
     if os.path.exists(dc_meta_path):
         with open(dc_meta_path, 'r') as f:
@@ -956,6 +957,7 @@ def load_data_centers(_mtime=None):
                 # Users may be a comma-separated list; take the primary (first).
                 primary_user = (r.get('Users', '') or '').split(',')[0]
                 user_by_dc[name] = _dc_clean_owner(primary_user)
+                country_by_dc[name] = (r.get('Country') or '').strip()
 
     def company_for(dc_name):
         label = (user_by_dc.get(dc_name, '')
@@ -1027,7 +1029,8 @@ def load_data_centers(_mtime=None):
     for name, pts in series.items():
         pts.sort(key=lambda p: p['date'])
         dcs.append({'name': name, 'company': company_for(name),
-                    'attributed': attributed_for(name), 'points': pts})
+                    'attributed': attributed_for(name), 'points': pts,
+                    'country': country_by_dc.get(name, '')})
     dcs.sort(key=lambda dc: dc['name'])
     return dcs
 
@@ -1204,6 +1207,52 @@ _DC_NETWORK_CLUSTERS = (
 
 # The cluster bases, weakest first; each level admits every basis before it.
 _DC_NETWORK_LEVELS = ('proximity', 'fabric', 'plausible')
+
+
+# ── Buildout by country ──────────────────────────────────────────────────
+# Country is a property of the building, read off Epoch's `Country` column.
+# Two timeline-only names have no metadata row at all (see CLAUDE.md on the
+# timelines export), so they'd vanish from a by-country view without this.
+_DC_COUNTRY_FALLBACK = {
+    "DayOne Kempas": "Malaysia",          # Johor, 20 km from DayOne Nusajaya
+    "EdgeCore Mesa PH03": "United States",  # Mesa, AZ
+}
+_DC_CTY_US = "United States"
+_DC_CTY_CN = "China"
+# Sites outside China that Chinese labs train on. Epoch's own source notes on
+# DayOne Nusajaya cite the FT reporting Alibaba and ByteDance training models
+# in Southeast Asia, and DayOne is the GDS Holdings spin-off. Counting the
+# whole campus as Chinese-accessible is an upper-bound reading — DayOne has
+# other tenants — so it is a selector, and its label says what it assumes.
+_DC_CN_ACCESS_ABROAD = ("DayOne Nusajaya", "DayOne Kempas")
+_DC_CTY_CN_ACCESS = "China-accessible"
+# Extrapolation: log-linear OLS on monthly samples of a country's step series
+# since this year (the tab's earliest chart start), pace uncertainty as the
+# larger of the fit's standard error, the spread of the slope across the
+# lookback windows, and a floor — the floor is what carries the cone for a
+# country with two years of data, where the windows all coincide.
+_DC_CTY_FIT_SINCE = 2023
+_DC_CTY_FIT_WINDOWS = (2023, 2024, 2025, 2026)
+_DC_CTY_SIGMA_G_FLOOR = 0.10      # OOM/yr, 1σ
+_DC_CTY_MIN_FIT_POINTS = 6        # monthly samples; fewer → borrow the US pace
+_DC_CTY_HORIZONS = [2028, 2029, 2030, 2031]
+_DC_CTY_SINCE_YEARS = [2023, 2024, 2025, 2026]
+_DC_CTY_CN_DOMESTIC = "China (domestic only)"
+_DC_CTY_POOL_OPTIONS = {
+    "Largest networkable group per company (selector above)": 'company',
+    "Largest single site": 'site',
+    "Every site in the country, pooled (upper bound)": 'country',
+}
+_DC_CTY_CN_OPTIONS = {
+    "Sites in China + Chinese labs' sites abroad (DayOne Johor)": 'abroad',
+    "Sites in China only": 'domestic',
+}
+_DC_CTY_PACE_OPTIONS = {
+    "The US trend for every country (a follower tracks the leader)": 'us',
+    "Each country's own fitted trend": 'own',
+}
+_DC_CTY_COLORS = {_DC_CTY_US: "#1F77B4", _DC_CTY_CN: "#D62728",
+                  _DC_CTY_CN_ACCESS: "#D62728", _DC_CTY_CN_DOMESTIC: "#8B1A1A"}
 
 _DC_EXCLUDE_COMPANIES = {
     "QTS", "DayOne", "CoreWeave", "STACK", "Stream", "Vantage", "EdgeCore",
@@ -1536,6 +1585,198 @@ def _dc_company_networked_series(series, cluster_of):
 
 def _dc_color(company, idx):
     return _DC_COLORS.get(company, _DC_PALETTE[idx % len(_DC_PALETTE)])
+
+
+def _dc_site_country(dc):
+    """A site's country: Epoch's column, else the curated fallback, else ''."""
+    return dc.get('country') or _DC_COUNTRY_FALLBACK.get(dc['name'], '')
+
+
+def _dc_country_groups(series, country_of, cn_scope='abroad'):
+    """country label → [site names], for the by-country panel.
+
+    `cn_scope='abroad'` moves the sites in _DC_CN_ACCESS_ABROAD out of their
+    own country into a _DC_CTY_CN_ACCESS group alongside every site in China,
+    so nothing is counted twice; 'domestic' leaves them where they stand and
+    labels the Chinese group plainly. Sites with no country are dropped.
+    """
+    groups = {}
+    for name in series:
+        c = country_of.get(name, '')
+        if cn_scope == 'abroad' and (c == _DC_CTY_CN or name in _DC_CN_ACCESS_ABROAD):
+            c = _DC_CTY_CN_ACCESS
+        if not c:
+            continue
+        groups.setdefault(c, []).append(name)
+    return groups
+
+
+def _dc_country_steps(series, names, mode, cluster_of):
+    """One country's capacity over time as [(date, value, detail), …].
+
+    mode 'site'    — its largest single site (detail = site name)
+    mode 'company' — the largest networkable group any one company there has,
+                     pooled exactly as _dc_company_networked_series() does it
+                     (detail = "company — cluster" or the site)
+    mode 'country' — every site in the country summed (detail = site count):
+                     the state-direction claim the Pacing tab makes for China,
+                     an upper bound for anyone else
+    """
+    sub = {n: series[n] for n in names if n in series}
+    if not sub:
+        return []
+    if mode == 'site':
+        return [(d, v, n) for d, v, n, _ in _dc_envelope(sub)]
+    if mode == 'company':
+        per_co = _dc_company_networked_series(sub, cluster_of)
+        dates = sorted({d for steps in per_co.values() for d, *_ in steps})
+        out = []
+        for d in dates:
+            best = None
+            for co, steps in per_co.items():
+                val = _dc_val_at([(s[0], s[1]) for s in steps], d)
+                if val is None:
+                    continue
+                if best is None or val > best[0]:
+                    last = next(s for s in reversed(steps) if s[0] <= d)
+                    best = (val, f"{co} — {last[3]}" if last[3] else
+                            f"{co} — {last[2][0]}")
+            if best is not None:
+                out.append((d, best[0], best[1]))
+        return out
+    dates = sorted({d for v in sub.values() for d, _ in v['pts']})
+    out = []
+    for d in dates:
+        vals = [x for x in (_dc_val_at(v['pts'], d) for v in sub.values())
+                if x is not None]
+        out.append((d, sum(vals), f"{len(vals)} sites"))
+    return out
+
+
+def _dc_cty_month_grid(start, end):
+    """First-of-month datetimes from `start`'s month through `end`'s."""
+    out = []
+    y, m = start.year, start.month
+    while datetime(y, m, 1) <= end:
+        out.append(datetime(y, m, 1))
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+    return out
+
+
+def _dc_cty_fit(steps, since=None):
+    """Log-linear OLS of a step series, sampled monthly up to its last change.
+
+    Returns {t0, v0, g, se, sigma_g, sigma_res, n, windows} — t0/v0 the anchor
+    (last recorded step), g the central pace in OOM/yr fitted on samples from
+    `since` (default _DC_CTY_FIT_SINCE) on, windows the pace over every
+    lookback in _DC_CTY_FIT_WINDOWS that has enough points whatever `since`
+    is, sigma_g the 1σ pace uncertainty = max(se, window spread / 2·1.28,
+    floor) — so the windows the user did not pick still widen the cone. None when fewer than
+    _DC_CTY_MIN_FIT_POINTS positive monthly samples exist or the anchor is not
+    positive.
+    """
+    if not steps or steps[-1][1] is None or steps[-1][1] <= 0:
+        return None
+    t0, v0 = steps[-1][0], steps[-1][1]
+    pts = [(s[0], s[1]) for s in steps]
+    first_pos = next((d for d, v in pts if v is not None and v > 0), None)
+    if first_pos is None:
+        return None
+    since = datetime(since or _DC_CTY_FIT_SINCE, 1, 1)
+    grid = _dc_cty_month_grid(max(first_pos, datetime(_DC_CTY_FIT_WINDOWS[0], 1, 1)), t0)
+    all_samples = [(d, _dc_val_at(pts, d)) for d in grid]
+    all_samples = [(d, v) for d, v in all_samples if v is not None and v > 0]
+    # The anchor itself, so the fit sees the latest step even mid-month.
+    all_samples.append((t0, v0))
+    samples = [x for x in all_samples if x[0] >= since]
+    if len(samples) < _DC_CTY_MIN_FIT_POINTS:
+        return None
+
+    def _ols(sub):
+        t = np.array([(d - t0).days / 365.25 for d, _ in sub])
+        y = np.log10([v for _, v in sub])
+        a, b = fit_line(t, y)
+        resid = y - (a + b * t)
+        dof = len(sub) - 2
+        sxx = float(((t - t.mean()) ** 2).sum())
+        se = (float(np.sqrt(resid @ resid / dof / sxx))
+              if dof > 0 and sxx > 0 else 0.0)
+        return float(b), se, float(resid.std())
+
+    g, se, sigma_res = _ols(samples)
+    windows = {}
+    for yr in _DC_CTY_FIT_WINDOWS:
+        sub = [s for s in all_samples if s[0] >= datetime(yr, 1, 1)]
+        if len(sub) >= _DC_CTY_MIN_FIT_POINTS:
+            windows[yr] = _ols(sub)[0]
+    spread = ((max(windows.values()) - min(windows.values())) / (2 * 1.282)
+              if windows else 0.0)
+    sigma_g = max(se, spread, _DC_CTY_SIGMA_G_FLOOR)
+    return {'t0': t0, 'v0': v0, 'g': g, 'se': se, 'sigma_g': sigma_g,
+            'sigma_res': sigma_res, 'n': len(samples), 'windows': windows}
+
+
+def _dc_cty_trajectories(steps, fit, grid, n, pace=None):
+    """(n, len(grid)) array: the recorded step value on every grid date up to
+    the anchor, then `n` sampled extrapolations past it.
+
+    log10 v = log10 v0 + g·τ + ε·min(τ, 1yr), with g ~ N(pace.g, pace.sigma_g)
+    and ε ~ N(0, fit.sigma_res): the pace draw opens the cone linearly in log
+    space, the residual term ramps in over a year to the scatter the recorded
+    series showed around its own trend. `pace` defaults to `fit` and can be
+    another country's fit, for a borrowed trend. NaN where nothing is recorded.
+    """
+    pts = [(s[0], s[1]) for s in steps]
+    out = np.full((n, len(grid)), np.nan)
+    last = pts[-1][0] if pts else None
+    for j, d in enumerate(grid):
+        v = _dc_val_at(pts, d) if last is not None and d <= last else None
+        if v is not None:
+            out[:, j] = v
+    if fit is None:
+        return out
+    pace = pace or fit
+    g = np.random.normal(pace['g'], pace['sigma_g'], n)
+    eps = np.random.normal(0.0, fit['sigma_res'], n)
+    base = np.log10(fit['v0'])
+    for j, d in enumerate(grid):
+        if d <= fit['t0']:
+            continue
+        tau = (d - fit['t0']).days / 365.25
+        out[:, j] = 10 ** (base + g * tau + eps * min(tau, 1.0))
+    return out
+
+
+def _dc_cty_lag_months(follower, leader, grid):
+    """Months by which `follower` trails `leader`, per sample and grid date:
+    the gap between a date and the first date the leader's running max reached
+    the follower's value then. Negative means the follower is ahead; where the
+    leader never gets there within the grid the lag is floored at one month
+    past the grid's end — a bound, so the percentiles stay honest rather than
+    dropping exactly the samples where the follower leads. NaN where either
+    side is unrecorded. Returns (lag, unresolved), the second a boolean mask
+    of the floored cells.
+    """
+    n, m = follower.shape
+    lead_max = np.fmax.accumulate(np.where(np.isnan(leader), -np.inf, leader),
+                                  axis=1)
+    months = np.array([(d.year - grid[0].year) * 12 + d.month - grid[0].month
+                       for d in grid], dtype=float)
+    out = np.full((n, m), np.nan)
+    unresolved = np.zeros((n, m), dtype=bool)
+    for j in range(m):
+        target = follower[:, j][:, None]
+        hit = lead_max >= target                       # (n, m)
+        any_hit = hit.any(axis=1)
+        first = np.argmax(hit, axis=1)
+        known = ~np.isnan(follower[:, j])
+        ok = any_hit & known
+        out[ok, j] = months[j] - months[first[ok]]
+        out[known & ~any_hit, j] = months[j] - (months[-1] + 1)
+        unresolved[:, j] = known & ~any_hit
+    return out, unresolved
 
 
 # ── Load data (before sidebar, so model names are available) ─────────────
@@ -6783,7 +7024,8 @@ def render_eci_gap():
 # ── Data Centers ───────────────────────────────────────────────────────────
 
 _DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing", "dc_pool_n",
-                  "dc_start_year", "dc_end_year"]
+                  "dc_start_year", "dc_end_year", "dc_cty_pool", "dc_cty_cn",
+                  "dc_cty_pace", "dc_cty_since", "dc_cty_horizon"]
 _DC_DEFAULTS = {
     "dc_metric": "Compute (H100-equiv)",
     "dc_log": True,
@@ -6792,6 +7034,11 @@ _DC_DEFAULTS = {
     "dc_pool_n": "Nearby sites + announced fabric",
     "dc_start_year": 2025,
     "dc_end_year": 2027,
+    "dc_cty_pool": "Largest networkable group per company (selector above)",
+    "dc_cty_cn": "Sites in China + Chinese labs' sites abroad (DayOne Johor)",
+    "dc_cty_pace": "The US trend for every country (a follower tracks the leader)",
+    "dc_cty_since": 2024,
+    "dc_cty_horizon": 2030,
 }
 
 # Chart/projection window options. The start clips the left edge of every chart
@@ -7094,6 +7341,305 @@ def _dc_add_projection_band(fig, today, x_end):
                        text='planned / under construction →',
                        showarrow=False, xanchor='right', yanchor='bottom',
                        font=dict(size=10, color='#999999'))
+
+
+def _dc_fan_bands(fig, grid, traj, color, name, legendgroup):
+    """50% and 80% bands of a trajectory matrix, NaN columns left blank."""
+    cols = np.where(np.isnan(traj).all(axis=0), np.nan, 0)
+    p10, p25, p75, p90 = (np.nanpercentile(traj, q, axis=0) for q in (10, 25, 75, 90))
+    for lo, hi, alpha in ((p10, p90, 0.12), (p25, p75, 0.22)):
+        rgba = f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},{int(color[5:7], 16)},{alpha})"
+        xs = [d for d, c in zip(grid, cols) if not np.isnan(c)]
+        lo_v = [v for v, c in zip(lo, cols) if not np.isnan(c)]
+        hi_v = [v for v, c in zip(hi, cols) if not np.isnan(c)]
+        fig.add_trace(go.Scatter(
+            x=xs + xs[::-1], y=hi_v + lo_v[::-1], fill='toself',
+            fillcolor=rgba, line=dict(width=0), mode='lines',
+            hoverinfo='skip', showlegend=False, legendgroup=legendgroup,
+            name=name))
+
+
+def _dc_cty_band(arr, kind):
+    """'median (p10–p90)' in the metric's units; just the value where the
+    samples agree (inside recorded data)."""
+    lo, med, hi = (float(np.nanpercentile(arr, q)) for q in (10, 50, 90))
+    if lo == hi:
+        return _dc_fmt_value(med, kind)
+    return (f"{_dc_fmt_value(med, kind)} ({_dc_fmt_value(lo, kind)}–"
+            f"{_dc_fmt_value(hi, kind)})")
+
+
+def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
+                             x_start, metric_label, kind, log_scale,
+                             shift_days, include_future):
+    """Buildout by country — US vs China, with each country's largest training
+    run extrapolated past the end of its recorded data under a cone.
+
+    `series` is the tab's metric series with **no** host hidden: a country's
+    capacity is a fact about buildings, not about who Epoch lists in them.
+    """
+    st.subheader("Buildout by country: US vs China")
+    st.caption(
+        "Each line is the biggest training run one party in that country "
+        "could mount, by the pooling rule below, so the US and China lines "
+        "read in the same units as the company charts above. Recorded "
+        "buildout (solid actual, dashed planned) runs to the tab's *Project "
+        "through* year, or to wherever Epoch's data for the country stops if "
+        "that is sooner — for China it stops at 2027 — and past that point "
+        "each line is extrapolated along its fitted log-linear trend, with a "
+        "50% / 80% cone. No colocation host is hidden here, unlike the charts "
+        "above: a landlord's hall in a country is capacity in that country "
+        "whoever trains in it.")
+
+    c1, c2 = st.columns(2)
+    pool_label = c1.selectbox("Within a country, count", list(_DC_CTY_POOL_OPTIONS),
+                              key="dc_cty_pool")
+    cn_label = c1.radio("China's compute", list(_DC_CTY_CN_OPTIONS), key="dc_cty_cn",
+                        help="Epoch's source notes on DayOne Nusajaya cite FT "
+                             "reporting that Alibaba and ByteDance train models "
+                             "in Southeast Asia; DayOne is the GDS Holdings "
+                             "spin-off. Counting the whole campus is an upper "
+                             "bound — it has other tenants.")
+    pace_label = c2.radio("Extrapolate along", list(_DC_CTY_PACE_OPTIONS),
+                          key="dc_cty_pace")
+    since = c2.radio("Fit trend since", _DC_CTY_SINCE_YEARS, horizontal=True,
+                     index=_DC_CTY_SINCE_YEARS.index(_DC_DEFAULTS["dc_cty_since"]),
+                     key="dc_cty_since",
+                     help="A log-linear fit from a country's first site "
+                          "go-live runs hot — the early ramp from nothing is "
+                          "steeper than the steady state — and one that runs "
+                          "to the edge of the planned data runs cool, because "
+                          "the far future is under-catalogued. The pace "
+                          "readout below gives every window.")
+    horizon = c2.radio("Extrapolate through", _DC_CTY_HORIZONS, horizontal=True,
+                       index=_DC_CTY_HORIZONS.index(_DC_DEFAULTS["dc_cty_horizon"]),
+                       key="dc_cty_horizon")
+    mode = _DC_CTY_POOL_OPTIONS[pool_label]
+    cn_scope = _DC_CTY_CN_OPTIONS[cn_label]
+    pace_mode = _DC_CTY_PACE_OPTIONS[pace_label]
+    cn_key = _DC_CTY_CN_ACCESS if cn_scope == 'abroad' else _DC_CTY_CN
+
+    groups = _dc_country_groups(series, country_of, cn_scope)
+    steps_by = {c: _dc_country_steps(series, names, mode, cluster_of)
+                for c, names in groups.items()}
+    if cn_scope == 'abroad':
+        # The mainland alone, for reference against the wider scope.
+        dom = [n for n in series if country_of.get(n) == _DC_CTY_CN]
+        steps_by[_DC_CTY_CN_DOMESTIC] = _dc_country_steps(series, dom, mode,
+                                                          cluster_of)
+    steps_by = {c: s for c, s in steps_by.items()
+                if s and any(v and v > 0 for _, v, _ in s)}
+    if _DC_CTY_US not in steps_by:
+        st.warning("No US data for this metric.")
+        return
+    horizon_end = datetime(horizon, 12, 31)
+    x_end = max(cap_date, horizon_end) + timedelta(days=30)
+    grid = _dc_cty_month_grid(x_start, max(cap_date, horizon_end))
+
+    fits = {c: _dc_cty_fit(s, since=since) for c, s in steps_by.items()}
+    us_fit = fits[_DC_CTY_US]
+    borrowed = set()
+
+    def _pace_for(c):
+        """The pace to extrapolate on. A borrowed US pace keeps the country's
+        own fitted pace inside the 80% cone, so the two readings disagreeing
+        shows up as width rather than vanishing."""
+        if c == _DC_CTY_US or (pace_mode == 'own' and fits[c] is not None):
+            return fits[c]
+        borrowed.add(c)
+        if us_fit is None:
+            return None
+        own = fits[c]
+        if own is None:
+            return us_fit
+        return dict(us_fit, sigma_g=max(us_fit['sigma_g'],
+                                        abs(own['g'] - us_fit['g']) / 1.282))
+
+    def _anchor(c):
+        """The fit to anchor on — the country's own, or the US pace re-anchored
+        at the country's last recorded step when its own history is too short."""
+        if fits[c] is not None:
+            return fits[c]
+        s = steps_by[c]
+        if us_fit is None or not s or not s[-1][1] or s[-1][1] <= 0:
+            return None
+        return dict(us_fit, t0=s[-1][0], v0=s[-1][1])
+
+    cone_for = [_DC_CTY_US] + ([cn_key] if cn_key in steps_by else [])
+    traj = {}
+    for c in cone_for:
+        fit = _anchor(c)
+        traj[c] = _dc_cty_trajectories(steps_by[c], fit, grid, N_SAMPLES,
+                                       pace=_pace_for(c) if fit else None)
+
+    # ── Chart ──
+    fig = go.Figure()
+    if include_future:
+        _dc_add_projection_band(fig, today, x_end)
+    others = sorted((c for c in steps_by if c not in cone_for),
+                    key=lambda c: -max(v for _, v, _ in steps_by[c] if v))
+    for i, c in enumerate(others):
+        color = _DC_CTY_COLORS.get(c, _DC_PALETTE[(i + 3) % len(_DC_PALETTE)])
+        s = steps_by[c]
+        (a_x, a_y), (p_x, p_y) = _dc_split_at(s, today, cap_date)
+        fig.add_trace(go.Scatter(
+            x=a_x, y=a_y, mode='lines', name=c, legendgroup=c,
+            line=dict(color=color, width=1.2, shape='hv'), opacity=0.7,
+            hoverinfo='skip'))
+        if p_x is not None:
+            fig.add_trace(go.Scatter(
+                x=p_x, y=p_y, mode='lines', name=c, legendgroup=c,
+                line=dict(color=color, width=1.2, shape='hv', dash='dash'),
+                opacity=0.7, showlegend=False, hoverinfo='skip'))
+        dots = [x for j, x in enumerate(s) if j == 0 or x[1] != s[j - 1][1]]
+        fig.add_trace(go.Scatter(
+            x=[x[0] for x in dots], y=[x[1] for x in dots], mode='markers',
+            marker=dict(size=4, color=color), name=c, legendgroup=c,
+            showlegend=False, hoverinfo='text',
+            hovertext=[f"{c}{' (planned)' if x[0] > today else ''}<br>"
+                       f"{_dc_fmt_value(x[1], kind)} — {x[2]}<br>"
+                       f"{_dc_milestone_dates(x[0], shift_days)}" for x in dots]))
+    for c in cone_for:
+        color = _DC_CTY_COLORS.get(c, "#D62728")
+        s = steps_by[c]
+        fit = _anchor(c)
+        t0 = fit['t0'] if fit else s[-1][0]
+        if fit is not None and t0 < horizon_end:
+            _dc_fan_bands(fig, grid, traj[c], color, c, c)
+            proj_cols = [j for j, d in enumerate(grid) if d > t0]
+            med = np.nanmedian(traj[c], axis=0)
+            fig.add_trace(go.Scatter(
+                x=[t0] + [grid[j] for j in proj_cols],
+                y=[fit['v0']] + [med[j] for j in proj_cols], mode='lines',
+                line=dict(color=color, width=2, dash='dot'), name=c,
+                legendgroup=c, showlegend=False, hoverinfo='text',
+                hovertext=[f"{c} — extrapolated<br>{_dc_fmt_value(fit['v0'], kind)}"
+                           f"<br>{t0:%b %Y}"] +
+                          [f"{c} — extrapolated<br>median "
+                           f"{_dc_fmt_value(med[j], kind)}<br>80%: "
+                           f"{_dc_fmt_value(np.nanpercentile(traj[c][:, j], 10), kind)}"
+                           f" – {_dc_fmt_value(np.nanpercentile(traj[c][:, j], 90), kind)}"
+                           f"<br>{grid[j]:%b %Y}" for j in proj_cols]))
+        (a_x, a_y), (p_x, p_y) = _dc_split_at(s, today, t0)
+        fig.add_trace(go.Scatter(
+            x=a_x, y=a_y, mode='lines', name=c, legendgroup=c,
+            line=dict(color=color, width=3, shape='hv'), hoverinfo='skip'))
+        if p_x is not None:
+            fig.add_trace(go.Scatter(
+                x=p_x, y=p_y, mode='lines', name=c, legendgroup=c,
+                line=dict(color=color, width=3, shape='hv', dash='dash'),
+                showlegend=False, hoverinfo='skip'))
+        dots = [x for j, x in enumerate(s) if j == 0 or x[1] != s[j - 1][1]]
+        fig.add_trace(go.Scatter(
+            x=[x[0] for x in dots], y=[x[1] for x in dots], mode='markers',
+            marker=dict(size=6, color=color), name=c, legendgroup=c,
+            showlegend=False, hoverinfo='text',
+            hovertext=[f"{c}{' (planned)' if x[0] > today else ''}<br>"
+                       f"{_dc_fmt_value(x[1], kind)} — {x[2]}<br>"
+                       f"{_dc_milestone_dates(x[0], shift_days)}" for x in dots]))
+    vals = [v for s in steps_by.values() for v in _dc_visible_vals(s, x_start)]
+    for c in cone_for:
+        if not np.isnan(traj[c]).all():
+            vals.append(float(np.nanmax(np.nanpercentile(traj[c], 90, axis=0))))
+    fig.update_layout(**_dc_layout(log_scale, metric_label, x_start, x_end,
+                                   y_range=_dc_yrange(vals, log_scale),
+                                   height=500, show_legend=True, kind=kind))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── Fit readout ──
+    def _pace_text(c):
+        fit = fits.get(c)
+        p = _pace_for(c)
+        if p is None:
+            return f"{c}: no trend to extrapolate"
+        dbl = 12 * np.log10(2) / p['g'] if p['g'] > 0 else float('inf')
+        src = ("US trend borrowed, cone widened to cover its own fit"
+               if c in borrowed and fit else "US trend borrowed" if c in borrowed
+               else f"own trend, {fit['n']} monthly samples")
+        win = ", ".join(f"since {y}: ×{10 ** g:.1f}/yr" for y, g in
+                        sorted(fit['windows'].items())) if fit else ""
+        return (f"**{c}**: ×{10 ** p['g']:.1f}/yr (doubling every {dbl:.0f}mo; "
+                f"±{p['sigma_g']:.2f} OOM/yr 1σ), {src}"
+                f"{' — ' + win if win else ''}")
+    st.caption(
+        "Fitted pace — " + "; ".join(_pace_text(c) for c in cone_for) + ". "
+        f"Pace uncertainty is the larger of the fit's standard error, the "
+        f"spread across lookback windows and a {_DC_CTY_SIGMA_G_FLOOR:.2f} OOM/yr "
+        "floor; the recorded series' scatter around its trend is added in over "
+        "the first year. The cone starts at the country's last recorded step, "
+        "so it is a trend through Epoch's site list — a site Epoch has not "
+        "catalogued, or an export-control shock, moves the line off it.")
+    if mode == 'country':
+        st.caption("*Every site pooled* assumes a government can direct all of "
+                   "a country's operators onto one job — the Pacing tab's China "
+                   "argument. For the US it is an upper bound nobody can run.")
+
+    # ── Readout: year-end values, ratio and lag ──
+    if cn_key not in traj:
+        st.info("No Chinese site has a value for this metric.")
+        return
+    us, cn = traj[_DC_CTY_US], traj[cn_key]
+    lag, unresolved = _dc_cty_lag_months(cn, us, grid)
+    rows = []
+    first_year = max(today.year, grid[0].year)
+    for yr in range(first_year, horizon + 1):
+        d = datetime(yr, 12, 1)
+        if d not in grid:
+            continue
+        j = grid.index(d)
+        if np.isnan(us[:, j]).all() or np.isnan(cn[:, j]).all():
+            continue
+        u, c = us[:, j], cn[:, j]
+        ratio = u / c
+        lg = lag[:, j]
+        def _num_band(a, fmt):
+            lo, med, hi = (float(np.nanpercentile(a, q)) for q in (10, 50, 90))
+            return fmt(med) if round(lo) == round(hi) else (
+                f"{fmt(med)} ({fmt(lo)}–{fmt(hi)})")
+        rows.append({
+            "Year end": str(yr),
+            "US": _dc_cty_band(u, kind),
+            cn_key: _dc_cty_band(c, kind),
+            "US ÷ China": _num_band(ratio, lambda x: f"{x:.1f}×"),
+            "China lag (months)": (
+                "—" if np.isnan(lg).all() else
+                f"ahead in {unresolved[:, j].mean():.0%} of samples"
+                if unresolved[:, j].mean() > 0.5 else
+                _num_band(lg, lambda x: f"{x:.0f}")),
+        })
+    if rows:
+        last = rows[-1]
+        j = grid.index(datetime(horizon, 12, 1)) if datetime(horizon, 12, 1) in grid else None
+        if j is not None and not np.isnan(cn[:, j]).all():
+            lag_med = float(np.nanmedian(lag[:, j]))
+            ahead = float(unresolved[:, j].mean())
+            lag_phrase = (
+                f"ahead of the US in {ahead:.0%} of samples" if ahead > 0.5 else
+                f"about {lag_med:.0f} months behind where the US first stood "
+                "at that level" if lag_med >= 0 else
+                f"about {-lag_med:.0f} months ahead of the US")
+            st.markdown(
+                f"**Largest {cn_key} training run by end-{horizon}: "
+                f"{_dc_fmt_value(np.nanmedian(cn[:, j]), kind)}** "
+                f"(80%: {_dc_fmt_value(np.nanpercentile(cn[:, j], 10), kind)}–"
+                f"{_dc_fmt_value(np.nanpercentile(cn[:, j], 90), kind)}), "
+                f"against a US {last['US'].split(' (')[0]} — the US at "
+                f"{last['US ÷ China'].split(' (')[0]} China's size, "
+                f"{lag_phrase}.")
+        st.table(rows)
+        st.caption(
+            "Median with the 10th–90th percentile in brackets; *US ÷ China* is "
+            "the per-sample ratio, *lag* the months since the US line (running "
+            "max) first reached China's value — negative means China ahead; a "
+            "sample where the US never gets there inside the chart is floored "
+            "at a month past its end, and once most samples are such the cell "
+            "says so instead. "
+            "Where the year end falls inside recorded data the brackets "
+            "collapse to the recorded value; for an inverted metric (time to "
+            "train) the ratio and lag still read US-ahead-positive, since both "
+            "are computed on the stored runs-per-window. The selected metric "
+            "is what is tabulated — choose *6mo train log OP* to read the "
+            "answer in training-run operations.")
 
 
 def render_data_centers():
@@ -7593,6 +8139,21 @@ def render_data_centers():
 
     # Per-company: does the buildout predict releases?
     _cc_company_buildout(_today, cfg["key"], kind)
+
+    # By country: US vs China, extrapolated past the end of the recorded data.
+    # Rebuilt without the host filter — country is about buildings, not tenants.
+    _cty_series = _dc_series_for_metric(
+        dc_all, key, cap_date=cap_date - timedelta(days=shift_days))
+    if shift_days:
+        _cty_series = {n: {'company': v['company'],
+                           'pts': [(d + timedelta(days=shift_days), val)
+                                   for d, val in v['pts']]}
+                       for n, v in _cty_series.items()}
+    _dc_render_country_panel(
+        _cty_series, {dc['name']: _dc_site_country(dc) for dc in dc_all},
+        cluster_of, today=_today, cap_date=cap_date, x_start=x_start,
+        metric_label=metric_label, kind=kind, log_scale=log_scale,
+        shift_days=shift_days, include_future=include_future)
 
 
 # ══════════════════════════════════════════════════════════════════════════
