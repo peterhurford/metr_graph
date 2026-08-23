@@ -2274,6 +2274,23 @@ class TestCcDcDerivation:
             assert len(set(dates)) == len(dates), f"{lab}: duplicate-date record"
             assert all(b > a for a, b in zip(vals, vals[1:])), lab
 
+    def test_run_window_scales_levels_only(self):
+        """The 6-month frontier is the 2-month one scaled by the window ratio
+        and slid one window later — same leaders, same structure — so the
+        sidebar's Run length toggle changes levels and dates, never which
+        sites make the frontier."""
+        cap = datetime(2028, 12, 31)
+        fr2 = vp._cc_trainflop_frontier(vp.dc_all, cap, key='train_flop',
+                                        run_days=vp._DAYS_2MO)
+        fr6 = vp._cc_trainflop_frontier(vp.dc_all, cap, key='train_flop_6mo',
+                                        run_days=vp._DAYS_6MO)
+        assert len(fr2) == len(fr6) > 0
+        ratio = vp._SECONDS_6MO / vp._SECONDS_2MO
+        dshift = timedelta(days=vp._DAYS_6MO - vp._DAYS_2MO)
+        for (d2, v2), (d6, v6) in zip(fr2, fr6):
+            assert d6 == d2 + dshift
+            assert abs(v6 / v2 - ratio) < 1e-9
+
     def test_us_pace_cross_check_agrees_across_tabs(self):
         """The 'recent built' segment fit (this tab) and the by-country engine's
         US fit (DC tab) measure the same buildout two ways; they may differ —

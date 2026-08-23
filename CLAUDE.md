@@ -464,7 +464,14 @@ the projections only, never the rates: the catalogue cap follows the horizon but
 never drops below end-2028, and every fit era ends by Jan 2029, so the segment fits
 are identical whatever year is selected (`test_project_through_horizon`,
 integration). The China-ETA panel keeps its own adaptive horizon — it charts a
-crossing date, not a range.
+crossing date, not a range. A *Run length* selectbox (`cc_run`, reusing
+`_PC_RUN_OPTIONS` verbatim, default 2-month) switches the frontier to the loader's
+`train_flop_6mo` column with the matching one-run shift — a constant scale and
+slide, so the frontier's leaders never change (`test_run_window_scales_levels_only`);
+China's Chart-A capacity band scales by the window ratio too, keeping both
+countries' ceilings on one assumption, and the window-labelled captions follow.
+`_cc_country_pace_check` stays on the 2-month column — its fitted paces are
+identical either way.
 
 ### Compute vs Capabilities — China's ETA to a target ECI
 

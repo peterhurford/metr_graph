@@ -854,6 +854,18 @@ class TestComputeVsCapabilities:
         assert "cross-check" in caps
         assert "china-accessible" in caps
 
+    def test_run_length_toggle(self):
+        """Switching to the 6-month window (the Pacing tab's options,
+        verbatim) renders clean and relabels the capacity captions and the
+        ceiling caveat with the chosen window."""
+        at = self._cc_app()
+        at.selectbox(key="cc_run").set_value("6-month run").run()
+        _assert_no_error(at, "Compute vs Capabilities / 6-month run")
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "6-month run" in caps
+        warns = " ".join(str(w.value) for w in at.warning)
+        assert "6mo-capacity" in warns
+
     def test_project_through_horizon(self):
         """The Projection range expander's 'Project through' year moves the
         forecast horizon: milestone cards, the end-year gap metric and the

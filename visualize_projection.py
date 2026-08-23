@@ -7195,8 +7195,9 @@ _DC_NETWORK_OPTIONS = {
 }
 
 # Compute vs Capabilities tab
-_CC_RESET_KEYS = ["cc_future", "cc_end_year", "cc_company"]
-_CC_DEFAULTS = {"cc_future": True, "cc_end_year": 2029, "cc_company": "OpenAI"}
+_CC_RESET_KEYS = ["cc_future", "cc_run", "cc_end_year", "cc_company"]
+_CC_DEFAULTS = {"cc_future": True, "cc_run": "2-month run",
+                "cc_end_year": 2029, "cc_company": "OpenAI"}
 _CC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
 # Fixed segment boundaries for the frontier-compute growth breakdown. Each entry
@@ -8278,12 +8279,16 @@ def _cc_logop_yaxis(fig, title):
     fig.update_yaxes(**ax)
 
 
-def _cc_trainflop_frontier(dcs, cap_date, with_names=False):
-    """Running-max frontier of 2mo-train-FLOP across AI-lab sites.
+def _cc_trainflop_frontier(dcs, cap_date, with_names=False,
+                           key='train_flop', run_days=_DAYS_2MO):
+    """Running-max frontier of train-FLOP across AI-lab sites.
 
-    Returns [(date, flop), …] sorted by date, with every point shifted forward
-    by the 2-month training lead time (a run on a site available at D only
-    finishes at D+2mo), matching the Data Centers tab. Monotonic non-decreasing.
+    `key`/`run_days` pick the training-run window — the loader's 2-month
+    'train_flop' (default) or 6-month 'train_flop_6mo' column, exactly the
+    DC/Pacing tabs' metric pair. Returns [(date, flop), …] sorted by date,
+    with every point shifted forward by one training run (a run on a site
+    available at D only finishes at D+run), matching the Data Centers tab.
+    Monotonic non-decreasing.
 
     Every company in _DC_EXCLUDE_COMPANIES is dropped here **unconditionally**,
     which is deliberately stricter than the Data Centers tab: that tab now
@@ -8296,12 +8301,12 @@ def _cc_trainflop_frontier(dcs, cap_date, with_names=False):
     match it, distorting the fitted rates and China's ETA downstream. The two
     frontiers therefore differ on purpose; the Data Centers tab says so.
     """
-    series = _dc_series_for_metric(dcs, 'train_flop', cap_date=cap_date)
+    series = _dc_series_for_metric(dcs, key, cap_date=cap_date)
     series = {n: v for n, v in series.items()
               if v['company'] not in _DC_EXCLUDE_COMPANIES}
     # The same milestone the DC tab's "Date points at" selector calls
-    # "Training run finished": capacity online at D trains a model by D+2mo.
-    shift = timedelta(days=_dc_timing_shift("Training run finished"))
+    # "Training run finished": capacity online at D trains a model by D+run.
+    shift = timedelta(days=_dc_timing_shift("Training run finished", run_days))
     series = {n: {'company': v['company'],
                   'pts': [(d + shift, val) for d, val in v['pts']]}
               for n, v in series.items()}
@@ -8892,6 +8897,8 @@ def _cc_country_pace_check(today):
     China-domestic series. Used to cross-check this tab's segment fits (US)
     and the hand-set _CC_CN_COMPUTE band (China) in captions and tests, so
     the two tabs can't silently disagree about either country's compute pace.
+    Always the 2-month 'train_flop' column: the 6-month values are a constant
+    multiple, so the fitted paces this returns are identical either way.
     """
     series = _dc_series_for_metric(dc_all, 'train_flop')
     country_of = {dc['name']: _dc_site_country(dc) for dc in dc_all}
@@ -8955,7 +8962,8 @@ def _cc_pooled_decomp(rows):
     return float(beta[0]), float(beta[1])
 
 
-def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31)):
+def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
+                    run_key='train_flop', run_days=_DAYS_2MO):
     """Section 4: the US-China frontier read through the compute lens.
 
     The honest headline is a *mismatch of scale*: the US holds a training-compute
@@ -8990,9 +8998,11 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31)):
     us_run_lf, cn_run_lf = us_cf[-1][1], cn_cf[-1][1]
     run_gap_oom = us_run_lf - cn_run_lf
 
-    # US capacity = Epoch's data-center buildout (largest cluster's 3-mo training
-    # capacity); its recent-built vs planned segments give the forward range.
-    dc_fr = _cc_trainflop_frontier(dc_all, horizon, with_names=True)
+    # US capacity = Epoch's data-center buildout (the largest cluster's training
+    # capacity over the sidebar's run window); its recent-built vs planned
+    # segments give the forward range.
+    dc_fr = _cc_trainflop_frontier(dc_all, horizon, with_names=True,
+                                   key=run_key, run_days=run_days)
     dc_fits = _cc_segment_fits([(d, v) for d, v, n, sd in dc_fr], today)
     g_us_hi = next((f['slope_oom'] for f in dc_fits
                     if f['label'].startswith('2025 H2')), 0.47)   # recent built
@@ -9005,11 +9015,18 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31)):
     us_cap_lf = next(lf for d, lf, n, sd in reversed(us_cap_hist) if d <= today)
     us_cap_end_lf = us_cap_hist[-1][1]
     # China capacity = its largest *demonstrated* run + modest single-cluster
-    # headroom (no Epoch buildout data; compute-constrained). Anchored at the last
-    # run so the fan connects to the data: lower edge = the run, upper = +headroom.
+    # headroom (compute-constrained; the sparse catalogued Chinese sites are
+    # cross-checked below, not fitted). Anchored at the last run so the fan
+    # connects to the data: lower edge = the run, upper = +headroom. Under a
+    # longer run window the same cluster yields proportionally more OPs, so the
+    # band scales by the window ratio — keeping both countries' ceilings on the
+    # same assumption (zero at the 2-month default, where it still touches the
+    # last red dot).
     g_cn_lo, g_cn_hi = _CC_CN_COMPUTE_LO, _CC_CN_COMPUTE_HI
+    run_extra = float(np.log10(run_days / _DAYS_2MO))
     cn_cap_d = cn_cf[-1][0] - _CC_RUN_COMPLETION_LAG
-    cn_cap_apex_lo, cn_cap_apex_hi = cn_run_lf, cn_run_lf + _CC_CN_CAPACITY_HEADROOM_OOM
+    cn_cap_apex_lo = cn_run_lf + run_extra
+    cn_cap_apex_hi = cn_run_lf + _CC_CN_CAPACITY_HEADROOM_OOM + run_extra
     d_yrs = (today - cn_cap_d).days / 365.25
     cn_cap_lo_lf = cn_cap_apex_lo + g_cn_lo * d_yrs     # capacity range at today
     cn_cap_hi_lf = cn_cap_apex_hi + g_cn_hi * d_yrs
@@ -9080,8 +9097,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31)):
         y=[10.0 ** lf for d, lf, n, sd in us_cap_hist],
         mode='lines', line=dict(color='#1F77B4', width=1.5, dash='dash'),
         opacity=0.7, name='US capacity (buildout)',
-        text=[f"<b>{n}</b><br>{_logop_lbl(lf)} (2-mo run)<br>"
-              f"{_dc_milestone_dates(sd, _DAYS_2MO, _DAYS_2MO)}"
+        text=[f"<b>{n}</b><br>{_logop_lbl(lf)} ({run_days // 30}-mo run)<br>"
+              f"{_dc_milestone_dates(sd, run_days, run_days)}"
               for d, lf, n, sd in us_cap_hist],
         hoverinfo='text'))
     # US capacity fan emanates from the last US *run* (not the DC line): lower edge
@@ -9116,7 +9133,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31)):
         f"~{_logop_lbl(us_run_lf)} (US) vs ~{_logop_num(cn_run_lf)} (China), a "
         f"**~{10 ** run_gap_oom:.0f}× ({run_gap_oom:.1f} OOM)** gap; recent US "
         f"frontier models use *less* (GPT-5 ~25.8) — efficiency, not bigger runs. "
-        f"**Dashed/shaded = capacity**, the largest single cluster's 2-month run: "
+        f"**Dashed/shaded = capacity**, the largest single cluster's "
+        f"{run_days // 30}-month run: "
         f"US ~{_logop_lbl(us_cap_lf)} today, riding announced megaclusters "
         f"(Stargate, Hyperion…) to ~{_logop_num(us_cap_end_lf)} by "
         f"{horizon.year}; China "
@@ -9126,7 +9144,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31)):
         f"grows {10 ** g_us_lo:.1f}–{10 ** g_us_hi:.1f}×/yr (US, measured) vs "
         f"~{10 ** g_cn_lo:.1f}–{10 ** g_cn_hi:.1f}×/yr (China), so the gap widens "
         "only slowly. *Run points are dated at est. training completion "
-        "(release − ~1mo) to align with the +2mo capacity line.*")
+        f"(release − ~1mo) to align with the +{run_days // 30}mo capacity line.*")
 
     # Cross-check the growth assumptions against the Data Centers tab's
     # by-country engine, so the two tabs' China stories stay reconciled.
@@ -9513,9 +9531,18 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
               f"{d10:%b %Y} – {d90:%b %Y} (80%)", delta_color="off")
     m2.metric("From today", f"~{(d50 - today).days / 30.44:.0f} mo",
               f"from {pretty(anchor_name)} at {anchor_eci:.0f}", delta_color="off")
-    m3.metric("Behind the US at that level",
+    # The 80% CI rides under each card's delta line rather than replacing it: the
+    # delta says *what the number is measured from* (the anchor model, the US
+    # model that set the bar), which the range can't carry. Both come off the same
+    # d10/d90 as card 1, so the three cards can't disagree.
+    m2.caption(f"80% CI: {(d10 - today).days / 30.44:.0f}–"
+               f"{(d90 - today).days / 30.44:.0f} mo")
+    m3.metric(f"Months behind US when reaching ECI {target:.0f}",
               "—" if us_hit_d is None else f"~{lag_mo:.0f} mo",
               f"US: {us_hit_txt}", delta_color="off")
+    if us_hit_d is not None:
+        m3.caption(f"80% CI: {(d10 - us_hit_d).days / 30.44:.0f}–"
+                   f"{(d90 - us_hit_d).days / 30.44:.0f} mo")
 
     # ── Chart: China's fan against the fixed target bar ───────────────────────
     # The fan is the smooth *capability* path (rates only). The vertical band and
@@ -10112,6 +10139,13 @@ def render_compute_capabilities():
         st.header("Compute vs Capabilities")
         include_future = st.checkbox("Include planned future buildout",
                                      value=True, key="cc_future")
+        # Run-length options are the Pacing tab's, verbatim.
+        if st.session_state.get("cc_run") not in _PC_RUN_OPTIONS:
+            st.session_state.pop("cc_run", None)
+        run_label = st.selectbox(
+            "Run length", list(_PC_RUN_OPTIONS),
+            index=list(_PC_RUN_OPTIONS).index(_CC_DEFAULTS["cc_run"]),
+            key="cc_run")
         with st.expander("Projection range"):
             cc_end_year = st.radio(
                 "Project through", _CC_END_YEARS, horizontal=True,
@@ -10125,15 +10159,20 @@ def render_compute_capabilities():
 
     st.header("Compute vs Capabilities")
     horizon = datetime(cc_end_year, 12, 31)
+    run_key = _PC_RUN_OPTIONS[run_label]
+    run_days = _DAYS_6MO if run_key == 'train_flop_6mo' else _DAYS_2MO
+    run_mo = run_days // 30
     # Shift capacity dates to the "Training run finished" milestone (the DC
-    # tab's selector wording): a site online at D has trained a model by D+2mo.
+    # tab's selector wording): a site online at D has trained a model by D+run.
     # The catalogue cap follows the horizon but never drops below end-2028, so
     # the segment fits (whose eras all end by Jan 2029) are identical whatever
     # year is selected — "Project through" moves the projections, not the rates.
     cap_date = ((datetime(max(2028, cc_end_year), 12, 31) if include_future
                  else _today)
-                + timedelta(days=_dc_timing_shift("Training run finished")))
-    frontier = _cc_trainflop_frontier(dc_all, cap_date)
+                + timedelta(days=_dc_timing_shift("Training run finished",
+                                                  run_days)))
+    frontier = _cc_trainflop_frontier(dc_all, cap_date, key=run_key,
+                                      run_days=run_days)
     if not frontier:
         st.warning("No data-center data available.")
         return
@@ -10417,8 +10456,8 @@ def render_compute_capabilities():
         "post-training/RL, so this is total-capability efficiency, not "
         "pretraining. (3) Cheap-model data is sparse — labs rarely retrain small "
         "models to re-hit old levels (Qwen, Kimi, distilled MoEs). (4) The "
-        "2mo-capacity series is a *ceiling*, not per-model training compute. "
-        "Order-of-magnitude, not forecasts.")
+        f"{run_mo}mo-capacity series is a *ceiling*, not per-model training "
+        "compute. Order-of-magnitude, not forecasts.")
     st.caption(
         "Data: Epoch AI Capabilities Index + Frontier Data Centers. The "
         "efficiency band spans two OLS directions — iso-ECI (compute on ECI+time) "
@@ -10436,7 +10475,8 @@ def render_compute_capabilities():
     # ══════════════════════════════════════════════════════════════════════
     # Section 3: US vs. China — the same decomposition read by country
     # ══════════════════════════════════════════════════════════════════════
-    _cc_us_vs_china(cc_rows, _today, horizon=horizon)
+    _cc_us_vs_china(cc_rows, _today, horizon=horizon,
+                    run_key=run_key, run_days=run_days)
 
 
 # ── URL parameter persistence ────────────────────────────────────────────
