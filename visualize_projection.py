@@ -9560,10 +9560,11 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     traj[:, 0] = anchor_eci
     e = np.full(n, float(anchor_eci))
     years = np.full(n, np.nan)
+    us_rate = np.asarray(us_rate)      # scalar or per-sample array
     for i in range(1, steps + 1):
         us_level = us_anchor + us_rate * grid[i - 1]
         if us_pause_level is not None:
-            us_level = min(us_level, us_pause_level)
+            us_level = np.minimum(us_level, us_pause_level)
         gap = np.maximum(us_level - e, 0.0)
         rate = pace * (comp + inno + (algo - inno) * np.minimum(1.0, gap / gap0))
         e = e + rate * dt
@@ -10992,18 +10993,26 @@ def _pc_render_us_pause(today, thr_ops):
         a_lo, a_hi = min(us_algo, cn_algo), max(us_algo, cn_algo)
         a_mid = cn_algo
     # The US climb to the bar: the compute↔ECI engine on the DC tab's fitted
-    # US largest-site pace, plus the shared algorithmic term.
+    # US largest-site pace — sampled with that fit's own sigma_g, so the pause
+    # date inherits the DC engine's pace uncertainty, not just its center.
     chk_us = _cc_country_pace_check(today).get(_DC_CTY_US)
-    us_rate = (b_algo + a_partial * chk_us['g']) if chk_us else \
-        (_cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1)) or 15.0)
+    n_s = N_SAMPLES
+    if chk_us:
+        us_rate = b_algo + a_partial * chk_us['g']
+        us_rate_s = np.maximum(
+            b_algo + a_partial * np.random.normal(chk_us['g'],
+                                                  chk_us['sigma_g'], n_s), 1.0)
+    else:
+        us_rate = _cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1)) or 15.0
+        us_rate_s = np.full(n_s, us_rate)
     gap_d = _cc_release_gap_days(cn_fr, since=today - timedelta(days=730))
     g_mid = 0.5 * (_CC_CN_COMPUTE_LO + _CC_CN_COMPUTE_HI)
     pace_lo, pace_hi, _obs = _cc_cn_pace_band(cn_fr, a_mid + a_partial * g_mid)
-    kw = dict(us_anchor=us_best[1], us_rate=us_rate, us_pause_level=threshold,
+    kw = dict(us_anchor=us_best[1], us_rate=us_rate_s, us_pause_level=threshold,
               a_partial=a_partial, g_lo=_CC_CN_COMPUTE_LO,
               g_hi=_CC_CN_COMPUTE_HI, algo_lo=a_lo, algo_mid=a_mid,
               algo_hi=a_hi, pace_lo=pace_lo, pace_hi=pace_hi,
-              release_gap_days=gap_d)
+              release_gap_days=gap_d, n=n_s)
     years, grid_yrs, traj = _cc_cn_crossing_sim(
         anchor_eci, threshold, inno_lo=inno[0], inno_hi=inno[1], **kw)
     yr_ok = years[np.isfinite(years)]
@@ -11012,16 +11021,24 @@ def _pc_render_us_pause(today, thr_ops):
         return
     d10, d50, d90 = (anchor_d + timedelta(days=float(np.percentile(yr_ok, p))
                                           * 365.25) for p in (10, 50, 90))
-    t_pause = max((threshold - us_best[1]) / us_rate, 0.0) if us_rate > 0 else 0.0
-    d_pause = anchor_d + timedelta(days=t_pause * 365.25)
+    # Pause-date distribution from the sampled climb rates (faster pace →
+    # earlier pause); the kink and annotation use the median.
+    t_pause_s = np.maximum((threshold - us_best[1]) / us_rate_s, 0.0)
+    dp10, dp50, dp90 = (anchor_d + timedelta(days=float(np.percentile(
+        t_pause_s, p)) * 365.25) for p in (10, 50, 90))
+    d_pause = dp50
+    # Months from the pause moment (floored at today) to the crossing,
+    # matched per sample so both uncertainties propagate.
+    _floor = np.maximum(t_pause_s * 365.25, (today - anchor_d).days)
+    surpass_mo = float(np.nanmedian(years * 365.25 - _floor)) / 30.44
     m1, m2 = st.columns(2)
     m1.metric(f"China reaches the paused US frontier (ECI {threshold:.0f})",
               f"{d50:%b %Y}", f"{d10:%b %Y} – {d90:%b %Y} (80%)",
               delta_color="off")
-    _t0 = max(d_pause, today)
     m2.metric("Time for China to surpass after US pause",
-              f"~{(d50 - _t0).days / 30.44:.0f} mo",
-              (f"US pauses {d_pause:%b %Y}" if d_pause > today else
+              f"~{surpass_mo:.0f} mo",
+              (f"US pauses ~{dp50:%b %Y} (80%: {dp10:%b %Y} – {dp90:%b %Y})"
+               if d_pause > today else
                f"from {pretty(anchor_name)} at {anchor_eci:.0f}"),
               delta_color="off")
 
@@ -11054,7 +11071,8 @@ def _pc_render_us_pause(today, thr_ops):
         line=dict(color='#1F77B4', width=4.5), opacity=0.4,
         name=f'US paused at {threshold:.0f}', hoverinfo='skip'))
     if d_pause > anchor_d:
-        fig.add_annotation(x=d_pause, y=threshold, text='US pauses',
+        fig.add_annotation(x=d_pause, y=threshold,
+                           text=f'US pauses ~{d_pause:%b %Y}',
                            showarrow=False, yshift=12,
                            font=dict(size=10, color='#1F77B4'))
     # China: actual frontier, then the sim's fan.
@@ -11095,8 +11113,9 @@ def _pc_render_us_pause(today, thr_ops):
     st.plotly_chart(fig, use_container_width=True)
 
     _rate_src = (f"({b_algo:.0f} algo + {a_partial:.0f} pts/×10 × the "
-                 f"DC-engine ×{10 ** chk_us['g']:.1f}/yr US compute pace)"
-                 if chk_us else "(observed US frontier slope)")
+                 f"DC-engine ×{10 ** chk_us['g']:.1f}/yr US compute pace, "
+                 "sampled with that fit's own σ so the pause date carries "
+                 "its uncertainty)" if chk_us else "(observed US frontier slope)")
     st.caption(
         f"Counterfactual: the US climbs at ~{us_rate:.0f} ECI/yr "
         f"{_rate_src} to **ECI {threshold:.0f}** — the sidebar's "
