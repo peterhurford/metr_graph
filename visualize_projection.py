@@ -11018,9 +11018,11 @@ def _pc_render_us_pause(today, thr_ops):
     m1.metric(f"China reaches the paused US frontier (ECI {threshold:.0f})",
               f"{d50:%b %Y}", f"{d10:%b %Y} – {d90:%b %Y} (80%)",
               delta_color="off")
-    m2.metric("Time for China to surpass",
-              f"~{(d50 - today).days / 30.44:.0f} mo",
-              f"from {pretty(anchor_name)} at {anchor_eci:.0f}",
+    _t0 = max(d_pause, today)
+    m2.metric("Time for China to surpass after US pause",
+              f"~{(d50 - _t0).days / 30.44:.0f} mo",
+              (f"US pauses {d_pause:%b %Y}" if d_pause > today else
+               f"from {pretty(anchor_name)} at {anchor_eci:.0f}"),
               delta_color="off")
 
     # ── The race, in ECI: US climbs to the bar and freezes; China's fan
@@ -11039,14 +11041,18 @@ def _pc_render_us_pause(today, thr_ops):
         marker=dict(size=4, color='#1F77B4', line=dict(color='white', width=0.5)),
         text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in us_fr],
         hoverinfo='text', name='US (actual)'))
-    us_path_d = [max(us_best[0], anchor_d)] + ([d_pause] if d_pause > anchor_d
-                                               else []) + [x_end]
-    us_path_v = [us_best[1]] + ([threshold] if d_pause > anchor_d else []) \
-        + [threshold]
+    # Two visually distinct segments: the projected climb (dashed, like every
+    # projection) and the frozen bar after the pause (thick translucent level).
+    t0_us = max(us_best[0], anchor_d)
+    if d_pause > t0_us:
+        fig.add_trace(go.Scatter(
+            x=[t0_us, d_pause], y=[us_best[1], threshold], mode='lines',
+            line=dict(color='#1F77B4', width=2, dash='dash'),
+            name='US climb (projected)', hoverinfo='skip'))
     fig.add_trace(go.Scatter(
-        x=us_path_d, y=us_path_v, mode='lines',
-        line=dict(color='#1F77B4', width=2, dash='dash'),
-        name=f'US → pause at {threshold:.0f}', hoverinfo='skip'))
+        x=[max(d_pause, t0_us), x_end], y=[threshold, threshold], mode='lines',
+        line=dict(color='#1F77B4', width=4.5), opacity=0.4,
+        name=f'US paused at {threshold:.0f}', hoverinfo='skip'))
     if d_pause > anchor_d:
         fig.add_annotation(x=d_pause, y=threshold, text='US pauses',
                            showarrow=False, yshift=12,
