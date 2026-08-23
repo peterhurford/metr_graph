@@ -7383,12 +7383,9 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
     """
     st.subheader("Buildout by country: US vs China")
     st.caption(
-        "Biggest training run one party in each country could mount. Solid = "
-        "actual, dashed = planned, dotted + cone (50% / 80%) = log-linear "
-        "extrapolation past the end of Epoch's data (2027 for China). "
-        "*China-accessible* adds DayOne Johor, where Epoch cites the FT on "
-        "Alibaba and ByteDance training — an upper bound, the campus has other "
-        "tenants. Colocation hosts are not hidden here.")
+        "Biggest training run one party per country could mount. Solid = actual, "
+        "dashed = planned, dotted + cone = extrapolated (50% / 80%). "
+        "*China-accessible* adds DayOne Johor (FT: Alibaba, ByteDance train there).")
 
     c1, c2 = st.columns(2)
     pool_label = c1.selectbox("Within a country, count", list(_DC_CTY_POOL_OPTIONS),
@@ -7398,10 +7395,8 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
     since = c2.radio("Fit trend since", _DC_CTY_SINCE_YEARS, horizontal=True,
                      index=_DC_CTY_SINCE_YEARS.index(_DC_DEFAULTS["dc_cty_since"]),
                      key="dc_cty_since",
-                     help="Fits from a country's first go-live run hot (ramp "
-                          "from nothing); fits to the edge of planned data run "
-                          "cool (under-catalogued). Every window is listed "
-                          "below.")
+                     help="Early windows run hot (ramp from zero); late ones "
+                          "run cool (under-catalogued).")
     horizon = c2.radio("Extrapolate through", _DC_CTY_HORIZONS, horizontal=True,
                        index=_DC_CTY_HORIZONS.index(_DC_DEFAULTS["dc_cty_horizon"]),
                        key="dc_cty_horizon")
@@ -7549,18 +7544,15 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
                else "US pace" if c in borrowed else "own fit")
         win = ", ".join(f"'{y % 100}: ×{10 ** g:.1f}" for y, g in
                         sorted(fit['windows'].items())) if fit else ""
-        return (f"**{c}** ×{10 ** p['g']:.1f}/yr, doubling {dbl:.0f}mo, "
-                f"±{p['sigma_g']:.2f} OOM/yr ({src}"
-                f"{'; by window ' + win if win else ''})")
+        return (f"**{c}** ×{10 ** p['g']:.1f}/yr ±{p['sigma_g']:.2f} OOM/yr, "
+                f"{src}{'; ' + win if win else ''}")
     st.caption(
         "Pace — " + "; ".join(_pace_text(c) for c in cone_for) + ". "
-        f"Uncertainty = max(fit s.e., window spread, {_DC_CTY_SIGMA_G_FLOOR:.2f} "
-        "OOM/yr) plus the series' own scatter. Chinese fits rest on a handful "
-        "of sites; the cone is a trend through Epoch's catalogue, not a policy "
-        "forecast.")
+        "Chinese fits rest on a handful of sites; cones follow Epoch's "
+        "catalogue, not policy.")
     if mode == 'country':
-        st.caption("*Every site pooled* assumes a state can direct all its "
-                   "operators onto one job; for the US it is an upper bound.")
+        st.caption("*Every site pooled* assumes a state directs all its "
+                   "operators onto one job.")
 
     # ── Readout: year-end values, ratio and lag ──
     if cn_key not in traj:
@@ -7625,9 +7617,7 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
         st.table(rows)
         st.caption(
             "Median (10th–90th pct). *Lag* = months since the US first reached "
-            "China's value; negative = China ahead. Ratio and lag stay "
-            "US-ahead-positive on the time-to-train metrics. Pick *6mo train "
-            "log OP* to read this in training-run operations.")
+            "China's value; negative = China ahead.")
 
 
 def render_data_centers():
