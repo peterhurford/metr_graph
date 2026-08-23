@@ -542,10 +542,12 @@ machinery rather than growing its own.
    the DC tab does — default is capacity-online, with the run length (and +30d for
    release) one click away; the fine print states which milestone the dates mean.
 
-The tab ends with `_pc_render_us_pause()`: the CC crossing sim with `us_rate=0` —
-today's stock stays distillable while a gap remains, then China runs on its
-indigenous algorithmic band plus its (export-control-bound, US-independent) compute
-term to the frozen US frontier.
+The tab ends with `_pc_render_us_pause()`: the CC crossing sim with `us_pause_level`
+— the US climbs at its compute-derived rate (b_algo + a_partial × the DC-engine US
+pace) to a selectable bar (`pc_pause_at`: today's frontier / 170 / 180), freezes,
+and China races the paused frontier in an ECI chart (US kink + China fan + crossing
+diamond); the paused stock stays distillable while a gap remains, then China runs on
+its indigenous band plus its export-control-bound compute term.
 
 Guarded by `TestPacing` (unit) and `TestPacingTab` (integration).
 

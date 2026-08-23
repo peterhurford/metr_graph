@@ -1098,16 +1098,24 @@ class TestPacingTab:
         return at
 
     def test_us_pause_panel_renders(self):
-        """The US-pause counterfactual renders with its crossing metric and
-        assumption caption (or degrades to an info box, never an error)."""
+        """The US-pause counterfactual renders with its crossing metric,
+        race chart and assumption caption."""
         at = self._app()
         subs = " ".join(str(s.value) for s in at.subheader)
-        assert "If the US paused today" in subs
+        assert "If the US paused" in subs
         labels = " ".join(str(m.label) for m in at.metric)
-        assert "frozen US frontier" in labels
+        assert "paused US frontier" in labels
         assert "losing distillation" in labels
         caps = " ".join(str(c.value) for c in at.caption)
         assert "indigenous" in caps
+
+    def test_us_pause_at_future_threshold(self):
+        """Pausing at a future bar moves the crossing metric to that bar."""
+        at = self._app()
+        at.selectbox(key="pc_pause_at").set_value("ECI 170").run()
+        _assert_no_error(at, "Pacing / pause at 170")
+        labels = " ".join(str(m.label) for m in at.metric)
+        assert "ECI 170" in labels
 
     def test_renders_with_headline_and_table(self):
         at = self._app()

@@ -9520,7 +9520,8 @@ def _cc_cn_target_years(anchor_eci, target, algo_lo, algo_mid, algo_hi,
 def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         g_lo, g_hi, algo_lo, algo_mid, algo_hi,
                         inno_lo, inno_hi, pace_lo, pace_hi,
-                        release_gap_days=None, n=None, horizon_yrs=12.0):
+                        release_gap_days=None, n=None, horizon_yrs=12.0,
+                        us_pause_level=None):
     """_cc_cn_target_years with distillation decay.
 
     The algorithmic term is gap-dependent:
@@ -9530,6 +9531,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     the indigenous `inno` band as China closes on the frontier it distills
     from. us_rate=0 models a US pause: the frozen stock stays distillable
     while a gap remains, then China runs on `inno` + compute alone.
+    `us_pause_level` caps US(t): the US climbs at `us_rate` until that level,
+    then freezes there — the pause-at-a-future-threshold scenario.
 
     Returns (years, grid_yrs, traj): crossing years incl. the release wait
     (NaN = not crossed within horizon), the monthly time grid, and the
@@ -9558,7 +9561,10 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     e = np.full(n, float(anchor_eci))
     years = np.full(n, np.nan)
     for i in range(1, steps + 1):
-        gap = np.maximum(us_anchor + us_rate * grid[i - 1] - e, 0.0)
+        us_level = us_anchor + us_rate * grid[i - 1]
+        if us_pause_level is not None:
+            us_level = min(us_level, us_pause_level)
+        gap = np.maximum(us_level - e, 0.0)
         rate = pace * (comp + inno + (algo - inno) * np.minimum(1.0, gap / gap0))
         e = e + rate * dt
         traj[:, i] = e
@@ -10806,11 +10812,12 @@ _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
 _PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party",
-                  "pc_timing"]
+                  "pc_timing", "pc_pause_at"]
 _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run",
                 "pc_pool": "Nearby + announced fabric",
                 "pc_party": "Tenant (who trains there)",
-                "pc_timing": "Data center construction"}
+                "pc_timing": "Data center construction",
+                "pc_pause_at": "Today's frontier"}
 
 
 def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
@@ -10938,15 +10945,19 @@ def _pc_when(rec):
     return f"~{rec['med']:%b %Y}"
 
 
-def _pc_render_us_pause(today):
-    """If US progress froze today: China's catch-up to the frozen frontier.
+_PC_PAUSE_OPTIONS = ("Today's frontier", "ECI 170", "ECI 180")
 
-    The CC tab's crossing sim with us_rate=0: today's stock (released models,
-    papers, open weights) stays distillable while a gap remains, then China
-    runs on its indigenous algorithmic rate (_cc_innovation_algo_band) plus
-    its compute term alone. Target = the frozen US best.
+
+def _pc_render_us_pause(today):
+    """If the US paused: China's catch-up to the paused frontier, in ECI.
+
+    The CC tab's crossing sim with `us_pause_level`: the US climbs at its
+    compute-derived ECI rate (b_algo + a_partial × the DC-engine US pace) to
+    the chosen bar and freezes there; the paused stock stays distillable
+    while a gap remains, then China runs on its indigenous algorithmic rate
+    (_cc_innovation_algo_band) plus its compute term alone.
     """
-    st.subheader("If the US paused today: when does China catch up?")
+    st.subheader("If the US paused: when does China catch up?")
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
     eci_all = load_eci_frontier(_mtime=_eci_mtime())
     us_fr = _cc_country_frontier(eci_all, 'United States of America')
@@ -10963,27 +10974,45 @@ def _pc_render_us_pause(today):
         st.success(f"{pretty(anchor_name)} is already at the US frontier.")
         return
 
-    a_partial, _b_algo = _cc_pooled_decomp(cc_rows)
+    if st.session_state.get("pc_pause_at") not in _PC_PAUSE_OPTIONS:
+        st.session_state.pop("pc_pause_at", None)
+    pause_label = st.selectbox(
+        "US pauses at", list(_PC_PAUSE_OPTIONS),
+        index=_PC_PAUSE_OPTIONS.index(_PC_DEFAULTS["pc_pause_at"]),
+        key="pc_pause_at",
+        help="The US keeps its current pace to this bar, then freezes; "
+             "China races the paused frontier.")
+    threshold = (us_best[1] if pause_label == "Today's frontier"
+                 else float(pause_label.split()[-1]))
+    threshold = max(threshold, us_best[1])
+
+    a_partial, b_algo = _cc_pooled_decomp(cc_rows)
     us_algo, _, _ = _cc_iso_compute_rate(cc_rows, 'United States of America')
     cn_algo, _, _ = _cc_iso_compute_rate(cc_rows, 'China')
     if us_algo is None or cn_algo is None:
-        a_lo = a_mid = a_hi = _b_algo
+        a_lo = a_mid = a_hi = b_algo
     else:
         a_lo, a_hi = min(us_algo, cn_algo), max(us_algo, cn_algo)
         a_mid = cn_algo
+    # The US climb to the bar: the compute↔ECI engine on the DC tab's fitted
+    # US largest-site pace, plus the shared algorithmic term.
+    chk_us = _cc_country_pace_check(today).get(_DC_CTY_US)
+    us_rate = (b_algo + a_partial * chk_us['g']) if chk_us else \
+        (_cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1)) or 15.0)
     gap_d = _cc_release_gap_days(cn_fr, since=today - timedelta(days=730))
     g_mid = 0.5 * (_CC_CN_COMPUTE_LO + _CC_CN_COMPUTE_HI)
     pace_lo, pace_hi, _obs = _cc_cn_pace_band(cn_fr, a_mid + a_partial * g_mid)
-    kw = dict(us_anchor=us_best[1], us_rate=0.0, a_partial=a_partial,
-              g_lo=_CC_CN_COMPUTE_LO, g_hi=_CC_CN_COMPUTE_HI,
-              algo_lo=a_lo, algo_mid=a_mid, algo_hi=a_hi,
-              pace_lo=pace_lo, pace_hi=pace_hi, release_gap_days=gap_d)
-    years, _grid, _traj = _cc_cn_crossing_sim(
-        anchor_eci, us_best[1], inno_lo=inno[0], inno_hi=inno[1], **kw)
+    kw = dict(us_anchor=us_best[1], us_rate=us_rate, us_pause_level=threshold,
+              a_partial=a_partial, g_lo=_CC_CN_COMPUTE_LO,
+              g_hi=_CC_CN_COMPUTE_HI, algo_lo=a_lo, algo_mid=a_mid,
+              algo_hi=a_hi, pace_lo=pace_lo, pace_hi=pace_hi,
+              release_gap_days=gap_d)
+    years, grid_yrs, traj = _cc_cn_crossing_sim(
+        anchor_eci, threshold, inno_lo=inno[0], inno_hi=inno[1], **kw)
     # Same pause, but distillation hypothetically stays frontier-fed: the
     # difference is what the dry-up itself costs.
     years_fed, _g2, _t2 = _cc_cn_crossing_sim(
-        anchor_eci, us_best[1], inno_lo=a_lo, inno_hi=a_hi, **kw)
+        anchor_eci, threshold, inno_lo=a_lo, inno_hi=a_hi, **kw)
     yr_ok = years[np.isfinite(years)]
     if len(yr_ok) < 100:
         st.info("Sampled rates were too weak to give a crossing date.")
@@ -10991,8 +11020,10 @@ def _pc_render_us_pause(today):
     d10, d50, d90 = (anchor_d + timedelta(days=float(np.percentile(yr_ok, p))
                                           * 365.25) for p in (10, 50, 90))
     dry_w = (float(np.nanmedian(years)) - float(np.nanmedian(years_fed))) * 52.18
+    t_pause = max((threshold - us_best[1]) / us_rate, 0.0) if us_rate > 0 else 0.0
+    d_pause = anchor_d + timedelta(days=t_pause * 365.25)
     m1, m2, m3 = st.columns(3)
-    m1.metric(f"China reaches the frozen US frontier (ECI {us_best[1]:.0f})",
+    m1.metric(f"China reaches the paused US frontier (ECI {threshold:.0f})",
               f"{d50:%b %Y}", f"{d10:%b %Y} – {d90:%b %Y} (80%)",
               delta_color="off")
     m2.metric("From today", f"~{(d50 - today).days / 30.44:.0f} mo",
@@ -11000,19 +11031,89 @@ def _pc_render_us_pause(today):
               delta_color="off")
     m3.metric("Cost of losing distillation", f"~{dry_w:+.0f} weeks",
               "vs the stock staying frontier-fed", delta_color="off")
+
+    # ── The race, in ECI: US climbs to the bar and freezes; China's fan
+    # catches up and crosses. ──
+    x_end = d90 + timedelta(days=150)
+    grid_d = [anchor_d + timedelta(days=y * 365.25) for y in grid_yrs]
+    keep = [i for i, d in enumerate(grid_d) if d <= x_end]
+    fig = go.Figure()
+    _dc_add_projection_band(fig, today, x_end)
+    fig.add_vrect(x0=d10, x1=d90, fillcolor='rgba(214,39,40,0.10)',
+                  line_width=0, layer='below')
+    # US: actual frontier, then the climb to the bar, flat after the pause.
+    fig.add_trace(go.Scatter(
+        x=[d for d, s, n in us_fr], y=[s for d, s, n in us_fr],
+        mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
+        marker=dict(size=4, color='#1F77B4', line=dict(color='white', width=0.5)),
+        text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in us_fr],
+        hoverinfo='text', name='US (actual)'))
+    us_path_d = [max(us_best[0], anchor_d)] + ([d_pause] if d_pause > anchor_d
+                                               else []) + [x_end]
+    us_path_v = [us_best[1]] + ([threshold] if d_pause > anchor_d else []) \
+        + [threshold]
+    fig.add_trace(go.Scatter(
+        x=us_path_d, y=us_path_v, mode='lines',
+        line=dict(color='#1F77B4', width=2, dash='dash'),
+        name=f'US → pause at {threshold:.0f}', hoverinfo='skip'))
+    if d_pause > anchor_d:
+        fig.add_annotation(x=d_pause, y=threshold, text='US pauses',
+                           showarrow=False, yshift=12,
+                           font=dict(size=10, color='#1F77B4'))
+    # China: actual frontier, then the sim's fan.
+    fig.add_trace(go.Scatter(
+        x=[d for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
+        mode='lines+markers', line=dict(color='#D62728', width=1.5),
+        marker=dict(size=4, color='#D62728', line=dict(color='white', width=0.5)),
+        text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in cn_fr],
+        hoverinfo='text', name='China (actual)'))
+    pct = {p: np.percentile(traj, p, axis=0) for p in (10, 25, 50, 75, 90)}
+    xs = [grid_d[i] for i in keep]
+    for lo_p, hi_p, alpha in ((10, 90, 0.10), (25, 75, 0.20)):
+        fig.add_trace(go.Scatter(
+            x=xs + xs[::-1], mode='lines',
+            y=[pct[hi_p][i] for i in keep] + [pct[lo_p][i] for i in keep][::-1],
+            fill='toself', fillcolor=f'rgba(214,39,40,{alpha})',
+            line=dict(width=0), hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter(
+        x=xs, y=[pct[50][i] for i in keep], mode='lines',
+        line=dict(color='#7F1010', width=2.5), name='China (projected median)',
+        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>China median</extra>'))
+    fig.add_trace(go.Scatter(
+        x=[d50], y=[threshold], mode='markers',
+        marker=dict(symbol='diamond', size=13, color='#D62728',
+                    line=dict(color='white', width=1.5)),
+        name=f'median crossing {d50:%b %Y}', hoverinfo='name'))
+    fig.update_layout(
+        height=440, plot_bgcolor='white', paper_bgcolor='white',
+        margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
+        legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
+                    bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
+                    borderwidth=1),
+        xaxis=dict(gridcolor='rgba(0,0,0,0.12)',
+                   range=[datetime(2024, 1, 1), x_end],
+                   tickfont=dict(color='#222'), title_font=dict(color='#222')),
+        yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
+                   tickfont=dict(color='#222'), title_font=dict(color='#222')))
+    st.plotly_chart(fig, use_container_width=True)
+
+    _rate_src = (f"({b_algo:.0f} algo + {a_partial:.0f} pts/×10 × the "
+                 f"DC-engine ×{10 ** chk_us['g']:.1f}/yr US compute pace)"
+                 if chk_us else "(observed US frontier slope)")
     st.caption(
-        f"Counterfactual: US progress stops today at {pretty(us_best[2])} "
-        f"(ECI {us_best[1]:.0f}). Today's stock stays distillable while the "
-        f"{us_best[1] - anchor_eci:.1f}-point gap remains; the algorithmic "
-        f"term then decays to an indigenous **{inno[0]:.0f}–{inno[1]:.0f} "
-        f"ECI/yr** (pretraining-efficiency floor to the top iso-compute "
-        f"band). Compute term unchanged ({_CC_CN_COMPUTE_LO * a_partial:.1f}–"
-        f"{_CC_CN_COMPUTE_HI * a_partial:.1f} ECI/yr — export-control-bound, "
-        "not US-dependent), plus the release-cadence wait. Same sim and pace "
-        "band as the Compute vs Capabilities crossing section — which lands "
-        f"*earlier* than this: its bar is lower ({_CC_CN_TARGET_ECI:.0f} vs "
-        f"{us_best[1]:.0f}) and, with the US still moving there, distillation "
-        "never dries up.")
+        f"Counterfactual: the US climbs at ~{us_rate:.0f} ECI/yr "
+        f"{_rate_src} to ECI {threshold:.0f}, "
+        "then freezes. The paused stock stays distillable while a gap "
+        "remains; China's algorithmic term then decays to an indigenous "
+        f"**{inno[0]:.0f}–{inno[1]:.0f} ECI/yr** (pretraining-efficiency "
+        "floor to the top iso-compute band), its compute term unchanged "
+        f"({_CC_CN_COMPUTE_LO * a_partial:.1f}–"
+        f"{_CC_CN_COMPUTE_HI * a_partial:.1f} ECI/yr — export-control-bound), "
+        "plus the release-cadence wait (the diamond sits right of where the "
+        "fan meets the bar). Same sim and pace band as the Compute vs "
+        "Capabilities crossing section — which lands *earlier*: its bar is "
+        f"lower ({_CC_CN_TARGET_ECI:.0f}) and distillation never dries up "
+        "there.")
 
 
 def render_pacing():

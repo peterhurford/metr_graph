@@ -2733,6 +2733,17 @@ class TestCcCnCrossingSim:
             cn_best[1], us_best[1], us_anchor=us_best[1], us_rate=0.0, **kw)
         assert np.nanmedian(y_pause) >= np.nanmedian(y_cc)
 
+    def test_crossing_is_later_for_a_higher_pause_bar(self):
+        """us_pause_level: the US climbs to the bar then freezes; a higher
+        bar means a longer climb and a later Chinese crossing."""
+        y_lo, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 158.0, us_anchor=158.0, us_rate=15.0, us_pause_level=158.0,
+            inno_lo=3.0, inno_hi=4.0, **self.KW)
+        y_hi, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 165.0, us_anchor=158.0, us_rate=15.0, us_pause_level=165.0,
+            inno_lo=3.0, inno_hi=4.0, **self.KW)
+        assert np.nanmedian(y_hi) > np.nanmedian(y_lo)
+
     def test_traj_is_nondecreasing(self):
         _, grid, traj = vp._cc_cn_crossing_sim(
             150.0, 160.0, us_anchor=160.0, us_rate=0.0,
