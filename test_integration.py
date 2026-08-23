@@ -1109,13 +1109,20 @@ class TestPacingTab:
         caps = " ".join(str(c.value) for c in at.caption)
         assert "indigenous" in caps
 
-    def test_us_pause_at_future_threshold(self):
-        """Pausing at a future bar moves the crossing metric to that bar."""
+    def test_us_pause_bar_syncs_with_sidebar_threshold(self):
+        """The pause bar follows the sidebar's training-run threshold: a
+        bigger run maps to a higher ECI bar via the exchange rate."""
         at = self._app()
-        at.selectbox(key="pc_pause_at").set_value("ECI 170").run()
-        _assert_no_error(at, "Pacing / pause at 170")
-        labels = " ".join(str(m.label) for m in at.metric)
-        assert "ECI 170" in labels
+
+        def _bar(at):
+            lab = next(str(m.label) for m in at.metric
+                       if "paused US frontier" in str(m.label))
+            return float(lab.split("ECI")[-1].strip(" )"))
+
+        base = _bar(at)
+        at.selectbox(key="pc_threshold").set_value("1e29").run()
+        _assert_no_error(at, "Pacing / pause bar at 1e29")
+        assert _bar(at) > base
 
     def test_renders_with_headline_and_table(self):
         at = self._app()

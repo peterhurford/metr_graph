@@ -544,10 +544,11 @@ machinery rather than growing its own.
 
 The tab ends with `_pc_render_us_pause()`: the CC crossing sim with `us_pause_level`
 — the US climbs at its compute-derived rate (b_algo + a_partial × the DC-engine US
-pace) to a selectable bar (`pc_pause_at`: today's frontier / 170 / 180), freezes,
-and China races the paused frontier in an ECI chart (US kink + China fan + crossing
-diamond); the paused stock stays distillable while a gap remains, then China runs on
-its indigenous band plus its export-control-bound compute term.
+pace) to the sidebar threshold's ECI equivalent (today's frontier + a_partial per
+OOM above the largest actual US run, floored at the frontier), freezes, and China
+races the paused frontier in an ECI chart (US kink + China fan + crossing diamond);
+the paused stock stays distillable while a gap remains, then China runs on its
+indigenous band plus its export-control-bound compute term.
 
 Guarded by `TestPacing` (unit) and `TestPacingTab` (integration).
 

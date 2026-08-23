@@ -10812,12 +10812,11 @@ _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
 _PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party",
-                  "pc_timing", "pc_pause_at"]
+                  "pc_timing"]
 _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run",
                 "pc_pool": "Nearby + announced fabric",
                 "pc_party": "Tenant (who trains there)",
-                "pc_timing": "Data center construction",
-                "pc_pause_at": "Today's frontier"}
+                "pc_timing": "Data center construction"}
 
 
 def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
@@ -10945,17 +10944,16 @@ def _pc_when(rec):
     return f"~{rec['med']:%b %Y}"
 
 
-_PC_PAUSE_OPTIONS = ("Today's frontier", "ECI 170", "ECI 180")
-
-
-def _pc_render_us_pause(today):
+def _pc_render_us_pause(today, thr_ops):
     """If the US paused: China's catch-up to the paused frontier, in ECI.
 
-    The CC tab's crossing sim with `us_pause_level`: the US climbs at its
-    compute-derived ECI rate (b_algo + a_partial × the DC-engine US pace) to
-    the chosen bar and freezes there; the paused stock stays distillable
-    while a gap remains, then China runs on its indigenous algorithmic rate
-    (_cc_innovation_algo_band) plus its compute term alone.
+    The pause bar syncs with the sidebar's training-run threshold: `thr_ops`
+    maps to ECI via the exchange rate — today's US frontier plus a_partial ×
+    the OOM between the threshold and the largest actual US run. The CC
+    crossing sim (`us_pause_level`) then has the US climb at its
+    compute-derived rate to that bar and freeze; the paused stock stays
+    distillable while a gap remains, then China runs on its indigenous
+    algorithmic rate (_cc_innovation_algo_band) plus its compute term alone.
     """
     st.subheader("If the US paused: when does China catch up?")
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
@@ -10974,19 +10972,18 @@ def _pc_render_us_pause(today):
         st.success(f"{pretty(anchor_name)} is already at the US frontier.")
         return
 
-    if st.session_state.get("pc_pause_at") not in _PC_PAUSE_OPTIONS:
-        st.session_state.pop("pc_pause_at", None)
-    pause_label = st.selectbox(
-        "US pauses at", list(_PC_PAUSE_OPTIONS),
-        index=_PC_PAUSE_OPTIONS.index(_PC_DEFAULTS["pc_pause_at"]),
-        key="pc_pause_at",
-        help="The US keeps its current pace to this bar, then freezes; "
-             "China races the paused frontier.")
-    threshold = (us_best[1] if pause_label == "Today's frontier"
-                 else float(pause_label.split()[-1]))
-    threshold = max(threshold, us_best[1])
-
     a_partial, b_algo = _cc_pooled_decomp(cc_rows)
+    # Pause bar = the sidebar threshold's ECI equivalent: today's US frontier
+    # plus a_partial per OOM between the threshold and the largest actual US
+    # run — floored at today's frontier (a bar below it is already crossed).
+    us_cf, _g_us_run = _cc_country_compute_frontier(
+        cc_rows, 'United States of America')
+    us_run_lf = us_cf[-1][1] if us_cf else None
+    if us_run_lf is None:
+        st.info("No US run-compute data to place the threshold in ECI.")
+        return
+    threshold = max(us_best[1],
+                    us_best[1] + a_partial * (np.log10(thr_ops) - us_run_lf))
     us_algo, _, _ = _cc_iso_compute_rate(cc_rows, 'United States of America')
     cn_algo, _, _ = _cc_iso_compute_rate(cc_rows, 'China')
     if us_algo is None or cn_algo is None:
@@ -11102,7 +11099,10 @@ def _pc_render_us_pause(today):
                  if chk_us else "(observed US frontier slope)")
     st.caption(
         f"Counterfactual: the US climbs at ~{us_rate:.0f} ECI/yr "
-        f"{_rate_src} to ECI {threshold:.0f}, "
+        f"{_rate_src} to **ECI {threshold:.0f}** — the sidebar's "
+        f"{thr_ops:.0e}-op threshold mapped through the exchange rate "
+        f"(+{a_partial:.0f} pts per ×10 from the largest actual US run, "
+        f"10^{us_run_lf:.1f} op) — "
         "then freezes. The paused stock stays distillable while a gap "
         "remains; China's algorithmic term then decays to an indigenous "
         f"**{inno[0]:.0f}–{inno[1]:.0f} ECI/yr** (pretraining-efficiency "
@@ -11373,7 +11373,7 @@ def render_pacing():
         "[Epoch AI, Frontier Data Centers](https://epoch.ai/data/data-centers) "
         "(CC-BY).")
 
-    _pc_render_us_pause(_today)
+    _pc_render_us_pause(_today, float(threshold_label))
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
