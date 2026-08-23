@@ -884,17 +884,22 @@ _SECONDS_6MO = _DAYS_6MO * 24 * 3600
 _CC_RUN_COMPLETION_LAG = timedelta(days=30)
 
 
-def _dc_milestone_dates(record_date, shift_days=0):
+def _dc_milestone_dates(record_date, shift_days=0, run_days=None):
     """Tooltip date lines for a buildout milestone. The plotted date is the site's
     DC-available date shifted forward by the chosen timing (`shift_days`), so
-    reconstruct the base and expand into the three milestones the timing dropdown
-    offers: DC online / training done / model out.
+    reconstruct the base and expand into the milestones the timing dropdown
+    offers: DC online, and — only when `run_days` names a training-run length,
+    i.e. the capacity metric is a train-OP one — training done / model out
+    for a run of that length. Other metrics assume no run, so they get the
+    DC-online line alone.
     """
     base = record_date - timedelta(days=shift_days)
-    return (f"DC online ~{base:%b %d, %Y}<br>"
-            f"Training done ~{(base + timedelta(days=_DAYS_2MO)):%b %d, %Y}<br>"
-            f"Model out ~"
-            f"{(base + timedelta(days=_DAYS_2MO) + _CC_RUN_COMPLETION_LAG):%b %d, %Y}")
+    out = f"DC online ~{base:%b %d, %Y}"
+    if run_days is not None:
+        done = base + timedelta(days=run_days)
+        out += (f"<br>Training done ({run_days // 30}mo run) ~{done:%b %d, %Y}"
+                f"<br>Model out ~{(done + _CC_RUN_COMPLETION_LAG):%b %d, %Y}")
+    return out
 
 
 # Fraction of peak throughput actually realized over a real training run.
@@ -7375,7 +7380,7 @@ def _dc_cty_band(arr, kind):
 
 def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
                              x_start, metric_label, kind, log_scale,
-                             shift_days, include_future):
+                             shift_days, include_future, run_days=None):
     """Buildout by country — US vs China, with each country's largest training
     run extrapolated past the end of its recorded data under a cone.
 
@@ -7503,7 +7508,7 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
             showlegend=False, hoverinfo='text',
             hovertext=[f"{c}{' (planned)' if x[0] > today else ''}<br>"
                        f"{_dc_fmt_value(x[1], kind)} — {x[2]}<br>"
-                       f"{_dc_milestone_dates(x[0], shift_days)}" for x in dots]))
+                       f"{_dc_milestone_dates(x[0], shift_days, run_days)}" for x in dots]))
     for c in cone_for:
         color = _DC_CTY_COLORS.get(c, "#D62728")
         s = steps_by[c]
@@ -7541,7 +7546,7 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
             showlegend=False, hoverinfo='text',
             hovertext=[f"{c}{' (planned)' if x[0] > today else ''}<br>"
                        f"{_dc_fmt_value(x[1], kind)} — {x[2]}<br>"
-                       f"{_dc_milestone_dates(x[0], shift_days)}" for x in dots]))
+                       f"{_dc_milestone_dates(x[0], shift_days, run_days)}" for x in dots]))
     vals = [v for s in steps_by.values() for v in _dc_visible_vals(s, x_start)]
     for c in cone_for:
         if not np.isnan(traj[c]).all():
@@ -7711,6 +7716,9 @@ def render_data_centers():
     # chosen milestone (DC construction / training done / model release). DC
     # construction means no shift.
     shift_days = _dc_timing_shift(timing_label, cfg.get("run_days", _DAYS_2MO))
+    # Hover milestones name a training run only for the train-OP metrics, and
+    # then the run length that metric assumes (2mo or 6mo).
+    hover_run_days = cfg.get("run_days") if key in ('train_flop', 'train_flop_6mo') else None
     if shift_days:
         shift = timedelta(days=shift_days)
         series = {n: {'company': v['company'],
@@ -7834,7 +7842,7 @@ def render_data_centers():
             textfont=dict(size=9, color='#1F77B4'),
             hovertext=[f"{p[2]} ({_dc_co_label(p[3], unattributed)})"
                        f"{' — planned' if projected else ''}<br>"
-                       f"{_dc_fmt_value(p[1], kind)}<br>{_dc_milestone_dates(p[0], shift_days)}"
+                       f"{_dc_fmt_value(p[1], kind)}<br>{_dc_milestone_dates(p[0], shift_days, hover_run_days)}"
                        for p in pts],
             hoverinfo='text', showlegend=False,
         ))
@@ -7851,7 +7859,7 @@ def render_data_centers():
                        f" — scale-up"
                        f"{' — planned' if p[0] > _today else ''}<br>"
                        f"{_dc_fmt_value(p[1], kind)}<br>"
-                       f"{_dc_milestone_dates(p[0], shift_days)}"
+                       f"{_dc_milestone_dates(p[0], shift_days, hover_run_days)}"
                        for p in pts],
             hoverinfo='text', showlegend=False,
         ))
@@ -7868,7 +7876,7 @@ def render_data_centers():
             hovertext=[f"{'Planned peak' if _peak_projected else 'Current'}: "
                        f"{cn} ({_dc_co_label(cco, unattributed)})<br>"
                        f"{_dc_fmt_value(cv, kind)}<br>"
-                       f"{_dc_milestone_dates(cd, shift_days)}"],
+                       f"{_dc_milestone_dates(cd, shift_days, hover_run_days)}"],
             hoverinfo='text', showlegend=False,
         ))
     fig1.update_layout(**_dc_layout(
@@ -7992,7 +8000,7 @@ def render_data_centers():
                 hovertext=[
                     f"{co_label} — {s[2]} ({label})"
                     f"{' (planned)' if s[0] > _today else ''}<br>"
-                    f"{_dc_fmt_value(s[1], kind)}<br>{_dc_milestone_dates(s[0], shift_days)}"
+                    f"{_dc_fmt_value(s[1], kind)}<br>{_dc_milestone_dates(s[0], shift_days, hover_run_days)}"
                     for s in pts],
                 hoverinfo='text',
             ))
@@ -8104,7 +8112,7 @@ def render_data_centers():
                 f"{_dc_fmt_value(s[1], kind)}"
                 f"{f' — {s[3]}, {len(s[2])} sites' if s[3] else ''}"
                 "<br>" + "<br>".join(f"• {n}" for n in s[2]) + "<br>"
-                f"{_dc_milestone_dates(s[0], shift_days)}"
+                f"{_dc_milestone_dates(s[0], shift_days, hover_run_days)}"
                 for s in dots],
             hoverinfo='text',
         ))
@@ -8169,7 +8177,8 @@ def render_data_centers():
         _cty_series, {dc['name']: _dc_site_country(dc) for dc in dc_all},
         cluster_of, today=_today, cap_date=cap_date, x_start=x_start,
         metric_label=metric_label, kind=kind, log_scale=log_scale,
-        shift_days=shift_days, include_future=include_future)
+        shift_days=shift_days, include_future=include_future,
+        run_days=hover_run_days)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -8972,7 +8981,7 @@ def _cc_us_vs_china(cc_rows, today):
         mode='lines', line=dict(color='#1F77B4', width=1.5, dash='dash'),
         opacity=0.7, name='US capacity (buildout)',
         text=[f"<b>{n}</b><br>{_logop_lbl(lf)} (2-mo run)<br>"
-              f"{_dc_milestone_dates(sd, _DAYS_2MO)}"
+              f"{_dc_milestone_dates(sd, _DAYS_2MO, _DAYS_2MO)}"
               for d, lf, n, sd in us_cap_hist],
         hoverinfo='text'))
     # US capacity fan emanates from the last US *run* (not the DC line): lower edge

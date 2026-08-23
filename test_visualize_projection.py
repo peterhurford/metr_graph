@@ -3734,3 +3734,33 @@ class TestDcByCountry:
         assert list(vp._DC_CTY_CN_OPTIONS)[0] == vp._DC_DEFAULTS["dc_cty_cn"]
         assert list(vp._DC_CTY_PACE_OPTIONS)[0] == vp._DC_DEFAULTS["dc_cty_pace"]
         assert vp._DC_CTY_PACE_OPTIONS[vp._DC_DEFAULTS["dc_cty_pace"]] == 'us'
+
+
+class TestDcMilestoneDates:
+    """Hover milestones name a training run only for the train-OP metrics,
+    and then the run length that metric assumes."""
+
+    def test_no_run_without_a_train_metric(self):
+        text = vp._dc_milestone_dates(datetime(2026, 3, 1))
+        assert text == "DC online ~Mar 01, 2026"
+        assert "Training done" not in text and "Model out" not in text
+
+    def test_run_length_follows_the_metric(self):
+        base = datetime(2026, 3, 1)
+        two = vp._dc_milestone_dates(base, 0, vp._DAYS_2MO)
+        six = vp._dc_milestone_dates(base, 0, vp._DAYS_6MO)
+        assert "Training done (2mo run)" in two and "Training done (6mo run)" in six
+        assert f"~{base + timedelta(days=vp._DAYS_2MO):%b %d, %Y}" in two
+        assert f"~{base + timedelta(days=vp._DAYS_6MO):%b %d, %Y}" in six
+        assert (f"Model out ~{base + timedelta(days=vp._DAYS_6MO) + vp._CC_RUN_COMPLETION_LAG:%b %d, %Y}"
+                in six)
+
+    def test_shift_is_undone_before_expanding(self):
+        base = datetime(2026, 3, 1)
+        shifted = base + timedelta(days=vp._DAYS_6MO)
+        assert vp._dc_milestone_dates(shifted, vp._DAYS_6MO, vp._DAYS_6MO) == \
+            vp._dc_milestone_dates(base, 0, vp._DAYS_6MO)
+
+    def test_metric_table_only_train_metrics_carry_run_days(self):
+        for label, cfg in vp._DC_METRICS.items():
+            assert ("run_days" in cfg) == (cfg["key"] in ("train_flop", "train_flop_6mo")), label
