@@ -3841,3 +3841,106 @@ class TestDcCtyPlanSlip:
         q = vp._dc_plan_quality(vp.dc_all, [dc['name'] for dc in vp.dc_all],
                                 datetime.now())
         assert q is not None and 0.1 < q < 0.9
+
+
+class TestPacing:
+    """The Pacing tab: threshold menu, crossing math, and the entity roster."""
+
+    def test_threshold_menu_matches_spec(self):
+        assert [float(t) for t in vp._PC_THRESHOLDS] == \
+            [1e27, 3e27, 5e27, 1e28, 2e28, 5e28, 1e29]
+
+    def test_tab_registered_with_slug(self):
+        assert "Pacing" in vp._TAB_OPTIONS
+        assert vp._SLUG_FOR_TAB["Pacing"] == "pacing"
+        assert vp._TAB_OPTIONS[vp._TAB_SLUG["pacing"]] == "Pacing"
+
+    def test_defaults_cover_reset_keys_and_url_tracking(self):
+        assert set(vp._PC_DEFAULTS) == set(vp._PC_RESET_KEYS)
+        assert vp._PC_DEFAULTS["pc_threshold"] in vp._PC_THRESHOLDS
+        assert vp._PC_DEFAULTS["pc_run"] in vp._PC_RUN_OPTIONS
+        keys, _ = vp._all_tracked()
+        assert "pc_threshold" in keys and "pc_run" in keys
+
+    def test_plan_crossing_is_first_step_at_or_above(self):
+        steps = [(datetime(2025, 1, 1), 5e26), (datetime(2026, 1, 1), 2e27),
+                 (datetime(2027, 1, 1), 8e27)]
+        assert vp._pc_plan_crossing(steps, 1e27) == datetime(2026, 1, 1)
+        assert vp._pc_plan_crossing(steps, 2e27) == datetime(2026, 1, 1)
+        assert vp._pc_plan_crossing(steps, 1e29) is None
+
+    def test_crossing_idx_sentinel_and_nan(self):
+        traj = np.array([[np.nan, 1.0, 5.0, 5.0],     # crosses at 2
+                         [1.0, 1.0, 1.0, 1.0],        # never → sentinel 4
+                         [6.0, 6.0, 6.0, 6.0]])       # crosses at 0
+        assert list(vp._pc_crossing_idx(traj, 5.0)) == [2.0, 4.0, 0.0]
+
+    def test_crossing_idx_monotone_in_threshold(self):
+        """Per sample the crossing index never moves earlier as the bar
+        rises — which is what makes every percentile of it monotone too."""
+        traj = np.fmax.accumulate(np.random.rand(200, 30), axis=1)
+        prev = np.zeros(200)
+        for t in (0.2, 0.5, 0.8, 1.1):
+            idx = vp._pc_crossing_idx(traj, t)
+            assert (idx >= prev).all()
+            prev = idx
+
+    def test_idx_date_maps_percentiles_and_nones_past_grid(self):
+        grid = [datetime(2026, m, 1) for m in range(1, 5)]
+        idx = np.array([0.0, 1.0, 4.0, 4.0])
+        assert vp._pc_idx_date(idx, grid, 25) == datetime(2026, 2, 1)
+        assert vp._pc_idx_date(idx, grid, 90) is None
+
+    # ── Live-data roster and projection ──
+
+    def _rows(self, today=datetime(2026, 8, 1)):
+        series_all = vp._dc_series_for_metric(vp.dc_all, 'train_flop_6mo',
+                                              cap_date=None)
+        hidden = vp._dc_hidden_companies(vp.dc_all, now=today)
+        shown = {n: s for n, s in series_all.items()
+                 if s['company'] not in hidden}
+        cluster_of = vp._dc_network_site_clusters('fabric')
+        country_of = {dc['name']: vp._dc_site_country(dc) for dc in vp.dc_all}
+        return vp._pc_entity_rows(
+            shown, series_all, country_of, cluster_of,
+            unattributed=vp._dc_unattributed_companies(vp.dc_all))
+
+    def test_entity_roster_covers_companies_then_countries(self):
+        rows = self._rows()
+        labels = [l for l, *_ in rows]
+        for want in (vp._DC_CTY_US, vp._DC_CTY_CN_ACCESS,
+                     vp._DC_CTY_CN_DOMESTIC):
+            assert want in labels, want
+        kinds = [k for _, k, _, _ in rows]
+        first_country = kinds.index('country')
+        assert 'company' not in kinds[first_country:], \
+            "companies must come before the country aggregates"
+        unattr = vp._dc_unattributed_companies(vp.dc_all)
+        for l, k, _, _ in rows:
+            if l.endswith('†'):
+                assert k == 'company' and l[:-2].rstrip() in unattr, l
+
+    def test_projection_grid_runs_to_the_horizon(self):
+        rows = self._rows()
+        today = datetime(2026, 8, 1)
+        grid, traj = vp._pc_projection(rows, vp.dc_all, today, since=2024)
+        assert grid[0] == datetime(2026, 8, 1)
+        assert grid[-1] == vp._PC_HORIZON
+        us = traj[vp._DC_CTY_US]
+        assert us.shape == (vp.N_SAMPLES, len(grid))
+        # The US has recorded capacity today, so no sample starts NaN, and
+        # a bar below today's capacity is crossed immediately in every sample.
+        assert not np.isnan(us[:, 0]).any()
+        idx = vp._pc_crossing_idx(us, 1e27)
+        assert (idx == 0).all()
+
+    def test_projection_crossing_orders_by_threshold_on_live_data(self):
+        rows = self._rows()
+        grid, traj = vp._pc_projection(rows, vp.dc_all, datetime(2026, 8, 1),
+                                       since=2024)
+        for label in (vp._DC_CTY_US, vp._DC_CTY_CN_ACCESS):
+            prev = np.zeros(vp.N_SAMPLES)
+            for t in [float(x) for x in vp._PC_THRESHOLDS]:
+                idx = vp._pc_crossing_idx(traj[label], t)
+                assert (idx >= prev).all(), (label, t)
+                prev = idx

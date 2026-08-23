@@ -1894,8 +1894,8 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "UK Cyber", "Employment", "Revenue", "Data Centers", "Compute vs Capabilities"]
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "UK Cyber": "ukcyber", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute vs Capabilities": "computecap"}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "UK Cyber", "Employment", "Revenue", "Data Centers", "Compute vs Capabilities", "Pacing"]
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "UK Cyber": "ukcyber", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute vs Capabilities": "computecap", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 
 # Read ?tab= from URL for deep-linking
@@ -10393,6 +10393,7 @@ def _all_tracked():
         (_ECG_TRACKED_KEYS, _ECG_DEFAULTS),
         (_DC_RESET_KEYS, _DC_DEFAULTS),
         (_CC_RESET_KEYS, _CC_DEFAULTS),
+        (_PC_RESET_KEYS, _PC_DEFAULTS),
     ]:
         keys.extend(ks)
         defaults.update(ds)
@@ -10484,6 +10485,308 @@ def _sync_session_to_url():
             qp[k] = str(val)
 
 
+
+# ══════════════════════════════════════════════════════════════════════════
+# Pacing — when does each entity first command a threshold-scale run?
+# ══════════════════════════════════════════════════════════════════════════
+
+# The bar a pacing agreement (or an observer) might care about, in total 8-bit
+# ops of one training job. For scale: GPT-5 ≈ 2e25, Mythos ≈ 1e27.
+_PC_THRESHOLDS = ("1e27", "3e27", "5e27", "1e28", "2e28", "5e28", "1e29")
+_PC_RUN_OPTIONS = {"6-month run": "train_flop_6mo", "2-month run": "train_flop"}
+_PC_HORIZON = datetime(2033, 12, 1)   # crossing-search grid end
+_PC_RESET_KEYS = ["pc_threshold", "pc_run"]
+_PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run"}
+
+
+def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
+                    unattributed=frozenset()):
+    """The entities racing to a threshold: [(label, kind, steps, site_names)].
+
+    Companies first — each one's largest networkable group, pooled exactly as
+    the Data Centers tab does it, hosts in `unattributed` marked with † — then
+    the three country aggregates (largest group any one company there has).
+    Country rows use the unfiltered site list: capacity in a country counts
+    whoever Epoch lists in the building. `steps` is [(date, value)].
+    """
+    rows = []
+    sites_of = {}
+    for name, v in series_shown.items():
+        sites_of.setdefault(v['company'], []).append(name)
+    per_co = _dc_company_networked_series(series_shown, cluster_of)
+    for co in sorted(per_co):
+        s2 = [(d, v) for d, v, *_ in per_co[co]]
+        if s2 and any(v > 0 for _, v in s2):
+            label = co + " †" if co in unattributed else co
+            rows.append((label, 'company', s2, tuple(sites_of.get(co, ()))))
+    groups = _dc_country_groups(series_all, country_of, 'abroad')
+    dom = [n for n in series_all if country_of.get(n) == _DC_CTY_CN]
+    for label, names in [(_DC_CTY_US, groups.get(_DC_CTY_US, [])),
+                         (_DC_CTY_CN_ACCESS, groups.get(_DC_CTY_CN_ACCESS, [])),
+                         (_DC_CTY_CN_DOMESTIC, dom)]:
+        steps = _dc_country_steps(series_all, names, 'company', cluster_of)
+        s2 = [(d, v) for d, v, _ in steps]
+        if s2 and any(v > 0 for _, v in s2):
+            rows.append((label, 'country', s2, tuple(names)))
+    return rows
+
+
+def _pc_plan_crossing(steps, threshold):
+    """The first recorded or catalogued step at or above `threshold`, or None."""
+    return next((d for d, v in steps if v is not None and v >= threshold), None)
+
+
+def _pc_crossing_idx(traj, threshold):
+    """Per-sample index of the first grid date whose value reaches `threshold`.
+
+    `traj.shape[1]` (one past the grid) is the never-crossed sentinel; NaN
+    cells never hit. Per sample the index is non-decreasing in the threshold,
+    so any percentile of it is too.
+    """
+    hit = np.where(np.isnan(traj), -np.inf, traj) >= threshold
+    any_hit = hit.any(axis=1)
+    first = np.argmax(hit, axis=1)
+    return np.where(any_hit, first, traj.shape[1]).astype(float)
+
+
+def _pc_idx_date(idx, grid, q):
+    """The q-th percentile crossing date, or None when it falls past the grid."""
+    j = int(round(float(np.percentile(idx, q))))
+    return grid[j] if j < len(grid) else None
+
+
+def _pc_projection(rows, dcs, today, since=None):
+    """(grid, label → sampled paths) for each entity, projected exactly as the
+    by-country panel does it: recorded steps, then catalogued plans under
+    quality-dependent slip, then — past the ~18-month plan horizon — the US
+    trend, widened by any disagreement with the entity's own fitted pace so
+    the two readings show up as range rather than vanishing. The US itself
+    extrapolates on its own fit.
+    """
+    plan_end = today + timedelta(days=_DC_CTY_PLAN_HORIZON_DAYS)
+    grid = _dc_cty_month_grid(datetime(today.year, today.month, 1), _PC_HORIZON)
+    fits = {label: _dc_cty_fit(steps, since=since, t_end=plan_end)
+            for label, _, steps, _ in rows}
+    us_fit = fits.get(_DC_CTY_US)
+    out = {}
+    for label, kind, steps, names in rows:
+        own = fits[label]
+        anchor = own
+        if anchor is None and us_fit is not None and steps:
+            # Too little history for a fit of its own: re-anchor the US pace
+            # at the entity's own last step.
+            t0 = min(steps[-1][0], plan_end)
+            v0 = _dc_val_at(steps, t0)
+            anchor = dict(us_fit, t0=t0, v0=v0) if v0 and v0 > 0 else None
+        if label == _DC_CTY_US or us_fit is None:
+            pace = own
+        elif own is None:
+            pace = us_fit
+        else:
+            pace = dict(us_fit, sigma_g=max(us_fit['sigma_g'],
+                                            abs(own['g'] - us_fit['g']) / 1.282))
+        quality = _dc_plan_quality(dcs, names, today)
+        out[label] = _dc_cty_trajectories(
+            steps, anchor, grid, N_SAMPLES, pace=pace if anchor else None,
+            today=today, slip_sigma=_dc_cty_slip_sigma(quality))
+    return grid, out
+
+
+def _pc_when(rec):
+    """One phrase for when an entity crosses, whatever its state."""
+    if rec['crossed']:
+        return f"already there (since {rec['plan']:%b %Y})"
+    if rec['med'] is None:
+        return f"not by {_PC_HORIZON.year} in most samples"
+    return f"~{rec['med']:%b %Y}"
+
+
+def render_pacing():
+    _today = datetime.now()
+
+    # ── Sidebar ──
+    with st.sidebar:
+        st.header("Pacing")
+        # A bookmarked URL can carry a stale label; drop it rather than raise.
+        if st.session_state.get("pc_threshold") not in _PC_THRESHOLDS:
+            st.session_state.pop("pc_threshold", None)
+        threshold_label = st.selectbox(
+            "Threshold (total training-run ops)", list(_PC_THRESHOLDS),
+            index=_PC_THRESHOLDS.index(_PC_DEFAULTS["pc_threshold"]),
+            key="pc_threshold",
+            help="Total 8-bit ops of one training job. GPT-5 ≈ 2e25; "
+                 "Mythos ≈ 1e27.")
+        if st.session_state.get("pc_run") not in _PC_RUN_OPTIONS:
+            st.session_state.pop("pc_run", None)
+        run_label = st.radio(
+            "Run length", list(_PC_RUN_OPTIONS),
+            index=list(_PC_RUN_OPTIONS).index(_PC_DEFAULTS["pc_run"]),
+            key="pc_run",
+            help="How long the job occupies the cluster; a longer run clears "
+                 "the bar on less hardware.")
+        if st.button("Reset", key="pc_reset"):
+            for k in _PC_RESET_KEYS:
+                st.session_state.pop(k, None)
+            st.session_state.update(_PC_DEFAULTS)
+            st.rerun()
+
+    threshold = float(threshold_label)
+    key = _PC_RUN_OPTIONS[run_label]
+
+    st.header("Pacing")
+    st.caption(
+        f"When each entity can first mount **one ≥{threshold_label}-op training "
+        f"job** ({run_label.lower()}, {_DC_UTILIZATION:.0%} utilization, Epoch "
+        "8-bit OP/s ratings), from the Frontier Data Centers catalogue.")
+
+    # ── Entities and projections ──
+    series_all = _dc_series_for_metric(dc_all, key, cap_date=None)
+    hidden = _dc_hidden_companies(dc_all, now=_today)
+    series_shown = {n: v for n, v in series_all.items()
+                    if v['company'] not in hidden}
+    cluster_of = _dc_network_site_clusters('fabric')
+    country_of = {dc['name']: _dc_site_country(dc) for dc in dc_all}
+    rows = _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
+                           unattributed=_dc_unattributed_companies(dc_all))
+    grid, traj = _pc_projection(rows, dc_all, _today,
+                                since=_DC_DEFAULTS["dc_cty_since"])
+
+    recs = []
+    for label, kind, steps, names in rows:
+        plan_d = _pc_plan_crossing(steps, threshold)
+        idx = _pc_crossing_idx(traj[label], threshold)
+        recs.append({
+            'label': label, 'kind': kind, 'plan': plan_d,
+            'crossed': plan_d is not None and plan_d <= _today,
+            'med': _pc_idx_date(idx, grid, 50),
+            'lo': _pc_idx_date(idx, grid, 10),
+            'hi': _pc_idx_date(idx, grid, 90),
+            'share': float((idx < len(grid)).mean()),
+        })
+    recs.sort(key=lambda r: (
+        (0, r['plan']) if r['crossed'] else
+        (1, r['med'] or _PC_HORIZON + timedelta(days=1)), -r['share']))
+
+    # ── Headline ──
+    us = next((r for r in recs if r['label'] == _DC_CTY_US), None)
+    cn = next((r for r in recs if r['label'] == _DC_CTY_CN_ACCESS), None)
+    first = next((r for r in recs if r['kind'] == 'company'), None)
+    if first is not None:
+        head = (f"**First over {threshold_label}: {first['label']}, "
+                f"{_pc_when(first)}.**")
+        if us is not None and cn is not None:
+            head += (f" United States {_pc_when(us)}; "
+                     f"China-accessible {_pc_when(cn)}")
+            d_us = us['plan'] if us['crossed'] else us['med']
+            d_cn = cn['plan'] if cn['crossed'] else cn['med']
+            if d_us is not None and d_cn is not None:
+                gap = (d_cn - d_us).days / 30.44
+                head += (f" — {abs(gap):.0f} months "
+                         f"{'later' if gap >= 0 else 'earlier'}.")
+            else:
+                head += "."
+        st.markdown(head)
+
+    # ── Timeline chart ──
+    fig = go.Figure()
+    order = [r['label'] for r in recs]
+    for i, r in enumerate(recs):
+        color = _DC_CTY_COLORS.get(r['label'], _dc_color(r['label'], i))
+        y = [r['label']]
+        if r['crossed']:
+            fig.add_trace(go.Scatter(
+                x=[r['plan']], y=y, mode='markers',
+                marker=dict(color=color, size=10, symbol='circle'),
+                showlegend=False, hoverinfo='text',
+                hovertext=[f"<b>{r['label']}</b><br>crossed "
+                           f"{r['plan']:%b %Y} (in the catalogue)"]))
+            continue
+        lo, hi = r['lo'], r['hi']
+        if lo is not None:
+            fig.add_trace(go.Scatter(
+                x=[lo, hi or grid[-1]], y=y * 2, mode='lines',
+                line=dict(color=color, width=5), opacity=0.35,
+                showlegend=False, hoverinfo='skip'))
+        if r['med'] is not None:
+            rng = (f"{lo:%b %Y} – " + (f"{hi:%b %Y}" if hi else
+                                       f">{_PC_HORIZON.year}")) if lo else "—"
+            fig.add_trace(go.Scatter(
+                x=[r['med']], y=y, mode='markers',
+                marker=dict(color=color, size=11, symbol='diamond'),
+                showlegend=False, hoverinfo='text',
+                hovertext=[f"<b>{r['label']}</b><br>median {r['med']:%b %Y} · "
+                           f"80%: {rng}<br>P(cross by {_PC_HORIZON.year}) = "
+                           f"{r['share']:.0%}"]))
+        else:
+            fig.add_trace(go.Scatter(
+                x=[grid[-1]], y=y, mode='markers',
+                marker=dict(color=color, size=10, symbol='triangle-right-open'),
+                showlegend=False, hoverinfo='text',
+                hovertext=[f"<b>{r['label']}</b><br>median beyond "
+                           f"{_PC_HORIZON.year} · P(cross by "
+                           f"{_PC_HORIZON.year}) = {r['share']:.0%}"]))
+        if r['plan'] is not None:
+            fig.add_trace(go.Scatter(
+                x=[r['plan']], y=y, mode='markers',
+                marker=dict(color=color, size=9, symbol='circle-open'),
+                showlegend=False, hoverinfo='text',
+                hovertext=[f"<b>{r['label']}</b><br>catalogued plan first "
+                           f"clears the bar {r['plan']:%b %Y}"]))
+    fig.add_shape(type='line', x0=_today, x1=_today, yref='paper', y0=0, y1=1,
+                  line=dict(color='gray', dash='dot', width=1))
+    fig.add_annotation(x=_today, yref='paper', y=1.04, text="today",
+                       showarrow=False, font=dict(size=11, color='gray'))
+    x_lo = min([_today] + [r['plan'] for r in recs if r['crossed']])
+    xs_hi = ([r['hi'] or grid[-1] for r in recs if not r['crossed']]
+             + [_today + timedelta(days=365)])
+    x_hi = min(max(xs_hi) + timedelta(days=120),
+               grid[-1] + timedelta(days=120))
+    fig.update_yaxes(categoryorder='array',
+                     categoryarray=list(reversed(order)))
+    fig.update_xaxes(range=[x_lo - timedelta(days=90), x_hi])
+    fig.update_layout(height=max(340, 60 + 30 * len(recs)),
+                      margin=dict(l=10, r=10, t=30, b=10),
+                      title=dict(text=f"First ≥{threshold_label}-op run, by "
+                                      "entity", font=dict(size=15)))
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        "Filled dot = already crossed; open dot = the catalogued plan's "
+        "crossing; diamond + band = projected median and 80% range (plan "
+        "slip + trend past ~18 months, the Data Centers tab's model — "
+        "non-US entities borrow the US pace, widened by any disagreement "
+        "with their own). † = no recorded tenant. Country rows: the largest "
+        "group any one company there has, unfiltered by host.")
+
+    # ── Table ──
+    def _fmt(d, alt="—"):
+        return f"{d:%b %Y}" if d is not None else alt
+
+    table = []
+    for r in recs:
+        if r['crossed']:
+            med, rng = f"crossed {_fmt(r['plan'])}", "—"
+        else:
+            med = _fmt(r['med'], f">{_PC_HORIZON.year}")
+            rng = (f"{_fmt(r['lo'])} – "
+                   f"{_fmt(r['hi'], f'>{_PC_HORIZON.year}')}"
+                   if r['lo'] is not None else "—")
+        table.append({
+            "Entity": r['label'],
+            "Plan crosses": _fmt(r['plan'], "not in catalogue"),
+            "Projected (median)": med,
+            "80% range": rng,
+            f"P(by {_PC_HORIZON.year})": f"{r['share']:.0%}",
+        })
+    st.table(table)
+    st.caption(
+        "*Plan crosses* reads the catalogue at face value; the projection "
+        "adds timing slip on plans and a fitted trend beyond them. Dates are "
+        "when the capacity is online; one run finishes "
+        f"{'6' if key == 'train_flop_6mo' else '2'} months later. Source: "
+        "[Epoch AI, Frontier Data Centers](https://epoch.ai/data/data-centers) "
+        "(CC-BY).")
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
 if not os.environ.get("_VP_TESTING"):
@@ -10507,6 +10810,8 @@ if not os.environ.get("_VP_TESTING"):
         render_data_centers()
     elif active_tab == "Compute vs Capabilities":
         render_compute_capabilities()
+    elif active_tab == "Pacing":
+        render_pacing()
 
     _sync_session_to_url()
 

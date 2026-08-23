@@ -34,7 +34,7 @@ No build system, no CI/CD, no package manager beyond requirements.txt (`streamli
 
 ## Architecture
 
-Nine-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `ukcyber`, `employment`, `revenue`, `datacenters`, `computecap`.
+Ten-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `ukcyber`, `employment`, `revenue`, `datacenters`, `computecap`, `pacing`.
 
 ### Tabs and Render Functions
 
@@ -49,6 +49,7 @@ Nine-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPT
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; ends with a US-vs-China by-country projection (`_dc_render_country_panel()`) |
 | Compute vs Capabilities | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; ends with China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) |
+| Pacing | `render_pacing()` | data centers (`dc_all`) | date each entity first commands a threshold-scale training run |
 
 ### Data Sources and How to Update
 
@@ -415,6 +416,38 @@ date distribution rather than the gap metrics above it. Three things are load-be
 
 Fan traces set `mode='lines'` explicitly: the fan spans ~6 quarters, and plotly defaults a
 Scatter under 20 points to `lines+markers`, studding the band outline with stray dots.
+
+### Pacing tab
+
+`render_pacing()` answers "when can each entity first mount one ≥T-op training job",
+for T from `_PC_THRESHOLDS` (a user-specified menu: 1e27…1e29) and a 2mo/6mo run
+length (`_PC_RUN_OPTIONS`, reusing the loader's `train_flop*` columns — 30%
+utilization, Epoch 8-bit OP/s). Deliberately thin: it reuses the Data Centers tab's
+machinery rather than growing its own.
+
+1. **Entities are the DC tab's, at fixed defaults.** Companies via
+   `_dc_company_networked_series` at the `'fabric'` pooling level with
+   `_dc_hidden_companies` applied and † from `_dc_unattributed_companies`; then three
+   country aggregates (US, China-accessible, China domestic) via `_dc_country_steps`
+   mode `'company'` on the **unfiltered** site list. Tenant-first attribution means
+   Colossus 1/2 count under Anthropic, not SpaceXAI — same as the DC tab; a
+   tenant/operator toggle is a candidate next iteration (see `pacing-tab-wip` for a
+   parked version).
+2. **The projection is the by-country model, unchanged.** `_pc_projection()` calls
+   `_dc_cty_fit` (since=`_DC_DEFAULTS["dc_cty_since"]`, plan horizon anchored) and
+   `_dc_cty_trajectories` (plan slip by `_dc_plan_quality`); non-US entities borrow
+   the US pace widened by `|g_own − g_us|/1.282`, short histories re-anchor the US fit
+   at their own last step. Don't fork these — drift between the two tabs' cones reads
+   as a bug.
+3. **Crossing math is per-sample first-hit.** `_pc_crossing_idx` returns the first
+   grid index reaching T with `len(grid)` as the never-crossed sentinel (NaN never
+   hits); per sample it is non-decreasing in T, so every percentile is too —
+   `test_crossing_idx_monotone_in_threshold`. `_pc_idx_date` maps a percentile back
+   to a grid date, `None` past the grid (rendered ">2033"). The grid runs monthly
+   from today to `_PC_HORIZON`. An entity whose catalogued steps cross before today
+   is "already there" via `_pc_plan_crossing`, not the Monte Carlo.
+
+Guarded by `TestPacing` (unit) and `TestPacingTab` (integration).
 
 ### Why the test suite is fast (and how to not un-fast it)
 

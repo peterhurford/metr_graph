@@ -1015,3 +1015,54 @@ class TestDataCentersByCountry:
         at.button(key="dc_reset").click().run()
         _assert_no_error(at, "by country / reset")
         assert at.radio(key="dc_cty_since").value == 2024
+
+
+# ===========================================================================
+# Pacing tab
+# ===========================================================================
+
+class TestPacingTab:
+    """The Pacing tab: renders with its defaults, follows the threshold, and
+    resets."""
+
+    def _app(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        return at
+
+    def test_renders_with_headline_and_table(self):
+        at = self._app()
+        _assert_no_error(at, "Pacing")
+        assert "Pacing" in [str(h.value) for h in at.header]
+        head = [str(m.value) for m in at.markdown
+                if "First over" in str(m.value)]
+        assert len(head) == 1 and "1e28" in head[0]
+        assert at.selectbox(key="pc_threshold").value == "1e28"
+        assert at.radio(key="pc_run").value == "6-month run"
+        table = at.table[-1].value
+        ents = list(table["Entity"])
+        assert "United States" in ents
+        assert "China-accessible" in ents
+        assert "China (domestic only)" in ents
+        assert "Plan crosses" in table.columns
+
+    def test_threshold_drives_the_headline(self):
+        at = self._app()
+        at.selectbox(key="pc_threshold").set_value("1e29").run()
+        _assert_no_error(at, "Pacing @ 1e29")
+        head = [str(m.value) for m in at.markdown
+                if "First over" in str(m.value)]
+        assert len(head) == 1 and "1e29" in head[0]
+
+    def test_run_length_toggle_renders(self):
+        at = self._app()
+        at.radio(key="pc_run").set_value("2-month run").run()
+        _assert_no_error(at, "Pacing / 2-month run")
+
+    def test_reset_restores_defaults(self):
+        at = self._app()
+        at.selectbox(key="pc_threshold").set_value("1e27").run()
+        [b for b in at.button if b.key == "pc_reset"][0].click().run()
+        _assert_no_error(at, "Pacing / reset")
+        assert at.selectbox(key="pc_threshold").value == "1e28"
