@@ -3945,12 +3945,40 @@ class TestPacing:
         assert by['OpenAI Stargate Abilene']['operator'] == 'Oracle'
         assert set(vp._PC_PARTY_OPTIONS.values()) == {'tenant', 'operator'}
 
-    def test_with_party_relabels_only_the_company(self):
-        assert vp._dc_with_party(vp.dc_all, 'tenant') is vp.dc_all
-        view = vp._dc_with_party(vp.dc_all, 'operator')
-        for dc, v in zip(vp.dc_all, view):
+    def test_with_party_sets_the_membership_list(self):
+        """Tenant view: `company` stays the primary label but `companies` is
+        every listed user, so a shared site counts under each tenant.
+        Operator view: both collapse to the owner."""
+        tview = {v['name']: v for v in vp._dc_with_party(vp.dc_all, 'tenant')}
+        for dc in vp.dc_all:
+            v = tview[dc['name']]
+            assert v['company'] == dc['company']
+            assert v['companies'] == (dc['users'] or [dc['tenant']])
+            assert v['points'] is dc['points']
+        assert set(tview['Colossus 2']['companies']) == \
+            {'Anthropic', 'Cursor', 'SpaceXAI'}
+        oview = {v['name']: v for v in vp._dc_with_party(vp.dc_all, 'operator')}
+        for dc in vp.dc_all:
+            v = oview[dc['name']]
             assert v['company'] == dc['operator']
-            assert v['name'] == dc['name'] and v['points'] is dc['points']
+            assert v['companies'] == [dc['operator']]
+
+    def test_shared_site_counts_under_every_tenant(self):
+        """The point of the membership list: SpaceXAI and Cursor train in
+        Colossus 2, so their per-company series must carry it — while the raw
+        (viewless) site list keeps single membership for the CC tab."""
+        view = vp._dc_with_party(vp.dc_all, 'tenant')
+        series = vp._dc_series_for_metric(view, 'train_flop_6mo',
+                                          cap_date=None)
+        per_co = vp._dc_company_networked_series(
+            series, vp._dc_network_site_clusters('fabric'))
+        peak = max(x for _, x in series['Colossus 2']['pts'])
+        for co in ('Anthropic', 'SpaceXAI', 'Cursor'):
+            assert co in per_co, co
+            assert per_co[co][-1][1] >= peak * (1 - 1e-9), co
+        raw = vp._dc_series_for_metric(vp.dc_all, 'train_flop_6mo',
+                                       cap_date=None)
+        assert raw['Colossus 2']['companies'] == ['Anthropic']
 
     def test_pool_menu_is_the_dc_tabs_and_nests(self):
         """The pacing pooling selector reuses _DC_NETWORK_OPTIONS, and a wider

@@ -138,6 +138,37 @@ low by 2027Q4, contradicting the chart directly above it. The rest of the app al
 them: `_cc_lab_for_site()` maps owner `Google*` to `Google`, and the ECI tabs substring-match
 `"Google"` for the same reason.
 
+### Tenant vs operator, and shared tenancy
+
+Both the Data Centers and Pacing tabs carry an *Attribute each site to* control
+(`dc_party` / `pc_party`, options `_DC_PARTY_OPTIONS`). `load_data_centers()` records
+three attributions per site: `tenant` (= `company`: first-listed user → owner → name
+token), `operator` (owner → token), and `users` — **every** listed user, aliased and
+deduped. `_dc_with_party(dcs, party)` builds the view: 'operator' re-points `company`
+at the owner; 'tenant' keeps `company` but sets a `companies` membership list to the
+full users list (falling back to `[tenant]`).
+
+Load-bearing:
+
+1. **Shared sites count under every listed tenant.** Epoch lists Anthropic, Cursor
+   *and* SpaceXAI as Colossus 2 users; crediting only the first made SpaceXAI's roster
+   exclude its own flagship building. `_dc_series_for_metric` carries `companies`, and
+   the two per-company aggregators (`_dc_company_series`,
+   `_dc_company_networked_series`) group each site under **each** member. This never
+   double-counts within a line (per-company lines are capability maxima), but lines
+   are **not additive across companies** — the captions say so. Nothing on these tabs
+   sums across companies; don't add such an aggregation without de-duplicating shared
+   sites first.
+2. **The raw `dc_all` keeps single membership.** `dc.get('companies', [company])`
+   fallback means any code path not going through `_dc_with_party` — notably the
+   Compute vs Capabilities tab — behaves exactly as before. `test_shared_site_counts_
+   under_every_tenant` pins both halves.
+3. **Hidden/unattributed sets are recomputed on the view**, so under 'operator' the
+   size gate re-admits owners like Oracle (Stargate Abilene) that the tenant view
+   never surfaces.
+
+Guarded by `TestPacing` party tests and `TestDataCentersParty`.
+
 `TestDcCompanyAliases` checks against the live CSV that every Google-owned site resolves to
 one company, that both spellings are still present upstream (so the map isn't dead weight),
 and that no label is a qualified form of another — the guard that would catch the next
@@ -431,11 +462,9 @@ machinery rather than growing its own.
    `_dc_hidden_companies` applied and † from `_dc_unattributed_companies`; then three
    country aggregates (US, China-accessible, China domestic) via `_dc_country_steps`
    (mode `'site'` when nothing pools, else `'company'`) on the **unfiltered** site
-   list. `pc_party` picks the attribution: the loader now carries both `tenant`
-   (= its `company` label: first-listed user → owner → name token) and `operator`
-   (owner → token), and `_dc_with_party()` re-points `company` at the chosen one —
-   under 'operator', Colossus flips from Anthropic to SpaceXAI and Stargate Abilene
-   to Oracle, and the hidden/unattributed sets are recomputed on that view.
+   list. `pc_party` picks the attribution via `_dc_with_party()` — see *Tenant vs
+   operator, and shared tenancy* above: tenant view credits shared sites to every
+   listed user, operator view to the owner alone.
 2. **The projection is the by-country model, unchanged.** `_pc_projection()` calls
    `_dc_cty_fit` (since=`_DC_DEFAULTS["dc_cty_since"]`, plan horizon anchored) and
    `_dc_cty_trajectories` (plan slip by `_dc_plan_quality`); non-US entities borrow

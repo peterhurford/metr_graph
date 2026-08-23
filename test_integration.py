@@ -1018,6 +1018,35 @@ class TestDataCentersByCountry:
 
 
 # ===========================================================================
+# Data Centers: tenant vs operator attribution
+# ===========================================================================
+
+class TestDataCentersParty:
+    """The DC tab's attribution radio: defaults to tenant (shared sites count
+    under every listed user), flips to operator, and resets."""
+
+    def _app(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Data Centers")
+        return at
+
+    def test_defaults_to_tenant_and_renders(self):
+        at = self._app()
+        _assert_no_error(at, "Data Centers / tenant")
+        assert at.radio(key="dc_party").value == "Tenant (who trains there)"
+
+    def test_operator_view_renders_and_resets(self):
+        at = self._app()
+        at.radio(key="dc_party").set_value(
+            "Operator (who owns the building)").run()
+        _assert_no_error(at, "Data Centers / operator")
+        [b for b in at.button if b.key == "dc_reset"][0].click().run()
+        _assert_no_error(at, "Data Centers / reset")
+        assert at.radio(key="dc_party").value == "Tenant (who trains there)"
+
+
+# ===========================================================================
 # Pacing tab
 # ===========================================================================
 

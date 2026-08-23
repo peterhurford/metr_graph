@@ -950,6 +950,7 @@ def load_data_centers(_mtime=None):
     # We attribute each site to the AI lab operating it (its primary listed user),
     # falling back to the facility owner, then to the site-name token.
     user_by_dc = {}
+    users_by_dc = {}
     owner_by_dc = {}
     country_by_dc = {}
     dc_meta_path = os.path.join(base, 'data_centers.csv')
@@ -960,9 +961,14 @@ def load_data_centers(_mtime=None):
                 if not name:
                     continue
                 owner_by_dc[name] = _dc_clean_owner(r.get('Owner', ''))
-                # Users may be a comma-separated list; take the primary (first).
-                primary_user = (r.get('Users', '') or '').split(',')[0]
-                user_by_dc[name] = _dc_clean_owner(primary_user)
+                # Users may be a comma-separated list; keep them all (for
+                # shared-tenancy attribution) and the primary (first) for the
+                # site's single label.
+                users = [u for u in (_dc_clean_owner(x) for x in
+                                     (r.get('Users', '') or '').split(','))
+                         if u]
+                users_by_dc[name] = users
+                user_by_dc[name] = users[0] if users else ''
                 country_by_dc[name] = (r.get('Country') or '').strip()
 
     def company_for(dc_name):
@@ -1039,10 +1045,17 @@ def load_data_centers(_mtime=None):
         # from who trains in it. Both fall through to the site-name token like
         # company_for(); 'tenant' is exactly company_for()'s label.
         operator = owner_by_dc.get(name, '') or token
+        # Every listed user, aliased and deduped in Epoch's order — the
+        # shared-tenancy attribution ('users' empty when Epoch names none).
+        users = []
+        for u in users_by_dc.get(name, ()):
+            u = _DC_COMPANY_ALIASES.get(u, u)
+            if u not in users:
+                users.append(u)
         dcs.append({'name': name, 'company': company_for(name),
                     'attributed': attributed_for(name), 'points': pts,
                     'operator': _DC_COMPANY_ALIASES.get(operator, operator),
-                    'tenant': company_for(name),
+                    'tenant': company_for(name), 'users': users,
                     'country': country_by_dc.get(name, '')})
     dcs.sort(key=lambda dc: dc['name'])
     return dcs
@@ -1457,14 +1470,26 @@ def _dc_fmt_value(v, kind):
     return f"{v:g}"
 
 
+_DC_PARTY_OPTIONS = {"Tenant (who trains there)": 'tenant',
+                     "Operator (who owns the building)": 'operator'}
+
+
 def _dc_with_party(dcs, party):
-    """The site list with `company` re-pointed at `party` ('tenant' or
-    'operator'). 'tenant' reproduces load_data_centers() exactly; 'operator'
-    credits a leased cluster to its owner instead of its first-listed user —
-    Colossus flips from Anthropic to SpaceXAI, Stargate Abilene to Oracle."""
-    if party == 'tenant':
-        return dcs
-    return [dict(dc, company=dc[party]) for dc in dcs]
+    """The site list under one attribution, with a `companies` membership list
+    the per-company aggregators group on.
+
+    'tenant' keeps the single `company` label (first-listed user → owner →
+    name token) but sets `companies` to **every** listed user, so a shared
+    site counts under each of its tenants — Colossus 2 under Anthropic,
+    Cursor and SpaceXAI alike, since all three train there. Per-company lines
+    are capability views (max per company), so this never double-counts
+    within a line, but lines aren't additive across companies. 'operator'
+    credits each building to its owner alone — Colossus to SpaceXAI,
+    Stargate Abilene to Oracle."""
+    if party == 'operator':
+        return [dict(dc, company=dc['operator'], companies=[dc['operator']])
+                for dc in dcs]
+    return [dict(dc, companies=dc['users'] or [dc['tenant']]) for dc in dcs]
 
 
 def _dc_series_for_metric(dcs, key, cap_date=None):
@@ -1483,7 +1508,9 @@ def _dc_series_for_metric(dcs, key, cap_date=None):
                 continue
             pts.append((p['date'], v))
         if pts:
-            out[dc['name']] = {'company': dc['company'], 'pts': pts}
+            out[dc['name']] = {'company': dc['company'], 'pts': pts,
+                               'companies': dc.get('companies',
+                                                   [dc['company']])}
     return out
 
 
@@ -1524,7 +1551,8 @@ def _dc_company_series(series):
     """
     companies = {}
     for name, v in series.items():
-        companies.setdefault(v['company'], []).append((name, v['pts']))
+        for co in v.get('companies', [v['company']]):
+            companies.setdefault(co, []).append((name, v['pts']))
     out = {}
     for co, members in companies.items():
         all_dates = sorted({d for _, pts in members for d, _ in pts})
@@ -1591,7 +1619,8 @@ def _dc_company_networked_series(series, cluster_of):
     companies = {}
     for name, v in series.items():
         key = None if cluster_of is None else cluster_of.get(name, name)
-        companies.setdefault(v['company'], []).append((name, key, v['pts']))
+        for co in v.get('companies', [v['company']]):
+            companies.setdefault(co, []).append((name, key, v['pts']))
     out = {}
     for co, members in companies.items():
         all_dates = sorted({d for _, _, pts in members for d, _ in pts})
@@ -7132,10 +7161,11 @@ def render_eci_gap():
 # ── Data Centers ───────────────────────────────────────────────────────────
 
 _DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing", "dc_pool_n",
-                  "dc_start_year", "dc_end_year", "dc_cty_cones", "dc_cty_pace",
+                  "dc_party", "dc_start_year", "dc_end_year", "dc_cty_cones", "dc_cty_pace",
                   "dc_cty_since"]
 _DC_DEFAULTS = {
     "dc_metric": "Compute (H100-equiv)",
+    "dc_party": "Tenant (who trains there)",
     "dc_log": True,
     "dc_future": True,
     "dc_timing": "Data center construction",
@@ -7769,6 +7799,13 @@ def render_data_centers():
             st.session_state.pop("dc_pool_n", None)
         net_label = st.selectbox("Data centers networked together",
                                  list(_DC_NETWORK_OPTIONS), key="dc_pool_n")
+        if st.session_state.get("dc_party") not in _DC_PARTY_OPTIONS:
+            st.session_state.pop("dc_party", None)
+        party_label = st.radio(
+            "Attribute each site to", list(_DC_PARTY_OPTIONS), key="dc_party",
+            help="Tenant credits a site to every user Epoch lists (Colossus 2 "
+                 "counts for Anthropic, Cursor and SpaceXAI alike), falling "
+                 "back to the owner; operator credits the owner alone.")
         with st.expander("Country projection"):
             cty_cones = st.checkbox("Show projection cones", key="dc_cty_cones",
                                     value=_DC_DEFAULTS["dc_cty_cones"])
@@ -7800,13 +7837,14 @@ def render_data_centers():
 
     key = cfg["key"]
     kind = cfg["kind"]
+    dc_view = _dc_with_party(dc_all, _DC_PARTY_OPTIONS[party_label])
     # Cap projected buildout at the end of the chosen projection year.
     cap_date = datetime(dc_end_year, 12, 31) if include_future else _today
-    series = _dc_series_for_metric(dc_all, key, cap_date=cap_date)
+    series = _dc_series_for_metric(dc_view, key, cap_date=cap_date)
     # Drop the colocation / neutral-host providers too small to matter; the big
     # ones are charted and marked instead (see _dc_hidden_companies).
-    hidden = _dc_hidden_companies(dc_all, now=_today)
-    unattributed = _dc_unattributed_companies(dc_all)
+    hidden = _dc_hidden_companies(dc_view, now=_today)
+    unattributed = _dc_unattributed_companies(dc_view)
     series = {n: v for n, v in series.items() if v['company'] not in hidden}
 
     # Shift every data point forward from the site's availability date to the
@@ -7846,7 +7884,7 @@ def render_data_centers():
 
     # Who is on the charts, and how sure we are whose hardware it is. Built from
     # the companies actually plotted, so it stays true as the data moves.
-    _peak_h100 = _dc_company_peak_h100(dc_all)
+    _peak_h100 = _dc_company_peak_h100(dc_view)
     _shown_hosts = sorted(
         {v['company'] for v in series.values()} & _DC_EXCLUDE_COMPANIES,
         key=lambda c: -_peak_h100.get(c, 0.0))
@@ -8184,21 +8222,24 @@ def render_data_centers():
         scope += "Everything else stands alone. "
     st.caption(
         scope +
-        "Sites pool under Epoch's first-listed user, else the landlord (†), "
-        "whose line treats unnamed tenants' halls as one tenant's.")
+        ("A shared site counts under each listed user, so lines aren't "
+         "additive across companies; unnamed tenants' halls fall to the "
+         "landlord (†)." if _DC_PARTY_OPTIONS[party_label] == 'tenant' else
+         "Every site is credited to the building's owner alone."))
 
     # By country: US vs China, extrapolated past the end of the recorded data.
     # Rebuilt without the host filter — country is about buildings, not tenants.
     _cty_series = _dc_series_for_metric(
-        dc_all, key, cap_date=cap_date - timedelta(days=shift_days))
+        dc_view, key, cap_date=cap_date - timedelta(days=shift_days))
     if shift_days:
         _cty_series = {n: {'company': v['company'],
+                           'companies': v.get('companies', [v['company']]),
                            'pts': [(d + timedelta(days=shift_days), val)
                                    for d, val in v['pts']]}
                        for n, v in _cty_series.items()}
     _dc_render_country_panel(
-        _cty_series, {dc['name']: _dc_site_country(dc) for dc in dc_all},
-        cluster_of, dcs=dc_all, today=_today, cap_date=cap_date, x_start=x_start,
+        _cty_series, {dc['name']: _dc_site_country(dc) for dc in dc_view},
+        cluster_of, dcs=dc_view, today=_today, cap_date=cap_date, x_start=x_start,
         metric_label=metric_label, kind=kind, log_scale=log_scale,
         shift_days=shift_days, include_future=include_future,
         pace_mode=_DC_CTY_PACE_OPTIONS[pace_label], since=cty_since,
@@ -10512,8 +10553,7 @@ def _sync_session_to_url():
 _PC_THRESHOLDS = ("1e27", "3e27", "5e27", "1e28", "2e28", "5e28", "1e29")
 _PC_RUN_OPTIONS = {"6-month run": "train_flop_6mo", "2-month run": "train_flop"}
 _PC_HORIZON = datetime(2033, 12, 1)   # crossing-search grid end
-_PC_PARTY_OPTIONS = {"Tenant (who trains there)": 'tenant',
-                     "Operator (who owns the building)": 'operator'}
+_PC_PARTY_OPTIONS = _DC_PARTY_OPTIONS
 _PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party"]
 _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run",
                 "pc_pool": "Nearby + announced fabric",
@@ -10533,7 +10573,8 @@ def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
     rows = []
     sites_of = {}
     for name, v in series_shown.items():
-        sites_of.setdefault(v['company'], []).append(name)
+        for co in v.get('companies', [v['company']]):
+            sites_of.setdefault(co, []).append(name)
     per_co = _dc_company_networked_series(series_shown, cluster_of)
     for co in sorted(per_co):
         s2 = [(d, v) for d, v, *_ in per_co[co]]
@@ -10660,10 +10701,10 @@ def render_pacing():
             "Attribute each site to", list(_PC_PARTY_OPTIONS),
             index=list(_PC_PARTY_OPTIONS).index(_PC_DEFAULTS["pc_party"]),
             key="pc_party",
-            help="Tenant is Epoch's first-listed user, falling back to the "
-                 "owner; operator is the owner. They differ where a cluster "
-                 "is leased out — Colossus (SpaceXAI's building; Anthropic "
-                 "trains there) and Stargate Abilene (Oracle's; OpenAI).")
+            help="Tenant credits a site to every user Epoch lists — "
+                 "Colossus 2 counts for Anthropic, Cursor and SpaceXAI "
+                 "alike — falling back to the owner; operator credits the "
+                 "owner alone (Colossus → SpaceXAI, Stargate → Oracle).")
         if st.button("Reset", key="pc_reset"):
             for k in _PC_RESET_KEYS:
                 st.session_state.pop(k, None)
