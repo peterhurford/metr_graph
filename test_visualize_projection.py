@@ -2023,6 +2023,173 @@ class TestCcTrainingFloorMatch:
         assert resp[2] == "Exactly one training run"
 
 
+class TestCcForwardMatch:
+    """_cc_forward_match: the cluster → release direction, in three tiers.
+
+    Tier 1 is the ordinary "first frontier release in the window", widened by
+    _CC_EARLY_GRACE_DAYS so a model that beat the 90d pipeline by a few days
+    still counts. Tier 2 defers to the backward match so the panel's two tables
+    can't name different releases for one cluster. Tier 3 admits a non-record
+    release rather than rendering a blank row.
+    """
+
+    TODAY = datetime(2026, 8, 22)
+
+    def _step(self, y, m, d, name="Cluster"):
+        return (datetime(y, m, d), 1.0, name)
+
+    def _pred(self, step):
+        from datetime import timedelta
+        return step[0] + timedelta(days=vp._CC_RELEASE_LAG_DAYS)
+
+    def test_grace_is_shorter_than_the_backward_floor(self):
+        # The forward grace deliberately does not open all the way to what the
+        # 60d training floor would allow (30d early). At 30d several clusters
+        # start claiming the same, earlier model and the forward table goes
+        # degenerate — see the constant's comment.
+        slack = vp._CC_RELEASE_LAG_DAYS - vp._CC_TRAIN_FLOOR_DAYS
+        assert 0 < vp._CC_EARLY_GRACE_DAYS < slack
+
+    def test_tier1_takes_first_frontier_release_in_window(self):
+        step = self._step(2026, 1, 1)
+        pred = self._pred(step)
+        early = (pred + timedelta(days=5), 100.0, "First")
+        later = (pred + timedelta(days=60), 110.0, "Second")
+        got, fb = vp._cc_forward_match(step, [early, later], [], {}, self.TODAY)
+        assert got[2] == "First" and fb is False
+
+    def test_tier1_reaches_back_over_the_grace_window(self):
+        # A model that shipped inside the grace window still belongs to the step.
+        step = self._step(2026, 1, 1)
+        pred = self._pred(step)
+        for early_by in (1, vp._CC_EARLY_GRACE_DAYS):
+            rel = (pred - timedelta(days=early_by), 100.0, "Fast shipper")
+            got, fb = vp._cc_forward_match(step, [rel], [], {}, self.TODAY)
+            assert got[2] == "Fast shipper" and fb is False
+
+    def test_tier1_stops_at_the_grace_window(self):
+        # One day past the grace, tier 1 declines — and with no backward tie and
+        # no other release, the step reports nothing at all.
+        step = self._step(2026, 1, 1)
+        rel = (self._pred(step) - timedelta(days=vp._CC_EARLY_GRACE_DAYS + 1),
+               100.0, "Too early")
+        got, fb = vp._cc_forward_match(step, [rel], [], {}, self.TODAY)
+        assert got is None and fb is False
+
+    def test_tier2_defers_to_the_backward_match(self):
+        # A release tied to this step by the 60d backward floor but sitting
+        # further back than the 7d forward grace is still this step's release —
+        # otherwise the two tables would disagree about the same cluster.
+        step = self._step(2026, 1, 1)
+        rel = (self._pred(step) - timedelta(days=24), 100.0, "Shipped early")
+        got, fb = vp._cc_forward_match(step, [rel], [], {(rel[0], rel[2]): step},
+                                       self.TODAY)
+        assert got[2] == "Shipped early" and fb is False
+
+    def test_tier2_prefers_the_earliest_release_tied_to_the_step(self):
+        step = self._step(2026, 1, 1)
+        pred = self._pred(step)
+        a = (pred - timedelta(days=24), 100.0, "Earlier")
+        b = (pred - timedelta(days=12), 110.0, "Later")
+        resp = {(a[0], a[2]): step, (b[0], b[2]): step}
+        got, _fb = vp._cc_forward_match(step, [a, b], [], resp, self.TODAY)
+        assert got[2] == "Earlier"
+
+    def test_tier2_ignores_releases_tied_to_a_different_step(self):
+        step = self._step(2026, 1, 1, "Mine")
+        other = self._step(2025, 6, 1, "Someone else's")
+        rel = (self._pred(step) - timedelta(days=24), 100.0, "Not mine")
+        got, fb = vp._cc_forward_match(step, [rel], [], {(rel[0], rel[2]): other},
+                                       self.TODAY)
+        assert got is None and fb is False
+
+    def test_tier3_admits_a_non_record_release(self):
+        step = self._step(2026, 1, 1)
+        pred = self._pred(step)
+        other = (pred + timedelta(days=3), 90.0, "Not a record")
+        got, fb = vp._cc_forward_match(step, [], [other], {}, self.TODAY)
+        assert got[2] == "Not a record" and fb is True
+
+    def test_tier3_only_fires_when_no_frontier_release_qualifies(self):
+        step = self._step(2026, 1, 1)
+        pred = self._pred(step)
+        record = (pred + timedelta(days=30), 100.0, "Record")
+        other = (pred + timedelta(days=3), 90.0, "Not a record")
+        got, fb = vp._cc_forward_match(step, [record], [other], {}, self.TODAY)
+        assert got[2] == "Record" and fb is False
+
+    def test_planned_cluster_never_falls_back(self):
+        # A DC that is not online yet has no releases to explain; it should read
+        # "still future", not borrow some unrelated model.
+        step = self._step(2027, 1, 1)
+        other = (self._pred(step) + timedelta(days=3), 90.0, "Not a record")
+        got, fb = vp._cc_forward_match(step, [], [other], {}, self.TODAY)
+        assert got is None and fb is False
+
+
+class TestCcCompanyAllReleases:
+    """_cc_company_all_releases: the tier-3 fallback pool."""
+
+    def test_collapses_reasoning_effort_variants(self):
+        # Keyed on Model name, so the ~10 gpt-5.6-sol_* rows are one release.
+        # Which Display-name variant would win a dedup is arbitrary and flips
+        # between Epoch pulls.
+        rel = vp._cc_company_all_releases()["OpenAI"]
+        sol = [t for t in rel if t[2] == "GPT-5.6 Sol"]
+        assert len(sol) == 1
+        assert sol[0][0] == datetime(2026, 7, 9)
+
+    def test_keeps_redated_revisions_of_one_model_name_apart(self):
+        # Epoch ships five dated revisions under the single Model name
+        # "GPT-4o"; two of them set OpenAI ECI records. Collapsing on the name
+        # alone would keep only the earliest and lose the rest, so the fallback
+        # pool would be missing releases the frontier series has. Asserted as a
+        # superset, not an exact list — Epoch can add revisions.
+        rel = vp._cc_company_all_releases()["OpenAI"]
+        gpt4o = {t[0] for t in rel if t[2] == "GPT-4o"}
+        assert {datetime(2024, 5, 13), datetime(2024, 8, 6)} <= gpt4o
+        assert len(gpt4o) >= 3
+
+    def test_same_day_releases_are_ordered_strongest_first(self):
+        # 2026-07-09 ships Sol, Terra and Luna together; a step matching that
+        # date should be offered the flagship, not whichever row sorted first.
+        rel = vp._cc_company_all_releases()["OpenAI"]
+        same_day = [t for t in rel if t[0] == datetime(2026, 7, 9)]
+        assert len(same_day) > 1, "expected several OpenAI releases on 2026-07-09"
+        assert same_day[0][2] == "GPT-5.6 Sol"
+        assert [t[1] for t in same_day] == sorted(
+            (t[1] for t in same_day), reverse=True)
+
+    def test_is_a_superset_of_the_frontier(self):
+        # Every running-max release must exist in the pool on the same date, or
+        # tier 3 could contradict tier 1.
+        allr = vp._cc_company_all_releases()
+        for lab, front in vp._cc_company_frontier_models().items():
+            dates = {t[0] for t in allr[lab]}
+            for d, _e, _n in front:
+                assert d in dates, f"{lab}: frontier date {d} missing from pool"
+
+    def test_sol_is_the_live_fallback_for_wisconsin(self):
+        # End-to-end on the shipped data: Epoch's 2026-08-18 rescore put Sol
+        # (161.08) under GPT-5.5 Pro (161.73), so it is no longer a running-max
+        # release and tier 1 finds nothing for Fairwater Wisconsin. Tier 3 must
+        # still surface it — that blank row is what the fallback exists to fix.
+        # If a later OpenAI release re-takes the record this stops applying;
+        # relax the assert to "some release is matched" rather than deleting it.
+        attr = vp._cc_lab_attribution()
+        milestones = vp._cc_lab_dc_milestones("OpenAI", attr, key="perf")
+        front = vp._cc_company_frontier_models()["OpenAI"]
+        allr = vp._cc_company_all_releases()["OpenAI"]
+        steps = [m for m in milestones
+                 if m[2] == "Microsoft Fairwater Wisconsin"
+                 and m[0] <= TestCcForwardMatch.TODAY]
+        assert steps, "Fairwater Wisconsin has no online capacity step"
+        got, fb = vp._cc_forward_match(steps[0], front, allr, {},
+                                       TestCcForwardMatch.TODAY)
+        assert got is not None, "Wisconsin still matches nothing"
+        assert got[2] == "GPT-5.6 Sol" and fb is True
+
+
 class TestCcDecomp:
     """_cc_decomp: regress ECI on log10(FLOP) and time."""
 
@@ -2936,6 +3103,23 @@ class TestDcCompanyNetworkedSeries:
             pooled = [s for s in net[co] if s[0] <= at]
             if cur and pooled:
                 assert pooled[-1][1] >= cur[-1][1]
+
+
+class TestDcProjectionRange:
+    """The Data Centers tab's chart window is a sidebar range, URL-tracked."""
+
+    def test_projection_range_registry_is_well_formed(self):
+        assert vp._DC_DEFAULTS["dc_start_year"] == 2025
+        assert vp._DC_DEFAULTS["dc_end_year"] == 2027
+        assert vp._DC_DEFAULTS["dc_start_year"] in vp._DC_START_YEARS
+        assert vp._DC_DEFAULTS["dc_end_year"] in vp._DC_END_YEARS
+        # No allowed pairing can invert the window.
+        assert max(vp._DC_START_YEARS) <= min(vp._DC_END_YEARS)
+        keys, defaults = vp._all_tracked()
+        for k in ("dc_start_year", "dc_end_year"):
+            assert k in vp._DC_RESET_KEYS       # reset button clears it
+            assert k in keys                    # and it round-trips through the URL
+            assert defaults[k] == vp._DC_DEFAULTS[k]
 
 
 class TestDcTrainFlopWindows:
