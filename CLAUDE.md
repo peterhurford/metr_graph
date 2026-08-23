@@ -490,16 +490,18 @@ date distribution rather than the gap metrics above it. Three things are load-be
    plotting bug; don't "fix" it by aligning them.
 4. **Distillation decays as the gap closes.** The headline uses `_cc_cn_crossing_sim`:
    the algorithmic term falls from the measured rate to an indigenous band
-   (`_cc_innovation_algo_band` — pretraining prior `_CC_PRETRAIN_ALGO_OOM`·a_partial up
-   to the top iso-compute band, the models least able to distill) as gap/gap₀ shrinks.
+   (`_cc_innovation_algo_band` — the ±3 frontier-grade b_time, floored at the
+   pretraining prior, up to the top iso-compute band) as gap/gap₀ shrinks.
    `_cc_cn_target_years` stays as the constant-rate comparison quoted in the caption.
    `TestCcCnCrossingSim` pins the limits (saturated = constant-rate; frozen US = slower;
    pause-to-frozen-bar later than 161-with-US-moving). The pace band is shared via
    `_cc_cn_pace_band` with the Pacing pause panel so the two crossings stay ordered.
    The engines section carries a measured distillation control: `_cc_frontier_grade_algo`
-   refits on models within 5 ECI of the running frontier (slower rate → larger compute
-   share, drawn as the split bar's frontier-grade line; `TestCcFrontierGradeAlgo` pins
-   the margin gradient).
+   refits on models within 5 ECI of the running frontier — distillation biases *both*
+   coefficients (a_partial down, b_time up), so the refit's pair replaces the pooled one
+   for every frontier-facing projection (US-vs-China slopes, the pause bar mapping and
+   climb, the compute terms), with pooled as fallback; `TestCcFrontierGradeAlgo` pins
+   the two-way gradient.
 
 Fan traces set `mode='lines'` explicitly: the fan spans ~6 quarters, and plotly defaults a
 Scatter under 20 points to `lines+markers`, studding the band outline with stray dots.

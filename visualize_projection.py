@@ -8555,12 +8555,14 @@ _CC_PRETRAIN_ALGO_OOM = 0.4
 
 
 def _cc_frontier_grade_algo(cc_rows, eci_all, margin=5.0):
-    """Algorithmic rate measured on near-frontier models only.
+    """The _cc_decomp regression on near-frontier models only.
 
-    Runs the _cc_decomp regression restricted to models within `margin` ECI
-    of the running frontier at their release — the subset least able to
-    distill from a stronger model — and returns (b_time, n): ECI/yr holding
-    compute fixed, and the subset size. None when too few models qualify.
+    Restricted to models within `margin` ECI of the running frontier at
+    their release — the subset least able to distill from a stronger model.
+    Returns {'a_partial', 'b_time', 'n'} or None. Distillation biases the
+    two coefficients in opposite directions (teacher-fed small models flatten
+    the compute slope and steepen the time slope), so the near-frontier
+    refit raises a_partial and lowers b_time vs the all-model fit.
     """
     fr = sorted(eci_all, key=lambda m: m['date'])
     run_d, run_v, best = [], [], 0.0
@@ -8577,7 +8579,10 @@ def _cc_frontier_grade_algo(cc_rows, eci_all, margin=5.0):
 
     sub = [r for r in cc_rows if r['eci'] >= _fr_at(r['date']) - margin]
     dec = _cc_decomp(sub)
-    return (float(dec['b_time']), len(sub)) if dec else None
+    if dec is None:
+        return None
+    return {'a_partial': float(dec['a_partial']),
+            'b_time': float(dec['b_time']), 'n': len(sub)}
 
 
 def _cc_cn_pace_band(cn_fr, r_central):
@@ -8593,22 +8598,30 @@ def _cc_cn_pace_band(cn_fr, r_central):
     return 0.85, 1.15, None
 
 
-def _cc_innovation_algo_band(cc_rows):
+def _cc_innovation_algo_band(cc_rows, eci_all=None):
     """(lo, hi) ECI/yr for algorithmic progress with no stronger teacher.
 
     The measured iso-compute rates include distillation, which a true frontier
-    cannot use. lo = the pretraining-efficiency prior × the compute exchange
-    rate; hi = the top iso-compute band's own rate — the models least able to
-    distill (still an upper bound: internal-teacher distillation remains).
-    None when the iso-compute fits are unavailable.
+    cannot use. Two near-frontier measurements bracket the rate: lo = the
+    tight (±3) frontier-grade refit's time coefficient — still
+    teacher-adjacent, so even the low end is generous — floored at the
+    pretraining-efficiency prior × the frontier-grade exchange rate; hi = the
+    top iso-compute band's own rate (internal-teacher distillation remains,
+    hence an upper bound). None when the fits are unavailable.
     """
     isoc = _cc_iso_compute(cc_rows)
     dec = _cc_decomp(cc_rows)
     if isoc is None or dec is None or not isoc.get('bands'):
         return None
     top = max(isoc['bands'], key=lambda b: b['center'])
-    lo = _CC_PRETRAIN_ALGO_OOM * dec['a_partial']
     hi = float(top['slope'])
+    if eci_all is None:
+        eci_all = load_eci_frontier(_mtime=_eci_mtime())
+    fg3 = _cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
+    a_ref = fg3['a_partial'] if fg3 else dec['a_partial']
+    lo = _CC_PRETRAIN_ALGO_OOM * a_ref
+    if fg3:
+        lo = max(lo, fg3['b_time'])
     return (min(lo, hi), max(lo, hi))
 
 
@@ -9095,8 +9108,15 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     # ECI projection: derived from compute (Chart A growth) + shared algorithmic
     # progress. a_partial = ECI per ×10 compute; b_algo = shared ECI/yr at fixed
     # compute (methods diffuse). Each country's ECI slope = a_partial·g + b_algo.
+    # Frontier projections use the frontier-grade coefficient pair — the
+    # all-model fit's a_partial is biased down (and b_time up) by
+    # distillation among followers, which the frontier cannot use. The
+    # pooled fit is the fallback when the refit is too thin.
     a_partial, b_algo = _cc_pooled_decomp(cc_rows)
-    inno_band = _cc_innovation_algo_band(cc_rows)
+    fgm = _cc_frontier_grade_algo(cc_rows, eci_all)
+    if fgm:
+        a_partial, b_algo = fgm['a_partial'], fgm['b_time']
+    inno_band = _cc_innovation_algo_band(cc_rows, eci_all)
     us_eci_slo, us_eci_shi = b_algo + a_partial * g_us_lo, b_algo + a_partial * g_us_hi
     cn_eci_slo, cn_eci_shi = b_algo + a_partial * g_cn_lo, b_algo + a_partial * g_cn_hi
     us_eci_smid = 0.5 * (us_eci_slo + us_eci_shi)
@@ -9370,7 +9390,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             "| Scenario | China algo rate | China ECI/yr (algo+compute) | "
             f"China ECI end-{horizon.year} | Behind US |",
             "|---|---|---|---|---|",
-            f"| **US algo growth** (shared) | {us_algo:.1f} pts/yr | "
+            f"| **US-measured algo rate** (mid-compute, itself teacher-fed) | "
+            f"{us_algo:.1f} pts/yr | "
             f"{slope_usalgo:.1f} pts/yr | ~{cn_end_us:.0f} | ~{mo_us:.0f} mo |",
             f"| **China's own algo growth** (distillation, decaying) | "
             f"{cn_algo:.1f} pts/yr | {slope_cnalgo:.1f} pts/yr | ~{cn_end_cn:.0f} "
@@ -9403,8 +9424,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         figd.add_trace(go.Scatter(
             x=bd_dates, y=list(cn_traj_us), mode='lines',
             line=dict(color='#D62728', width=2.5, dash='dash'),
-            name=f'China · US algo rate ({us_algo:.1f})',
-            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US algo</extra>'))
+            name=f'China · US-measured rate ({us_algo:.1f})',
+            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US-measured</extra>'))
         figd.add_trace(go.Scatter(
             x=bd_dates, y=list(cn_traj_cn), mode='lines',
             line=dict(color='#7F1010', width=2.5),
@@ -9437,7 +9458,9 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             f"({cn_algo:.1f} vs {us_algo:.1f} ECI/yr, ~+{premium_pct:.0f}%), its "
             "distillation term **decaying as the gap closes** — you can't "
             "overtake your teacher — so it approaches the US line, never past "
-            "it; the dashed line is the US-rate counterfactual"
+            "it; the dashed line rides the US-*measured* rate (mid-compute US "
+            "models, themselves teacher-fed — a follower rate, not the US "
+            "frontier engine)"
             + (f"; the grey dash-dot line strips distillation and "
                f"future-method diffusion entirely (indigenous "
                f"~{inno_mid:.0f} ECI/yr)" if cn_traj_inno is not None else "")
@@ -10572,16 +10595,22 @@ def render_compute_capabilities():
     # the subset that could not lean on a stronger teacher.
     fg = _cc_frontier_grade_algo(cc_rows, load_eci_frontier(_mtime=_eci_mtime()))
     share_fg = None
-    if fg is not None and xr_neutral > 0:
-        share_fg = _phys_share(fg[0] / xr_neutral)
-        st.caption(
-            f"**Distillation control:** refitting on near-frontier models only "
-            f"(within 5 ECI of the running frontier at release, n={fg[1]}) gives "
-            f"**+{fg[0]:.1f} ECI/yr** at fixed compute vs +{dec['b_time']:.1f} "
-            "all-model — models that couldn't lean on a stronger teacher "
-            "improved slower, so the frontier's own algo engine is smaller and "
-            f"compute's share nearer ~{share_fg * 100:.0f}% even on the "
-            "algo-favorable estimator.")
+    if fg is not None:
+        xr_fg = ((fg['a_partial'] * eci_per_oom) ** 0.5
+                 if fg['a_partial'] > 0 else xr_neutral)
+        if xr_fg > 0:
+            share_fg = _phys_share(fg['b_time'] / xr_fg)
+            st.caption(
+                f"**Distillation control:** refitting on near-frontier models "
+                f"only (within 5 ECI of the running frontier at release, "
+                f"n={fg['n']}) moves *both* coefficients — "
+                f"+{fg['b_time']:.1f} ECI/yr at fixed compute (vs "
+                f"+{dec['b_time']:.1f} all-model) and "
+                f"+{fg['a_partial']:.1f} ECI per ×10 compute (vs "
+                f"+{dec['a_partial']:.1f}) — distillation shifts credit from "
+                "compute to time among followers. At the frontier the algo "
+                "engine is smaller and compute's share nearer "
+                f"~{share_fg * 100:.0f}% even on the algo-favorable estimator.")
 
     # One 100%-of-growth split bar. The boundary between the two engines isn't
     # pinned down, so the contested middle (iso-compute share → iso-ECI share) is
@@ -10968,7 +10997,7 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
     us_fr = _cc_country_frontier(eci_all, 'United States of America')
     cn_fr = _cc_country_frontier(eci_all, 'China')
     dec = _cc_decomp(cc_rows)
-    inno = _cc_innovation_algo_band(cc_rows)
+    inno = _cc_innovation_algo_band(cc_rows, eci_all)
     if len(us_fr) < 2 or len(cn_fr) < 2 or dec is None or inno is None:
         st.info("Not enough ECI data for the pause scenario.")
         return
@@ -10979,7 +11008,11 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
         st.success(f"{pretty(anchor_name)} is already at the US frontier.")
         return
 
+    # Frontier-grade coefficient pair, as in _cc_us_vs_china (pooled fallback).
     a_partial, b_algo = _cc_pooled_decomp(cc_rows)
+    fgm = _cc_frontier_grade_algo(cc_rows, eci_all)
+    if fgm:
+        a_partial, b_algo = fgm['a_partial'], fgm['b_time']
     # Pause bar = the sidebar threshold's ECI equivalent: today's US frontier
     # plus a_partial per OOM between the threshold and the largest actual US
     # run — floored at today's frontier (a bar below it is already crossed).

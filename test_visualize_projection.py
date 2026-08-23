@@ -2640,22 +2640,31 @@ class TestCcInnovationAlgoBand:
         # The indigenous band sits at or below the distillation-inclusive
         # central rate — the premise of the correction.
         assert hi <= vp._cc_iso_compute(cc)['eci_per_yr'] + 1.0
+        # And its low end is at least the pretraining-efficiency floor,
+        # lifted to the tight frontier-grade time coefficient when that
+        # refit is available.
+        fg3 = vp._cc_frontier_grade_algo(cc, vp.load_eci_frontier(), margin=3.0)
+        if fg3:
+            assert lo >= min(fg3['b_time'], hi) - 1e-9
 
 
 class TestCcFrontierGradeAlgo:
-    def test_rate_falls_as_the_frontier_margin_tightens(self):
-        """The distillation fingerprint: the nearer to the frontier the
-        subset, the slower its measured algo rate."""
+    def test_coefficients_shift_as_the_frontier_margin_tightens(self):
+        """The distillation fingerprint, in both directions: the nearer to
+        the frontier the subset, the slower its time coefficient and the
+        steeper its compute coefficient."""
         cc = vp.load_eci_compute()
         eci = vp.load_eci_frontier()
-        rates = {}
+        fits = {}
         for m in (3, 5, 8):
             r = vp._cc_frontier_grade_algo(cc, eci, margin=m)
-            assert r is not None and r[1] >= 20, f"margin {m} too thin"
-            rates[m] = r[0]
-        assert rates[3] <= rates[5] <= rates[8] + 0.5
-        all_rate = vp._cc_decomp(cc)['b_time']
-        assert rates[5] <= all_rate + 0.5
+            assert r is not None and r['n'] >= 20, f"margin {m} too thin"
+            fits[m] = r
+        dec = vp._cc_decomp(cc)
+        assert fits[3]['b_time'] <= fits[5]['b_time'] <= fits[8]['b_time'] + 0.5
+        assert fits[5]['b_time'] <= dec['b_time'] + 0.5
+        assert fits[3]['a_partial'] >= fits[8]['a_partial'] - 0.5
+        assert fits[5]['a_partial'] >= dec['a_partial'] - 0.5
 
 
 class TestCcCnPaceBand:
