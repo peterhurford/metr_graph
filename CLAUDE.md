@@ -17,9 +17,6 @@ pytest -v                                    # all tests
 pytest test_visualize_projection.py -v       # unit tests (fast, uses fake Streamlit)
 pytest test_integration.py -v                # integration tests (slower, uses Streamlit AppTest)
 pytest test_visualize_projection.py::TestPretty::test_known_name -v  # single test
-```
-
-```bash
 pytest -v -n0                                # serial — needed for --pdb / live output
 _VP_SAMPLES=5000 pytest -v                   # production sample count (see below)
 ```
