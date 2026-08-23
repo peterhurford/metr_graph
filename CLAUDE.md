@@ -308,18 +308,31 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    caption: a fit from a country's first go-live runs hot (China-accessible's own trend is
    ×5/yr, a from-zero ramp), and one to the edge of the planned data runs cool (the far
    future is under-catalogued — the US since-2026 window is ×2.3/yr vs ×3.2 since 2024).
-5. **The default pace is the US trend borrowed** (`_DC_CTY_PACE_OPTIONS`, 'us'), with the
+5. **Cones open at today, not at the end of the catalogue.** Planned steps slip: sample
+   *i* reads the plan at `d − (d − today)·f_i`, `f_i` lognormal with median
+   `_dc_cty_slip_median(quality)` (10% of lead for fully sourced plans, 30% for pure
+   estimates; `_DC_CTY_SLIP_SIGMA` = 0.6). Quality is `_dc_plan_quality()`: the share of a
+   country's future rows whose `Construction status` cites a document
+   (`_DC_PLAN_SOURCED_RE` — a markdown link, "schedule", "filing", "stated", "permit"…).
+   Epoch publishes no confidence column, so this is a prose heuristic; live it splits the
+   future rows ~45/55 and `test_live_catalogue_has_both_kinds_of_plan` fails if a refresh
+   makes it dead weight. The trend takes over at `_DC_CTY_PLAN_HORIZON_DAYS` (18 months)
+   rather than at the last catalogued step, **with the slipped plan as a floor carried past
+   its last entry** — anchoring on the last entry held the US line flat through 2029 off one
+   site dated 2030, and the fit window is clipped there too so the under-catalogued tail
+   doesn't drag the pace down (×2.4/yr vs ×3.2).
+6. **The default pace is the US trend borrowed** (`_DC_CTY_PACE_OPTIONS`, 'us'), with the
    cone widened to `|g_own − g_us| / 1.28` so a country's own fit sits at the 80% edge
    rather than vanishing. Own-trend is one click away and has China overtaking the US by
    2029 — that is the ramp bias above, not a finding. The US always uses its own fit.
-6. **Lag never drops the samples where China leads.** `_dc_cty_lag_months()` floors an
+7. **Lag never drops the samples where China leads.** `_dc_cty_lag_months()` floors an
    unresolved sample (the US running max never reaches China's value inside the grid) at
    one month past the grid end and returns the mask; the table prints "ahead in N% of
    samples" once most are floored. Dropping them as NaN biased the 2030 median to "5 months
    behind" in a row whose ratio read 0.5×.
 
-The cone starts where Epoch's catalogue ends — for China that is 2027, well inside the
-window — so it is a trend through the site list, not a forecast of export-control policy.
+Past the plan horizon the cone is a trend through the site list (for China the catalogue
+ends in 2027), not a forecast of export-control policy.
 The tab's *Project through* year caps the recorded data for every country alike; turning
 planned buildout off gives a trend-only projection from today. `TestDcByCountry` (unit)
 and `TestDataCentersByCountry` (integration).

@@ -3758,3 +3758,75 @@ class TestDcMilestoneDates:
     def test_metric_table_only_train_metrics_carry_run_days(self):
         for label, cfg in vp._DC_METRICS.items():
             assert ("run_days" in cfg) == (cfg["key"] in ("train_flop", "train_flop_6mo")), label
+
+
+class TestDcCtyPlanSlip:
+    """Planned steps slip; the trend takes over at the plan horizon with the
+    plan as a floor."""
+
+    def _plan(self):
+        # Doubling every 6 months, recorded to 2028-06.
+        return [(datetime(2024, 1, 1) + timedelta(days=182 * i), 1e4 * 2 ** i, 'x')
+                for i in range(10)]
+
+    def test_slip_only_lowers_and_grows_with_lead(self):
+        steps = self._plan()
+        today = datetime(2026, 6, 1)
+        grid = vp._dc_cty_month_grid(datetime(2026, 1, 1), datetime(2028, 6, 1))
+        traj = vp._dc_cty_trajectories(steps, None, grid, 500, today=today,
+                                       slip_median=0.3)
+        pts = [(s[0], s[1]) for s in steps]
+        for j, d in enumerate(grid):
+            plan = vp._dc_val_at(pts, d)
+            if d <= today:
+                assert (traj[:, j] == plan).all()
+            else:
+                assert (traj[:, j] <= plan + 1e-9).all()
+        near, far = grid.index(datetime(2026, 9, 1)), grid.index(datetime(2028, 3, 1))
+        below = lambda j: (traj[:, j] < vp._dc_val_at(pts, grid[j])).mean()
+        assert below(far) > below(near)
+
+    def test_no_slip_without_today(self):
+        steps = self._plan()
+        grid = vp._dc_cty_month_grid(datetime(2026, 1, 1), datetime(2028, 6, 1))
+        traj = vp._dc_cty_trajectories(steps, None, grid, 20)
+        pts = [(s[0], s[1]) for s in steps]
+        assert all((traj[:, j] == vp._dc_val_at(pts, d)).all()
+                   for j, d in enumerate(grid))
+
+    def test_fit_anchors_at_the_plan_horizon_and_plan_floors_the_trend(self):
+        steps = self._plan()
+        t_end = datetime(2027, 1, 1)
+        fit = vp._dc_cty_fit(steps, since=2024, t_end=t_end)
+        pts = [(s[0], s[1]) for s in steps]
+        assert fit['t0'] == t_end and fit['v0'] == vp._dc_val_at(pts, t_end)
+        grid = vp._dc_cty_month_grid(datetime(2026, 1, 1), datetime(2029, 6, 1))
+        slow = dict(fit, g=0.01, sigma_g=0.0, sigma_res=0.0)
+        traj = vp._dc_cty_trajectories(steps, slow, grid, 50, today=datetime(2026, 6, 1),
+                                       slip_median=0.0001)
+        # A near-flat trend cannot pull the line under the catalogued plan…
+        j = grid.index(datetime(2028, 6, 1))
+        assert (traj[:, j] >= vp._dc_val_at(pts, grid[j]) * 0.999).all()
+        # …and past the catalogue the trend alone carries on.
+        assert (traj[:, -1] >= traj[:, j]).all()
+
+    def test_plan_quality_reads_construction_status(self):
+        today = datetime(2026, 1, 1)
+        dcs = [{'name': 'a', 'points': [
+            {'date': datetime(2025, 1, 1), 'status': 'Building 1 is operational.'},
+            {'date': datetime(2027, 1, 1), 'status': 'Per the [filing](http://x).'},
+            {'date': datetime(2027, 6, 1), 'status': 'Estimated by analogy.'},
+        ]}]
+        assert vp._dc_plan_quality(dcs, ['a'], today) == 0.5
+        assert vp._dc_plan_quality(dcs, ['b'], today) is None
+        assert vp._dc_plan_quality(dcs, ['a'], datetime(2028, 1, 1)) is None
+        lo, hi = vp._DC_CTY_SLIP_MEDIAN['sourced'], vp._DC_CTY_SLIP_MEDIAN['estimate']
+        assert vp._dc_cty_slip_median(1.0) == lo
+        assert vp._dc_cty_slip_median(0.0) == hi == vp._dc_cty_slip_median(None)
+        assert lo < vp._dc_cty_slip_median(0.5) < hi
+
+    def test_live_catalogue_has_both_kinds_of_plan(self):
+        """The heuristic has to split Epoch's future rows, or it is dead weight."""
+        q = vp._dc_plan_quality(vp.dc_all, [dc['name'] for dc in vp.dc_all],
+                                datetime.now())
+        assert q is not None and 0.1 < q < 0.9

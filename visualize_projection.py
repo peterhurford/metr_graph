@@ -8,6 +8,7 @@ import numpy as np
 import plotly.graph_objects as go
 import yaml
 import csv
+import re
 import os
 from datetime import datetime, timedelta
 import warnings
@@ -1241,6 +1242,23 @@ _DC_CTY_FIT_WINDOWS = (2023, 2024, 2025, 2026)
 _DC_CTY_SIGMA_G_FLOOR = 0.10      # OOM/yr, 1σ
 _DC_CTY_MIN_FIT_POINTS = 6        # monthly samples; fewer → borrow the US pace
 _DC_CTY_SINCE_YEARS = [2023, 2024, 2025, 2026]
+# Planned steps slip. A future step's date is pushed back by a fraction of its
+# lead time (how far past today it sits), drawn lognormal per sample with the
+# median below and _DC_CTY_SLIP_SIGMA as the log-sd. The median depends on how
+# much of the country's planned buildout Epoch documents from a schedule,
+# filing or statement (_DC_PLAN_SOURCED_RE on `Construction status`) rather
+# than estimates by analogy; it interpolates between the two medians by that
+# share. A heuristic on prose — Epoch publishes no confidence column.
+_DC_CTY_SLIP_MEDIAN = {'sourced': 0.10, 'estimate': 0.30}   # fraction of lead
+# How far past today the catalogue is treated as complete. Beyond it the trend
+# takes over and known plans are only a floor: Epoch's list thins out with
+# distance (one site dated 2030), and anchoring the trend on the last entry
+# held the US line flat through 2029.
+_DC_CTY_PLAN_HORIZON_DAYS = 548
+_DC_CTY_SLIP_SIGMA = 0.6
+_DC_PLAN_SOURCED_RE = re.compile(
+    r'\]\(http|\bschedul|\bfiling|\bstated\b|\bpermit|\bannounc|\bpress release',
+    re.I)
 _DC_CTY_CN_DOMESTIC = "China (domestic only)"
 _DC_CTY_PACE_OPTIONS = {
     "The US trend for every country (a follower tracks the leader)": 'us',
@@ -1652,6 +1670,26 @@ def _dc_country_steps(series, names, mode, cluster_of):
     return out
 
 
+def _dc_plan_quality(dcs, names, today):
+    """Share of a site group's future capacity rows whose construction status
+    cites a document (see _DC_PLAN_SOURCED_RE). None when nothing is planned."""
+    fut = [p for dc in dcs if dc['name'] in names
+           for p in dc['points'] if p['date'] > today]
+    if not fut:
+        return None
+    return sum(bool(_DC_PLAN_SOURCED_RE.search(p.get('status') or ''))
+               for p in fut) / len(fut)
+
+
+def _dc_cty_slip_median(quality):
+    """Median slip, as a fraction of lead time, for a plan of this quality
+    (share of rows sourced); the estimate median when quality is unknown."""
+    if quality is None:
+        return _DC_CTY_SLIP_MEDIAN['estimate']
+    return (_DC_CTY_SLIP_MEDIAN['estimate']
+            + quality * (_DC_CTY_SLIP_MEDIAN['sourced'] - _DC_CTY_SLIP_MEDIAN['estimate']))
+
+
 def _dc_cty_month_grid(start, end):
     """First-of-month datetimes from `start`'s month through `end`'s."""
     out = []
@@ -1664,7 +1702,7 @@ def _dc_cty_month_grid(start, end):
     return out
 
 
-def _dc_cty_fit(steps, since=None):
+def _dc_cty_fit(steps, since=None, t_end=None):
     """Log-linear OLS of a step series, sampled monthly up to its last change.
 
     Returns {t0, v0, g, se, sigma_g, sigma_res, n, windows} — t0/v0 the anchor
@@ -1676,10 +1714,17 @@ def _dc_cty_fit(steps, since=None):
     _DC_CTY_MIN_FIT_POINTS positive monthly samples exist or the anchor is not
     positive.
     """
-    if not steps or steps[-1][1] is None or steps[-1][1] <= 0:
+    if not steps:
         return None
-    t0, v0 = steps[-1][0], steps[-1][1]
     pts = [(s[0], s[1]) for s in steps]
+    # Anchor: the last recorded step, or the value carried at `t_end` when the
+    # catalogue runs past it (its tail is treated as a floor, not an anchor).
+    if t_end is not None and t_end < steps[-1][0]:
+        t0, v0 = t_end, _dc_val_at(pts, t_end)
+    else:
+        t0, v0 = steps[-1][0], steps[-1][1]
+    if v0 is None or v0 <= 0:
+        return None
     first_pos = next((d for d, v in pts if v is not None and v > 0), None)
     if first_pos is None:
         return None
@@ -1717,34 +1762,61 @@ def _dc_cty_fit(steps, since=None):
             'sigma_res': sigma_res, 'n': len(samples), 'windows': windows}
 
 
-def _dc_cty_trajectories(steps, fit, grid, n, pace=None):
-    """(n, len(grid)) array: the recorded step value on every grid date up to
-    the anchor, then `n` sampled extrapolations past it.
+def _dc_cty_trajectories(steps, fit, grid, n, pace=None, today=None,
+                         slip_median=None):
+    """(n, len(grid)) array of sampled capacity paths.
 
-    log10 v = log10 v0 + g·τ + ε·min(τ, 1yr), with g ~ N(pace.g, pace.sigma_g)
-    and ε ~ N(0, fit.sigma_res): the pace draw opens the cone linearly in log
-    space, the residual term ramps in over a year to the scatter the recorded
-    series showed around its own trend. `pace` defaults to `fit` and can be
-    another country's fit, for a borrowed trend. NaN where nothing is recorded.
+    Up to `today` every sample is the recorded step value. Past today and up
+    to the last recorded step t0, planned steps slip: sample i reads the plan
+    at d − (d − today)·f_i with f_i ~ lognormal(median `slip_median`,
+    _DC_CTY_SLIP_SIGMA), so a step a year out lands ~f_i of a year late — the
+    cone opens at today, modestly, and skews down. With `today` or
+    `slip_median` None nothing slips. Past t0 each sample extrapolates from
+    its own realized value there: log10 v = log10 v(t0) + g·τ + ε·min(τ, 1yr),
+    with g ~ N(pace.g, pace.sigma_g) and ε ~ N(0, fit.sigma_res), floored at
+    the slipped plan where the catalogue runs past t0 — a known site still
+    comes online; the trend adds what isn't catalogued yet. `pace` defaults
+    to `fit` and can be another country's, for a borrowed trend. NaN where
+    nothing is recorded and no fit extends it.
     """
     pts = [(s[0], s[1]) for s in steps]
     out = np.full((n, len(grid)), np.nan)
-    last = pts[-1][0] if pts else None
+    if not pts:
+        return out
+    last = pts[-1][0]
+    days = np.array([(d - last).days for d, _ in pts], dtype=float)
+    vals = np.array([np.nan if v is None else v for _, v in pts], dtype=float)
+    slip = (np.random.lognormal(np.log(slip_median), _DC_CTY_SLIP_SIGMA, n)
+            if today is not None and slip_median else None)
+
+    def _realized(d):
+        """Per-sample value of the recorded series at date d, after slip."""
+        q = np.full(n, float((d - last).days))
+        if slip is not None and d > today:
+            q = q - (d - today).days * slip
+        idx = np.searchsorted(days, q, side='right') - 1
+        v = np.where(idx >= 0, vals[np.clip(idx, 0, len(vals) - 1)], np.nan)
+        return v
+
     for j, d in enumerate(grid):
-        v = _dc_val_at(pts, d) if last is not None and d <= last else None
-        if v is not None:
-            out[:, j] = v
+        if d <= last:
+            out[:, j] = _realized(d)
     if fit is None:
         return out
     pace = pace or fit
     g = np.random.normal(pace['g'], pace['sigma_g'], n)
     eps = np.random.normal(0.0, fit['sigma_res'], n)
-    base = np.log10(fit['v0'])
+    anchor = _realized(fit['t0'])
+    anchor = np.where(np.isnan(anchor) | (anchor <= 0), fit['v0'], anchor)
+    base = np.log10(anchor)
     for j, d in enumerate(grid):
         if d <= fit['t0']:
             continue
         tau = (d - fit['t0']).days / 365.25
-        out[:, j] = 10 ** (base + g * tau + eps * min(tau, 1.0))
+        trend = 10 ** (base + g * tau + eps * min(tau, 1.0))
+        # The slipped plan is a floor, carried forward past its last entry.
+        floor = out[:, j] if d <= last else _realized(last)
+        out[:, j] = np.fmax(trend, floor)
     return out
 
 
@@ -7364,7 +7436,7 @@ def _dc_cty_band(arr, kind):
             f"{_dc_fmt_value(hi, kind)})")
 
 
-def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
+def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_date,
                              x_start, metric_label, kind, log_scale,
                              shift_days, include_future, pace_mode, since,
                              horizon, run_days=None):
@@ -7404,7 +7476,9 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
     x_end = max(cap_date, horizon_end) + timedelta(days=30)
     grid = _dc_cty_month_grid(x_start, max(cap_date, horizon_end))
 
-    fits = {c: _dc_cty_fit(s, since=since) for c, s in steps_by.items()}
+    plan_end = today + timedelta(days=_DC_CTY_PLAN_HORIZON_DAYS)
+    fits = {c: _dc_cty_fit(s, since=since, t_end=plan_end)
+            for c, s in steps_by.items()}
     us_fit = fits[_DC_CTY_US]
     borrowed = set()
 
@@ -7429,17 +7503,25 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
         if fits[c] is not None:
             return fits[c]
         s = steps_by[c]
-        if us_fit is None or not s or not s[-1][1] or s[-1][1] <= 0:
+        if us_fit is None or not s:
             return None
-        return dict(us_fit, t0=s[-1][0], v0=s[-1][1])
+        t0 = min(s[-1][0], plan_end)
+        v0 = _dc_val_at([(x[0], x[1]) for x in s], t0)
+        if not v0 or v0 <= 0:
+            return None
+        return dict(us_fit, t0=t0, v0=v0)
 
     cone_for = [_DC_CTY_US] + [c for c in (cn_key, _DC_CTY_CN_DOMESTIC)
                                if c in steps_by]
-    traj = {}
+    traj, quality = {}, {}
+    site_names = dict(groups)
+    site_names[_DC_CTY_CN_DOMESTIC] = dom
     for c in cone_for:
         fit = _anchor(c)
-        traj[c] = _dc_cty_trajectories(steps_by[c], fit, grid, N_SAMPLES,
-                                       pace=_pace_for(c) if fit else None)
+        quality[c] = _dc_plan_quality(dcs, site_names.get(c, ()), today)
+        traj[c] = _dc_cty_trajectories(
+            steps_by[c], fit, grid, N_SAMPLES, pace=_pace_for(c) if fit else None,
+            today=today, slip_median=_dc_cty_slip_median(quality[c]))
 
     # ── Chart ──
     fig = go.Figure()
@@ -7473,18 +7555,21 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
         s = steps_by[c]
         fit = _anchor(c)
         t0 = fit['t0'] if fit else s[-1][0]
-        if fit is not None and t0 < horizon_end:
+        if (fit is not None and t0 < horizon_end) or t0 > today:
+            # The cone opens at today: slipped plans up to t0, trend beyond.
             _dc_fan_bands(fig, grid, traj[c], color, c, c)
-            proj_cols = [j for j, d in enumerate(grid) if d > t0]
+            proj_cols = [j for j, d in enumerate(grid) if d > today]
             med = np.nanmedian(traj[c], axis=0)
+            v_today = _dc_val_at([(x[0], x[1]) for x in s], today)
+            head_x = [today] if v_today is not None else []
             fig.add_trace(go.Scatter(
-                x=[t0] + [grid[j] for j in proj_cols],
-                y=[fit['v0']] + [med[j] for j in proj_cols], mode='lines',
+                x=head_x + [grid[j] for j in proj_cols],
+                y=([v_today] if v_today is not None else []) + [med[j] for j in proj_cols], mode='lines',
                 line=dict(color=color, width=2, dash='dot'), name=c,
                 legendgroup=c, showlegend=False, hoverinfo='text',
-                hovertext=[f"{c} — extrapolated<br>{_dc_fmt_value(fit['v0'], kind)}"
-                           f"<br>{t0:%b %Y}"] +
-                          [f"{c} — extrapolated<br>median "
+                hovertext=([f"{c}<br>{_dc_fmt_value(v_today, kind)}<br>today"] if v_today is not None else []) +
+                          [f"{c} — {'plan, slipped' if grid[j] <= t0 else 'trend (plan as floor)' if grid[j] <= s[-1][0] else 'extrapolated'}"
+                           f"<br>median "
                            f"{_dc_fmt_value(med[j], kind)}<br>80%: "
                            f"{_dc_fmt_value(np.nanpercentile(traj[c][:, j], 10), kind)}"
                            f" – {_dc_fmt_value(np.nanpercentile(traj[c][:, j], 90), kind)}"
@@ -7526,10 +7611,18 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, today, cap_date,
                else "US pace" if c in borrowed else "own fit")
         win = ", ".join(f"'{y % 100}: ×{10 ** g:.1f}" for y, g in
                         sorted(fit['windows'].items())) if fit else ""
+        q = quality.get(c)
+        plan = (f"; plans {q:.0%} sourced, median slip "
+                f"{_dc_cty_slip_median(q):.0%} of lead" if q is not None else
+                "; no plans past today")
         return (f"**{c}** ×{10 ** p['g']:.1f}/yr ±{p['sigma_g']:.2f} OOM/yr, "
-                f"{src}{'; ' + win if win else ''}")
+                f"{src}{'; ' + win if win else ''}{plan}")
     st.caption(
         "Pace — " + "; ".join(_pace_text(c) for c in cone_for) + ". "
+        "Cones open at today: planned steps slip by a lognormal fraction of "
+        "their lead time, less when Epoch cites a schedule or filing; past "
+        f"{_DC_CTY_PLAN_HORIZON_DAYS // 30} months out the trend takes over with "
+        "known plans as a floor. "
         "Chinese fits rest on a handful of sites; cones follow Epoch's "
         "catalogue, not policy.")
 
@@ -8051,7 +8144,7 @@ def render_data_centers():
                        for n, v in _cty_series.items()}
     _dc_render_country_panel(
         _cty_series, {dc['name']: _dc_site_country(dc) for dc in dc_all},
-        cluster_of, today=_today, cap_date=cap_date, x_start=x_start,
+        cluster_of, dcs=dc_all, today=_today, cap_date=cap_date, x_start=x_start,
         metric_label=metric_label, kind=kind, log_scale=log_scale,
         shift_days=shift_days, include_future=include_future,
         pace_mode=_DC_CTY_PACE_OPTIONS[pace_label], since=cty_since,
