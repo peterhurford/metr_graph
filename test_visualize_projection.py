@@ -1802,6 +1802,44 @@ def _ccrow(date, log10_flop, eci, **extra):
     return row
 
 
+class TestCcLogOpAxis:
+    """The compute charts label their log axis in log₁₀ operations."""
+
+    def _fig(self, ys):
+        import plotly.graph_objects as go
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=list(range(len(ys))), y=ys))
+        return fig
+
+    def test_number_and_label_helpers(self):
+        assert vp._logop_num(28.0) == "28"
+        assert vp._logop_num(28.34) == "28.3"
+        assert vp._logop_num(float('nan')) == "—"
+        assert vp._logop_lbl(26.83) == "26.8 log OP"
+        assert vp._logop_lbl(float('inf')) == "—"
+
+    def test_axis_is_log_and_labelled_in_log_ops(self):
+        fig = self._fig([1e25, 1e26, 3e26])
+        vp._cc_logop_yaxis(fig, "Training compute (log₁₀ OP)")
+        ax = fig.layout.yaxis
+        assert ax.type == 'log'
+        assert ax.title.text == "Training compute (log₁₀ OP)"
+        plain = [re.sub(r'<[^>]+>', '', t) for t in ax.ticktext]
+        assert plain and all(24.0 <= float(t) <= 27.0 for t in plain)
+        # Values stay raw; only the labels are logged.
+        assert ax.tickvals == pytest.approx(
+            tuple(10.0 ** float(t) for t in plain))
+        # No explicit range — plotly keeps autoscaling.
+        assert ax.range is None
+
+    def test_no_positive_data_leaves_a_plain_log_axis(self):
+        fig = self._fig([0, 0])
+        vp._cc_logop_yaxis(fig, "Training compute (log₁₀ OP)")
+        ax = fig.layout.yaxis
+        assert ax.type == 'log' and ax.title.text.endswith("OP)")
+        assert ax.tickmode != 'array'
+
+
 class TestCcLoglinearSlope:
     """_cc_loglinear_slope: OLS of log10(value) on years."""
 

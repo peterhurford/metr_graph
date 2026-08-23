@@ -1134,12 +1134,25 @@ def _fmt_duration_days(days):
     return _u(days / 365.25, "year")
 
 
+def _logop_num(lf):
+    """A log₁₀ operation count to one decimal, integers kept bare: 28.0 → "28"."""
+    if lf is None or not np.isfinite(lf):
+        return "—"
+    return f"{lf:.1f}".rstrip('0').rstrip('.')
+
+
+def _logop_lbl(lf):
+    """A log₁₀ operation count with its unit, for prose and hovers."""
+    n = _logop_num(lf)
+    return n if n == "—" else f"{n} log OP"
+
+
 def _log_op(v):
-    """log₁₀ of an operation count, to one decimal with a bare integer kept
+    """log₁₀ of a raw operation count, to one decimal with a bare integer kept
     bare: 1e28 → "28", 2e28 → "28.3"."""
     if v is None or not np.isfinite(v) or v <= 0:
         return "—"
-    return f"{np.log10(v):.1f}".rstrip('0').rstrip('.')
+    return _logop_num(np.log10(v))
 
 
 def _dc_fmt_value(v, kind):
@@ -7311,6 +7324,30 @@ def render_data_centers():
 # Compute vs Capabilities — does data-center FLOP predict ECI?
 # ══════════════════════════════════════════════════════════════════════════
 
+def _cc_logop_yaxis(fig, title):
+    """Label a hand-built compute figure's log y-axis in log₁₀ operations.
+
+    The Data Centers tab routes its charts through `_dc_layout(kind='flop')`;
+    these figures build their axis inline, so they get the same treatment here:
+    the plotted value stays the raw operation count and only the tick text is
+    logged. Tick positions are read off whatever the traces actually cover, and
+    no explicit range is set, so plotly keeps autoscaling.
+    """
+    vals = []
+    for tr in fig.data:
+        for y in (getattr(tr, 'y', None) or []):
+            if isinstance(y, (int, float)) and np.isfinite(y) and y > 0:
+                vals.append(y)
+    ticks = (_dc_logop_ticks([np.log10(min(vals)) - 0.05,
+                              np.log10(max(vals)) + 0.05], True)
+             if vals else None)
+    ax = dict(title_text=title, type='log', gridcolor='rgba(0,0,0,0.12)',
+              tickfont=dict(color='#222'), title_font=dict(color='#222'))
+    if ticks is not None:
+        ax.update(tickmode='array', tickvals=ticks[0], ticktext=ticks[1])
+    fig.update_yaxes(**ax)
+
+
 def _cc_trainflop_frontier(dcs, cap_date, with_names=False):
     """Running-max frontier of 2mo-train-FLOP across AI-lab sites.
 
@@ -8057,7 +8094,7 @@ def _cc_us_vs_china(cc_rows, today):
             y=[10.0 ** lf for d, lf, s, n in cf],
             mode='lines+markers', line=dict(color=col, width=2.5),
             marker=dict(size=6, color=col, line=dict(color='white', width=0.5)),
-            text=[f"<b>{n}</b><br>{10.0 ** lf:.1e} FLOP &nbsp; ECI {s:.0f}<br>"
+            text=[f"<b>{n}</b><br>{_logop_lbl(lf)} &nbsp; ECI {s:.0f}<br>"
                   f"Released {d:%b %Y}<br><i>plotted at est. training completion "
                   f"(−{_CC_RUN_COMPLETION_LAG.days / 30.44:.1f}mo)</i>"
                   for d, lf, s, n in cf],
@@ -8072,7 +8109,7 @@ def _cc_us_vs_china(cc_rows, today):
         y=[10.0 ** lf for d, lf, n, sd in us_cap_hist],
         mode='lines', line=dict(color='#1F77B4', width=1.5, dash='dash'),
         opacity=0.7, name='US capacity (buildout)',
-        text=[f"<b>{n}</b><br>{10.0 ** lf:.1e} FLOP (2-mo run)<br>"
+        text=[f"<b>{n}</b><br>{_logop_lbl(lf)} (2-mo run)<br>"
               f"{_dc_milestone_dates(sd, _DAYS_2MO)}"
               for d, lf, n, sd in us_cap_hist],
         hoverinfo='text'))
@@ -8100,24 +8137,23 @@ def _cc_us_vs_china(cc_rows, today):
         xaxis=dict(gridcolor='rgba(0,0,0,0.12)',
                    range=[datetime(2023, 1, 1), horizon],
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
-        yaxis=dict(title_text="Training compute (FLOP)", type='log',
-                   gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
-                   title_font=dict(color='#222')))
+        yaxis=dict(gridcolor='rgba(0,0,0,0.12)'))
+    _cc_logop_yaxis(figc, "Training compute (log₁₀ OP)")
     st.plotly_chart(figc, use_container_width=True)
     st.caption(
         f"**Solid = grounded**: largest *actual* training runs Epoch estimates per "
-        f"model — ~{10 ** us_run_lf:.0e} (US) vs ~{10 ** cn_run_lf:.0e} (China), a "
+        f"model — ~{_logop_lbl(us_run_lf)} (US) vs ~{_logop_num(cn_run_lf)} (China), a "
         f"**~{10 ** run_gap_oom:.0f}× ({run_gap_oom:.1f} OOM)** gap. Recent US "
-        f"frontier models use *less* (GPT-5 ~7e25) — efficiency, not bigger runs. "
+        f"frontier models use *less* (GPT-5 ~25.8) — efficiency, not bigger runs. "
         f"**Dashed/shaded = capacity** — the largest *single cluster's* 2-month "
-        f"run: US ~{10 ** us_cap_lf:.0e} today rising through *announced* "
-        f"megaclusters (Stargate, Hyperion…) to ~{10 ** us_cap_end_lf:.0e} by 2029 "
-        f"(Epoch buildout), China ~{10 ** cn_cap_lo_lf:.0e}–{10 ** cn_cap_hi_lf:.0e} "
+        f"run: US ~{_logop_lbl(us_cap_lf)} today rising through *announced* "
+        f"megaclusters (Stargate, Hyperion…) to ~{_logop_num(us_cap_end_lf)} by 2029 "
+        f"(Epoch buildout), China ~{_logop_num(cn_cap_lo_lf)}–{_logop_num(cn_cap_hi_lf)} "
         f"(estimated, no Epoch data). "
         f"China's *total* chips — mostly smuggled NVIDIA + domestic Ascend — are "
         f"plentiful, but concentrating them into one coherent run is the bottleneck "
         f"(dispersed chips, export-controlled networking), so single-cluster "
-        f"capacity stays near its biggest known run (~{10 ** cn_run_lf:.0e}). "
+        f"capacity stays near its biggest known run (~{_logop_num(cn_run_lf)}). "
         f"Capacity grows {10 ** g_us_lo:.1f}–{10 ** g_us_hi:.1f}×/yr (US, measured) "
         f"vs ~{10 ** g_cn_lo:.1f}–{10 ** g_cn_hi:.1f}×/yr (China), so the gap "
         f"widens only slowly. *Run points are dated at estimated training "
@@ -8193,7 +8229,7 @@ def _cc_us_vs_china(cc_rows, today):
     st.caption(
         "Caveats: a_partial and b_algo come from a pooled OLS where compute and "
         "time are collinear, so the compute-vs-algorithm split is approximate; US "
-        "labs under-disclose training FLOP, so the compute gap is if anything "
+        "labs under-disclose training compute, so the compute gap is if anything "
         "understated; and no forward data-center data exists for China (Epoch's "
         "buildout tracking is almost entirely US sites). US = 'United States of "
         "America', China = 'China' in Epoch's country tags; multi-country and "
@@ -9184,9 +9220,9 @@ def render_compute_capabilities():
                        f"({fseg['doubling_mo']:.0f}-mo doubling)"] * 2,
             hoverinfo='text', showlegend=True))
     fig1.update_layout(**_dc_layout(
-        True, "2mo train FLOP", x_start, end_x,
+        True, "2mo train log OP", x_start, end_x,
         y_range=_dc_yrange([v for _, v in frontier], True),
-        show_legend=True))
+        kind='flop', show_legend=True))
     st.plotly_chart(fig1, use_container_width=True)
 
     # Segment growth table.
@@ -9220,7 +9256,7 @@ def render_compute_capabilities():
     st.caption(
         f"Based on {dec['n']} models reporting training compute. Row 2 is "
         "algorithmic efficiency (better architectures, data, RL, post-training, "
-        "scaffolding) — i.e. “effective compute per real FLOP” going up.")
+        "scaffolding) — i.e. “effective compute per real operation” going up.")
 
     # Iso-ECI scatter: compute vs date. Continuous ECI-by-color reads poorly, so
     # we use discrete capability bands — each band's dots and its downward fit
@@ -9263,9 +9299,8 @@ def render_compute_capabilities():
                     borderwidth=1),
         xaxis=dict(gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
                    title_font=dict(color='#222')),
-        yaxis=dict(title_text="Training compute (FLOP)", type='log',
-                   gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
-                   title_font=dict(color='#222')))
+        yaxis=dict(gridcolor='rgba(0,0,0,0.12)'))
+    _cc_logop_yaxis(figx, "Training compute (log₁₀ OP)")
     st.plotly_chart(figx, use_container_width=True)
     st.caption(
         "Each colored set is a fixed-capability band (ECI ± "
@@ -9285,7 +9320,7 @@ def render_compute_capabilities():
                    f"{tm['lo']:.0f}–{tm['hi']:.0f} mo |")
     st.markdown("\n".join(tmd))
     st.caption(
-        "Inverse regression `log10(FLOP) = α·ECI + βₜ·t + c` gives "
+        "Inverse regression `log10(OP) = α·ECI + βₜ·t + c` gives "
         f"−βₜ = {eff['g_inv']:.2f} OOM/yr (R² {eff['r2']:.2f}); the iso-ECI bands "
         f"give a median {eff['band_median']:.2f} OOM/yr. NB: ECI rewards "
         "reasoning/RL/post-training, so this is *total* capability efficiency, "
@@ -9297,7 +9332,7 @@ def render_compute_capabilities():
         st.markdown(
             "**The mirror image — same compute, rising capability.** Flip the axes: "
             "hold the *compute budget* fixed and watch ECI climb. A model trained on "
-            f"the same FLOP a year later scores about **+{isoc['eci_per_yr']:.0f} ECI "
+            f"the same compute a year later scores about **+{isoc['eci_per_yr']:.0f} ECI "
             f"points** higher (range {isoc['lo']:.0f}–{isoc['hi']:.0f} across budgets).")
         _CBAND_COLORS = {23.5: '#8C6BB1', 24.5: '#3690C0', 25.5: '#02818A'}
 
@@ -9323,7 +9358,7 @@ def render_compute_capabilities():
                 marker=dict(size=7, color=col, line=dict(color='white', width=0.5)),
                 text=[f"{m['name']}<br>ECI {m['eci']:.0f}" for m in mem],
                 hoverinfo='text', legendgroup=str(c),
-                name=f"~10^{c:.1f} FLOP  →  +{bseg['slope']:.0f} ECI/yr",
+                name=f"~{_logop_num(c)} log OP  →  +{bseg['slope']:.0f} ECI/yr",
                 showlegend=True))
             figc.add_trace(go.Scatter(
                 x=bseg['fit_x'], y=bseg['fit_y'], mode='lines',
@@ -9341,7 +9376,7 @@ def render_compute_capabilities():
                        tickfont=dict(color='#222'), title_font=dict(color='#222')))
         st.plotly_chart(figc, use_container_width=True)
         st.caption(
-            "Each colored set is a fixed *compute* band (log₁₀ FLOP ± "
+            "Each colored set is a fixed *compute* band (log₁₀ OP ± "
             f"{_CC_CBAND_HALFWIDTH:.1f} dex); its dotted line slopes *up* — that's "
             "ECI gained per year at a constant compute budget. Same engine as the "
             "chart above, axes flipped.")
@@ -9368,7 +9403,7 @@ def render_compute_capabilities():
             f"At a constant budget, a year's algorithmic progress adds ~"
             f"{isoc['eci_per_yr']:.0f} ECI — the same capability you'd otherwise "
             f"have to buy with ~{10 ** (isoc['eci_per_yr'] / epo):.0f}× more compute "
-            f"(at {epo:.0f} ECI per ×10 FLOP). The mirror image of the table above: "
+            f"(at {epo:.0f} ECI per ×10 compute). The mirror image of the table above: "
             "there, capability gets cheaper; here, the same spend buys more.")
 
     # Two engines — what a compute slowdown really costs. Flows on from the
@@ -9468,7 +9503,7 @@ def render_compute_capabilities():
         "*worse* than the ⅓–½ shown. (2) ECI bundles post-training/RL, so the "
         "efficiency rate is total-capability, not pretraining. (3) Labs rarely "
         "train small models just to re-hit old capability levels, so the cheap-"
-        "model edge is sparse (Qwen, Kimi, distilled MoEs). (4) The 2mo-FLOP "
+        "model edge is sparse (Qwen, Kimi, distilled MoEs). (4) The 2mo-capacity "
         "series is a capacity *ceiling*, not per-model training compute. Order-of-"
         "magnitude, not forecasts.")
     st.caption(
