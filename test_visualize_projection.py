@@ -3077,10 +3077,10 @@ class TestDcCompanyAliases:
         for target in set(vp._DC_COMPANY_ALIASES.values()):
             assert target in vp._DC_COLORS
 
-    def test_quarterly_table_companies_resolve_without_aliasing(self):
-        """The table's column keys index _dc_company_series() directly now; it
-        used to carry its own alias tuple and take the first spelling that
-        existed, which silently picked the minority series."""
+    def test_headline_companies_resolve_without_aliasing(self):
+        """_dc_company_series() keys are the merged labels; the quarterly table
+        that used to sit on the tab carried its own alias tuple and silently
+        picked the minority Google series, which is the failure guarded here."""
         series = {n: v for n, v in
                   vp._dc_series_for_metric(vp.dc_all, 'h100').items()
                   if v['company'] not in vp._DC_EXCLUDE_COMPANIES}

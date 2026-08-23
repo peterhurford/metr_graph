@@ -729,8 +729,7 @@ class TestDataCenters:
             _assert_no_error(at, f"Data Centers / {label}")
             text = " ".join(str(m.value) for m in at.markdown) + \
                 " ".join(str(c.value) for c in at.caption)
-            # The quarterly table cells and captions are in time units, never
-            # a bare run count.
+            # Captions are in time units, never a bare run count.
             assert "Methodology: time to train one" in text
             assert any(u in text for u in ("hour", "day", "week", "month"))
 
@@ -743,10 +742,6 @@ class TestDataCenters:
         at = self._dc_app()
         assert at.radio(key="dc_start_year").value == 2025
         assert at.radio(key="dc_end_year").value == 2027
-        # The quarterly table spans exactly the chosen window.
-        table = " ".join(str(m.value) for m in at.markdown)
-        assert "| 2025Q1 |" in table and "| 2027Q4 |" in table
-        assert "| 2024Q4 |" not in table and "| 2028Q1 |" not in table
 
     def test_projection_range_change(self):
         at = self._dc_app()
@@ -754,8 +749,6 @@ class TestDataCenters:
         _assert_no_error(at, "Data Centers / project through 2029")
         at.radio(key="dc_start_year").set_value(2023).run()
         _assert_no_error(at, "Data Centers / start 2023")
-        table = " ".join(str(m.value) for m in at.markdown)
-        assert "| 2023Q1 |" in table and "| 2029Q4 |" in table
 
     def test_reset(self):
         at = self._dc_app()

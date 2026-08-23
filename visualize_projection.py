@@ -7956,40 +7956,8 @@ def render_data_centers():
                                     height=500, show_legend=True, kind=kind))
     st.plotly_chart(fig2, use_container_width=True)
 
-    # ══════════════════════════════════════════════════════════════════════
-    # Section 4: Quarterly capacity-by-company table
-    # ══════════════════════════════════════════════════════════════════════
-    _table_cos = ["OpenAI", "Anthropic", "Google", "Meta", "SpaceXAI", "Alibaba"]
-    _q_ends = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}
-
-    def _co_val_at(steps, t):
-        """Forward-filled company value at date t (latest step on/before t)."""
-        cur = None
-        for d, v, _n in steps:
-            if d <= t:
-                cur = v
-            else:
-                break
-        return cur
-
-    _col_steps = {co: comp.get(co, []) for co in _table_cos}
-    md = ["| Quarter | " + " | ".join(_table_cos) + " |",
-          "|" + "---|" * (len(_table_cos) + 1)]
-    for yr in range(dc_start_year, dc_end_year + 1):
-        for q in range(1, 5):
-            mo, day = _q_ends[q]
-            qd = datetime(yr, mo, day)
-            cells = [_dc_fmt_value(_co_val_at(_col_steps[co], qd), kind)
-                     for co in _table_cos]
-            md.append(f"| {yr}Q{q} | " + " | ".join(cells) + " |")
-    st.markdown("\n".join(md))
-
-    st.caption(
-        f"Each cell is the company's largest single data center by **{metric_label}** "
-        "as of the end of that quarter, forward-filled between Epoch AI's reported "
-        "milestones. "
-        f"{'Includes planned / under-construction buildout dated past today.' if include_future else 'Planned future buildout is excluded (toggle it in the sidebar); quarters past today repeat the latest known value.'} "
-        "Data: Epoch AI, ‘Frontier Data Centers’ (epoch.ai/data/data-centers), CC-BY 4.0.")
+    st.caption("Data: Epoch AI, ‘Frontier Data Centers’ "
+               "(epoch.ai/data/data-centers), CC-BY 4.0.")
 
     # ══════════════════════════════════════════════════════════════════════
     # Section 5: Largest company capacity when several sites are networked
