@@ -7581,7 +7581,7 @@ def render_data_centers():
         "setting including the narrowest.")
 
     # Per-company: does the buildout predict releases?
-    _cc_company_buildout(_today, cfg["key"], kind, metric_label)
+    _cc_company_buildout(_today, cfg["key"], kind)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -8956,7 +8956,7 @@ _CC_TRAIN_FLOOR_DAYS = _DAYS_2MO   # 60d
 # two directions agree. Deliberately *not* the full 30d that the 60d training
 # floor would allow: at 30d several clusters start claiming the same, earlier
 # model (Meta's Eagle Mountain, Temple and Prometheus steps would all match Muse
-# Spark), which makes the forward table degenerate. 7d changes exactly one
+# Spark), which makes the forward match degenerate. 7d changes exactly one
 # existing match (Google New Albany → Gemini 2.0 Flash, 6d early) and that one
 # moves *into* agreement with the backward match.
 _CC_EARLY_GRACE_DAYS = 7
@@ -9182,12 +9182,12 @@ def _cc_forward_match(step, frontier, all_rel, fm_resp, today):
 _CC_PANEL_START = datetime(2024, 1, 1)
 
 
-def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Performance (8-bit OP/s)'):
+def _cc_company_buildout(today, metric_key='perf', kind='sci'):
     """Per-company data-center buildout vs frontier model timing.
 
-    Rendered at the bottom of the Data Centers tab. `metric_key`/`kind`/
-    `metric_label` come from the tab's capacity-metric selector and drive which
-    metric defines (and labels) each "largest DC" capacity step.
+    Rendered at the bottom of the Data Centers tab. `metric_key`/`kind` come
+    from the tab's capacity-metric selector and drive which metric defines (and
+    formats) each "largest DC" capacity step.
     """
     st.subheader("Per-company: does the buildout predict release timing?")
     st.caption(
@@ -9239,7 +9239,7 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
         return cand[-1] if cand else None   # milestones are date-sorted
 
     # Which cluster the backward match hands each frontier release to.
-    # _cc_forward_match consults it so the two tables can't name different
+    # _cc_forward_match consults it so the two directions can't name different
     # releases for the same cluster.
     fm_resp = {(d, n): _responsible_cluster(d) for d, _e, n in fm_vis}
 
@@ -9379,51 +9379,17 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci', metric_label='Per
             "(capacity-gated); large positive gaps mean the model was limited by "
             f"something other than compute.{orphan_note}{fb_note}")
 
-    # ── Both directions as date-only tables ──
-    st.markdown("**Cluster → release it enables** "
-                "(each step, the earliest release it could have trained)")
-    rowsA = [f"| Largest DC ({metric_label}) | Online | "
-             f"Predicts (+{_CC_RELEASE_LAG_DAYS}d) | Earliest release it "
-             "enables | Gap |",
-             "|---|---|---|---|---|"]
-    for e in expected:
-        dc = f"{e['name']} — {_dc_fmt_value(e['perf'], kind)}"
-        if e['future']:
-            rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | "
-                         f"{e['pred']:%Y-%m-%d} | *(DC still future)* | — |")
-        elif e['model']:
-            mark = " †" if e['fallback'] else ""
-            rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | {e['pred']:%Y-%m-%d} | "
-                         f"{e['model'][2]} ({e['model'][0]:%Y-%m-%d}){mark} | "
-                         f"{e['err']:+d}d |")
-        else:
-            rowsA.append(f"| {dc} | {e['step']:%Y-%m-%d} | "
-                         f"{e['pred']:%Y-%m-%d} | *(no release yet)* | — |")
-    st.markdown("\n".join(rowsA))
+    # The fallback releases are drawn hollow and marked † on the chart; say
+    # once why a real flagship can turn up as a non-record.
     if any(e['fallback'] for e in expected):
         st.caption(
-            "† not an ECI record for this lab. Shown because no record-setting "
-            "release fell in the window: Epoch recomputes ECI live, so a real "
-            "flagship can end up scored under its own predecessor and drop off "
-            "the running max without its release date changing. This panel "
-            "compares dates only, so the release still belongs here — it is "
-            "just marked, drawn hollow, and left out of the median above.")
-
-    st.markdown("**Release → cluster it came from** "
-                "(the most recent cluster online early enough to have trained it)")
-    rowsB = [f"| Release | Trained on (largest cluster, {metric_label}) | "
-             f"Implies (+{_CC_RELEASE_LAG_DAYS}d) | Shipped vs implied |",
-             "|---|---|---|---|"]
-    for m in model_match:
-        nm = f"{m['name']} ({m['date']:%Y-%m-%d})" + ("" if m['frontier'] else " †")
-        if m['resp']:
-            r = m['resp']
-            rowsB.append(f"| {nm} | "
-                         f"{r[2]} — {_dc_fmt_value(r[1], kind)} ({r[0]:%Y-%m-%d}) | "
-                         f"{m['pred']:%Y-%m-%d} | {m['err']:+d}d |")
-        else:
-            rowsB.append(f"| {nm} | *(predates any tracked cluster)* | — | — |")
-    st.markdown("\n".join(rowsB))
+            "† not an ECI record for this lab. Such a release is shown because "
+            "no record-setting one fell in its cluster's window: Epoch "
+            "recomputes ECI live, so a real flagship can end up scored under "
+            "its own predecessor and drop off the running max without its "
+            "release date changing. This panel compares dates only, so the "
+            "release still belongs here — it is just marked, drawn hollow, and "
+            "left out of the median above.")
 
     st.caption(
         f"Diamonds = capacity steps shifted forward {_CC_RELEASE_LAG_DAYS} days to "

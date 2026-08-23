@@ -264,8 +264,10 @@ CSV, plus tab-to-tab set equality, the Google spellings, and slug round-tripping
 `_cc_company_buildout()` (bottom of the Data Centers tab) is a **pure timing test**: each
 capacity step of a lab's largest single data center, shifted forward `_CC_RELEASE_LAG_DAYS`
 (90d = 60d training + 30d release prep), against when that lab's models actually shipped.
-Capability is never compared. Two directions with two different clocks, tabled one above the
-other, so they must not contradict each other:
+Capability is never compared. Two directions with two different clocks — both now read out
+through the one timeline chart (forward in the predicted-row hovers, backward in the
+connectors and the headline median; the two date tables that used to sit under it were
+removed as redundant) — so they must not contradict each other:
 
 - **Backward** (release → cluster), `_responsible_cluster`: the latest step online at least
   one training run (`_CC_TRAIN_FLOOR_DAYS`, 60d) before the release. The extra ~1mo release
@@ -282,7 +284,7 @@ other, so they must not contradict each other:
 Load-bearing:
 
 1. **The grace is 7d, not the 30d the 60d floor would allow.** At 30d, clusters start
-   claiming the *same, earlier* model and the forward table goes degenerate. 7d changes
+   claiming the *same, earlier* model and the forward match goes degenerate. 7d changes
    exactly one pre-existing match, moving it *into* agreement with the backward match.
 2. **Tier 3 exists because "frontier release" is a running max while Epoch recomputes ECI
    live.** A real flagship can be rescored under its own predecessor and vanish from the

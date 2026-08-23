@@ -2983,7 +2983,7 @@ class TestDcAxisScale:
 
     def test_values_and_hovers_stay_raw_counts(self):
         """Only the axis is rescaled — _dc_fmt_value still takes raw counts, so
-        the tables, hovers and _cc_company_buildout keep working unchanged."""
+        the hovers and _cc_company_buildout keep working unchanged."""
         assert vp._dc_fmt_value(1824153.6, 'h100') == "1.82M"
         assert vp._dc_fmt_value(816321, 'h100') == "816k"
         ser = vp._dc_series_for_metric(vp.dc_all, 'h100')
