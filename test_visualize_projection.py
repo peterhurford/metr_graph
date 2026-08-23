@@ -2228,6 +2228,90 @@ class TestCcCompanyAllReleases:
         assert got[2] == "GPT-5.6 Sol" and fb is True
 
 
+class TestCcDcDerivation:
+    """The CC tab derives its compute inputs from the DC tab's machinery."""
+
+    def test_lab_attribution_reads_the_loaders_fields(self):
+        """Every site→lab mapping is explainable by the loader's own operator
+        or aliased-users fields, and a fallback-labelled site never maps to a
+        lab — so a spelling change Epoch makes is fixed in the loader once."""
+        attr = vp._cc_lab_attribution()
+        by_name = {dc['name']: dc for dc in vp.dc_all}
+        assert set(attr) == set(by_name)
+        mapped = 0
+        for name, lab in attr.items():
+            dc = by_name[name]
+            if lab is None:
+                continue
+            mapped += 1
+            assert dc['attributed'], name
+            cands = {vp._CC_LAB_ALIASES.get(dc['operator'], dc['operator'])}
+            cands |= {vp._CC_LAB_ALIASES.get(u, u) for u in dc['users']}
+            assert any(c == lab or (lab == 'Google' and c.startswith('Google'))
+                       for c in cands), (name, lab, cands)
+        assert mapped > 0
+
+    def test_colossus_is_xais_buildout_not_its_tenants(self):
+        """Operator outranks tenants here (unlike the DC/Pacing shared-tenancy
+        rule): Colossus 2 lists Anthropic first among its users, but the
+        release-timing panel credits the buildout to its builder, xAI — which
+        also pins the SpaceXAI→xAI alias against the live CSV."""
+        attr = vp._cc_lab_attribution()
+        spacex = [dc['name'] for dc in vp.dc_all if dc['operator'] == 'SpaceXAI']
+        assert spacex, "no SpaceXAI-operated site in the live CSV — retire the alias?"
+        for name in spacex:
+            assert attr[name] == 'xAI', name
+
+    def test_milestones_match_the_shared_envelope(self):
+        """_cc_lab_dc_milestones is the DC envelope filtered to record steps:
+        one milestone per date, values strictly increasing."""
+        attr = vp._cc_lab_attribution()
+        for lab in vp._CC_PANEL_LABS:
+            ms = vp._cc_lab_dc_milestones(lab, attr, key='train_flop')
+            dates = [d for d, _v, _n in ms]
+            vals = [v for _d, v, _n in ms]
+            assert dates == sorted(dates)
+            assert len(set(dates)) == len(dates), f"{lab}: duplicate-date record"
+            assert all(b > a for a, b in zip(vals, vals[1:])), lab
+
+    def test_us_pace_cross_check_agrees_across_tabs(self):
+        """The 'recent built' segment fit (this tab) and the by-country engine's
+        US fit (DC tab) measure the same buildout two ways; they may differ —
+        lab-only vs any-landlord, event points vs monthly samples — but a gap
+        beyond ~0.15 OOM/yr means one of the two engines drifted."""
+        today = datetime.now()
+        cap = datetime(2028, 12, 31) + timedelta(days=vp._DAYS_2MO)
+        fits = vp._cc_segment_fits(vp._cc_trainflop_frontier(vp.dc_all, cap),
+                                   today)
+        g_recent = next(f['slope_oom'] for f in fits
+                        if f['label'].startswith('2025 H2'))
+        chk = vp._cc_country_pace_check(today)[vp._DC_CTY_US]
+        assert chk is not None
+        assert abs(g_recent - chk['g']) < 0.15, (g_recent, chk['g'])
+
+
+class TestCcCnComputeBand:
+    """The hand-set China compute band vs the DC tab's catalogued paces."""
+
+    def test_band_is_ordered_and_positive(self):
+        assert 0 < vp._CC_CN_COMPUTE_LO < vp._CC_CN_COMPUTE_HI
+
+    def test_band_sits_at_or_below_the_catalogue_paces(self):
+        """The band claims coherent-single-run growth, a strictly harder thing
+        than building halls, so it must not exceed what the catalogue shows:
+        HI ≤ the China-accessible ramp, LO ≤ the domestic-sites pace. If an
+        Epoch refresh breaks this, retarget the constants deliberately (the
+        catalogue slowing below the band means the judgment is now optimistic)
+        rather than loosening the test."""
+        chk = vp._cc_country_pace_check(datetime.now())
+        ca, cd = chk[vp._DC_CTY_CN_ACCESS], chk[vp._DC_CTY_CN_DOMESTIC]
+        assert ca is not None and cd is not None, (
+            "Epoch no longer catalogues enough Chinese sites to fit — the "
+            "cross-check (and the captions quoting it) are dead weight")
+        assert vp._CC_CN_COMPUTE_HI <= ca['g'], (vp._CC_CN_COMPUTE_HI, ca['g'])
+        assert vp._CC_CN_COMPUTE_LO <= cd['g'], (vp._CC_CN_COMPUTE_LO, cd['g'])
+
+
 class TestCcDecomp:
     """_cc_decomp: regress ECI on log10(FLOP) and time."""
 

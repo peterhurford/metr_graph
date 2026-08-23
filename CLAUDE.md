@@ -420,6 +420,44 @@ Load-bearing:
 
 `TestCcForwardMatch` and `TestCcCompanyAllReleases` guard all of the above.
 
+### Compute vs Capabilities — how it derives from the Data Centers tab
+
+The CC tab's compute inputs are the DC tab's machinery, not a parallel implementation.
+Four contracts, each guarded:
+
+1. **Site→lab attribution reads the loader's fields.** `_cc_lab_attribution()` derives
+   from `dc_all`'s `operator`/`users` (already folded by `_DC_COMPANY_ALIASES`) plus the
+   one CC-only identity `_CC_LAB_ALIASES` (`SpaceXAI` → `xAI`); it never re-reads the CSV.
+   Attribution is **operator-first, then primary tenant** — Colossus 2 is *xAI's* buildout
+   though Anthropic is its first-listed user — deliberately unlike the DC/Pacing
+   shared-tenancy rule, because the timing panel asks whose *buildout* predicts whose
+   releases. Fallback-labelled sites (`attributed` False) never map to a lab.
+   `TestCcDcDerivation` pins both the field-derivation and the Colossus precedence.
+2. **Milestones are the shared envelope.** `_cc_lab_dc_milestones()` =
+   `_dc_series_for_metric` + `_dc_envelope` over the lab's sites, filtered to record
+   steps — one milestone per date (the old hand-rolled scan could emit two same-date
+   records in dict order).
+3. **Dates mean "Training run finished".** The +2mo shifts in `_cc_trainflop_frontier()`
+   and `render_compute_capabilities()` go through `_dc_timing_shift("Training run
+   finished")`, the DC tab's own milestone vocabulary.
+4. **Country paces are cross-checked, not forked.** `_cc_country_pace_check()` runs the
+   by-country engine (`_dc_country_steps` + `_dc_cty_fit`, no pooling, plan-horizon
+   clipped, unfiltered sites) for US / China-accessible / China-domestic. Captions quote
+   it next to the segment fits and the hand-set `_CC_CN_COMPUTE_LO/HI` band; tests keep
+   the two engines honest — US segment fit within 0.15 OOM/yr of the country fit
+   (`test_us_pace_cross_check_agrees_across_tabs`), and the China band at or below the
+   catalogued paces (`TestCcCnComputeBand`: HI ≤ China-accessible ramp, LO ≤ domestic
+   pace). The band stays hand-set on purpose: it claims coherent-*single-run* growth
+   (networking is the export-controlled step), while the catalogue counts buildings —
+   and the China-accessible fit is a from-zero ramp the DC tab itself flags as hot. If a
+   refresh breaks either test, retarget the constants deliberately.
+
+The tab states the derivation to the reader too: a sidebar note and cross-check
+captions deep-linking `?tab=datacenters` (the compute frontier itself is deliberately
+not charted — the tab is about the exchange rate, not the buildout) —
+`test_dc_derivation_is_stated` (integration) asserts they render. The lab-only
+exclusion contract is unchanged (`test_compute_capabilities_frontier_stays_lab_only`).
+
 ### Compute vs Capabilities — China's ETA to a target ECI
 
 `_render_cc_china_target()` answers "when does China cross `_CC_CN_TARGET_ECI`" (161) with a

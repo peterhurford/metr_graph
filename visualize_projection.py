@@ -8298,7 +8298,9 @@ def _cc_trainflop_frontier(dcs, cap_date, with_names=False):
     series = _dc_series_for_metric(dcs, 'train_flop', cap_date=cap_date)
     series = {n: v for n, v in series.items()
               if v['company'] not in _DC_EXCLUDE_COMPANIES}
-    shift = timedelta(days=_DAYS_2MO)
+    # The same milestone the DC tab's "Date points at" selector calls
+    # "Training run finished": capacity online at D trains a model by D+2mo.
+    shift = timedelta(days=_dc_timing_shift("Training run finished"))
     series = {n: {'company': v['company'],
                   'pts': [(d + shift, val) for d, val in v['pts']]}
               for n, v in series.items()}
@@ -8856,17 +8858,46 @@ _CC_GAP_WINDOWS = [
 #
 # US is MEASURED: Epoch's data-center buildout (committed/under-construction) gives
 # a data-backed range — the recent built pace (~3×/yr) down to the planned 2026–28
-# pipeline (~1.9×/yr). Those segment slopes are read live from the DC data, so no
+# pipeline (~2×/yr). Those segment slopes are read live from the DC data, so no
 # US constant lives here.
 #
-# China is a JUDGMENT call: we have no Epoch buildout data for China (its DC
-# tracking is ~all US sites). Export controls cap leading-edge chip supply (no
-# H100/B200; domestic Ascend/SMIC yield-limited), so its buildout is unlikely to
-# keep US pace. Low end = controls bite / stockpiles deplete; high end = China
-# sustains its most recent disclosed leg (~2×/yr). This is the gap we're trying to
-# bound, not measure.
+# China is still a JUDGMENT call, but no longer unchecked. Epoch's catalogue now
+# holds a handful of Chinese sites (VNET Ulanqab…) plus the China-accessible
+# DayOne Johor campus, and the Data Centers tab's by-country panel projects
+# them; _cc_country_pace_check() reads that same engine here. The band stays a
+# hand-set constant rather than that fit because the two measure different
+# things: the catalogue pace is *buildings* (and China-accessible is a from-zero
+# ramp the DC tab itself flags as running hot), while this band is the growth of
+# China's largest *coherent single-cluster training run* — capped by export
+# controls on leading-edge chips and, more bindingly, on the networking to fuse
+# dispersed chips into one run. Low end = controls bite / stockpiles deplete;
+# high end = China sustains its most recent disclosed leg (~2×/yr). The band is
+# kept at or below the catalogue's paces — TestCcCnComputeBand pins that against
+# the live data; if a refresh breaks it, retarget these deliberately.
 _CC_CN_COMPUTE_LO = 0.15   # ~1.4×/yr — export controls bite
 _CC_CN_COMPUTE_HI = 0.30   # ~2×/yr — China's recent disclosed pace holds
+
+
+def _cc_country_pace_check(today):
+    """Largest-site train-FLOP pace per country, from the DC tab's own engine.
+
+    Runs _dc_country_steps + _dc_cty_fit exactly as the Data Centers tab's
+    by-country panel does (no pooling, fit window clipped at the plan horizon,
+    unfiltered site list — a landlord's hall is capacity in its country), and
+    returns {label: fit-or-None} for the US, China-accessible and
+    China-domestic series. Used to cross-check this tab's segment fits (US)
+    and the hand-set _CC_CN_COMPUTE band (China) in captions and tests, so
+    the two tabs can't silently disagree about either country's compute pace.
+    """
+    series = _dc_series_for_metric(dc_all, 'train_flop')
+    country_of = {dc['name']: _dc_site_country(dc) for dc in dc_all}
+    groups = _dc_country_groups(series, country_of, 'abroad')
+    groups[_DC_CTY_CN_DOMESTIC] = [n for n in series
+                                   if country_of.get(n) == _DC_CTY_CN]
+    t_end = today + timedelta(days=_DC_CTY_PLAN_HORIZON_DAYS)
+    return {label: _dc_cty_fit(_dc_country_steps(series, groups.get(label, []),
+                                                 'site', {}), t_end=t_end)
+            for label in (_DC_CTY_US, _DC_CTY_CN_ACCESS, _DC_CTY_CN_DOMESTIC)}
 
 # China cluster-capacity estimate — largest *single cluster's* 2-month training
 # FLOP, to match the US buildout line (which is the largest single site, not a
@@ -9078,22 +9109,41 @@ def _cc_us_vs_china(cc_rows, today):
     _cc_logop_yaxis(figc, "Training compute (log₁₀ OP)")
     st.plotly_chart(figc, use_container_width=True)
     st.caption(
-        f"**Solid = grounded**: largest *actual* runs Epoch estimates per model — "
+        f"**Solid = grounded**: largest *actual* runs Epoch estimates — "
         f"~{_logop_lbl(us_run_lf)} (US) vs ~{_logop_num(cn_run_lf)} (China), a "
         f"**~{10 ** run_gap_oom:.0f}× ({run_gap_oom:.1f} OOM)** gap; recent US "
         f"frontier models use *less* (GPT-5 ~25.8) — efficiency, not bigger runs. "
-        f"**Dashed/shaded = capacity**, the largest *single cluster's* 2-month "
-        f"run: US ~{_logop_lbl(us_cap_lf)} today, rising through *announced* "
-        f"megaclusters (Stargate, Hyperion…) to ~{_logop_num(us_cap_end_lf)} by 2029 "
-        f"(Epoch buildout); China ~{_logop_num(cn_cap_lo_lf)}–{_logop_num(cn_cap_hi_lf)} "
-        f"(estimated, no Epoch data) — its chips are plentiful (smuggled NVIDIA + "
-        f"domestic Ascend) but too dispersed, and its networking too export-"
-        f"controlled, to concentrate into one run, so capacity stays near its "
-        f"biggest known run (~{_logop_num(cn_run_lf)}). Capacity grows "
-        f"{10 ** g_us_lo:.1f}–{10 ** g_us_hi:.1f}×/yr (US, measured) vs "
+        f"**Dashed/shaded = capacity**, the largest single cluster's 2-month run: "
+        f"US ~{_logop_lbl(us_cap_lf)} today, riding announced megaclusters "
+        f"(Stargate, Hyperion…) to ~{_logop_num(us_cap_end_lf)} by 2029; China "
+        f"~{_logop_num(cn_cap_lo_lf)}–{_logop_num(cn_cap_hi_lf)} (estimated) — "
+        "plenty of chips (smuggled NVIDIA + domestic Ascend), but too dispersed "
+        "and its networking too export-controlled to fuse into one run. Capacity "
+        f"grows {10 ** g_us_lo:.1f}–{10 ** g_us_hi:.1f}×/yr (US, measured) vs "
         f"~{10 ** g_cn_lo:.1f}–{10 ** g_cn_hi:.1f}×/yr (China), so the gap widens "
-        f"only slowly. *Run points are dated at estimated training completion "
+        "only slowly. *Run points are dated at est. training completion "
         "(release − ~1mo) to align with the +2mo capacity line.*")
+
+    # Cross-check the growth assumptions against the Data Centers tab's
+    # by-country engine, so the two tabs' China stories stay reconciled.
+    chk = _cc_country_pace_check(today)
+    chk_us, chk_ca, chk_cd = (chk.get(k) for k in
+                              (_DC_CTY_US, _DC_CTY_CN_ACCESS, _DC_CTY_CN_DOMESTIC))
+    if chk_us or chk_ca or chk_cd:
+        bits = []
+        if chk_us:
+            bits.append(f"US ×{10 ** chk_us['g']:.1f}/yr")
+        if chk_cd:
+            bits.append(f"China domestic ×{10 ** chk_cd['g']:.1f}/yr")
+        if chk_ca:
+            bits.append(f"China-accessible ×{10 ** chk_ca['g']:.1f}/yr "
+                        "(a from-zero ramp, runs hot)")
+        st.caption(
+            "**Cross-check vs the [Data Centers tab](?tab=datacenters):** its "
+            f"by-country engine fits the catalogued *buildings* at {'; '.join(bits)}. "
+            "The China band above is a hand-set claim about the largest *coherent* "
+            "run — fusing dispersed chips is the export-controlled step — kept at "
+            "or below those paces; a refresh that undercuts it forces a retarget.")
 
     # ── Chart B: ECI derived from compute (Chart A) + shared algorithmic
     # progress — ECI(t) = ECI_now + (a_partial·g_compute + b_algo)·t. The band is
@@ -9152,22 +9202,19 @@ def _cc_us_vs_china(cc_rows, today):
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     st.plotly_chart(figf, use_container_width=True)
     st.caption(
-        f"ECI = **~{a_partial:.0f} pts per ×10 compute** (pooled US+China rate) "
-        f"riding each country's Chart-A compute growth, **plus a shared "
-        f"~{b_algo:.0f} pts/yr algorithmic term** (methods diffuse). Band = each "
-        f"country's compute-growth range, so the divergence is purely the compute "
-        f"gap and the ECI gap widens slowly — ~{gap_end:.0f} pts (~{mo_end:.0f} mo) "
-        "by end-2029. **Dotted line** = the algorithmic-only climb; the **shaded "
-        "gap** up to the dashed line is that country's compute contribution, "
-        "visibly wider for the US.")
+        f"ECI = **~{a_partial:.0f} pts per ×10 compute** (pooled) on each "
+        f"country's Chart-A compute growth, **plus a shared ~{b_algo:.0f} pts/yr "
+        "algorithmic term** (methods diffuse). Bands = compute-growth ranges, so "
+        f"the divergence is purely the compute gap — ~{gap_end:.0f} pts "
+        f"(~{mo_end:.0f} mo) by end-2029. **Dotted** = algorithmic-only; the "
+        "**shaded gap** to the dashed line is compute's contribution, wider for "
+        "the US.")
 
     st.caption(
-        "Caveats: a_partial and b_algo come from a pooled OLS with collinear "
-        "compute and time, so the split is approximate; US labs under-disclose "
-        "training compute, understating the compute gap if anything; and Epoch "
-        "tracks almost no Chinese buildout. US/China are Epoch's country tags; "
-        "multi-country and untagged models excluded. Order-of-magnitude, not "
-        "forecasts.")
+        "Caveats: the pooled OLS splits collinear compute and time only "
+        "approximately; US labs under-disclose training compute (understating "
+        "the gap if anything); US/China are Epoch's tags, multi-country and "
+        "untagged models excluded. Order-of-magnitude, not forecasts.")
 
     # ── China's algorithmic edge: the distillation scenario ────────────────────
     # Chart B assumes a *shared* algorithmic term — methods diffuse, so both
@@ -9268,20 +9315,16 @@ def _cc_us_vs_china(cc_rows, today):
                        tickfont=dict(color='#222'), title_font=dict(color='#222')))
         st.plotly_chart(figd, use_container_width=True)
         st.caption(
-            f"Backdated to **Jan 2025** (China frontier ≈{cn_anchor:.0f} ECI then) "
-            "so the edge accumulates over the full period it applies to. Both China "
-            f"lines share a compute term (~{compute_term_cn:.1f} ECI/yr = "
-            f"{a_partial:.0f} pts/×10 compute × {10 ** g_cn_mid:.1f}×/yr capacity "
-            "growth) and differ only in the algorithmic one. The **solid dark line** "
-            f"uses China's own measured rate ({cn_algo:.1f} vs {us_algo:.1f} ECI/yr, "
-            f"a +{premium:.1f}/yr ~+{premium_pct:.0f}% edge), **capped at the US "
-            "frontier** — distillation closes a gap but can't overtake the model it "
-            "learns from — and tracks China's actual points; the dashed **US-rate** "
-            "line is the counterfactual without the edge. So the edge buys earlier "
-            f"*parity*, not a lead. Fits use n={n_us_iso} US / n={n_cn_iso} China "
-            "models within ±0.4 dex of each country's median compute; with so few "
-            "same-budget US models and a flat China compute axis, treat the edge as "
-            "suggestive.")
+            f"Backdated to **Jan 2025** (China ≈{cn_anchor:.0f} ECI then) so the "
+            "edge accumulates over its full period. Both China lines share the "
+            f"compute term (~{compute_term_cn:.1f} ECI/yr) and differ only "
+            "algorithmically: the **solid line** uses China's own measured rate "
+            f"({cn_algo:.1f} vs {us_algo:.1f} ECI/yr, ~+{premium_pct:.0f}%), "
+            "**capped at the US frontier** — distillation can't overtake its "
+            "teacher; the dashed line is the US-rate counterfactual. The edge buys "
+            f"earlier *parity*, not a lead. Fits: n={n_us_iso} US / n={n_cn_iso} "
+            "China within ±0.4 dex of median compute — so few same-budget US "
+            "models that the edge is suggestive only.")
 
     # ── When does China cross the target ECI? ─────────────────────────────────
     _render_cc_china_target(
@@ -9419,9 +9462,9 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
     if obs and r_central > 0:
         pace_lo = min(0.85, min(obs) / r_central)
         pace_hi = max(1.15, max(obs) / r_central)
-        obs_note = (f"reality-checked against China's own frontier slope over the "
-                    f"{len(obs)} standard windows ({min(obs):.1f}–{max(obs):.1f} "
-                    f"ECI/yr, vs ~{r_central:.1f} bottom-up)")
+        obs_note = (f"reality-checked against China's observed frontier slope "
+                    f"({min(obs):.1f}–{max(obs):.1f} vs ~{r_central:.1f} ECI/yr "
+                    "bottom-up)")
     else:
         pace_lo, pace_hi = 0.85, 1.15
         obs_note = "with a ±15% pace factor"
@@ -9565,29 +9608,24 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
 
     st.caption(
         f"China's frontier sits at **ECI {anchor_eci:.0f}** ({pretty(anchor_name)}, "
-        f"{anchor_d:%b %Y}), **{target - anchor_eci:.1f} points** short of "
-        f"{target:.0f}, closing at a median **~{rate_med:.0f} ECI/yr** — built like "
-        f"Chart B: {algo_note}, plus a compute term of "
-        f"~{a_partial * 0.5 * (g_lo + g_hi):.1f} ECI/yr ({a_partial:.0f} pts per ×10 "
-        f"compute × China's {10 ** g_lo:.1f}–{10 ** g_hi:.1f}×/yr capacity growth), "
-        f"{obs_note}. The compute term is the *small* one: at {a_partial:.0f} pts "
-        f"per ×10, an extra {g_hi:.2f} OOM/yr is worth ~{a_partial * g_hi:.1f} "
-        f"ECI/yr against an algorithmic ~{a_mid:.0f}, so even doubling China's "
-        f"compute growth moves the date by weeks. "
-        + (f"The crossing also waits for a model to ship: China's frontier has "
-           f"stepped every ~{gap_d:.0f} days lately, drawn as an exponential wait — "
-           f"which is why the diamond sits right of where the fan meets the bar."
-           if gap_d else ""))
+        f"{anchor_d:%b %Y}), **{target - anchor_eci:.1f} points** short, closing at "
+        f"a median **~{rate_med:.0f} ECI/yr**: {algo_note}, plus "
+        f"~{a_partial * 0.5 * (g_lo + g_hi):.1f} ECI/yr from compute "
+        f"({a_partial:.0f} pts per ×10 × China's {10 ** g_lo:.1f}–"
+        f"{10 ** g_hi:.1f}×/yr capacity growth), {obs_note}. Compute is the "
+        f"*small* term — even doubling China's compute growth (+{g_hi:.2f} OOM/yr) "
+        f"adds ~{a_partial * g_hi:.1f} ECI/yr against ~{a_mid:.0f} algorithmic, "
+        "moving the date by weeks. "
+        + (f"And a crossing waits for a release (one every ~{gap_d:.0f} days "
+           "lately, an exponential wait) — hence the diamond sits right of where "
+           "the fan meets the bar." if gap_d else ""))
     st.caption(
         f"Caveats: ECI {target:.0f} is a *fixed* bar — the US frontier as of "
-        f"{us_hit_txt} — so crossing it means China matching where the US is "
-        "**now**; the US line keeps moving, and the gap sections above answer "
-        "parity. The rate is constant within a trajectory, so the fan is a straight "
-        "climb; only the release-wait term models the frontier's step shape, and "
-        "neither captures a paradigm shift, a chip shock, or a lab not shipping. "
-        "Rates inherit every caveat above, and Epoch recomputes ECI as benchmarks "
-        "are added — a target this close to today's frontier can move under a "
-        "rescore.")
+        f"{us_hit_txt} — so crossing it means matching where the US is **now**, "
+        "not parity. Trajectories climb at a constant rate; only the release wait "
+        "models the frontier's steps, and nothing here captures a paradigm shift, "
+        "a chip shock, or a lab not shipping. Epoch recomputes ECI live — a "
+        "target this close to the frontier can move under a rescore.")
 
 
 # ── Per-company buildout-vs-release timing ────────────────────────────────
@@ -9622,21 +9660,32 @@ _CC_EARLY_GRACE_DAYS = 7
 # Microsoft/Oracle, Anthropic on Amazon/Fluidstack). This deliberately differs
 # from load_data_centers' generic company_for so Colossus maps to xAI (its owner)
 # rather than its listed Anthropic tenant.
-def _cc_lab_for_site(owner, user):
-    if owner == 'SpaceXAI':
-        return 'xAI'
-    if owner == 'Meta':
-        return 'Meta'
-    if owner.startswith('Google'):
+# Epoch's owner label for the Colossus sites is SpaceXAI; the releasing lab
+# this panel races is xAI. This is the only spelling _DC_COMPANY_ALIASES does
+# not already fold (it maps presentation labels, not owner→lab identities).
+_CC_LAB_ALIASES = {'SpaceXAI': 'xAI'}
+
+
+def _cc_lab_for_site(operator, primary_user):
+    """The releasing lab a site's buildout belongs to, or None.
+
+    Operator-first for the labs that own their buildings (xAI, Meta, Google),
+    then the primary listed tenant — so Colossus 2 stays *xAI's* buildout even
+    though Anthropic and Cursor are listed as users. This panel asks whose
+    buildout predicts whose releases, so the builder outranks its tenants;
+    that is deliberately different from the DC/Pacing tabs' shared-tenancy
+    rule, which credits a shared site to every listed tenant.
+    """
+    op = _CC_LAB_ALIASES.get(operator, operator)
+    if op.startswith('Google'):
         return 'Google'
-    if user == 'OpenAI':
-        return 'OpenAI'
-    if user == 'Anthropic':
-        return 'Anthropic'
-    if user.startswith('Google'):
+    if op in ('xAI', 'Meta'):
+        return op
+    u = _CC_LAB_ALIASES.get(primary_user, primary_user)
+    if u.startswith('Google'):
         return 'Google'
-    if user in ('Meta', 'xAI'):
-        return user
+    if u in _CC_PANEL_LABS:
+        return u
     return None
 
 
@@ -9647,42 +9696,42 @@ def _dc_meta_mtime():
 
 @st.cache_data
 def _cc_lab_attribution(_mtime=None):
-    """site name → one of the 5 labs (or None), via _cc_lab_for_site."""
-    base = os.path.dirname(__file__)
-    path = os.path.join(base, 'data_centers.csv')
+    """site name → one of the 5 labs (or None), via _cc_lab_for_site.
+
+    Derived from load_data_centers()'s own attribution fields (`operator`,
+    `users` — both already aliased through _DC_COMPANY_ALIASES) rather than a
+    second read of data_centers.csv, so an Epoch spelling change is handled in
+    one place: the loader. Sites whose company label is the site-name fallback
+    (`attributed` False) never map to a lab — that token names a landlord, and
+    whoever trains there is unknown.
+    """
     out = {}
-    if not os.path.exists(path):
-        return out
-    with open(path, 'r') as f:
-        for r in csv.DictReader(f):
-            n = (r.get('Name') or '').strip()
-            if not n:
-                continue
-            owner = _dc_clean_owner(r.get('Owner', ''))
-            user = _dc_clean_owner((r.get('Users', '') or '').split(',')[0])
-            out[n] = _cc_lab_for_site(owner, user)
+    for dc in dc_all:
+        if not dc['attributed']:
+            out[dc['name']] = None
+            continue
+        primary = dc['users'][0] if dc['users'] else ''
+        out[dc['name']] = _cc_lab_for_site(dc['operator'], primary)
     return out
 
 
 def _cc_lab_dc_milestones(lab, attribution, key='perf'):
     """Capacity records of a lab's single largest DC over time: the running-max of
     its sites' chosen capacity metric (`key`), keeping only the dates the record
-    steps up. Returns [(date, value, site), …] sorted by date."""
-    pts = []
-    for dc in dc_all:
-        if attribution.get(dc['name']) != lab:
-            continue
-        for p in dc['points']:
-            val = p.get(key)
-            if val and val > 0:
-                pts.append((p['date'], val, dc['name']))
-    pts.sort(key=lambda t: t[0])
+    steps up. Returns [(date, value, site), …] sorted by date.
+
+    Built on the Data Centers tab's own machinery — _dc_series_for_metric over
+    the lab's sites, then _dc_envelope — so "largest site over time" has one
+    implementation across the two tabs; only the record-step filter is local.
+    """
+    sub = [dc for dc in dc_all if attribution.get(dc['name']) == lab]
+    series = _dc_series_for_metric(sub, key)
     out = []
     best = 0.0
-    for d, val, n in pts:
-        if val > best * 1.0001:
+    for d, val, name, _co in _dc_envelope(series):
+        if val is not None and val > best * 1.0001:
             best = val
-            out.append((d, val, n))
+            out.append((d, val, name))
     return out
 
 
@@ -10058,6 +10107,10 @@ def render_compute_capabilities():
         st.header("Compute vs Capabilities")
         include_future = st.checkbox("Include planned future buildout",
                                      value=True, key="cc_future")
+        st.caption(
+            "Compute inputs come from the Data Centers tab's series (largest "
+            "AI-lab site, 2-month train FLOP), with planned buildout through "
+            "2028.")
         if st.button("Reset", key="cc_reset"):
             for k in _CC_RESET_KEYS:
                 st.session_state.pop(k, None)
@@ -10065,13 +10118,17 @@ def render_compute_capabilities():
             st.rerun()
 
     st.header("Compute vs Capabilities")
-    # The compute frontier itself is no longer charted, but its segment fits
-    # still supply the capacity growth rates the later sections project on.
-    cap_date = (datetime(2028, 12, 31) if include_future else _today) + timedelta(days=_DAYS_2MO)
+    # Shift capacity dates to the "Training run finished" milestone (the DC
+    # tab's selector wording): a site online at D has trained a model by D+2mo.
+    cap_date = ((datetime(2028, 12, 31) if include_future else _today)
+                + timedelta(days=_dc_timing_shift("Training run finished")))
     frontier = _cc_trainflop_frontier(dc_all, cap_date)
     if not frontier:
         st.warning("No data-center data available.")
         return
+    # The compute frontier itself is not charted here — its segment fits
+    # supply the capacity growth rates the later sections project on, and the
+    # captions name the Data Centers tab as their source.
     fits = _cc_segment_fits(frontier, _today)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -10288,6 +10345,12 @@ def render_compute_capabilities():
               "iso-ECI ↔ iso-compute")
     e3.metric("Share of growth of compute", f"{share_lo*100:.0f}–{share_hi*100:.0f}%",
               "≈ ⅓ to ½")
+    st.caption(
+        f"The ×{10**g_recent:.1f}/yr capacity pace is the “{fits[-2]['label'] if len(fits) >= 2 else ''}” "
+        "fit of the largest-lab-site train-FLOP series from the [Data Centers "
+        "tab](?tab=datacenters), restricted to sites attributable to a "
+        "model-shipping lab (neutral hosts excluded — deliberately stricter "
+        "than that tab's own record line).")
     st.markdown(
         f"So **physical compute drives roughly a third to a half** of the "
         f"~{obs_slope:.0f} ECI-points/yr.")
