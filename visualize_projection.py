@@ -1256,6 +1256,10 @@ _DC_CTY_SLIP_MEDIAN = {'sourced': 0.10, 'estimate': 0.30}   # fraction of lead
 # held the US line flat through 2029.
 _DC_CTY_PLAN_HORIZON_DAYS = 548
 _DC_CTY_SLIP_SIGMA = 0.6
+# Level uncertainty on a plan, OOM per year of lead (1σ, symmetric): a site
+# can come in under or over its stated size, and plans a year out are less
+# exact than next quarter's. Small on purpose; slip carries the downside.
+_DC_CTY_PLAN_LEVEL_SIGMA = 0.06
 _DC_PLAN_SOURCED_RE = re.compile(
     r'\]\(http|\bschedul|\bfiling|\bstated\b|\bpermit|\bannounc|\bpress release',
     re.I)
@@ -1774,7 +1778,10 @@ def _dc_cty_trajectories(steps, fit, grid, n, pace=None, today=None,
     `slip_median` None nothing slips. Past t0 each sample extrapolates from
     its own realized value there: log10 v = log10 v(t0) + g·τ + ε·min(τ, 1yr),
     with g ~ N(pace.g, pace.sigma_g) and ε ~ N(0, fit.sigma_res), floored at
-    the slipped plan where the catalogue runs past t0 — a known site still
+    the slipped plan where the catalogue runs past t0. Inside the plan window
+    each sample also carries a level draw of _DC_CTY_PLAN_LEVEL_SIGMA OOM per
+    year of lead, so a flat plan still has a (small) band. Every path is made
+    non-decreasing at the end — a known site still
     comes online; the trend adds what isn't catalogued yet. `pace` defaults
     to `fit` and can be another country's, for a borrowed trend. NaN where
     nothing is recorded and no fit extends it.
@@ -1788,27 +1795,34 @@ def _dc_cty_trajectories(steps, fit, grid, n, pace=None, today=None,
     vals = np.array([np.nan if v is None else v for _, v in pts], dtype=float)
     slip = (np.random.lognormal(np.log(slip_median), _DC_CTY_SLIP_SIGMA, n)
             if today is not None and slip_median else None)
-
-    pos = vals > 0
-    lv = np.where(pos, np.log10(np.where(pos, vals, 1.0)), np.nan)
+    level = np.random.normal(0.0, _DC_CTY_PLAN_LEVEL_SIGMA, n)
 
     def _realized(d):
-        """Per-sample value of the recorded series at date d, after slip. Past
-        today the plan is read log-interpolated between steps — capacity comes
-        online building by building — so the cone is a wedge, not a series of
-        blotches at step edges."""
+        """Per-sample value of the recorded step series at date d: past today
+        each sample reads the plan at its slipped date and scales it by its
+        level draw, so a step lands late by a sample-specific amount and a flat
+        stretch still carries a (small) band."""
         q = np.full(n, float((d - last).days))
+        scale = 1.0
         if slip is not None and d > today:
-            q = q - (d - today).days * slip
-            return 10 ** np.interp(q, days, lv, left=np.nan)
+            lead = (d - today).days
+            # A slipped plan cannot fall below what is already built today.
+            q = np.maximum(q - lead * slip, float((today - last).days))
+            scale = 10 ** (level * lead / 365.25)
         idx = np.searchsorted(days, q, side='right') - 1
-        return np.where(idx >= 0, vals[np.clip(idx, 0, len(vals) - 1)], np.nan)
+        v = np.where(idx >= 0, vals[np.clip(idx, 0, len(vals) - 1)], np.nan)
+        return v * scale
 
     for j, d in enumerate(grid):
         if d <= last:
             out[:, j] = _realized(d)
+    def _monotone(a):
+        """Built capacity does not go away: each path non-decreasing, with
+        NaN kept where nothing was recorded or extrapolated."""
+        return np.where(np.isnan(a), np.nan, np.fmax.accumulate(a, axis=1))
+
     if fit is None:
-        return out
+        return _monotone(out)
     pace = pace or fit
     g = np.random.normal(pace['g'], pace['sigma_g'], n)
     eps = np.random.normal(0.0, fit['sigma_res'], n)
@@ -1823,7 +1837,7 @@ def _dc_cty_trajectories(steps, fit, grid, n, pace=None, today=None,
         # The slipped plan is a floor, carried forward past its last entry.
         floor = out[:, j] if d <= last else _realized(last)
         out[:, j] = np.fmax(trend, floor)
-    return out
+    return _monotone(out)
 
 
 def _dc_cty_lag_months(follower, leader, grid):
@@ -7567,15 +7581,15 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         if fit is not None and t0 < horizon_end:
             # The dotted median runs from the anchor on; inside the plan
             # window the dashed plan is the reference and the cone hangs off it.
-            proj_cols = [j for j, d in enumerate(grid) if d > t0]
             med = np.nanmedian(traj[c], axis=0)
+            start = max(j for j, d in enumerate(grid) if d <= t0)
+            proj_cols = [j for j, d in enumerate(grid) if j >= start]
             fig.add_trace(go.Scatter(
-                x=[t0] + [grid[j] for j in proj_cols],
-                y=[fit['v0']] + [med[j] for j in proj_cols], mode='lines',
+                x=[grid[j] for j in proj_cols],
+                y=[med[j] for j in proj_cols], mode='lines',
                 line=dict(color=color, width=2, dash='dot'), name=c,
                 legendgroup=c, showlegend=False, hoverinfo='text',
-                hovertext=[f"{c}<br>{_dc_fmt_value(fit['v0'], kind)}<br>{t0:%b %Y}"] +
-                          [f"{c} — {'trend (plan as floor)' if grid[j] <= s[-1][0] else 'extrapolated'}"
+                hovertext=[f"{c} — {'trend (plan as floor)' if grid[j] <= s[-1][0] else 'extrapolated'}"
                            f"<br>median "
                            f"{_dc_fmt_value(med[j], kind)}<br>80%: "
                            f"{_dc_fmt_value(np.nanpercentile(traj[c][:, j], 10), kind)}"

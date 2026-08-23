@@ -309,9 +309,14 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    ×5/yr, a from-zero ramp), and one to the edge of the planned data runs cool (the far
    future is under-catalogued — the US since-2026 window is ×2.3/yr vs ×3.2 since 2024).
 5. **Cones open at today, not at the end of the catalogue.** Planned steps slip: sample
-   *i* reads the plan at `d − (d − today)·f_i`, `f_i` lognormal with median
-   `_dc_cty_slip_median(quality)` (10% of lead for fully sourced plans, 30% for pure
-   estimates; `_DC_CTY_SLIP_SIGMA` = 0.6). Quality is `_dc_plan_quality()`: the share of a
+   *i* reads the step plan at `d − (d − today)·f_i` (clamped so a slipped plan never falls
+   below what is built today), `f_i` lognormal with median `_dc_cty_slip_median(quality)`
+   (10% of lead for fully sourced plans, 30% for pure estimates; `_DC_CTY_SLIP_SIGMA` =
+   0.6), and scales it by a symmetric level draw (`_DC_CTY_PLAN_LEVEL_SIGMA` = 0.06 OOM
+   per year of lead) so a flat plan still carries a small band. Every sampled path is made
+   non-decreasing (built capacity persists) — that, not a plot fix, is what keeps the
+   median from dipping at the plan-to-trend junction. Slipping a *step* plan is deliberate:
+   log-interpolating between steps was tried and anticipated capacity ahead of its date. Quality is `_dc_plan_quality()`: the share of a
    country's future rows whose `Construction status` cites a document
    (`_DC_PLAN_SOURCED_RE` — a markdown link, "schedule", "filing", "stated", "permit"…).
    Epoch publishes no confidence column, so this is a prose heuristic; live it splits the

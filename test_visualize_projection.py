@@ -3776,20 +3776,19 @@ class TestDcCtyPlanSlip:
         traj = vp._dc_cty_trajectories(steps, None, grid, 500, today=today,
                                        slip_median=0.3)
         pts = [(s[0], s[1]) for s in steps]
-        # Past today the plan is read log-interpolated between steps (capacity
-        # arrives building by building), and slip can only move a sample
-        # earlier along that curve, i.e. lower.
-        xs = [(d - pts[-1][0]).days for d, _ in pts]
-        ys = np.log10([v for _, v in pts])
-        interp = lambda d: 10 ** np.interp((d - pts[-1][0]).days, xs, ys)
+        plan = lambda d: vp._dc_val_at(pts, d)
         for j, d in enumerate(grid):
             if d <= today:
-                assert (traj[:, j] == vp._dc_val_at(pts, d)).all()
+                assert (traj[:, j] == plan(d)).all()
             else:
-                assert (traj[:, j] <= interp(d) * (1 + 1e-9)).all()
+                # Slip pulls the typical path under the plan; the symmetric
+                # level term lets individual samples sit a little above it.
+                assert np.median(traj[:, j]) <= plan(d) * 1.03
         near, far = grid.index(datetime(2026, 9, 1)), grid.index(datetime(2028, 3, 1))
-        gap = lambda j: np.log10(interp(grid[j]) / np.median(traj[:, j]))
-        assert gap(far) > gap(near) > 0
+        gap = lambda j: np.log10(plan(grid[j]) / np.median(traj[:, j]))
+        assert gap(far) > gap(near) >= 0
+        # Every path is non-decreasing.
+        assert (np.diff(traj, axis=1) >= -1e-9).all()
 
     def test_no_slip_without_today(self):
         steps = self._plan()
@@ -3807,11 +3806,15 @@ class TestDcCtyPlanSlip:
         assert fit['t0'] == t_end and fit['v0'] == vp._dc_val_at(pts, t_end)
         grid = vp._dc_cty_month_grid(datetime(2026, 1, 1), datetime(2029, 6, 1))
         slow = dict(fit, g=0.01, sigma_g=0.0, sigma_res=0.0)
-        traj = vp._dc_cty_trajectories(steps, slow, grid, 50, today=datetime(2026, 6, 1),
+        traj = vp._dc_cty_trajectories(steps, slow, grid, 400, today=datetime(2026, 6, 1),
                                        slip_median=0.0001)
-        # A near-flat trend cannot pull the line under the catalogued plan…
+        # A near-flat trend cannot pull the line under the catalogued plan
+        # (up to the plan's own level uncertainty, which is symmetric)…
         j = grid.index(datetime(2028, 6, 1))
-        assert (traj[:, j] >= vp._dc_val_at(pts, grid[j]) * 0.999).all()
+        plan = vp._dc_val_at(pts, grid[j])
+        assert np.median(traj[:, j]) >= plan * 0.93
+        lead_yr = (grid[j] - datetime(2026, 6, 1)).days / 365.25
+        assert (traj[:, j] >= plan * 10 ** (-4 * vp._DC_CTY_PLAN_LEVEL_SIGMA * lead_yr)).all()
         # …and past the catalogue the trend alone carries on.
         assert (traj[:, -1] >= traj[:, j]).all()
 
