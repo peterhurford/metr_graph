@@ -9341,21 +9341,11 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         premium = cn_algo - us_algo
         premium_pct = (premium / us_algo * 100) if us_algo else 0.0
 
-        # Backdate the scenario to the start of 2025: China's distillation edge has
-        # been operating through the whole post-DeepSeek-V3 era, so the two algo-rate
-        # trajectories diverge from a Jan-2025 anchor rather than from today — the
-        # premium accumulates across the full period it actually applied to. The
-        # China-own-rate line then doubles as a backtest: fit to the real data, it
-        # should track China's actual frontier, while the US-rate line is the
-        # counterfactual "where China would be on the leader's algo rate alone."
-        anchor_date = datetime(2025, 1, 1)
-
-        def _fr_at(fr, d):
-            vals = [s for dd, s, n in fr if dd <= d]
-            return max(vals) if vals else fr[0][1]
-
-        cn_anchor = _fr_at(cn_fr, anchor_date)
-        us_anchor = _fr_at(us_fr, anchor_date)
+        # The scenario lines emanate from today's frontiers; the actual data
+        # points stay on the chart as history.
+        anchor_date = today
+        cn_anchor = cn_best[1]
+        us_anchor = us_best[1]
         bd_dates = [anchor_date] + _cc_quarter_ends(anchor_date, horizon)
         dt_bd = np.array([(d - anchor_date).days / 365.25 for d in bd_dates])
 
@@ -9451,8 +9441,9 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                        tickfont=dict(color='#222'), title_font=dict(color='#222')))
         st.plotly_chart(figd, use_container_width=True)
         st.caption(
-            f"Backdated to **Jan 2025** (China ≈{cn_anchor:.0f} ECI then) so the "
-            "edge accumulates over its full period. Both China lines share the "
+            f"From today's frontiers (US {us_anchor:.0f}, China "
+            f"{cn_anchor:.0f}; actual points are history). Both China lines "
+            "share the "
             f"compute term (~{compute_term_cn:.1f} ECI/yr) and differ only "
             "algorithmically: the **solid line** uses China's own measured rate "
             f"({cn_algo:.1f} vs {us_algo:.1f} ECI/yr, ~+{premium_pct:.0f}%), its "
@@ -10981,15 +10972,15 @@ def _pc_when(rec, horizon=None):
 def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
     """If the US paused: China's catch-up to the paused frontier, in ECI.
 
-    The pause bar syncs with the sidebar's training-run threshold: `thr_ops`
-    maps to ECI via the exchange rate — today's US frontier plus a_partial ×
-    the OOM between the threshold and the largest actual US run. The CC
-    crossing sim (`us_pause_level`) then has the US climb at its
-    compute-derived rate to that bar and freeze; the paused stock stays
-    distillable while a gap remains, then China runs on its indigenous
-    algorithmic rate (_cc_innovation_algo_band) plus its compute term alone.
-    The pause *date* also waits for hardware able to complete a `thr_ops`
-    run of `run_days` (the sidebar's run length), on the same DC fit.
+    The US pauses when it *completes its first thr_ops run* of the sidebar's
+    run length: hardware needs 2-month capacity of thr_ops × (2mo/run) on
+    the σ-sampled DC fit, then the run itself — so both the threshold and
+    the run length move the pause date. Until then its frontier climbs at
+    the compute-derived rate, and it freezes at whatever level that climb
+    has reached (per sample), which is the bar China must cross. The paused
+    stock stays distillable while a gap remains, then China runs on its
+    indigenous algorithmic rate (_cc_innovation_algo_band) plus its compute
+    term alone.
     """
     st.subheader("If the US paused: when does China catch up?")
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
@@ -11013,17 +11004,6 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
     fgm = _cc_frontier_grade_algo(cc_rows, eci_all)
     if fgm:
         a_partial, b_algo = fgm['a_partial'], fgm['b_time']
-    # Pause bar = the sidebar threshold's ECI equivalent: today's US frontier
-    # plus a_partial per OOM between the threshold and the largest actual US
-    # run — floored at today's frontier (a bar below it is already crossed).
-    us_cf, _g_us_run = _cc_country_compute_frontier(
-        cc_rows, 'United States of America')
-    us_run_lf = us_cf[-1][1] if us_cf else None
-    if us_run_lf is None:
-        st.info("No US run-compute data to place the threshold in ECI.")
-        return
-    threshold = max(us_best[1],
-                    us_best[1] + a_partial * (np.log10(thr_ops) - us_run_lf))
     us_algo, _, _ = _cc_iso_compute_rate(cc_rows, 'United States of America')
     cn_algo, _, _ = _cc_iso_compute_rate(cc_rows, 'China')
     if us_algo is None or cn_algo is None:
@@ -11048,40 +11028,36 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
     gap_d = _cc_release_gap_days(cn_fr, since=today - timedelta(days=730))
     g_mid = 0.5 * (_CC_CN_COMPUTE_LO + _CC_CN_COMPUTE_HI)
     pace_lo, pace_hi, _obs = _cc_cn_pace_band(cn_fr, a_mid + a_partial * g_mid)
-    kw = dict(us_anchor=us_best[1], us_rate=us_rate_s, us_pause_level=threshold,
+    # First completed thr_ops run of this length: 2-month capacity must reach
+    # thr_ops × (2mo/run) on the σ-sampled DC fit, no earlier than today, and
+    # the run itself follows — run length moves both terms.
+    t_today = max((today - anchor_d).days, 0) / 365.25
+    if chk_us is not None and g_s is not None:
+        need_lf = np.log10(thr_ops * _DAYS_2MO / run_days)
+        t0_yrs = (chk_us['t0'] - anchor_d).days / 365.25
+        t_cap_s = t0_yrs + (need_lf - np.log10(chk_us['v0'])) / g_s
+        t_pause_s = np.maximum(t_cap_s, t_today) + run_days / 365.25
+    else:
+        t_pause_s = np.full(n_s, t_today + run_days / 365.25)
+    # The US freezes at whatever its frontier reached by run completion —
+    # per sample, so pace uncertainty widens both the date and the bar.
+    level_s = us_best[1] + us_rate_s * t_pause_s
+    lvl50 = float(np.median(level_s))
+    kw = dict(us_anchor=us_best[1], us_rate=us_rate_s, us_pause_level=level_s,
               a_partial=a_partial, g_lo=_CC_CN_COMPUTE_LO,
               g_hi=_CC_CN_COMPUTE_HI, algo_lo=a_lo, algo_mid=a_mid,
               algo_hi=a_hi, pace_lo=pace_lo, pace_hi=pace_hi,
               release_gap_days=gap_d, n=n_s)
     years, grid_yrs, traj = _cc_cn_crossing_sim(
-        anchor_eci, threshold, inno_lo=inno[0], inno_hi=inno[1], **kw)
+        anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1], **kw)
     yr_ok = years[np.isfinite(years)]
     if len(yr_ok) < 100:
         st.info("Sampled rates were too weak to give a crossing date.")
         return
     d10, d50, d90 = (anchor_d + timedelta(days=float(np.percentile(yr_ok, p))
                                           * 365.25) for p in (10, 50, 90))
-    # Capability arrival at the bar, per sample.
-    t_eci_s = np.maximum((threshold - us_best[1]) / us_rate_s, 0.0)
-    # Hardware feasibility: a thr_ops job of this run length needs 2-month
-    # capacity of thr_ops × (2mo/run) on the same (sampled) DC fit, and
-    # completing the run adds the run itself. Run length is what moves this —
-    # a shorter run needs proportionally more cluster.
-    if g_s is not None:
-        need_lf = np.log10(thr_ops * _DAYS_2MO / run_days)
-        t0_yrs = (chk_us['t0'] - anchor_d).days / 365.25
-        t_feas_s = (np.maximum(
-            t0_yrs + (need_lf - np.log10(chk_us['v0'])) / g_s, 0.0)
-            + run_days / 365.25)
-    else:
-        t_feas_s = 0.0
-    # The US pauses when it first *completes* a thr_ops run: the later of
-    # capability arrival and hardware feasibility.
-    t_pause_s = np.maximum(t_eci_s, t_feas_s)
     d_pause = anchor_d + timedelta(
         days=float(np.percentile(t_pause_s, 50)) * 365.25)
-    d_kink = anchor_d + timedelta(
-        days=float(np.percentile(t_eci_s, 50)) * 365.25)
     # Months from the pause moment (floored at today) to the crossing,
     # matched per sample so both uncertainties propagate.
     _floor = np.maximum(t_pause_s * 365.25, (today - anchor_d).days)
@@ -11090,7 +11066,7 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
     m1, m2 = st.columns(2)
     _ops = f"{thr_ops:.0e}".replace("e+", "e")
     m1.metric(f"China reaches the paused US frontier "
-              f"({_ops} → ECI ~{threshold:.0f})",
+              f"({_ops}, {run_days // 30}-mo run → ECI ~{lvl50:.0f})",
               f"{d50:%b %Y}", f"{d10:%b %Y} – {d90:%b %Y} (80%)",
               delta_color="off")
     m2.metric("Time for China to surpass after US pause",
@@ -11116,17 +11092,17 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
     # Two visually distinct segments: the projected climb (dashed, like every
     # projection) and the frozen bar after the pause (thick translucent level).
     t0_us = max(us_best[0], anchor_d)
-    if d_kink > t0_us:
+    if d_pause > t0_us:
         fig.add_trace(go.Scatter(
-            x=[t0_us, d_kink], y=[us_best[1], threshold], mode='lines',
+            x=[t0_us, d_pause], y=[us_best[1], lvl50], mode='lines',
             line=dict(color='#1F77B4', width=2, dash='dash'),
             name='US climb (projected)', hoverinfo='skip'))
     fig.add_trace(go.Scatter(
-        x=[max(d_kink, t0_us), x_end], y=[threshold, threshold], mode='lines',
+        x=[max(d_pause, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
         line=dict(color='#1F77B4', width=4.5), opacity=0.4,
-        name=f'US paused at {threshold:.0f}', hoverinfo='skip'))
+        name=f'US paused at {lvl50:.0f}', hoverinfo='skip'))
     if d_pause > anchor_d:
-        fig.add_annotation(x=d_pause, y=threshold,
+        fig.add_annotation(x=d_pause, y=lvl50,
                            text=f'US pauses ~{d_pause:%b %Y}',
                            showarrow=False, yshift=12,
                            font=dict(size=10, color='#1F77B4'))
@@ -11150,7 +11126,7 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
         line=dict(color='#7F1010', width=2.5), name='China (projected median)',
         hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>China median</extra>'))
     fig.add_trace(go.Scatter(
-        x=[d50], y=[threshold], mode='markers',
+        x=[d50], y=[lvl50], mode='markers',
         marker=dict(symbol='diamond', size=13, color='#D62728',
                     line=dict(color='white', width=1.5)),
         name=f'median crossing {d50:%b %Y}', hoverinfo='name'))
@@ -11173,22 +11149,17 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
                  "its uncertainty)" if chk_us else "(observed US frontier slope)")
     st.caption(
         f"Counterfactual: the US climbs at ~{us_rate:.0f} ECI/yr "
-        f"{_rate_src} to **ECI {threshold:.0f}** — the sidebar's "
-        f"{thr_ops:.0e}-op threshold mapped through the exchange rate "
-        f"(+{a_partial:.0f} pts per ×10 from the largest actual US run, "
-        f"10^{us_run_lf:.1f} op) — "
-        "then freezes. The paused stock stays distillable while a gap "
-        "remains; China's algorithmic term then decays to an indigenous "
-        f"**{inno[0]:.0f}–{inno[1]:.0f} ECI/yr** (pretraining-efficiency "
-        "floor to the top iso-compute band), its compute term unchanged "
-        f"({_CC_CN_COMPUTE_LO * a_partial:.1f}–"
+        f"{_rate_src} until it *completes its first {_ops}-op run* of the "
+        f"sidebar's {run_days // 30}-month length — a shorter run needs "
+        "proportionally more cluster on the same capacity fit, so it pauses "
+        f"later *and higher* — freezing at **ECI ~{lvl50:.0f}** (median), "
+        "the bar China must cross. The paused stock stays distillable while "
+        "a gap remains; China's algorithmic term then decays to an "
+        f"indigenous **{inno[0]:.0f}–{inno[1]:.0f} ECI/yr**, its compute "
+        f"term unchanged ({_CC_CN_COMPUTE_LO * a_partial:.1f}–"
         f"{_CC_CN_COMPUTE_HI * a_partial:.1f} ECI/yr — export-control-bound), "
         "plus the release-cadence wait (the diamond sits right of where the "
-        "fan meets the bar). The pause date is the later of capability "
-        f"arrival and the first *completed* {run_days // 30}-month {_ops}-op "
-        "run on the same capacity fit — a shorter run needs proportionally "
-        "more cluster, so it can pause later. Same sim and pace band as the "
-        "Compute vs "
+        "fan meets the bar). Same sim and pace band as the Compute vs "
         "Capabilities crossing section — which lands *earlier*: its bar is "
         f"lower ({_CC_CN_TARGET_ECI:.0f}) and distillation never dries up "
         "there.")

@@ -1110,13 +1110,20 @@ class TestPacingTab:
         assert "indigenous" in caps
 
     def test_pause_date_respects_run_length(self):
-        """The pause waits for hardware able to complete the run: the caption
-        names the selected run length, and the 2-month setting renders clean."""
+        """The US pauses at its first *completed* threshold run: a 2-month
+        run needs 3x the cluster, so the pause comes later and the frozen
+        bar — the US frontier by then — sits higher than under 6-month."""
         at = self._app()
-        caps = " ".join(str(c.value) for c in at.caption)
-        assert "6-month" in caps and "-op run" in caps
+
+        def _bar(at):
+            lab = next(str(m.label) for m in at.metric
+                       if "paused US frontier" in str(m.label))
+            return float(lab.split("ECI")[-1].strip(" ~)"))
+
+        bar_6mo = _bar(at)
         at.radio(key="pc_run").set_value("2-month run").run()
         _assert_no_error(at, "Pacing / pause with 2-month run")
+        assert _bar(at) > bar_6mo
         caps = " ".join(str(c.value) for c in at.caption)
         assert "2-month" in caps and "-op run" in caps
 

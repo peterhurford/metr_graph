@@ -544,17 +544,15 @@ machinery rather than growing its own.
    the DC tab does — default is capacity-online, with the run length (and +30d for
    release) one click away; the fine print states which milestone the dates mean.
 
-The tab ends with `_pc_render_us_pause()`: the CC crossing sim with `us_pause_level`
-— the US climbs at its compute-derived rate (b_algo + a_partial × the DC-engine US
-pace) to the sidebar threshold's ECI equivalent (today's frontier + a_partial per
-OOM above the largest actual US run, floored at the frontier), freezes, and China
-races the paused frontier in an ECI chart (US kink + China fan + crossing diamond);
-the paused stock stays distillable while a gap remains, then China runs on its
-indigenous band plus its export-control-bound compute term. The pause date is the
-later of capability arrival and the first *completed* threshold run of the sidebar's
-run length on the same (sigma-sampled) capacity fit — run length moves it. A
-*Projection range* expander (`pc_end_year`, default 2033) sets the crossing-search
-horizon.
+The tab ends with `_pc_render_us_pause()`: the US pauses when it *completes its
+first threshold-scale run* of the sidebar's run length (2-mo capacity of
+thr × 2mo/run on the σ-sampled DC fit, plus the run), frozen at whatever its
+compute-derived climb reached by then — per sample, so run length moves both the
+pause date and the bar (`us_pause_level` and the sim target are arrays). China
+races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the
+paused stock stays distillable while a gap remains, then China runs on its
+indigenous band plus its export-control-bound compute term. A *Projection range*
+expander (`pc_end_year`, default 2033) sets the crossing-search horizon.
 
 Guarded by `TestPacing` (unit) and `TestPacingTab` (integration).
 
