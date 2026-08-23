@@ -3776,15 +3776,20 @@ class TestDcCtyPlanSlip:
         traj = vp._dc_cty_trajectories(steps, None, grid, 500, today=today,
                                        slip_median=0.3)
         pts = [(s[0], s[1]) for s in steps]
+        # Past today the plan is read log-interpolated between steps (capacity
+        # arrives building by building), and slip can only move a sample
+        # earlier along that curve, i.e. lower.
+        xs = [(d - pts[-1][0]).days for d, _ in pts]
+        ys = np.log10([v for _, v in pts])
+        interp = lambda d: 10 ** np.interp((d - pts[-1][0]).days, xs, ys)
         for j, d in enumerate(grid):
-            plan = vp._dc_val_at(pts, d)
             if d <= today:
-                assert (traj[:, j] == plan).all()
+                assert (traj[:, j] == vp._dc_val_at(pts, d)).all()
             else:
-                assert (traj[:, j] <= plan + 1e-9).all()
+                assert (traj[:, j] <= interp(d) * (1 + 1e-9)).all()
         near, far = grid.index(datetime(2026, 9, 1)), grid.index(datetime(2028, 3, 1))
-        below = lambda j: (traj[:, j] < vp._dc_val_at(pts, grid[j])).mean()
-        assert below(far) > below(near)
+        gap = lambda j: np.log10(interp(grid[j]) / np.median(traj[:, j]))
+        assert gap(far) > gap(near) > 0
 
     def test_no_slip_without_today(self):
         steps = self._plan()

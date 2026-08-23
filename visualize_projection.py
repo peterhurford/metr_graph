@@ -1789,14 +1789,20 @@ def _dc_cty_trajectories(steps, fit, grid, n, pace=None, today=None,
     slip = (np.random.lognormal(np.log(slip_median), _DC_CTY_SLIP_SIGMA, n)
             if today is not None and slip_median else None)
 
+    pos = vals > 0
+    lv = np.where(pos, np.log10(np.where(pos, vals, 1.0)), np.nan)
+
     def _realized(d):
-        """Per-sample value of the recorded series at date d, after slip."""
+        """Per-sample value of the recorded series at date d, after slip. Past
+        today the plan is read log-interpolated between steps — capacity comes
+        online building by building — so the cone is a wedge, not a series of
+        blotches at step edges."""
         q = np.full(n, float((d - last).days))
         if slip is not None and d > today:
             q = q - (d - today).days * slip
+            return 10 ** np.interp(q, days, lv, left=np.nan)
         idx = np.searchsorted(days, q, side='right') - 1
-        v = np.where(idx >= 0, vals[np.clip(idx, 0, len(vals) - 1)], np.nan)
-        return v
+        return np.where(idx >= 0, vals[np.clip(idx, 0, len(vals) - 1)], np.nan)
 
     for j, d in enumerate(grid):
         if d <= last:
@@ -7555,20 +7561,21 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         s = steps_by[c]
         fit = _anchor(c)
         t0 = fit['t0'] if fit else s[-1][0]
-        if (fit is not None and t0 < horizon_end) or t0 > today:
+        if t0 > today or (fit is not None and t0 < horizon_end):
             # The cone opens at today: slipped plans up to t0, trend beyond.
             _dc_fan_bands(fig, grid, traj[c], color, c, c)
-            proj_cols = [j for j, d in enumerate(grid) if d > today]
+        if fit is not None and t0 < horizon_end:
+            # The dotted median runs from the anchor on; inside the plan
+            # window the dashed plan is the reference and the cone hangs off it.
+            proj_cols = [j for j, d in enumerate(grid) if d > t0]
             med = np.nanmedian(traj[c], axis=0)
-            v_today = _dc_val_at([(x[0], x[1]) for x in s], today)
-            head_x = [today] if v_today is not None else []
             fig.add_trace(go.Scatter(
-                x=head_x + [grid[j] for j in proj_cols],
-                y=([v_today] if v_today is not None else []) + [med[j] for j in proj_cols], mode='lines',
+                x=[t0] + [grid[j] for j in proj_cols],
+                y=[fit['v0']] + [med[j] for j in proj_cols], mode='lines',
                 line=dict(color=color, width=2, dash='dot'), name=c,
                 legendgroup=c, showlegend=False, hoverinfo='text',
-                hovertext=([f"{c}<br>{_dc_fmt_value(v_today, kind)}<br>today"] if v_today is not None else []) +
-                          [f"{c} — {'plan, slipped' if grid[j] <= t0 else 'trend (plan as floor)' if grid[j] <= s[-1][0] else 'extrapolated'}"
+                hovertext=[f"{c}<br>{_dc_fmt_value(fit['v0'], kind)}<br>{t0:%b %Y}"] +
+                          [f"{c} — {'trend (plan as floor)' if grid[j] <= s[-1][0] else 'extrapolated'}"
                            f"<br>median "
                            f"{_dc_fmt_value(med[j], kind)}<br>80%: "
                            f"{_dc_fmt_value(np.nanpercentile(traj[c][:, j], 10), kind)}"
@@ -7617,14 +7624,23 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
                 "; no plans past today")
         return (f"**{c}** ×{10 ** p['g']:.1f}/yr ±{p['sigma_g']:.2f} OOM/yr, "
                 f"{src}{'; ' + win if win else ''}{plan}")
-    st.caption(
-        "Pace — " + "; ".join(_pace_text(c) for c in cone_for) + ". "
-        "Cones open at today: planned steps slip by a lognormal fraction of "
-        "their lead time, less when Epoch cites a schedule or filing; past "
-        f"{_DC_CTY_PLAN_HORIZON_DAYS // 30} months out the trend takes over with "
-        "known plans as a floor. "
-        "Chinese fits rest on a handful of sites; cones follow Epoch's "
-        "catalogue, not policy.")
+    def _pace_short(c):
+        p = _pace_for(c)
+        if p is None:
+            return f"**{c}** no trend"
+        return (f"**{c}** ×{10 ** p['g']:.1f}/yr"
+                f"{' (US pace)' if c in borrowed else ''}")
+    st.caption("Pace — " + "; ".join(_pace_short(c) for c in cone_for) + ". "
+               "Planned steps slip more the further out and the less sourced "
+               f"they are; past {_DC_CTY_PLAN_HORIZON_DAYS // 30} months the "
+               "trend takes over with plans as a floor.")
+    with st.expander("Fit details"):
+        st.caption("; ".join(_pace_text(c) for c in cone_for) + ". "
+                   "±: 1σ on the pace = max(fit s.e., spread across windows, "
+                   f"{_DC_CTY_SIGMA_G_FLOOR:.2f}). Slip median is a fraction of "
+                   "lead time, interpolated by the share of future rows whose "
+                   "status cites a document. Chinese fits rest on a handful of "
+                   "sites; cones follow Epoch's catalogue, not policy.")
 
     # ── Readout: year-end values, ratio and lag ──
     if cn_key not in traj:

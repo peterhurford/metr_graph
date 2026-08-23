@@ -709,9 +709,9 @@ class TestDataCenters:
             text = " ".join(str(c.value) for c in at.caption)
             assert ("By proximity" in text) == label.startswith("Nearby"), label
             assert ("By announced fabric" in text) == ("fabric" in label), label
-            assert ("plausible fabric" in text) == ("plausible" in label), \
+            assert ("plausible fabric" in text) == label.startswith("Nearby + plausible"), \
                 label
-            if "plausible" in label:
+            if label.startswith("Nearby + plausible"):
                 # The speculative regions are named, so the reader can see what
                 # is being assumed rather than just a bigger number.
                 assert "Mid-South" in text and "Texas & Oklahoma" in text
