@@ -3720,7 +3720,7 @@ class TestDcByCountry:
         assert lag[0, 11] == -1 and unresolved[0, 11]
 
     def test_defaults_and_reset_keys(self):
-        for k in ("dc_cty_pace", "dc_cty_since"):
+        for k in ("dc_cty_pace", "dc_cty_since", "dc_cty_cones"):
             assert k in vp._DC_RESET_KEYS and k in vp._DC_DEFAULTS
         assert vp._DC_DEFAULTS["dc_cty_pace"] in vp._DC_CTY_PACE_OPTIONS
         assert vp._DC_DEFAULTS["dc_cty_since"] in vp._DC_CTY_SINCE_YEARS
@@ -3761,32 +3761,35 @@ class TestDcMilestoneDates:
 
 
 class TestDcCtyPlanSlip:
-    """Planned steps slip; the trend takes over at the plan horizon with the
-    plan as a floor."""
+    """Planned steps carry symmetric timing noise; the trend takes over at the
+    plan horizon with the plan as a floor."""
 
     def _plan(self):
         # Doubling every 6 months, recorded to 2028-06.
         return [(datetime(2024, 1, 1) + timedelta(days=182 * i), 1e4 * 2 ** i, 'x')
                 for i in range(10)]
 
-    def test_slip_only_lowers_and_grows_with_lead(self):
+    def test_plan_centres_the_band_and_spread_grows_with_lead(self):
         steps = self._plan()
         today = datetime(2026, 6, 1)
         grid = vp._dc_cty_month_grid(datetime(2026, 1, 1), datetime(2028, 6, 1))
-        traj = vp._dc_cty_trajectories(steps, None, grid, 500, today=today,
-                                       slip_median=0.3)
+        traj = vp._dc_cty_trajectories(steps, None, grid, 2000, today=today,
+                                       slip_sigma=0.3)
         pts = [(s[0], s[1]) for s in steps]
         plan = lambda d: vp._dc_val_at(pts, d)
         for j, d in enumerate(grid):
             if d <= today:
                 assert (traj[:, j] == plan(d)).all()
             else:
-                # Slip pulls the typical path under the plan; the symmetric
-                # level term lets individual samples sit a little above it.
-                assert np.median(traj[:, j]) <= plan(d) * 1.03
+                # Timing noise is symmetric, so the plan sits inside the
+                # 25–75% band, not on its edge. (Monotonicity biases the path
+                # up a little; the doubling plan makes the value spread wide.)
+                lo, hi = np.percentile(traj[:, j], [25, 75])
+                assert lo <= plan(d) * 1.05 and plan(d) <= hi * 1.05, d
         near, far = grid.index(datetime(2026, 9, 1)), grid.index(datetime(2028, 3, 1))
-        gap = lambda j: np.log10(plan(grid[j]) / np.median(traj[:, j]))
-        assert gap(far) > gap(near) >= 0
+        spread = lambda j: np.log10(np.percentile(traj[:, j], 90)
+                                    / np.percentile(traj[:, j], 10))
+        assert spread(far) > spread(near) > 0
         # Every path is non-decreasing.
         assert (np.diff(traj, axis=1) >= -1e-9).all()
 
@@ -3807,7 +3810,7 @@ class TestDcCtyPlanSlip:
         grid = vp._dc_cty_month_grid(datetime(2026, 1, 1), datetime(2029, 6, 1))
         slow = dict(fit, g=0.01, sigma_g=0.0, sigma_res=0.0)
         traj = vp._dc_cty_trajectories(steps, slow, grid, 400, today=datetime(2026, 6, 1),
-                                       slip_median=0.0001)
+                                       slip_sigma=0.0001)
         # A near-flat trend cannot pull the line under the catalogued plan
         # (up to the plan's own level uncertainty, which is symmetric)…
         j = grid.index(datetime(2028, 6, 1))
@@ -3828,10 +3831,10 @@ class TestDcCtyPlanSlip:
         assert vp._dc_plan_quality(dcs, ['a'], today) == 0.5
         assert vp._dc_plan_quality(dcs, ['b'], today) is None
         assert vp._dc_plan_quality(dcs, ['a'], datetime(2028, 1, 1)) is None
-        lo, hi = vp._DC_CTY_SLIP_MEDIAN['sourced'], vp._DC_CTY_SLIP_MEDIAN['estimate']
-        assert vp._dc_cty_slip_median(1.0) == lo
-        assert vp._dc_cty_slip_median(0.0) == hi == vp._dc_cty_slip_median(None)
-        assert lo < vp._dc_cty_slip_median(0.5) < hi
+        lo, hi = vp._DC_CTY_SLIP_SIGMA_Q['sourced'], vp._DC_CTY_SLIP_SIGMA_Q['estimate']
+        assert vp._dc_cty_slip_sigma(1.0) == lo
+        assert vp._dc_cty_slip_sigma(0.0) == hi == vp._dc_cty_slip_sigma(None)
+        assert lo < vp._dc_cty_slip_sigma(0.5) < hi
 
     def test_live_catalogue_has_both_kinds_of_plan(self):
         """The heuristic has to split Epoch's future rows, or it is dead weight."""

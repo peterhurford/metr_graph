@@ -988,6 +988,14 @@ class TestDataCentersByCountry:
         at.radio(key="dc_start_year").set_value(2023).run()
         _assert_no_error(at, "by country / from 2023")
 
+    def test_cones_toggle(self):
+        at = self._dc_app()
+        assert at.checkbox(key="dc_cty_cones").value is True
+        at.checkbox(key="dc_cty_cones").set_value(False).run()
+        _assert_no_error(at, "by country / cones off")
+        # The numbers stay; only the shaded bands go.
+        assert self._headline(at)
+
     def test_trend_only_when_planned_buildout_is_off(self):
         at = self._dc_app()
         at.checkbox(key="dc_future").set_value(False).run()

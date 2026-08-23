@@ -1242,20 +1242,21 @@ _DC_CTY_FIT_WINDOWS = (2023, 2024, 2025, 2026)
 _DC_CTY_SIGMA_G_FLOOR = 0.10      # OOM/yr, 1σ
 _DC_CTY_MIN_FIT_POINTS = 6        # monthly samples; fewer → borrow the US pace
 _DC_CTY_SINCE_YEARS = [2023, 2024, 2025, 2026]
-# Planned steps slip. A future step's date is pushed back by a fraction of its
-# lead time (how far past today it sits), drawn lognormal per sample with the
-# median below and _DC_CTY_SLIP_SIGMA as the log-sd. The median depends on how
-# much of the country's planned buildout Epoch documents from a schedule,
-# filing or statement (_DC_PLAN_SOURCED_RE on `Construction status`) rather
-# than estimates by analogy; it interpolates between the two medians by that
-# share. A heuristic on prose — Epoch publishes no confidence column.
-_DC_CTY_SLIP_MEDIAN = {'sourced': 0.10, 'estimate': 0.30}   # fraction of lead
+# Timing noise on planned steps: a future step's date moves by a Normal(0, σ)
+# fraction of its lead time (how far past today it sits) — symmetric, so
+# Epoch's dates centre the band; Epoch dates conservatively (it already pushes
+# doubtful completions out), so a one-sided lateness model was tried and put
+# the plan at the top edge of the interval instead. σ depends on how much of
+# the country's planned buildout Epoch documents from a schedule, filing or
+# statement (_DC_PLAN_SOURCED_RE on `Construction status`) rather than
+# estimates by analogy; it interpolates between the two values by that share.
+# A heuristic on prose — Epoch publishes no confidence column.
+_DC_CTY_SLIP_SIGMA_Q = {'sourced': 0.15, 'estimate': 0.35}  # σ, fraction of lead
 # How far past today the catalogue is treated as complete. Beyond it the trend
 # takes over and known plans are only a floor: Epoch's list thins out with
 # distance (one site dated 2030), and anchoring the trend on the last entry
 # held the US line flat through 2029.
 _DC_CTY_PLAN_HORIZON_DAYS = 548
-_DC_CTY_SLIP_SIGMA = 0.6
 # Level uncertainty on a plan, OOM per year of lead (1σ, symmetric): a site
 # can come in under or over its stated size, and plans a year out are less
 # exact than next quarter's. Small on purpose; slip carries the downside.
@@ -1685,13 +1686,13 @@ def _dc_plan_quality(dcs, names, today):
                for p in fut) / len(fut)
 
 
-def _dc_cty_slip_median(quality):
-    """Median slip, as a fraction of lead time, for a plan of this quality
-    (share of rows sourced); the estimate median when quality is unknown."""
+def _dc_cty_slip_sigma(quality):
+    """Timing-noise σ, as a fraction of lead time, for a plan of this quality
+    (share of rows sourced); the estimate value when quality is unknown."""
     if quality is None:
-        return _DC_CTY_SLIP_MEDIAN['estimate']
-    return (_DC_CTY_SLIP_MEDIAN['estimate']
-            + quality * (_DC_CTY_SLIP_MEDIAN['sourced'] - _DC_CTY_SLIP_MEDIAN['estimate']))
+        return _DC_CTY_SLIP_SIGMA_Q['estimate']
+    return (_DC_CTY_SLIP_SIGMA_Q['estimate']
+            + quality * (_DC_CTY_SLIP_SIGMA_Q['sourced'] - _DC_CTY_SLIP_SIGMA_Q['estimate']))
 
 
 def _dc_cty_month_grid(start, end):
@@ -1767,15 +1768,14 @@ def _dc_cty_fit(steps, since=None, t_end=None):
 
 
 def _dc_cty_trajectories(steps, fit, grid, n, pace=None, today=None,
-                         slip_median=None):
+                         slip_sigma=None):
     """(n, len(grid)) array of sampled capacity paths.
 
-    Up to `today` every sample is the recorded step value. Past today and up
-    to the last recorded step t0, planned steps slip: sample i reads the plan
-    at d − (d − today)·f_i with f_i ~ lognormal(median `slip_median`,
-    _DC_CTY_SLIP_SIGMA), so a step a year out lands ~f_i of a year late — the
-    cone opens at today, modestly, and skews down. With `today` or
-    `slip_median` None nothing slips. Past t0 each sample extrapolates from
+    Up to `today` every sample is the recorded step value. Past today, planned
+    steps move in time: sample i reads the plan at d − (d − today)·f_i with
+    f_i ~ Normal(0, `slip_sigma`) — symmetric, so the plan centres the band,
+    which opens at today and widens with lead. With `today` or `slip_sigma`
+    None nothing moves. Past t0 each sample extrapolates from
     its own realized value there: log10 v = log10 v(t0) + g·τ + ε·min(τ, 1yr),
     with g ~ N(pace.g, pace.sigma_g) and ε ~ N(0, fit.sigma_res), floored at
     the slipped plan where the catalogue runs past t0. Inside the plan window
@@ -1793,8 +1793,8 @@ def _dc_cty_trajectories(steps, fit, grid, n, pace=None, today=None,
     last = pts[-1][0]
     days = np.array([(d - last).days for d, _ in pts], dtype=float)
     vals = np.array([np.nan if v is None else v for _, v in pts], dtype=float)
-    slip = (np.random.lognormal(np.log(slip_median), _DC_CTY_SLIP_SIGMA, n)
-            if today is not None and slip_median else None)
+    slip = (np.random.normal(0.0, slip_sigma, n)
+            if today is not None and slip_sigma else None)
     level = np.random.normal(0.0, _DC_CTY_PLAN_LEVEL_SIGMA, n)
 
     def _realized(d):
@@ -7115,7 +7115,8 @@ def render_eci_gap():
 # ── Data Centers ───────────────────────────────────────────────────────────
 
 _DC_RESET_KEYS = ["dc_metric", "dc_log", "dc_future", "dc_timing", "dc_pool_n",
-                  "dc_start_year", "dc_end_year", "dc_cty_pace", "dc_cty_since"]
+                  "dc_start_year", "dc_end_year", "dc_cty_cones", "dc_cty_pace",
+                  "dc_cty_since"]
 _DC_DEFAULTS = {
     "dc_metric": "Compute (H100-equiv)",
     "dc_log": True,
@@ -7124,6 +7125,7 @@ _DC_DEFAULTS = {
     "dc_pool_n": "Nearby + announced fabric",
     "dc_start_year": 2025,
     "dc_end_year": 2027,
+    "dc_cty_cones": True,
     "dc_cty_pace": "The US trend for every country (a follower tracks the leader)",
     "dc_cty_since": 2024,
 }
@@ -7459,7 +7461,7 @@ def _dc_cty_band(arr, kind):
 def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_date,
                              x_start, metric_label, kind, log_scale,
                              shift_days, include_future, pace_mode, since,
-                             horizon, run_days=None):
+                             horizon, show_cones=True, run_days=None):
     """Buildout by country — US vs China, with each country's largest training
     run extrapolated past the end of its recorded data under a cone.
 
@@ -7541,7 +7543,7 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         quality[c] = _dc_plan_quality(dcs, site_names.get(c, ()), today)
         traj[c] = _dc_cty_trajectories(
             steps_by[c], fit, grid, N_SAMPLES, pace=_pace_for(c) if fit else None,
-            today=today, slip_median=_dc_cty_slip_median(quality[c]))
+            today=today, slip_sigma=_dc_cty_slip_sigma(quality[c]))
 
     # ── Chart ──
     fig = go.Figure()
@@ -7575,8 +7577,8 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         s = steps_by[c]
         fit = _anchor(c)
         t0 = fit['t0'] if fit else s[-1][0]
-        if t0 > today or (fit is not None and t0 < horizon_end):
-            # The cone opens at today: slipped plans up to t0, trend beyond.
+        if show_cones and (t0 > today or (fit is not None and t0 < horizon_end)):
+            # The cone opens at today: time-shifted plans up to t0, trend beyond.
             _dc_fan_bands(fig, grid, traj[c], color, c, c)
         if fit is not None and t0 < horizon_end:
             # The dotted median runs from the anchor on; inside the plan
@@ -7595,7 +7597,10 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
                            f"{_dc_fmt_value(np.nanpercentile(traj[c][:, j], 10), kind)}"
                            f" – {_dc_fmt_value(np.nanpercentile(traj[c][:, j], 90), kind)}"
                            f"<br>{grid[j]:%b %Y}" for j in proj_cols]))
-        (a_x, a_y), (p_x, p_y) = _dc_split_at(s, today, t0)
+        # The dashed plan is drawn to its own last catalogued step — passing
+        # t0 here made the polyline double back when the catalogue ran past
+        # the trend anchor.
+        (a_x, a_y), (p_x, p_y) = _dc_split_at(s, today, s[-1][0])
         fig.add_trace(go.Scatter(
             x=a_x, y=a_y, mode='lines', name=c, legendgroup=c,
             line=dict(color=color, width=3, shape='hv'), hoverinfo='skip'))
@@ -7633,9 +7638,9 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         win = ", ".join(f"'{y % 100}: ×{10 ** g:.1f}" for y, g in
                         sorted(fit['windows'].items())) if fit else ""
         q = quality.get(c)
-        plan = (f"; plans {q:.0%} sourced, median slip "
-                f"{_dc_cty_slip_median(q):.0%} of lead" if q is not None else
-                "; no plans past today")
+        plan = (f"; plans {q:.0%} sourced, timing "
+                f"±{_dc_cty_slip_sigma(q):.0%} of lead (1σ)" if q is not None
+                else "; no plans past today")
         return (f"**{c}** ×{10 ** p['g']:.1f}/yr ±{p['sigma_g']:.2f} OOM/yr, "
                 f"{src}{'; ' + win if win else ''}{plan}")
     def _pace_short(c):
@@ -7645,13 +7650,13 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         return (f"**{c}** ×{10 ** p['g']:.1f}/yr"
                 f"{' (US pace)' if c in borrowed else ''}")
     st.caption("Pace — " + "; ".join(_pace_short(c) for c in cone_for) + ". "
-               "Planned steps slip more the further out and the less sourced "
-               f"they are; past {_DC_CTY_PLAN_HORIZON_DAYS // 30} months the "
-               "trend takes over with plans as a floor.")
+               "Bands centre on the plan, wider the further out and the less "
+               f"sourced it is; past {_DC_CTY_PLAN_HORIZON_DAYS // 30} months "
+               "the trend takes over with plans as a floor.")
     with st.expander("Fit details"):
         st.caption("; ".join(_pace_text(c) for c in cone_for) + ". "
                    "±: 1σ on the pace = max(fit s.e., spread across windows, "
-                   f"{_DC_CTY_SIGMA_G_FLOOR:.2f}). Slip median is a fraction of "
+                   f"{_DC_CTY_SIGMA_G_FLOOR:.2f}). Timing σ is a fraction of "
                    "lead time, interpolated by the share of future rows whose "
                    "status cites a document. Chinese fits rest on a handful of "
                    "sites; cones follow Epoch's catalogue, not policy.")
@@ -7748,6 +7753,8 @@ def render_data_centers():
         net_label = st.selectbox("Data centers networked together",
                                  list(_DC_NETWORK_OPTIONS), key="dc_pool_n")
         with st.expander("Country projection"):
+            cty_cones = st.checkbox("Show projection cones", key="dc_cty_cones",
+                                    value=_DC_DEFAULTS["dc_cty_cones"])
             pace_label = st.radio("Extrapolate along", list(_DC_CTY_PACE_OPTIONS),
                                   key="dc_cty_pace")
             cty_since = st.radio(
@@ -8178,7 +8185,7 @@ def render_data_centers():
         metric_label=metric_label, kind=kind, log_scale=log_scale,
         shift_days=shift_days, include_future=include_future,
         pace_mode=_DC_CTY_PACE_OPTIONS[pace_label], since=cty_since,
-        horizon=dc_end_year, run_days=hover_run_days)
+        horizon=dc_end_year, show_cones=cty_cones, run_days=hover_run_days)
 
     # Per-company: does the buildout predict releases?
     _cc_company_buildout(_today, cfg["key"], kind)

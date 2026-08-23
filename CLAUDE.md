@@ -308,15 +308,21 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    caption: a fit from a country's first go-live runs hot (China-accessible's own trend is
    ×5/yr, a from-zero ramp), and one to the edge of the planned data runs cool (the far
    future is under-catalogued — the US since-2026 window is ×2.3/yr vs ×3.2 since 2024).
-5. **Cones open at today, not at the end of the catalogue.** Planned steps slip: sample
-   *i* reads the step plan at `d − (d − today)·f_i` (clamped so a slipped plan never falls
-   below what is built today), `f_i` lognormal with median `_dc_cty_slip_median(quality)`
-   (10% of lead for fully sourced plans, 30% for pure estimates; `_DC_CTY_SLIP_SIGMA` =
-   0.6), and scales it by a symmetric level draw (`_DC_CTY_PLAN_LEVEL_SIGMA` = 0.06 OOM
-   per year of lead) so a flat plan still carries a small band. Every sampled path is made
-   non-decreasing (built capacity persists) — that, not a plot fix, is what keeps the
-   median from dipping at the plan-to-trend junction. Slipping a *step* plan is deliberate:
-   log-interpolating between steps was tried and anticipated capacity ahead of its date. Quality is `_dc_plan_quality()`: the share of a
+5. **Cones open at today and centre on the plan.** Sample *i* reads the step plan at
+   `d − (d − today)·f_i` (clamped so a shifted plan never falls below what is built
+   today), `f_i` ~ Normal(0, `_dc_cty_slip_sigma(quality)`) — 15% of lead for fully
+   sourced plans, 35% for pure estimates — and scales it by a symmetric level draw
+   (`_DC_CTY_PLAN_LEVEL_SIGMA` = 0.06 OOM per year of lead) so a flat plan still carries
+   a small band. The timing noise is symmetric **on purpose**: Epoch dates conservatively
+   (it pushes doubtful completions out itself), and the one-sided lognormal-lateness model
+   tried first put every planned step at the top edge of its own interval — VNET Ulanqab
+   most visibly. Every sampled path is made non-decreasing (built capacity persists) —
+   that, not a plot fix, is what keeps the median from dipping at the plan-to-trend
+   junction. Slipping a *step* plan is deliberate: log-interpolating between steps was
+   tried and anticipated capacity ahead of its date. The dashed plan line is drawn to its
+   own last catalogued step, never truncated at the trend anchor — `_dc_split_at` appends
+   its end-x after the future steps, so truncating there made the polyline double back on
+   itself. A *Show projection cones* checkbox (`dc_cty_cones`) hides the bands. Quality is `_dc_plan_quality()`: the share of a
    country's future rows whose `Construction status` cites a document
    (`_DC_PLAN_SOURCED_RE` — a markdown link, "schedule", "filing", "stated", "permit"…).
    Epoch publishes no confidence column, so this is a prose heuristic; live it splits the
