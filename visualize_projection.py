@@ -11006,28 +11006,22 @@ def _pc_render_us_pause(today, thr_ops):
               release_gap_days=gap_d)
     years, grid_yrs, traj = _cc_cn_crossing_sim(
         anchor_eci, threshold, inno_lo=inno[0], inno_hi=inno[1], **kw)
-    # Same pause, but distillation hypothetically stays frontier-fed: the
-    # difference is what the dry-up itself costs.
-    years_fed, _g2, _t2 = _cc_cn_crossing_sim(
-        anchor_eci, threshold, inno_lo=a_lo, inno_hi=a_hi, **kw)
     yr_ok = years[np.isfinite(years)]
     if len(yr_ok) < 100:
         st.info("Sampled rates were too weak to give a crossing date.")
         return
     d10, d50, d90 = (anchor_d + timedelta(days=float(np.percentile(yr_ok, p))
                                           * 365.25) for p in (10, 50, 90))
-    dry_w = (float(np.nanmedian(years)) - float(np.nanmedian(years_fed))) * 52.18
     t_pause = max((threshold - us_best[1]) / us_rate, 0.0) if us_rate > 0 else 0.0
     d_pause = anchor_d + timedelta(days=t_pause * 365.25)
-    m1, m2, m3 = st.columns(3)
+    m1, m2 = st.columns(2)
     m1.metric(f"China reaches the paused US frontier (ECI {threshold:.0f})",
               f"{d50:%b %Y}", f"{d10:%b %Y} – {d90:%b %Y} (80%)",
               delta_color="off")
-    m2.metric("From today", f"~{(d50 - today).days / 30.44:.0f} mo",
+    m2.metric("Time for China to surpass",
+              f"~{(d50 - today).days / 30.44:.0f} mo",
               f"from {pretty(anchor_name)} at {anchor_eci:.0f}",
               delta_color="off")
-    m3.metric("Cost of losing distillation", f"~{dry_w:+.0f} weeks",
-              "vs the stock staying frontier-fed", delta_color="off")
 
     # ── The race, in ECI: US climbs to the bar and freezes; China's fan
     # catches up and crosses. ──
