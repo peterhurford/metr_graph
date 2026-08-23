@@ -1100,6 +1100,31 @@ class TestPacingTab:
         at.radio(key="pc_run").set_value("2-month run").run()
         _assert_no_error(at, "Pacing / 2-month run")
 
+    def test_timing_toggle_shifts_the_dates(self):
+        """'Training run finished' pushes every crossing out by one run
+        length (6mo at the default run), so a plan crossing moves later."""
+        at = self._app()
+        assert at.selectbox(key="pc_timing").value == \
+            "Data center construction"
+        base = dict(zip(at.table[-1].value["Entity"],
+                        at.table[-1].value["Plan crosses"]))
+        at.selectbox(key="pc_timing").set_value("Training run finished").run()
+        _assert_no_error(at, "Pacing / training finished")
+        shifted = dict(zip(at.table[-1].value["Entity"],
+                           at.table[-1].value["Plan crosses"]))
+        import datetime as _dt
+        moved = 0
+        for ent, val in base.items():
+            if val == "—" or ent not in shifted or shifted[ent] == "—":
+                continue
+            d0 = _dt.datetime.strptime(val, "%b %Y")
+            d1 = _dt.datetime.strptime(shifted[ent], "%b %Y")
+            assert d1 > d0, ent
+            moved += 1
+        assert moved > 0
+        at.selectbox(key="pc_timing").set_value("Model release").run()
+        _assert_no_error(at, "Pacing / model release")
+
     def test_every_pooling_option_renders(self):
         at = self._app()
         for label in ["Single site (no networking)", "Nearby only",
@@ -1130,3 +1155,5 @@ class TestPacingTab:
         assert at.radio(key="pc_party").value == "Tenant (who trains there)"
         assert at.selectbox(key="pc_pool").value == \
             "Nearby + announced fabric"
+        assert at.selectbox(key="pc_timing").value == \
+            "Data center construction"

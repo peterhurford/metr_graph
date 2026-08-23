@@ -10557,10 +10557,12 @@ _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 # The Pacing tab adds a third attribution: entities are countries, with China
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
-_PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party"]
+_PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party",
+                  "pc_timing"]
 _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run",
                 "pc_pool": "Nearby + announced fabric",
-                "pc_party": "Tenant (who trains there)"}
+                "pc_party": "Tenant (who trains there)",
+                "pc_timing": "Data center construction"}
 
 
 def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
@@ -10711,6 +10713,15 @@ def render_pacing():
             key="pc_run",
             help="How long the job occupies the cluster; a longer run clears "
                  "the bar on less hardware.")
+        if st.session_state.get("pc_timing") not in _DC_TIMING_OPTIONS:
+            st.session_state.pop("pc_timing", None)
+        timing_label = st.selectbox(
+            "Date points at", list(_DC_TIMING_OPTIONS),
+            index=list(_DC_TIMING_OPTIONS).index(_PC_DEFAULTS["pc_timing"]),
+            key="pc_timing",
+            help="Same milestones as the Data Centers tab: capacity online, "
+                 "+ one run (the chosen length) for training finished, "
+                 "+ 30 days more for a release.")
         if st.session_state.get("pc_pool") not in _DC_NETWORK_OPTIONS:
             st.session_state.pop("pc_pool", None)
         net_label = st.selectbox(
@@ -10752,8 +10763,14 @@ def render_pacing():
         f"{party}.")
 
     # ── Entities and projections ──
+    run_days = _DAYS_6MO if key == 'train_flop_6mo' else _DAYS_2MO
+    shift_days = _dc_timing_shift(timing_label, run_days)
     dc_view = _dc_with_party(dc_all, party)
     series_all = _dc_series_for_metric(dc_view, key, cap_date=None)
+    if shift_days:
+        series_all = {n: {**v, 'pts': [(d + timedelta(days=shift_days), val)
+                                       for d, val in v['pts']]}
+                      for n, v in series_all.items()}
     hidden = _dc_hidden_companies(dc_view, now=_today)
     series_shown = {n: v for n, v in series_all.items()
                     if v['company'] not in hidden}
@@ -10914,11 +10931,19 @@ def render_pacing():
                for yr in _PC_TABLE_YEARS},
         })
     st.table(table)
+    if timing_label == "Data center construction":
+        _when = ("Dates are when the capacity is online; one run finishes "
+                 f"{run_days // 30} months later.")
+    elif timing_label == "Training run finished":
+        _when = (f"Dates include the {run_days // 30}-month run: when a "
+                 "model of this scale first finishes training.")
+    else:
+        _when = (f"Dates include the {run_days // 30}-month run plus "
+                 "30 days of release prep.")
     st.caption(
         "*Plan crosses* reads the catalogue at face value; the projection "
-        "adds timing slip on plans and a fitted trend beyond them. Dates are "
-        "when the capacity is online; one run finishes "
-        f"{'6' if key == 'train_flop_6mo' else '2'} months later. Source: "
+        f"adds timing slip on plans and a fitted trend beyond them. {_when} "
+        "Source: "
         "[Epoch AI, Frontier Data Centers](https://epoch.ai/data/data-centers) "
         "(CC-BY).")
 

@@ -480,7 +480,11 @@ machinery rather than growing its own.
    `test_crossing_idx_monotone_in_threshold`. `_pc_idx_date` maps a percentile back
    to a grid date, `None` past the grid (rendered ">2033"). The grid runs monthly
    from today to `_PC_HORIZON`. An entity whose catalogued steps cross before today
-   is "already there" via `_pc_plan_crossing`, not the Monte Carlo.
+   is "already there" via `_pc_plan_crossing`, not the Monte Carlo. A *Date points
+   at* selectbox (`pc_timing`, `_DC_TIMING_OPTIONS` verbatim) shifts the input
+   series by `_dc_timing_shift(label, run_days)` before rows are built, exactly as
+   the DC tab does — default is capacity-online, with the run length (and +30d for
+   release) one click away; the fine print states which milestone the dates mean.
 
 Guarded by `TestPacing` (unit) and `TestPacingTab` (integration).
 
