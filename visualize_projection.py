@@ -10903,7 +10903,7 @@ def render_pacing():
                    if r['lo'] is not None else "—")
         table.append({
             "Entity": r['label'],
-            "Plan crosses": _fmt(r['plan'], "not in catalogue"),
+            "Plan crosses": _fmt(r['plan']),
             "Projected (median)": med,
             "80% range": rng,
             f"P(by {_PC_HORIZON.year})": f"{r['share']:.0%}",
