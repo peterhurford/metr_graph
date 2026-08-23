@@ -1117,7 +1117,7 @@ class TestPacingTab:
         def _bar(at):
             lab = next(str(m.label) for m in at.metric
                        if "paused US frontier" in str(m.label))
-            return float(lab.split("ECI")[-1].strip(" )"))
+            return float(lab.split("ECI")[-1].strip(" ~)"))
 
         base = _bar(at)
         at.selectbox(key="pc_threshold").set_value("1e29").run()

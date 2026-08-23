@@ -11033,7 +11033,9 @@ def _pc_render_us_pause(today, thr_ops):
     _delta_mo = (years * 365.25 - _floor)[np.isfinite(years)] / 30.44
     s10, s50, s90 = (float(np.percentile(_delta_mo, p)) for p in (10, 50, 90))
     m1, m2 = st.columns(2)
-    m1.metric(f"China reaches the paused US frontier (ECI {threshold:.0f})",
+    _ops = f"{thr_ops:.0e}".replace("e+", "e")
+    m1.metric(f"China reaches the paused US frontier "
+              f"({_ops} → ECI ~{threshold:.0f})",
               f"{d50:%b %Y}", f"{d10:%b %Y} – {d90:%b %Y} (80%)",
               delta_color="off")
     m2.metric("Time for China to surpass after US pause",
