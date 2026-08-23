@@ -10553,6 +10553,7 @@ def _sync_session_to_url():
 _PC_THRESHOLDS = ("1e27", "3e27", "5e27", "1e28", "2e28", "5e28", "1e29")
 _PC_RUN_OPTIONS = {"6-month run": "train_flop_6mo", "2-month run": "train_flop"}
 _PC_HORIZON = datetime(2033, 12, 1)   # crossing-search grid end
+_PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 # The Pacing tab adds a third attribution: entities are countries, with China
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
@@ -10782,6 +10783,9 @@ def render_pacing():
             'lo': _pc_idx_date(idx, grid, 10),
             'hi': _pc_idx_date(idx, grid, 90),
             'share': float((idx < len(grid)).mean()),
+            'p_by': {yr: float((idx <= bisect.bisect_right(
+                         grid, datetime(yr, 12, 31)) - 1).mean())
+                     for yr in _PC_TABLE_YEARS},
         })
     recs.sort(key=lambda r: (
         (0, r['plan']) if r['crossed'] else
@@ -10906,7 +10910,8 @@ def render_pacing():
             "Plan crosses": _fmt(r['plan']),
             "Projected (median)": med,
             "80% range": rng,
-            f"P(by {_PC_HORIZON.year})": f"{r['share']:.0%}",
+            **{f"P(EOY {yr})": f"{r['p_by'][yr]:.0%}"
+               for yr in _PC_TABLE_YEARS},
         })
     st.table(table)
     st.caption(
