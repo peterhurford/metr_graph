@@ -840,6 +840,16 @@ class TestComputeVsCapabilities:
         assert "Algorithmic efficiency" in labels
         assert "Share of growth of compute" in labels
 
+    def test_channel_decomposition_renders(self):
+        """The three-channel section shows the derivation table, the stacked
+        US/China bars, and the residual consistency check."""
+        at = self._cc_app()
+        text = " ".join(str(m.value) for m in at.markdown)
+        assert "Where frontier growth comes from" in text
+        assert "Diffusion" in text and "Distillation" in text
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "consistency check" in caps
+
     def test_distillation_anchor_dropdown(self):
         """The scenario-lines anchor toggles between today and the Jan-2025
         backtest, and the caption follows."""

@@ -9142,6 +9142,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     if fgm:
         a_partial, b_algo = fgm['a_partial'], fgm['b_time']
     inno_band = _cc_innovation_algo_band(cc_rows, eci_all)
+    pure_band = _cc_pure_innovation_band(cc_rows, eci_all)
     us_eci_slo, us_eci_shi = b_algo + a_partial * g_us_lo, b_algo + a_partial * g_us_hi
     cn_eci_slo, cn_eci_shi = b_algo + a_partial * g_cn_lo, b_algo + a_partial * g_cn_hi
     us_eci_smid = 0.5 * (us_eci_slo + us_eci_shi)
@@ -9344,6 +9345,82 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         "the gap if anything); US/China are Epoch's tags, multi-country and "
         "untagged models excluded. Order-of-magnitude, not forecasts.")
 
+    # ── Where frontier growth comes from: three algorithmic channels ──────────
+    # Each channel is measured (or bounded) independently; innovation is the
+    # per-country residual against the observed frontier slope, and landing
+    # inside the independently derived pure band is the consistency check.
+    st.markdown("**Where frontier growth comes from — three algorithmic "
+                "channels + compute**")
+    isoc_all = _cc_iso_compute(cc_rows)
+    _cut = _CC_GAP_WINDOWS[1][1]
+    obs_us_fr = _cc_frontier_eci_slope(us_fr, _cut)
+    obs_cn_fr = _cc_frontier_eci_slope(cn_fr, _cut)
+    if (inno_band and pure_band and isoc_all and isoc_all.get('bands')
+            and obs_us_fr and obs_cn_fr):
+        top_b = max(isoc_all['bands'], key=lambda b: b['center'])
+        dist_prem = max(isoc_all['eci_per_yr'] - top_b['slope'], 0.0)
+        diff_mid = max(0.5 * (inno_band[0] + inno_band[1])
+                       - 0.5 * (pure_band[0] + pure_band[1]), 0.0)
+        comp_us_t = a_partial * 0.5 * (g_us_lo + g_us_hi)
+        comp_cn_t = a_partial * 0.5 * (g_cn_lo + g_cn_hi)
+        inno_us_r = max(obs_us_fr - comp_us_t - diff_mid, 0.0)
+        inno_cn_r = max(obs_cn_fr - comp_cn_t - diff_mid - dist_prem, 0.0)
+        st.markdown(
+            "| Channel | ECI/yr | How it's measured |\n"
+            "|---|---|---|\n"
+            f"| **Innovation** (never decays) | {pure_band[0]:.1f}–"
+            f"{pure_band[1]:.1f} | pretraining-efficiency prior "
+            f"({_CC_PRETRAIN_ALGO_OOM:.1f} OOM/yr × {a_partial:.0f} pts/×10) "
+            "up to the ±3 near-frontier refit |\n"
+            "| **Diffusion** (methods; dries up ~"
+            f"{_CC_DIFF_ABSORB_YRS:.0f} yr after a pause) | ~{diff_mid:.1f} | "
+            f"residual: the no-external-teacher level ({inno_band[0]:.1f}–"
+            f"{inno_band[1]:.1f}, two convergent near-frontier fits) minus "
+            "innovation |\n"
+            f"| **Distillation** (decays as the gap closes) | ~{dist_prem:.1f} "
+            f"| all-band iso-compute (+{isoc_all['eci_per_yr']:.1f}) minus "
+            f"the top band (+{top_b['slope']:.1f}) — only sub-frontier "
+            "models have external teachers |")
+        figw = go.Figure()
+        for name, col, u, c in (
+                ('Physical compute', '#D62728', comp_us_t, comp_cn_t),
+                ('Innovation', '#1F77B4', inno_us_r, inno_cn_r),
+                ('Diffusion', '#6BAED6', diff_mid, diff_mid),
+                ('Distillation', '#FF7F0E', 0.0, dist_prem)):
+            figw.add_trace(go.Bar(
+                y=['China', 'United States'], x=[c, u], orientation='h',
+                name=name, marker_color=col,
+                hovertemplate=name + ': %{x:.1f} ECI/yr<extra></extra>'))
+        for cty, obs in (('United States', obs_us_fr), ('China', obs_cn_fr)):
+            figw.add_annotation(x=obs, y=cty, xanchor='left',
+                                text=f' = {obs:.1f} observed', showarrow=False,
+                                font=dict(size=11, color='#222222'))
+        figw.update_layout(
+            barmode='stack', height=200, plot_bgcolor='white',
+            paper_bgcolor='white', font=dict(color='#222222'),
+            margin=dict(l=90, r=90, t=10, b=30),
+            legend=dict(orientation='h', y=-0.4, x=0.5, xanchor='center',
+                        font=dict(size=11, color='#222')),
+            xaxis=dict(title_text="Frontier ECI growth since 2024 (ECI/yr)",
+                       gridcolor='rgba(0,0,0,0.12)',
+                       tickfont=dict(color='#222'),
+                       title_font=dict(color='#222')),
+            yaxis=dict(tickfont=dict(color='#222')))
+        st.plotly_chart(figw, use_container_width=True)
+        _in_band = (pure_band[0] - 0.5 <= inno_us_r <= pure_band[1] + 0.5
+                    and pure_band[0] - 0.5 <= inno_cn_r <= pure_band[1] + 0.5)
+        st.caption(
+            "Each bar sums to the country's observed frontier slope since "
+            "2024. Compute = the exchange rate × each side's capacity "
+            "growth; **distillation applies only to the follower** (the "
+            "frontier has no stronger teacher); **diffusion flows to both** "
+            "(methods travel both ways — MLA/GRPO went east-to-west); "
+            "**innovation is the residual** — and it lands "
+            + ("**inside**" if _in_band else "**outside**")
+            + f" the independently derived {pure_band[0]:.1f}–"
+            f"{pure_band[1]:.1f} band for both countries, the "
+            "decomposition's main consistency check.")
+
     # ── China's algorithmic edge: the distillation scenario ────────────────────
     # Chart B assumes a *shared* algorithmic term — methods diffuse, so both
     # countries gain capability at the same per-year rate at fixed compute. But a
@@ -9413,7 +9490,6 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         # (no distillation and no diffusion — the pure band midpoint).
         cn_traj_inno = (cn_anchor + (compute_term_cn + inno_mid) * dt_bd
                         if inno_band else None)
-        pure_band = _cc_pure_innovation_band(cc_rows, eci_all)
         pure_mid = 0.5 * (pure_band[0] + pure_band[1]) if pure_band else None
         cn_traj_pure = (cn_anchor + (compute_term_cn + pure_mid) * dt_bd
                         if pure_mid is not None else None)
