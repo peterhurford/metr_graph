@@ -11288,6 +11288,45 @@ def _pc_when(rec, horizon=None):
     return f"~{rec['med']:%b %Y}"
 
 
+# METR time-horizon milestone quoted at the top of the tab: one work-week, the
+# first entry in the METR tab's own milestone table.
+_PC_METR_TARGET_HRS = 40.0
+_PC_METR_LEVELS = (("p50", "p50_min"), ("p80", "p80_min"))
+
+
+def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None):
+    """(early, median, late) dates for the METR frontier to reach `target_hrs`.
+
+    Reproduces `render_metr()` at its defaults — piecewise linear broken at
+    GPT-4o, doubling time lognormal over [DT/2, DT*2], position lognormal over
+    the current model's own CI — so the two tabs can't quote different dates
+    for the same milestone. As there, the p50 slope sets the trend for both
+    reliability levels and only the intercept and position CI are re-fit on the
+    chosen series. Returns None if the segment slope is flat or negative.
+    """
+    n = n or N_SAMPLES
+    lo_key, hi_key = val_key[:-4] + '_lo', val_key[:-4] + '_hi'
+    base = frontier[0]['date']
+    days = np.array([(m['date'] - base).days for m in frontier[gpt4o_idx:]],
+                    dtype=float)
+    log2_p50 = np.array([np.log2(m['p50_min']) for m in frontier[gpt4o_idx:]])
+    log2_disp = np.array([np.log2(m[val_key]) for m in frontier[gpt4o_idx:]])
+    slope = fit_line(days, log2_p50)[1]
+    if slope <= 0:
+        return None
+    dt = round(1.0 / slope)
+    proj_dt = _lognormal_from_ci(max(10, round(dt / 2)), dt * 2, n)
+    fitted_hrs = 2 ** (np.mean(log2_disp - slope * days) + slope * days[-1]) / 60
+    cur = frontier[-1]
+    pos_lo = (cur.get(lo_key) or cur[val_key]) / 60
+    pos_hi = (cur.get(hi_key) or cur[val_key]) / 60
+    sigma = max((np.log(pos_hi) - np.log(pos_lo)) / (2 * 1.282), 0.0)
+    start_hrs = np.random.lognormal(np.log(fitted_hrs), sigma, n)
+    days_to = np.log2(target_hrs / start_hrs) * proj_dt
+    return tuple(cur['date'] + timedelta(days=float(d))
+                 for d in np.percentile(days_to, [10, 50, 90]))
+
+
 # Realized ship lag of a US frontier model — run finished to public release,
 # prep plus queue: GPT-5.5 Pro's run finished ~Feb 2026 and shipped Apr 23
 # (Mythos model card). The released frontier trails the trained one by this,
@@ -12022,12 +12061,18 @@ def render_pacing():
     pc_horizon = datetime(pc_end_year, 12, 1)
 
     st.header("Pacing")
-    st.caption(
-        f"When each entity can first mount **one ≥{threshold_label}-op training "
-        f"job** ({run_label.lower()}, {_DC_UTILIZATION:.0%} utilization, Epoch "
-        "8-bit OP/s ratings), from the Frontier Data Centers catalogue. "
-        f"Sites pooled at *{net_label.lower()}*, attributed to the "
-        f"{party}.")
+
+    # ── METR 40-hour crossings ──
+    _metr_etas = [(lab, _pc_metr_eta(frontier_all, k))
+                  for lab, k in _PC_METR_LEVELS]
+    if all(e is not None for _, e in _metr_etas):
+        st.subheader("Capabilities Milestones")
+        for col, (lab, (early, med, late)) in zip(
+                st.columns(len(_metr_etas)), _metr_etas):
+            with col:
+                st.metric(f"METR {lab} horizon reaches 40h",
+                          med.strftime('%b %Y'))
+                st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")
 
     # ── Entities and projections ──
     run_days = _DAYS_6MO if key == 'train_flop_6mo' else _DAYS_2MO
@@ -12077,23 +12122,20 @@ def render_pacing():
         (1, r['med'] or pc_horizon + timedelta(days=1)), -r['share']))
 
     # ── Headline ──
+    st.subheader("Compute Thresholds")
     us = next((r for r in recs if r['label'] == _DC_CTY_US), None)
     cn = next((r for r in recs if r['label'] == _DC_CTY_CN_ACCESS), None)
-    first = recs[0] if recs else None
-    if first is not None:
-        head = (f"**First over {threshold_label}: {first['label']}, "
-                f"{_pc_when(first, pc_horizon)}.**")
-        if us is not None and cn is not None:
-            head += (f" United States {_pc_when(us, pc_horizon)}; "
-                     f"China-accessible {_pc_when(cn, pc_horizon)}")
-            d_us = us['plan'] if us['crossed'] else us['med']
-            d_cn = cn['plan'] if cn['crossed'] else cn['med']
-            if d_us is not None and d_cn is not None:
-                gap = (d_cn - d_us).days / 30.44
-                head += (f" — {abs(gap):.0f} months "
-                         f"{'later' if gap >= 0 else 'earlier'}.")
-            else:
-                head += "."
+    if us is not None and cn is not None:
+        head = (f"**United States {_pc_when(us, pc_horizon)}; "
+                f"China-accessible {_pc_when(cn, pc_horizon)}")
+        d_us = us['plan'] if us['crossed'] else us['med']
+        d_cn = cn['plan'] if cn['crossed'] else cn['med']
+        if d_us is not None and d_cn is not None:
+            gap = (d_cn - d_us).days / 30.44
+            head += (f" \u2014 {abs(gap):.0f} months "
+                     f"{'later' if gap >= 0 else 'earlier'}.**")
+        else:
+            head += ".**"
         st.markdown(head)
 
     # ── Timeline chart ──

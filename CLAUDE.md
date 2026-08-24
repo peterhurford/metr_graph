@@ -522,6 +522,15 @@ length (`_PC_RUN_OPTIONS`, default 2mo, reusing the loader's `train_flop*` colum
 utilization, Epoch 8-bit OP/s). Deliberately thin: it reuses the Data Centers tab's
 machinery rather than growing its own.
 
+The tab opens with `_pc_metr_eta()`: median + 80% CI for the METR frontier to
+reach 40h at p50 and at p80, a capability clock beside the compute one and
+independent of every control below. It reproduces `render_metr()` at its
+defaults (GPT-4o-broken segment, DT over [DT/2, DT*2], position over the
+current model's CI, p50 slope for both levels) rather than fitting its own —
+`test_metr_eta_reproduces_the_metr_tab_defaults` pins that. The compute half's
+headline is the US-vs-China line, so it renders only under the `Country`
+attribution; the threshold reaches the display through the chart title.
+
 1. **One roster per attribution, never mixed.** `pc_party` (`_PC_PARTY_OPTIONS` =
    `_DC_PARTY_OPTIONS` + `Country`) picks the entity kind. Tenant/operator race the
    charted companies via `_dc_company_networked_series` at the sidebar's pooling

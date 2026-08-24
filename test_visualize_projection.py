@@ -4202,6 +4202,34 @@ class TestPacing:
         keys, _ = vp._all_tracked()
         assert "pc_threshold" in keys and "pc_run" in keys
 
+    def test_metr_eta_reproduces_the_metr_tab_defaults(self):
+        """The 40h panel is the METR tab's own milestone row, not a second
+        model: same GPT-4o-broken segment, same DT and position priors."""
+        fr = vp.frontier_all
+        days = np.array([(m['date'] - fr[0]['date']).days
+                         for m in fr[vp.gpt4o_idx:]], dtype=float)
+        slope = vp.fit_line(
+            days, np.array([np.log2(m['p50_min'])
+                            for m in fr[vp.gpt4o_idx:]]))[1]
+        dt = round(1.0 / slope)
+        for _lab, key in vp._PC_METR_LEVELS:
+            early, med, late = vp._pc_metr_eta(fr, key, n=20000)
+            assert early < med < late
+            # Median path: fitted position carried forward at the segment DT.
+            fitted = 2 ** (np.mean(
+                np.array([np.log2(m[key]) for m in fr[vp.gpt4o_idx:]])
+                - slope * days) + slope * days[-1]) / 60
+            want = fr[-1]['date'] + timedelta(
+                days=np.log2(vp._PC_METR_TARGET_HRS / fitted) * dt)
+            assert abs((med - want).days) < 45
+
+    def test_metr_p80_crosses_40h_after_p50(self):
+        """p80 is the more demanding bar, so it arrives later at every
+        percentile."""
+        p50 = vp._pc_metr_eta(vp.frontier_all, 'p50_min', n=20000)
+        p80 = vp._pc_metr_eta(vp.frontier_all, 'p80_min', n=20000)
+        assert all(b > a for a, b in zip(p50, p80))
+
     def test_cutoff_slider_labels_round_trip(self):
         """The advanced cut-off sliders are month labels (URL- and
         reset-safe): first option is the constant default, every other

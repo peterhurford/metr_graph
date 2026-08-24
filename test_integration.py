@@ -1126,6 +1126,15 @@ class TestPacingTab:
         breakdown table renders after it, so position is not an address."""
         return next(t.value for t in at.table if "Entity" in t.value.columns)
 
+    def test_metr_40h_panel_renders_at_the_top(self):
+        """Both reliability levels get a dated metric with an 80% CI."""
+        at = self._app()
+        labels = [str(m.label) for m in at.metric]
+        assert "METR p50 horizon reaches 40h" in labels
+        assert "METR p80 horizon reaches 40h" in labels
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert caps.count("80% CI:") >= 2
+
     def test_us_pause_panel_renders(self):
         """The US-pause counterfactual renders with its crossing metric,
         race chart and assumption caption."""
@@ -1411,9 +1420,9 @@ class TestPacingTab:
         at = self._app()
         _assert_no_error(at, "Pacing")
         assert "Pacing" in [str(h.value) for h in at.header]
-        head = [str(m.value) for m in at.markdown
-                if "First over" in str(m.value)]
-        assert len(head) == 1 and "1e28" in head[0]
+        # The US-vs-China headline is a country line; the default roster is
+        # companies, so it appears only under the 'Country' attribution.
+        assert not [m for m in at.markdown if "China-accessible" in str(m.value)]
         assert at.selectbox(key="pc_threshold").value == "1e28"
         assert at.radio(key="pc_run").value == "2-month run"
         table = self._entities(at)
@@ -1428,19 +1437,25 @@ class TestPacingTab:
         at = self._app()
         at.radio(key="pc_party").set_value("Country").run()
         _assert_no_error(at, "Pacing / country")
+        head = [str(m.value) for m in at.markdown
+                if "China-accessible" in str(m.value)]
+        assert len(head) == 1 and "United States" in head[0]
         ents = list(self._entities(at)["Entity"])
         assert "United States" in ents
         assert "China-accessible" in ents
         assert "China (domestic only)" in ents
         assert "Anthropic" not in ents
 
-    def test_threshold_drives_the_headline(self):
+    def test_threshold_drives_the_race(self):
+        """The headline no longer names the threshold, so the chart title
+        is what carries it into the display."""
         at = self._app()
         at.selectbox(key="pc_threshold").set_value("1e29").run()
         _assert_no_error(at, "Pacing @ 1e29")
-        head = [str(m.value) for m in at.markdown
-                if "First over" in str(m.value)]
-        assert len(head) == 1 and "1e29" in head[0]
+        import json
+        titles = [json.loads(el.proto.spec)["layout"].get("title", {}).get("text", "")
+                  for el in at.get("plotly_chart")]
+        assert any("1e29" in str(t) for t in titles)
 
     def test_run_length_toggle_renders(self):
         at = self._app()
