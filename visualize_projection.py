@@ -11601,11 +11601,10 @@ def _pc_report_lag(days_to, release_dated, timing_label, n=None):
 # late-but-uncertain milestone widens the answer instead of just shifting it.
 # Keyed by slug because the card labels are built from the target constants.
 _PC_RSI_WEIGHTS = {
-    "metr_p50": 5.0,
     "metr_p80": 20.0,
     "eci_170": 5.0,
     "eci_195": 20.0,
-    "rli_90": 15.0,
+    "rli_90": 20.0,
     "cobench_85": 15.0,
     "staff_10x": 20.0,
 }
@@ -11885,9 +11884,13 @@ def _pc_when(rec, horizon=None):
 
 
 # METR time-horizon milestone quoted at the top of the tab: one work-week, the
-# first entry in the METR tab's own milestone table.
+# first entry in the METR tab's own milestone table. p80 only — p50 dates the
+# horizon a model clears half the time, too weak a bar to be a candidate RSI
+# threshold, and it fired ~9 months ahead of every other milestone here.
+# `_pc_metr_eta` still fits on p50 (that is the METR tab's own default) and
+# takes the displayed series as `val_key`.
 _PC_METR_TARGET_HRS = 40.0
-_PC_METR_LEVELS = (("p50", "p50_min"), ("p80", "p80_min"))
+_PC_METR_LEVELS = (("p80", "p80_min"),)
 
 
 def _pc_eta_out(anchor_date, days_to, samples):

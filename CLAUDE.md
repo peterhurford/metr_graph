@@ -583,8 +583,10 @@ utilization, Epoch 8-bit OP/s). Deliberately thin: it reuses the Data Centers ta
 machinery rather than growing its own.
 
 The tab opens with *Capabilities Milestones*, six cards independent of every
-control below: `_pc_metr_eta()` for the METR frontier reaching 40h at p50 and
-at p80, `_pc_eci_eta()` for the US-best ECI frontier reaching each of
+control below: `_pc_metr_eta()` for the METR frontier reaching 40h at p80
+(`_PC_METR_LEVELS`; p50 is deliberately not shown — it dates the horizon a model
+clears half the time, too weak a bar for a candidate RSI threshold, and it fired
+~9 months ahead of everything else), `_pc_eci_eta()` for the US-best ECI frontier reaching each of
 `_PC_ECI_TARGETS` — 170, the top line of `_ECI_US_MILESTONES`, and 195, above
 anything that tab draws and a long extrapolation of the same fit —
 `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT` (90%, above
@@ -592,10 +594,9 @@ that tab's own milestone table, which stops at 50%), `_pc_rsi_eta()` for
 the CoBench frontier reaching `_RSI_SUBSTITUTION_BAR` (85%, Anthropic's own
 full-substitution bar, which the RSI tab dates too), and `_pc_rsi_survey_eta()`
 for self-reported staff speedup reaching `_PC_RSI_SURVEY_TARGET_X` (10x, about a
-doubling and a half past the most recent round's ~4x). They render in **two
-rows** — seven on one line squeezes every label to two words. Each reproduces
+doubling and a half past the most recent round's ~4x). They render in **two rows** — on one line every label squeezes to two words. Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
-[DT/2, DT*2], position over the current model's CI, p50 slope for both levels;
+[DT/2, DT*2], position over the current model's CI, p50 slope fits the trend;
 ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2; RLI: single OLS in
 logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
 ± 1 point; RSI CoBench: single OLS in logit space, odds-doubling time over
@@ -608,9 +609,11 @@ milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
 `test_rli_eta_reproduces_the_rli_tab_defaults` and
 `test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that; the cross-tab
 `test_pacing_quotes_the_same_milestone` compares the two CoBench dates with a
-tolerance, since both are Monte Carlo medians off an unseeded RNG. Five of the seven are dated off *released, publicly benchmarked* models (METR,
+tolerance, since both are Monte Carlo medians off an unseeded RNG.
+
+Four of the six are dated off *released, publicly benchmarked* models (METR,
 ECI, RLI); CoBench and the staff survey are internal evaluations Anthropic
-reports for models it has not shipped. So `_pc_report_lag()` pulls the five back
+reports for models it has not shipped. So `_pc_report_lag()` pulls the four back
 by `_PC_REPORT_LAG_DAYS` (1–2 months, sampled over the range so the spread lands
 in the CI) whenever *Date points at* is not `_PC_TIMING_RELEASE`; the other two
 are already on that clock and must not be shifted twice.

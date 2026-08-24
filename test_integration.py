@@ -1176,16 +1176,16 @@ class TestPacingTab:
         return next(t.value for t in at.table if "Entity" in t.value.columns)
 
     def test_metr_40h_panel_renders_at_the_top(self):
-        """Both reliability levels get a dated metric with an 80% CI."""
+        """p80 only: p50 is too weak a bar to be a candidate RSI threshold."""
         at = self._app()
         labels = [str(m.label) for m in at.metric]
-        assert "METR p50 horizon reaches 40h" in labels
         assert "METR p80 horizon reaches 40h" in labels
+        assert "METR p50 horizon reaches 40h" not in labels
         assert "US ECI reaches 170" in labels
         assert "US ECI reaches 195" in labels
         assert "RLI reaches 90%" in labels
         caps = " ".join(str(c.value) for c in at.caption)
-        assert caps.count("80% CI:") >= 5
+        assert caps.count("80% CI:") >= 4
 
     def test_us_pause_panel_renders(self):
         """The US-pause counterfactual renders with its crossing metric,
