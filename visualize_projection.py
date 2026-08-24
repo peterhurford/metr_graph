@@ -4967,6 +4967,8 @@ def render_rsi():
                 min_value=0.5, max_value=99.5, step=1.0)
 
     st.header("RSI")
+    st.warning("Warning: RSI projections under construction, these are simple "
+               "models and not 'all things considered' takes.")
 
     st.subheader("CoBench")
     st.markdown(
