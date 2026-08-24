@@ -1227,10 +1227,10 @@ class TestPacingTab:
     def test_projection_range(self):
         """'Project through' moves the crossing-search horizon."""
         at = self._app()
-        at.radio(key="pc_end_year").set_value(2029).run()
-        _assert_no_error(at, "Pacing / through 2029")
-        at.radio(key="pc_end_year").set_value(2035).run()
-        _assert_no_error(at, "Pacing / through 2035")
+        at.radio(key="pc_end_year").set_value(2027).run()
+        _assert_no_error(at, "Pacing / through 2027")
+        at.radio(key="pc_end_year").set_value(2031).run()
+        _assert_no_error(at, "Pacing / through 2031")
 
     def test_both_charts_end_at_the_projection_range(self):
         """Timeline and pause charts both run to *Project through*, like
@@ -1245,7 +1245,7 @@ class TestPacingTab:
             return out
 
         at = self._app()
-        for yr in (2029, 2035):
+        for yr in (2028, 2031):
             at.radio(key="pc_end_year").set_value(yr).run()
             _assert_no_error(at, f"Pacing / through {yr}")
             ends = _ends(at)

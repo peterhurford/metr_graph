@@ -11021,7 +11021,7 @@ def _sync_session_to_url():
 # ops of one training job. For scale: GPT-5 ≈ 2e25, Mythos ≈ 1e27.
 _PC_THRESHOLDS = ("1e27", "3e27", "5e27", "1e28", "2e28", "5e28", "1e29")
 _PC_RUN_OPTIONS = {"6-month run": "train_flop_6mo", "2-month run": "train_flop"}
-_PC_HORIZON = datetime(2033, 12, 1)   # crossing-search grid end
+_PC_HORIZON = datetime(2031, 12, 1)   # crossing-search grid end
 _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 # The Pacing tab adds a third attribution: entities are countries, with China
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
@@ -11036,7 +11036,7 @@ _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "2-month run",
                 "pc_end_year": _PC_HORIZON.year,
                 "pc_stop_dist": False, "pc_stop_remote": False,
                 "pc_withhold": True}
-_PC_END_YEARS = [2029, 2031, 2033, 2035]
+_PC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
 
 def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,

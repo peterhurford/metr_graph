@@ -584,7 +584,7 @@ China
 races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the
 paused stock stays distillable while a gap remains, then China runs on its
 indigenous band plus its export-control-bound compute term. A *Projection range*
-expander (`pc_end_year`, default 2033) sets the crossing-search horizon and — like every
+expander (`pc_end_year`, options 2027–2031, default 2031) sets the crossing-search horizon and — like every
 other tab's *Project through* — the x-axis of **both** charts: the timeline runs to the
 grid end (+120d pad) instead of auto-fitting to content, and the pause panel takes
 `horizon=` (sim `horizon_yrs` from China's anchor, floored at 1yr) so its fan ends on the
