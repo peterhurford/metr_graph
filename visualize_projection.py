@@ -12105,64 +12105,55 @@ def _pc_rsi_blend(components, weights, origin, n=None):
                  for d in np.percentile(out, [10, 50, 90]))
 
 
-def _pc_month_starts(first, last):
-    """First-of-month datetimes covering [first, last] inclusive."""
-    out, d = [], datetime(first.year, first.month, 1)
-    while d <= last:
-        out.append(d)
-        d = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
-    return out
-
-
 def _pc_rsi_dist_fig(days, origin, early, med, late):
-    """Monthly probability of the blend landing in each month.
+    """Cumulative probability that the blend has landed by each date.
 
-    A histogram rather than a smooth curve on purpose: the blend is a mixture
-    of seven milestones, and the lumps are where its components sit — a kernel
-    would smooth away the structure the single median already hides. Bins run to
-    the 99.5th percentile but the axis stops at the 97th: past that the bars are
-    a flat sub-1%/month tail that takes half the width and hides the shape. The
-    80% CI above still states the full spread.
+    A CDF rather than a histogram: the blend is a mixture of seven milestones,
+    so a density is lumpy where its components sit and the bin width becomes a
+    presentation choice. The cumulative curve has neither problem, and reading
+    "X% by date D" off it is the question this section answers. Sampled daily
+    so the hover tracks continuously; the axis stops at the 98th percentile,
+    past which the curve is a flat tail that only costs width.
     """
-    lo_d = origin + timedelta(days=float(np.percentile(days, 0.5)))
-    hi_d = origin + timedelta(days=float(np.percentile(days, 99.5)))
-    starts = _pc_month_starts(lo_d, hi_d)
-    if len(starts) < 2:
+    srt = np.sort(days)
+    d0 = float(np.percentile(srt, 0.5))
+    d1 = float(np.percentile(srt, 98))
+    if d1 - d0 < 2:
         return None
-    edges = [(d - origin).days for d in starts] + [
-        (starts[-1] - origin).days + 31]
-    counts, _ = np.histogram(days, bins=edges)
-    share = counts / len(days) * 100
+    grid = np.arange(np.floor(d0), np.ceil(d1) + 1, 1.0)
+    cdf = np.searchsorted(srt, grid, side='right') / len(srt) * 100
+    dates = [origin + timedelta(days=float(g)) for g in grid]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=starts, y=share.tolist(),
-        marker=dict(color='#4F8DFD', line=dict(width=0)),
-        hovertext=[f"{d:%b %Y}<br>{v:.1f}% of samples"
-                   for d, v in zip(starts, share)],
+    fig.add_trace(go.Scatter(
+        x=dates, y=cdf.tolist(), mode='lines',
+        line=dict(color='#4F8DFD', width=2.5),
+        fill='tozeroy', fillcolor='rgba(79,141,253,0.12)',
+        hovertext=[f"By {d:%b %d, %Y}<br>{v:.0f}% chance"
+                   for d, v in zip(dates, cdf)],
         hoverinfo='text', showlegend=False))
     fig.add_vrect(x0=early, x1=late, fillcolor='rgba(52,152,219,0.10)',
                   line_width=0, layer='below')
     # add_vline's own annotation averages the x endpoints, which throws on a
     # datetime axis; place it separately against the paper y-axis instead.
     fig.add_vline(x=med, line=dict(color='#2c3e50', width=2, dash='dash'))
-    _x_end = min(origin + timedelta(days=float(np.percentile(days, 97))),
-                 starts[-1] + timedelta(days=31))
     fig.add_annotation(x=med, y=1.0, yref='paper', yanchor='bottom',
                        xanchor='left', xshift=4, showarrow=False,
                        text=f"median {med:%b %Y}",
                        font=dict(size=11, color='#2c3e50'))
     fig.update_layout(
-        height=260, margin=dict(l=50, r=30, t=30, b=35), bargap=0.15,
+        height=300, margin=dict(l=50, r=30, t=30, b=35),
         font=dict(color='#1a1a2e'),
-        xaxis=dict(range=[starts[0], _x_end],
+        xaxis=dict(range=[dates[0], dates[-1]],
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   showspikes=True, spikemode='across', spikethickness=1,
+                   spikedash='dot', spikecolor='#9aa5b1',
                    tickfont=dict(color='#1a1a2e')),
-        yaxis=dict(title="Share of samples", ticksuffix='%',
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+        yaxis=dict(title="Chance crossed by then", range=[0, 100],
+                   ticksuffix='%', gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'),
                    title_font=dict(color='#1a1a2e')),
-        plot_bgcolor='white', paper_bgcolor='white')
+        hovermode='x', plot_bgcolor='white', paper_bgcolor='white')
     return fig
 
 
