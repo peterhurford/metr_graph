@@ -1209,6 +1209,34 @@ class TestPacingTab:
         md = " ".join(str(m.value) for m in at.markdown)
         assert late in md
 
+    def test_chinese_run_length_trades_compute_against_wall_clock(self):
+        """A longer Chinese run lifts the path (more compute in one model)
+        and shifts it right (the run takes longer), so the crossing is a
+        U-curve in run length: a few extra months help, a year hurts.
+        Matching the bar's length is the default and changes nothing."""
+        at = self._app()
+
+        def _surpass_mo(at):
+            m = next(m for m in at.metric
+                     if "Time for China to surpass" in str(m.label))
+            return float(str(m.value).strip("~ mo"))
+
+        sl = at.slider(key="pc_cn_run")
+        assert sl.value == 2 and sl.max == 12
+        base = _surpass_mo(at)
+        assert not [c for c in at.caption if "Chinese run" in str(c.value)]
+
+        at.slider(key="pc_cn_run").set_value(5).run()
+        _assert_no_error(at, "Pacing / 5-month Chinese run")
+        mid = _surpass_mo(at)
+        cap = " ".join(str(c.value) for c in at.caption)
+        assert "5-month Chinese run" in cap and "3 months of extra" in cap
+        at.slider(key="pc_cn_run").set_value(12).run()
+        _assert_no_error(at, "Pacing / 12-month Chinese run")
+        long_run = _surpass_mo(at)
+        assert mid < base            # a moderate stretch pays
+        assert long_run > mid        # a year of wall clock does not
+
     def test_pause_dates_follow_timing_in_lockstep(self):
         """'Date points at' shifts both countries' pause-panel dates to the
         chosen milestone (construction → release ≈ run + 1 mo later), while

@@ -4223,6 +4223,37 @@ class TestPacing:
         assert vp._pc_when_date("nonsense", today) == today
         assert vp._pc_when_date(None, today) == today
 
+    def test_cross_years_reproduces_the_sims_own_crossings(self):
+        """_pc_cross_years re-reads sampled paths against a second bar; on
+        the bar the sim itself used it must return the sim's answer, else
+        the run-length comparison isn't paired."""
+        kw = dict(a_partial=8.0, g_lo=0.15, g_hi=0.30, algo_lo=11.0,
+                  algo_mid=12.0, algo_hi=13.0, pace_lo=0.8, pace_hi=1.1,
+                  n=200, inno_lo=8.0, inno_hi=10.0,
+                  us_anchor=165.0, us_rate=25.0)
+        years, grid, traj = vp._cc_cn_crossing_sim(150.0, 160.0, **kw)
+        again = vp._pc_cross_years(traj, grid, 160.0)
+        assert np.array_equal(np.isnan(years), np.isnan(again))
+        assert np.allclose(years[~np.isnan(years)], again[~np.isnan(again)])
+        # A lower bar is reached no later, per sample; a per-sample bar
+        # works the same as the scalar it broadcasts from.
+        lower = vp._pc_cross_years(traj, grid, 155.0)
+        assert np.all(lower[~np.isnan(lower)] <=
+                      np.nan_to_num(again, nan=np.inf)[~np.isnan(lower)])
+        vec = vp._pc_cross_years(traj, grid, np.full(200, 160.0))
+        assert np.allclose(np.nan_to_num(vec, nan=-1),
+                           np.nan_to_num(again, nan=-1))
+        # Never reached inside the grid → NaN, not a spurious crossing.
+        assert np.isnan(vp._pc_cross_years(traj, grid, 1e6)).all()
+
+    def test_chinese_run_length_slider_bounds(self):
+        """The Chinese run-length control starts at the bar's own length
+        (running *shorter* isn't the question) and tops out at a year."""
+        assert vp._PC_CN_RUN_MAX == 12
+        assert vp._PC_DEFAULTS["pc_cn_run"] == \
+            max(round(vp._DAYS_2MO / 30), 1)
+        assert vp._PC_DEFAULTS["pc_run"] == "2-month run"
+
     def test_plan_crossing_is_first_step_at_or_above(self):
         steps = [(datetime(2025, 1, 1), 5e26, "Site A"),
                  (datetime(2026, 1, 1), 2e27, "Cluster B (2 sites)"),

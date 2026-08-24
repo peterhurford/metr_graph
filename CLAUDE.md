@@ -577,7 +577,18 @@ stays on the default compute band — it is shared with the CC crossing.
 An *Advanced* expander dates the two cuts (`pc_dist_when` / `pc_remote_when`,
 `_pc_when_options` month labels — strings, so they round-trip through the URL and
 reset to a constant `Now` = the checkbox alone; a stale label is dropped like
-`pc_threshold`). Sliders are `disabled` without their checkbox. A dated remote cut
+`pc_threshold`). Sliders are `disabled` without their checkbox. It also carries
+`pc_cn_run` (2–12 months, min = the bar's own run length, default = it): China need
+not match the length the bar was set at. A longer run is a one-off **level** move,
+never a faster rate — ×(L/L_us) compute into one model, worth `a_partial` per ×10 —
+paid for with L−L_us months of wall clock, so China's whole deliverable path lifts by
+`cn_gain` and shifts right by `cn_extra`. The organic sim is untouched (algorithmic
+channels don't speed up because a run is longer); the lift is applied by re-reading
+the *same* sampled paths against a bar lowered by `cn_gain` via `_pc_cross_years`,
+which must reproduce the sim's own interpolated crossings exactly — that pairing is
+what makes the stated net free of MC noise. Live the answer is a U-curve (~5–6 months
+is the optimum; a year is worse than matching), which is the point of the control.
+A dated remote cut
 must not slow the years *before* it: the band stays on the export-control default
 until the cut and `comp_slow=(t_cut, a_partial·g_domestic)` takes over after, while
 the setback is sized at the cut date (today's OOM gap widened by `(g_mid − g_dom)`

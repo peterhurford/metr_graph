@@ -11039,8 +11039,9 @@ _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
 _PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold",
-                  "pc_dist_when", "pc_remote_when"]
+                  "pc_dist_when", "pc_remote_when", "pc_cn_run"]
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
+_PC_CN_RUN_MAX = 12           # months: longest Chinese catch-up training run
 _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "2-month run",
                 "pc_pool": "Nearby + announced fabric",
                 "pc_party": "Tenant (who trains there)",
@@ -11049,7 +11050,8 @@ _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "2-month run",
                 "pc_stop_dist": False, "pc_stop_remote": False,
                 "pc_withhold": True,
                 "pc_dist_when": _PC_WHEN_NOW,
-                "pc_remote_when": _PC_WHEN_NOW}
+                "pc_remote_when": _PC_WHEN_NOW,
+                "pc_cn_run": 2}
 _PC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
 
@@ -11066,6 +11068,29 @@ def _pc_when_options(today, end=_PC_HORIZON):
         if d > end:
             return opts
         opts.append(f"{d:%b %Y}")
+
+
+def _pc_cross_years(traj, grid, target):
+    """Per-sample first crossing of `target` on `traj`, NaN where never.
+
+    The same sub-step interpolation `_cc_cn_crossing_sim` does internally
+    (snapping to the monthly grid swallows sub-month differences), pulled
+    out so one set of sampled paths can be re-read against a second bar —
+    what the Chinese-run-length comparison needs. `target` may be scalar or
+    per-sample.
+    """
+    tgt = np.broadcast_to(np.asarray(target, dtype=float).ravel()
+                          if np.ndim(target) else float(target), len(traj))
+    hit = traj >= tgt[:, None]
+    ok = hit.any(axis=1)
+    idx = np.argmax(hit, axis=1)
+    rows = np.arange(len(traj))
+    prev = traj[rows, np.maximum(idx - 1, 0)]
+    frac = np.clip((tgt - prev) / np.maximum(traj[rows, idx] - prev, 1e-12),
+                   0.0, 1.0)
+    dt = grid[1] - grid[0] if len(grid) > 1 else 0.0
+    years = grid[np.maximum(idx - 1, 0)] + frac * dt
+    return np.where(ok, np.where(idx == 0, 0.0, years), np.nan)
 
 
 def _pc_tri(lo, hi, n, pad=0.01):
@@ -11280,7 +11305,8 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
              "domestic cluster (a level setback the domestic buildout must "
              "first regrow), and grows at the domestic catalogued pace "
              "thereafter.")
-    with st.expander("Advanced — when the controls bite"):
+    with st.expander("Advanced"):
+        st.markdown("**When the controls bite**")
         _opts = _pc_when_options(today)
         for _k in ("pc_dist_when", "pc_remote_when"):
             if st.session_state.get(_k, _PC_WHEN_NOW) not in _opts:
@@ -11304,6 +11330,26 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
         st.caption("Both default to *Now*, which is what the checkboxes on "
                    "their own mean. Moving a slider right buys China more "
                    "time on that channel before it closes.")
+        st.divider()
+        st.markdown("**Length of Chinese training run**")
+        us_run_mo = max(int(round(run_days / 30)), 1)
+        if not (us_run_mo <= st.session_state.get("pc_cn_run", us_run_mo)
+                <= _PC_CN_RUN_MAX):
+            st.session_state.pop("pc_cn_run", None)   # stale for this bar
+        cn_run_mo = st.slider(
+            "Months China trains its catch-up model for", us_run_mo,
+            _PC_CN_RUN_MAX, value=us_run_mo, step=1, key="pc_cn_run",
+            help=f"The bar is a {us_run_mo}-month US run, but China need "
+                 "not match its length. Running longer puts more total "
+                 "compute into one model and needs proportionally less "
+                 "cluster to do it — so the hardware is there sooner — "
+                 "while the run itself finishes later. It can go either "
+                 "way; the cards above show which.")
+        st.caption(f"An L-month run carries ×L/{us_run_mo} the compute of "
+                   f"the {us_run_mo}-month bar: China's whole path lifts by "
+                   f"what that buys and shifts right by L−{us_run_mo} "
+                   f"months. Defaults to {us_run_mo} — matching the bar, "
+                   "and no change from the panel above.")
     d_dist = _pc_when_date(dist_when, today)
     d_remote = _pc_when_date(remote_when, today)
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
@@ -11327,6 +11373,19 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
     fgm = _cc_frontier_grade_algo(cc_rows, eci_all)
     if fgm:
         a_partial, b_algo = fgm['a_partial'], fgm['b_time']
+    # A longer Chinese run is a one-off *level* move, not a faster rate: it
+    # puts ×(L/L_us) the compute into one model, worth a_partial per ×10 of
+    # capability, and needs proportionally less cluster so the hardware is
+    # there sooner — but that model lands L−L_us months later. So China's
+    # whole deliverable path lifts by `cn_gain` and shifts right by
+    # `cn_extra`. Which way the crossing moves is the point of the control:
+    # the lift is worth cn_gain / (China's ECI rate) of time, and beyond a
+    # few months the extra wall clock outruns it. The organic sim is
+    # untouched — the algorithmic channels don't speed up because a run is
+    # longer — so the lift is applied by reading the same sampled paths
+    # against a bar lowered by cn_gain.
+    cn_gain = a_partial * float(np.log10(cn_run_mo / us_run_mo))
+    cn_extra = (cn_run_mo - us_run_mo) * 30.44 / 365.25
     us_algo, _, _ = _cc_iso_compute_rate(cc_rows, 'United States of America')
     cn_algo, _, _ = _cc_iso_compute_rate(cc_rows, 'China')
     if us_algo is None or cn_algo is None:
@@ -11463,6 +11522,14 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
         kw['horizon_yrs'] = max((horizon - anchor_d).days / 365.25, 1.0)
     years, grid_yrs, traj = _cc_cn_crossing_sim(
         anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1], **kw)
+    # The run-length trade-off, read off the *same* sampled paths so the
+    # comparison is paired (no MC noise between the two answers): the bar
+    # drops by cn_gain, then the extra wall clock is added back.
+    years_base = years
+    if cn_run_mo != us_run_mo:
+        years = _pc_cross_years(traj, grid_yrs, level_s - cn_gain) + cn_extra
+        traj = traj + cn_gain
+        grid_yrs = grid_yrs + cn_extra
     # Sensitivity: China's compute term at the catalogued China-accessible
     # buildout pace (Chinese labs' sites abroad included) instead of the
     # export-control band — the channel where "remote" compute would bite.
@@ -11474,6 +11541,8 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
             anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
             **dict(kw, g_lo=max(chk_ca['g'] - chk_ca['sigma_g'], 0.05),
                    g_hi=chk_ca['g'] + chk_ca['sigma_g']))
+        if cn_run_mo != us_run_mo:
+            y_ca = _pc_cross_years(_tc, _gc, level_s - cn_gain) + cn_extra
         ok_ca = y_ca[np.isfinite(y_ca)]
         if len(ok_ca) >= 100:
             d50_ca = anchor_d + timedelta(
@@ -11528,6 +11597,21 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
                "points at* — both countries move together, so the gap "
                "between them never changes (and no release-queue wait is "
                "added: a queue delays both sides alike).")
+    if cn_run_mo != us_run_mo:
+        _both = np.isfinite(years) & np.isfinite(years_base)
+        _net = float(np.median((years - years_base)[_both])) * 12 \
+            if _both.any() else 0.0
+        _xtra = cn_run_mo - us_run_mo
+        _mos = f"{_xtra} month" + ("s" if _xtra != 1 else "")
+        st.caption(
+            f"**{cn_run_mo}-month Chinese run** (*Advanced*): "
+            f"×{cn_run_mo / us_run_mo:.1f} the compute of the "
+            f"{us_run_mo}-month bar in one model — worth **+{cn_gain:.1f} "
+            f"ECI**, or {_xtra - _net:.1f} months of China's climb — "
+            f"against {_mos} of extra training: net **{abs(_net):.1f} mo "
+            f"{'later' if _net > 0 else 'earlier'}** than matching the "
+            f"bar's {us_run_mo} months. On the chart China's fan therefore "
+            f"starts {_mos} after its last actual model, that much higher.")
     _when_r = "today" if d_remote <= today else f"**{d_remote:%b %Y}**"
     _dom_hi = g_hi_eff if g_dom_hi is None else g_dom_hi
     _dom_lo = g_lo_eff if g_dom_hi is None else g_dom_lo
