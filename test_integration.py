@@ -1249,37 +1249,66 @@ class TestPacingTab:
         the point of having it."""
         at = self._app()
 
+        _KEYS = {"domestic": "domestic", "abroad": "abroad",
+                 "innovation": "Indigenous", "diffusion": "Diffusion",
+                 "distillation": "Distillation", "run": "Longer training",
+                 "total": "Total"}
+
         def _rows(at):
             t = next(x.value for x in at.table if "Channel" in x.value.columns)
-            return {r["Channel"].split(" —")[0]:
-                    (float(r["ECI closed"]), r["Share"], r["Without it"])
-                    for _, r in t.iterrows()}
+            out = {}
+            for _, r in t.iterrows():
+                key = next((k for k, sub in _KEYS.items()
+                            if sub in r["Channel"]), r["Channel"])
+                out[key] = (float(r["ECI closed"]), r["Share"],
+                            r["Without it"])
+            return out
 
         base = _rows(at)
-        assert set(base) >= {"Compute", "Indigenous innovation", "Diffusion",
-                             "Distillation", "**Total**"}
-        gap = base["**Total**"][0]
-        parts = sum(v[0] for k, v in base.items() if k != "**Total**")
+        assert set(base) == {"domestic", "abroad", "innovation", "diffusion",
+                             "distillation", "total"}
+        gap = base["total"][0]
+        parts = sum(v[0] for k, v in base.items() if k != "total")
         assert parts == pytest.approx(gap, abs=0.15)
         assert all(v[0] > 0 for v in base.values())
         # Every channel is load-bearing: removing it costs months.
         for k, v in base.items():
-            if k == "**Total**":
+            if k == "total":
                 continue
             assert v[2] == "not by 2031" or float(v[2].rstrip(" mo")) > 0, k
 
         at.checkbox(key="pc_stop_dist").check().run()
         _assert_no_error(at, "Pacing / why with distillation cut")
         cut = _rows(at)
-        assert cut["Distillation"][0] < base["Distillation"][0] / 2
-        assert cut["**Total**"][0] == pytest.approx(gap, abs=1.0)
-
+        assert cut["distillation"][0] < base["distillation"][0] / 2
+        assert cut["total"][0] == pytest.approx(gap, abs=1.0)
         at.checkbox(key="pc_stop_dist").uncheck().run()
+
+        # Cutting remote access collapses exactly the row that prices it:
+        # the shadow the breakdown subtracts becomes the run itself.
+        at.checkbox(key="pc_stop_remote").check().run()
+        _assert_no_error(at, "Pacing / why with remote access cut")
+        rem = _rows(at)
+        assert rem["abroad"][0] == pytest.approx(0.0, abs=0.05)
+        assert rem["abroad"][2] == "+0.0 mo"
+        assert rem["domestic"][0] == pytest.approx(base["domestic"][0],
+                                                   abs=1.0)
+        # Dating the cut later leaves part of it standing.
+        at.select_slider(key="pc_remote_when").set_value("Aug 2028").run()
+        _assert_no_error(at, "Pacing / why with remote access cut later")
+        later = _rows(at)
+        # Between the two: more than a cut today leaves, no more than never
+        # cutting. The upper bound carries a tolerance because the test
+        # suite runs a small Monte Carlo (conftest's _VP_SAMPLES).
+        assert later["abroad"][0] > rem["abroad"][0]
+        assert later["abroad"][0] < base["abroad"][0] + 1.0
+        at.select_slider(key="pc_remote_when").set_value("Now").run()
+        at.checkbox(key="pc_stop_remote").uncheck().run()
+
         at.slider(key="pc_cn_run").set_value(6).run()
         _assert_no_error(at, "Pacing / why with a 6-month run")
         run = _rows(at)
-        assert "Longer training run" in run
-        assert run["Longer training run"][0] > 0
+        assert run["run"][0] > 0
 
     def test_pause_dates_follow_timing_in_lockstep(self):
         """'Date points at' shifts both countries' pause-panel dates to the

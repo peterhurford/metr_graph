@@ -605,13 +605,21 @@ second model: `_cc_cn_crossing_sim` fills an optional `channels` dict with the f
 terms' cumulative ECI (`_CC_CHANNELS`, summing to `traj − anchor` exactly —
 `test_channels_account_for_the_whole_climb`), `_pc_at_years` reads each at its own
 sample's crossing for the *ECI closed* / *Share* columns, and *Without it* re-crosses
-`traj − channel` via `_pc_cross_years`. The two columns answer different questions and
+`traj − channel` via `_pc_cross_years`. **Compute splits in two**, because remote access
+is a lever the panel offers and folding it into one compute row hid it: `comp_shadow`
+(comp_cap, dead) makes the sim accumulate a fifth column, the compute term recomputed
+with each sample's *own* pace capped at the domestic ceiling and its own setback window.
+Capping the same sample rather than redrawing is load-bearing — when the run already has
+no access abroad the cap never binds, so the two coincide exactly and the abroad row
+reads a clean 0.0, and it's held ≤ the actual term per step so the remainder can't go
+negative while a setback regrows. The shadow is built whether or not the checkbox is on.
+The two columns answer different questions and
 **Without it is deliberately non-additive** — kill compute and the gap stays wider, so
 distillation runs at full strength longer; the caption says so. The total's months run
 from China's last model, not from the pause the cards count from — also captioned. A
 longer Chinese run appears as its own row (`years_base` is its counterfactual). Live at
-defaults: innovation 50% (without it, no crossing by 2031), diffusion 19%, compute 17%,
-distillation 14%. Note for tests: this table renders *after* the race table, so address
+defaults: innovation 50% (no crossing by 2031 without it), diffusion 19%, distillation
+14%, compute abroad 10% (worth 4.3 months on its own), compute domestic 8%. Note for tests: this table renders *after* the race table, so address
 the race table by its columns (`TestPacingTab._entities`), never by position.
 China
 races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the

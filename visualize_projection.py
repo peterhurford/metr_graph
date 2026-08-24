@@ -9688,7 +9688,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         us_pause_level=None, pure_lo=None, pure_hi=None,
                         t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS,
                         t_dist_stop=None, comp_dead=None, comp_slow=None,
-                        dist_teacher=None, channels=None):
+                        dist_teacher=None, channels=None, comp_shadow=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -9722,6 +9722,15 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     *cumulative* ECI contributions, each an (n, len(grid)) array summing to
     `traj − anchor_eci` — what the Pacing tab's breakdown reads to say which
     channel closed the gap. Off by default: four more arrays of traj's size.
+    `comp_shadow` (comp_cap, dead) adds a fifth, `compute_domestic`: the
+    compute term recomputed with each sample's own pace capped at `comp_cap`
+    and its own `dead` setback window — i.e. what compute would have
+    contributed with domestic clusters alone. Capping the *same* sample
+    (rather than redrawing) is what makes the difference a clean
+    remote-access attribution: when the run already has no access abroad the
+    cap never binds and the two coincide exactly. Held ≤ the actual term per
+    step, so `compute − compute_domestic` can't go negative while a setback
+    is being regrown.
 
     Returns (years, grid_yrs, traj): crossing years incl. the release wait
     (NaN = not crossed within horizon), the monthly time grid, and the
@@ -9755,8 +9764,9 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     grid = np.arange(steps + 1) * dt
     traj = np.empty((n, steps + 1))
     traj[:, 0] = anchor_eci
+    shadow = channels is not None and comp_shadow is not None
     if channels is not None:
-        for _k in _CC_CHANNELS:
+        for _k in _CC_CHANNELS + (('compute_domestic',) if shadow else ()):
             channels[_k] = np.zeros((n, steps + 1))
     e = np.full(n, float(anchor_eci))
     years = np.full(n, np.nan)
@@ -9782,6 +9792,14 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         if channels is not None:
             for _k, _p in zip(_CC_CHANNELS, parts):
                 channels[_k][:, i] = channels[_k][:, i - 1] + _p * dt
+        if shadow:
+            cap, dead = comp_shadow
+            d_on_c = (0.0 if dead is not None
+                      and dead[0] <= grid[i - 1] < dead[1] else 1.0)
+            dom = np.minimum(pace * np.minimum(comp_t, cap) * d_on_c,
+                             parts[0])
+            channels['compute_domestic'][:, i] = \
+                channels['compute_domestic'][:, i - 1] + dom * dt
         e = e + rate * dt
         traj[:, i] = e
         hit = np.isnan(years) & (e >= target)
@@ -11282,6 +11300,8 @@ _PC_SHIP_LAG_DAYS = 60
 # Display names for the four rate terms, in _CC_CHANNELS order.
 _PC_CHANNEL_LABELS = {
     'compute': "Compute — China's own cluster buildout",
+    'compute_domestic': "Compute — domestic clusters",
+    'compute_abroad': "Compute — remote access to clusters abroad",
     'innovation': "Indigenous innovation — never dries up",
     'diffusion': "Diffusion — published US methods, drying up after the pause",
     'distillation': "Distillation — training against US model outputs",
@@ -11318,10 +11338,19 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         return (float(np.median((alt - years)[both])) * 12.0
                 if both.sum() >= 100 else None)
 
+    # Compute splits in two when the sim carried a domestic-only shadow:
+    # what domestic clusters alone would have contributed, and the rest —
+    # the export-controlled channel. The two still sum to the compute term,
+    # so the identity below is untouched.
+    cum = {k: chan[k] for k in _CC_CHANNELS}
+    if 'compute_domestic' in chan:
+        cum['compute_domestic'] = chan['compute_domestic']
+        cum['compute_abroad'] = chan['compute'] - chan['compute_domestic']
+        del cum['compute']
     contrib, rows = {}, []
-    for k in _CC_CHANNELS:
+    for k, arr in cum.items():
         contrib[k] = float(np.nanmedian(
-            _pc_at_years(chan[k], grid0, years - cn_extra)))
+            _pc_at_years(arr, grid0, years - cn_extra)))
     if cn_run_mo != us_run_mo:
         contrib['run'] = cn_gain
     total_eci = sum(contrib.values())
@@ -11332,7 +11361,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
             d = _delta(years_base)
         else:
             label = _PC_CHANNEL_LABELS[k]
-            d = _delta(_pc_cross_years(traj0 - chan[k], grid0, target0)
+            d = _delta(_pc_cross_years(traj0 - cum[k], grid0, target0)
                        + cn_extra)
         rows.append({
             "Channel": label,
@@ -11355,7 +11384,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         "later. Same samples as the chart, so this is a decomposition "
         "rather than a "
         "second model. **ECI closed** is each term's cumulative contribution "
-        "at its own sample's crossing; the four sum to the gap by "
+        "at its own sample's crossing; the terms sum to the gap by "
         "construction, which is why the shares are exact. **Without it** "
         "re-crosses the same paths with that term removed — the number a "
         "policy question asks — and does *not* add up: kill compute and the "
@@ -11590,9 +11619,14 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
     g_lo_eff, g_hi_eff = _CC_CN_COMPUTE_LO, _CC_CN_COMPUTE_HI
     comp_dead, comp_slow, dlvl_oom = None, None, 0.0
     g_dom_lo = g_dom_hi = None       # domestic band, for the Assumes line
+    comp_shadow = None               # domestic-only compute, for the breakdown
     t_cut_r = max((d_remote - anchor_d).days, 0) / 365.25
     chk_dom = chk_pace.get(_DC_CTY_CN_DOMESTIC)
-    if stop_remote and chk_dom is not None:
+    if chk_dom is not None:
+        # The domestic-only counterfactual is computed whether or not the
+        # checkbox is on: with it off it is the shadow the breakdown
+        # subtracts to price China's access to compute abroad; with it on
+        # it also sets the run's own band and setback.
         _ser = _dc_series_for_metric(dc_all, 'train_flop')
         _cty = {dc['name']: _dc_site_country(dc) for dc in dc_all}
         _grp = _dc_country_groups(_ser, _cty, 'abroad')
@@ -11608,21 +11642,26 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
         g_dom = max(chk_dom['g'], 0.05)
         g_dom_hi = min(g_hi_eff, g_dom)
         g_dom_lo = min(g_lo_eff, g_dom_hi)
-        if t_cut_r <= t_today:
-            # Bites now: the whole sim runs on the domestic band.
-            g_lo_eff, g_hi_eff = g_dom_lo, g_dom_hi
-        else:
-            # Export-control band until the cut, domestic band after it.
-            comp_slow = (t_cut_r,
-                         a_partial * _pc_tri(g_dom_lo, g_dom_hi, n_s))
-        if acc and dom and acc > dom:
-            # The setback is the gap at the cut date: today's gap, widened
-            # by however far the two paces diverge before the cut bites.
-            dlvl_oom = max(float(np.log10(acc / dom))
-                           + (g_mid - g_dom) * max(t_cut_r - t_today, 0.0),
-                           0.0)
-            comp_dead = (max(t_cut_r, t_today),
-                         max(t_cut_r, t_today) + dlvl_oom / g_dom)
+        dlvl_today = (max(float(np.log10(acc / dom)), 0.0)
+                      if acc and dom and acc > dom else 0.0)
+        comp_shadow = (a_partial * g_dom_hi,
+                       (t_today, t_today + dlvl_today / g_dom)
+                       if dlvl_today else None)
+        if stop_remote:
+            if t_cut_r <= t_today:
+                # Bites now: the whole sim runs on the domestic band.
+                g_lo_eff, g_hi_eff = g_dom_lo, g_dom_hi
+            else:
+                # Export-control band until the cut, domestic band after.
+                comp_slow = (t_cut_r,
+                             a_partial * _pc_tri(g_dom_lo, g_dom_hi, n_s))
+            if dlvl_today:
+                # The setback is the gap at the cut date: today's gap,
+                # widened by how far the two paces diverge before it bites.
+                dlvl_oom = max(dlvl_today + (g_mid - g_dom)
+                               * max(t_cut_r - t_today, 0.0), 0.0)
+                comp_dead = (max(t_cut_r, t_today),
+                             max(t_cut_r, t_today) + dlvl_oom / g_dom)
     pure = _cc_pure_innovation_band(cc_rows, eci_all)
     kw = dict(us_anchor=us_best[1], us_rate=us_rate_s, us_pause_level=level_s,
               a_partial=a_partial, g_lo=g_lo_eff,
@@ -11641,7 +11680,7 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
     chan = {}
     years, grid_yrs, traj = _cc_cn_crossing_sim(
         anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
-        channels=chan, **kw)
+        channels=chan, comp_shadow=comp_shadow, **kw)
     # The run-length trade-off, read off the *same* sampled paths so the
     # comparison is paired (no MC noise between the two answers): the bar
     # drops by cn_gain, then the extra wall clock is added back. The organic
@@ -11880,6 +11919,13 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
 
     # ── Why that long? The same samples, decomposed by rate term. ──
     _notes = []
+    if comp_shadow is not None:
+        _notes.append(
+            "The two compute rows split China's cluster growth into what "
+            "its domestic buildout alone would have delivered and what "
+            "access to clusters abroad adds on top — the same "
+            "domestic-only counterfactual the remote-access checkbox "
+            "applies, which is why ticking it zeroes that row.")
     if stop_dist:
         _notes.append(
             "Distillation is cut "

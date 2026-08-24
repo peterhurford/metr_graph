@@ -4249,6 +4249,36 @@ class TestPacing:
         assert vp._cc_cn_crossing_sim(150.0, 160.0, **kw)[2].shape == \
             traj.shape
 
+    def test_comp_shadow_prices_access_to_compute_abroad(self):
+        """comp_shadow adds a domestic-only compute column by capping each
+        sample's own pace; the remainder is what access abroad bought. A cap
+        above the band never binds, so the two coincide exactly and the row
+        reads zero — which is what makes 'cut remote access' collapse it."""
+        kw = dict(a_partial=8.0, g_lo=0.15, g_hi=0.30, algo_lo=11.0,
+                  algo_mid=12.0, algo_hi=13.0, pace_lo=0.8, pace_hi=1.1,
+                  n=120, inno_lo=8.0, inno_hi=10.0, us_anchor=165.0,
+                  us_rate=25.0)
+        loose, tight, setback = {}, {}, {}
+        vp._cc_cn_crossing_sim(150.0, 160.0, channels=loose,
+                               comp_shadow=(8.0 * 0.40, None), **kw)
+        _, _, traj = vp._cc_cn_crossing_sim(
+            150.0, 160.0, channels=tight,
+            comp_shadow=(8.0 * 0.16, None), **kw)
+        vp._cc_cn_crossing_sim(150.0, 160.0, channels=setback,
+                               comp_shadow=(8.0 * 0.40, (0.0, 1.0)), **kw)
+        assert np.allclose(loose['compute_domestic'], loose['compute'])
+        assert (tight['compute'][:, -1] - tight['compute_domestic'][:, -1]
+                > 0).mean() > 0.9      # the band barely reaches this cap
+        # A dead window on the shadow alone also prices the level setback.
+        assert (setback['compute'][:, -1]
+                > setback['compute_domestic'][:, -1]).all()
+        # The shadow never exceeds the term it shadows, and never disturbs
+        # the four-channel identity.
+        for ch in (loose, tight, setback):
+            assert (ch['compute_domestic'] <= ch['compute'] + 1e-9).all()
+        assert np.allclose(sum(tight[k] for k in vp._CC_CHANNELS),
+                           traj - 150.0)
+
     def test_at_years_reads_a_cumulative_at_the_crossing(self):
         """_pc_at_years interpolates inside the step, like the crossing
         itself, and passes NaN through for samples that never cross."""
