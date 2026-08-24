@@ -36,6 +36,11 @@ def _has_widget(at, widget_type, key):
         return False
 
 
+def at_caps(at):
+    """All caption text on the page."""
+    return list(at.caption)
+
+
 def _switch_tab(at, tab_name):
     """Switch to a tab and run."""
     [r for r in at.radio if r.label == "Tab"][0].set_value(tab_name).run()
@@ -951,20 +956,18 @@ class TestRsiTab:
         assert "Median" in labels and "80% CI" in labels
         assert "–" in labels["80% CI"]
 
-    def test_the_only_table_is_the_staff_survey(self):
-        """The CoBench half is a chart, not a listing; the survey half is a
-        table because the source disclaims plotting it as one series."""
+    def test_survey_is_a_second_chart_not_a_table(self):
         at = self._rsi_app()
-        tables = at.get("table")
-        assert len(tables) == 1
+        assert len(at.get("plotly_chart")) == 2
+        assert len(at.get("table")) == 0
         assert any("Comparable metric: the internal staff survey" in h.value
                    for h in at.subheader)
-        body = " ".join(md.value for md in at.markdown)
-        assert "Comparability: partial, and degrading." in body
-        for head in ("The sample changes.",
-                     "The substitution question changes.",
-                     "Anthropic itself now distrusts the series."):
-            assert head in body
+
+    def test_survey_caption_does_not_claim_discontinuation(self):
+        """The report says only that no new survey was run for Mythos 5."""
+        caps = " ".join(c.value for c in at_caps(self._rsi_app()))
+        assert "no new survey was run for Mythos 5" in caps
+        assert "discontinu" not in caps.lower()
 
     def test_slower_rate_pushes_the_bar_out(self):
         at = self._rsi_app()

@@ -581,74 +581,37 @@ def _rsi_date_label(m, fmt='%b %d, %Y'):
 
 
 # The internal researcher survey — the other series in the report's section on
-# substituting models for Anthropic staff (§3.4.2), run per frontier model from
-# Opus 4 through Mythos Preview and then discontinued. Kept as a table rather
-# than a second chart: the report's own comparability caveats (`_RSI_SURVEY_
-# NOTES`) say the sample and the question both move underneath the numbers, so
-# plotting them as one series would assert a trend the source disclaims.
+# substituting models for Anthropic staff (§3.4.2). Self-reported output
+# multiple against no AI assistance, per frontier model. Opus 4's round set no
+# number: it only established the result was below the pre-set 3x median
+# rule-out threshold, so it plots as an upper bound. `stat` records which
+# statistic each round reported — the rounds are not all the same one, which is
+# the main reason to read the line loosely.
 
 _RSI_SURVEY = [
-    {"Model (date)": "Opus 4 (May 2025)",
-     "n": "4",
-     "Question": "Could this model completely automate a junior ML researcher? "
-                 "(after \u22652h hands-on evaluation)",
-     "Uplift vs no AI": "Below the pre-set 3x median rule-out threshold",
-     "Drop-in replacement?": "0 of 4 yes"},
-    {"Model (date)": "Opus 4.1 (Aug 2025)",
-     "n": "\u2014", "Question": "not run",
-     "Uplift vs no AI": "\u2014", "Drop-in replacement?": "\u2014"},
-    {"Model (date)": "Opus 4.5 (Nov 2025)",
-     "n": "18, recruited from the top ~30 staff by internal Claude Code usage",
-     "Question": "same protocol",
-     "Uplift vs no AI": "9 of 18 reported \u2265100%; median 100%, mean 220%",
-     "Drop-in replacement?": "0 of 18 believed it crossed AI R&D-4; 2 called it a "
-                             "near-complete entry-level replacement with meaningful caveats"},
-    {"Model (date)": "Opus 4.6 (Feb 2026)",
-     "n": "16, deliberately broadened to general-research and infra/maintenance roles",
-     "Question": "Could it be made a drop-in replacement for an entry-level (L4) "
-                 "researcher with \u22643 months of scaffolding/tooling, at >50% "
-                 "probability?",
-     "Uplift vs no AI": "range 30\u2013700%, mean 152%, median 100% \u2014 more modest "
-                        "than previous surveys, which focused on superusers",
-     "Drop-in replacement?": "11 unlikely / 3 likely-with-3-months / 2 already-possible; "
-                             "all 5 affirmative respondents were contacted and all "
-                             "revised or had been answering a different question"},
-    {"Model (date)": "Mythos Preview (Apr 2026), poll A",
-     "n": "130 reactions (opt-in Slack poll)",
-     "Question": "How much did AI-powered systems accelerate your work output over the "
-                 "past week vs. no model access?",
-     "Uplift vs no AI": "geometric mean \u2248 4x",
-     "Drop-in replacement?": "n/a"},
-    {"Model (date)": "Mythos Preview (Apr 2026), poll B",
-     "n": "18 (Google Form, 11 L4 capability dimensions)",
-     "Question": "already here / likely within 3 months of scaffolding / unlikely",
-     "Uplift vs no AI": "n/a",
-     "Drop-in replacement?": "1 of 18 said a drop-in entry-level replacement already "
-                             "exists; 4 of 18 gave \u226550% odds within 3 months of "
-                             "scaffolding iteration"},
-    {"Model (date)": "Opus 4.7, Opus 4.8, Mythos 5, Opus 5",
-     "n": "\u2014",
-     "Question": "not run; each card refers back to the Mythos Preview surveys",
-     "Uplift vs no AI": "\u2014", "Drop-in replacement?": "\u2014"},
+    {"name": "Opus 4", "date": "2025-05-22", "uplift": 3.0, "stat": "bound",
+     "note": "n=4 · upper bound: below the pre-set 3x median rule-out threshold"
+             "<br>0 of 4 called it a junior-researcher replacement"},
+    {"name": "Opus 4.5", "date": "2025-11-24", "uplift": 2.0, "stat": "median",
+     "note": "n=18, top ~30 staff by internal Claude Code use · median (mean 3.2x)"
+             "<br>0 of 18 thought it crossed AI R&D-4"},
+    {"name": "Opus 4.6", "date": "2026-02-05", "uplift": 2.0, "stat": "median",
+     "lo": 1.3, "hi": 8.0,
+     "note": "n=16, broadened past superusers · median (mean 2.5x), range 1.3\u20138x"
+             "<br>2 of 16 said a drop-in L4 was already possible; both revised on "
+             "follow-up"},
+    {"name": "Mythos Preview", "date": "2026-04-07", "uplift": 4.0, "stat": "geomean",
+     "note": "n=130, opt-in Slack poll · geometric mean, past week's work output"
+             "<br>1 of 18 in a separate poll said a drop-in L4 already exists"},
 ]
 
-# Why the series above doesn't stack, in the report's own terms.
-_RSI_SURVEY_NOTES = [
-    ("The sample changes.", "Opus 4.5 surveyed superusers, Opus 4.6 was deliberately "
-     "broader and produced lower numbers, and Mythos Preview's 4x came from a "
-     "self-selected opt-in poll with 130 responders."),
-    ("The substitution question changes.", "\"Could it completely automate a junior ML "
-     "researcher *today*\" (Opus 4 / 4.5) became \"could it be *made into* a drop-in L4 "
-     "within 3 months of scaffolding, at >50% probability\" (Opus 4.6, Mythos Preview). "
-     "The second is a forecast, and Anthropic flags that respondents are untrained "
-     "forecasters given ~10 minutes."),
-    ("Anthropic itself now distrusts the series.", "Per the Aug 2026 Risk Report, "
-     "respondents may overestimate uplift on tasks they chose to delegate and "
-     "underestimate it where the gain is in latency; uplift on individual tasks does "
-     "not translate directly into acceleration of research progress; and the surveys "
-     "are \"somewhat informative\" but have been deprioritized in favour of the other "
-     "evidence in \u00a73.4."),
-]
+
+@st.cache_data
+def load_rsi_survey():
+    rows = [{**r, 'date': datetime.strptime(r['date'], '%Y-%m-%d')}
+            for r in _RSI_SURVEY]
+    rows.sort(key=lambda r: r['date'])
+    return rows
 
 
 @st.cache_data
@@ -5098,34 +5061,67 @@ def render_rsi():
 
 
 def _render_rsi_survey():
-    """The other substitution series in the report: the internal staff survey.
+    """The report's other substitution series: self-reported researcher uplift.
 
-    Deliberately a table, not a chart — see `_RSI_SURVEY`.
+    Opus 4's round reported no number, only that the result was under the 3x
+    rule-out threshold, so it draws as a hollow upper-bound caret and is left
+    off the connecting line.
     """
     st.markdown("---")
     st.subheader("Comparable metric: the internal staff survey")
-    st.markdown(
-        "The most directly labor-substitution-relevant series Anthropic has run: a "
-        "survey of its own technical staff, per frontier model from Opus 4 through "
-        "Mythos Preview, then discontinued.")
-    st.table(_RSI_SURVEY)
 
-    st.markdown("**Comparability: partial, and degrading.** "
-                "The uplift question — how much faster are you with the model than "
-                "with no AI assistance — is stable across every round, and the "
-                "numbers are roughly stackable: median 100% at Opus 4.5, median 100% "
-                "at Opus 4.6, geometric mean ~4x at Mythos Preview. Three things move "
-                "underneath it.")
-    for i, (head, body) in enumerate(_RSI_SURVEY_NOTES, 1):
-        st.markdown(f"{i}. **{head}** {body}")
+    rows = load_rsi_survey()
+    measured = [r for r in rows if r['stat'] != 'bound']
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=[r['date'] for r in measured], y=[r['uplift'] for r in measured],
+        mode='lines', line=dict(color='#4F8DFD', width=2),
+        hoverinfo='skip', showlegend=False))
+
+    for r in rows:
+        if 'lo' in r:
+            fig.add_trace(go.Scatter(
+                x=[r['date'], r['date']], y=[r['lo'], r['hi']],
+                mode='lines', line=dict(color='#4F8DFD', width=1.5),
+                opacity=0.35, hoverinfo='skip', showlegend=False))
+        _bound = r['stat'] == 'bound'
+        fig.add_trace(go.Scatter(
+            x=[r['date']], y=[r['uplift']], mode='markers+text',
+            marker=dict(color='white' if _bound else '#4F8DFD', size=13,
+                        symbol='triangle-down' if _bound else 'circle',
+                        line=dict(color='#4F8DFD' if _bound else 'white', width=2)),
+            text=[r['name']], textposition='top center',
+            textfont=dict(size=10, color='#1a1a2e'),
+            hovertext=f"{r['name']}<br>{r['date'].strftime('%b %Y')}<br>"
+                      f"{'≤' if _bound else ''}{r['uplift']:.1f}x output vs no AI"
+                      f"<br>{r['note']}",
+            hoverinfo='text', showlegend=False))
+
+    fig.update_layout(
+        height=420, margin=dict(l=50, r=60, t=40, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(title="Survey round",
+                   range=[rows[0]['date'] - timedelta(days=40),
+                          rows[-1]['date'] + timedelta(days=40)],
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        yaxis=dict(title="Self-reported output vs. no AI assistance",
+                   range=[0, 9], ticksuffix='x',
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        hovermode='closest', plot_bgcolor='white', paper_bgcolor='white')
+    st.plotly_chart(fig, width="stretch")
 
     st.caption(
-        "Fine print: per-model rows come from the corresponding Claude system cards; "
-        "the Mythos Preview polls and the assessment of the series are from "
-        f"[Anthropic, Redacted Risk Report, August 2026, §3.4.2]({_RSI_SOURCE_URL}). "
-        "The series is not charted on purpose — the sample and the question both "
-        "change between rounds, so a single line through these numbers would assert "
-        "a trend the source itself disclaims.")
+        "Anthropic surveys its own technical staff on productivity uplift per frontier "
+        "model; the rounds differ in who was sampled and which statistic was reported "
+        "(hover a point), and Mythos Preview is the most recent — no new survey was run "
+        "for Mythos 5. Anthropic notes respondents may overstate uplift on tasks they "
+        "chose to delegate, and that per-task uplift doesn't translate directly into "
+        "faster research overall. Source: "
+        f"[Redacted Risk Report, August 2026, §3.4.2]({_RSI_SOURCE_URL}) and the "
+        "corresponding Claude system cards.")
 
 
 # ── UK Cyber (AISI narrow cyber tasks) ───────────────────────────────────

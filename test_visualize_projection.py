@@ -3175,24 +3175,24 @@ class TestRsi:
         assert slope == pytest.approx(expect[1])
         assert intercept == pytest.approx(expect[0])
 
-    def test_survey_rows_are_uniform_and_cover_the_discontinuation(self):
-        """The table's value is the gaps as much as the numbers: the rounds
-        that were never run are rows, not omissions."""
-        cols = set(vp._RSI_SURVEY[0])
-        assert cols == {"Model (date)", "n", "Question", "Uplift vs no AI",
-                        "Drop-in replacement?"}
-        for r in vp._RSI_SURVEY:
-            assert set(r) == cols
-            assert all(str(v).strip() for v in r.values())
-        models = [r["Model (date)"] for r in vp._RSI_SURVEY]
-        assert models[0].startswith("Opus 4 ")
-        assert any("not run" in r["Question"] for r in vp._RSI_SURVEY)
-        assert "Mythos 5" in models[-1] and "not run" in vp._RSI_SURVEY[-1]["Question"]
+    def test_survey_rows_carry_a_plottable_value_and_a_hover_note(self):
+        rows = vp.load_rsi_survey()
+        assert [r['name'] for r in rows] == [
+            "Opus 4", "Opus 4.5", "Opus 4.6", "Mythos Preview"]
+        assert [r['date'] for r in rows] == sorted(r['date'] for r in rows)
+        for r in rows:
+            assert r['uplift'] > 1 and r['stat'] in ('bound', 'median', 'geomean')
+            assert 'n=' in r['note']
+            if 'lo' in r:
+                assert r['lo'] < r['uplift'] < r['hi']
 
-    def test_survey_notes_are_head_and_body_pairs(self):
-        assert len(vp._RSI_SURVEY_NOTES) == 3
-        for head, body in vp._RSI_SURVEY_NOTES:
-            assert head.endswith(".") and len(body) > 40
+    def test_opus_4_is_the_only_bound(self):
+        """Its round reported no number, only that it fell under the 3x
+        rule-out threshold, so it must not be drawn as a measured point."""
+        rows = vp.load_rsi_survey()
+        bounds = [r for r in rows if r['stat'] == 'bound']
+        assert [r['name'] for r in bounds] == ["Opus 4"]
+        assert bounds[0]['uplift'] == 3.0
 
     def test_dt_ci_default_spans_both_segment_rates(self):
         """Three points whose segments disagree ~8x: the conventional

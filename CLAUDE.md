@@ -296,16 +296,19 @@ CoBench is filtered for difficulty (mostly problems Mythos Preview failed at lea
 once in three tries) and run at a 300k-token budget, so scores don't compare to
 public AI R&D suites — the fine print has to keep saying so.
 
-The tab's second half (`_render_rsi_survey()`) carries the report's other
-substitution series, the internal staff survey (§3.4.2), as `_RSI_SURVEY` plus
-`_RSI_SURVEY_NOTES`. It is a **table, not a chart, on purpose**: the sample and
-the substitution question both change between rounds — superusers, then a broader
-sample, then a self-selected opt-in poll; "could it automate a junior researcher
-today" became "could it be made into a drop-in L4 within 3 months" — so one line
-through the numbers would assert a trend the source disclaims, and Anthropic has
-deprioritized the series itself. The rounds that were never run are rows, not
-omissions; `test_survey_rows_are_uniform_and_cover_the_discontinuation` keeps
-them there.
+The tab's second half (`_render_rsi_survey()`) charts the report's other
+substitution series, the internal staff survey (§3.4.2): self-reported output
+multiple against no AI assistance, from `_RSI_SURVEY` via `load_rsi_survey()`.
+Two things are load-bearing. Opus 4's round reported **no number** — only that
+the result fell under the pre-set 3x median rule-out threshold — so `stat` is
+`'bound'`, it draws as a hollow caret and is left off the connecting line
+(`test_opus_4_is_the_only_bound`). And the rounds do not report the same
+statistic on the same sample (medians on superusers, then on a broader sample,
+then a geometric mean on an opt-in poll), so each point carries its `note` on
+hover and the two-sentence caption says the rounds differ; the survey has not
+been discontinued — the report says only that no new round was run for Mythos 5,
+and `test_survey_caption_does_not_claim_discontinuation` keeps the caption from
+saying otherwise.
 
 The Pacing tab's
 *Capabilities Milestones* row dates the same 85% bar through `_pc_rsi_eta()`,
