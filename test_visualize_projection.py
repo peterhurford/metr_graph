@@ -3130,7 +3130,7 @@ class TestRsi:
         rows = vp.load_rsi_data()
         assert [m['name'] for m in rows] == [
             "Claude Opus 4.6", "Claude Mythos Preview",
-            "Claude Mythos 5", "Model 2"]
+            "Claude Mythos 5", "Model 2 (internal)"]
         assert [m['date'] for m in rows] == sorted(m['date'] for m in rows)
         best = -float('inf')
         for m in rows:
@@ -3142,7 +3142,7 @@ class TestRsi:
         assert vp._rsi_date_label(by_name["Claude Opus 4.6"]) == "Feb 05, 2026"
         assert vp._rsi_date_label(by_name["Claude Mythos 5"]) == "Jun 09, 2026"
         assert vp._rsi_date_label(by_name["Claude Mythos Preview"]) == "~Apr 07, 2026"
-        assert vp._rsi_date_label(by_name["Model 2"], '%b %Y') == "~Jul 2026"
+        assert vp._rsi_date_label(by_name["Model 2 (internal)"], '%b %Y') == "~Jul 2026"
 
     def test_dt_ci_default_spans_both_segment_rates(self):
         """Three points whose segments disagree ~8x: the conventional

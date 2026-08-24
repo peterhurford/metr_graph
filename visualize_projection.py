@@ -557,7 +557,7 @@ def load_rli_data():
 # `date_known` False marks a release date the record does not pin down, and is
 # what puts the "~" in front of a date wherever it renders. Mythos Preview has
 # no published release record (its date is carried over from AISI's narrow
-# cyber figure, same as in aisi_cyber_tlo.csv); Model 2 is unreleased and its
+# cyber figure, same as in aisi_cyber_tlo.csv); Model 2 (internal) is unreleased and its
 # name redacted in the report, so its date is an estimate.
 
 _RSI_SOURCE_URL = ("https://www-cdn.anthropic.com/f61d49fa5596956a5dec75fea0e973bf6a6a8378/"
@@ -571,7 +571,7 @@ _RSI_RAW = [
     {"name": "Claude Opus 4.6",       "date": "2026-02-05", "cobench": 15.6, "date_known": True},
     {"name": "Claude Mythos Preview", "date": "2026-04-07", "cobench": 54.8, "date_known": False},
     {"name": "Claude Mythos 5",       "date": "2026-06-09", "cobench": 50.3, "date_known": True},
-    {"name": "Model 2",               "date": "2026-07-06", "cobench": 62.8, "date_known": False},
+    {"name": "Model 2 (internal)",    "date": "2026-07-06", "cobench": 62.8, "date_known": False},
 ]
 
 
@@ -600,6 +600,13 @@ _RSI_SURVEY = [
     {"name": "Mythos Preview", "date": "2026-04-07", "uplift": 4.0,
      "note": "n=130, opt-in Slack poll · geometric mean, past week's work output"
              "<br>1 of 18 in a separate poll said a drop-in L4 already exists"},
+    # No round was run for Model 2 (internal); ~4x is carried over from Mythos
+    # Preview as the best available read. `estimated` keeps it out of the fit —
+    # an assumed value must not set the slope, and this one would flatten it.
+    {"name": "Model 2 (internal)", "date": "2026-07-06", "uplift": 4.0,
+     "estimated": True,
+     "note": "no survey run · ~4x carried over from Mythos Preview"
+             "<br>excluded from the fit; if it holds, the last four months are flat"},
 ]
 
 # The survey fan's position CI: the fitted multiple divided and multiplied by
@@ -5074,6 +5081,11 @@ def render_rsi():
         lambda e: _inv_logit(proj_start_logit + e * proj_slope) * 100,
         lambda v: f"{v:.1f}%")
 
+    st.caption(
+        "Source: "
+        f"[Anthropic, Redacted Risk Report, August 2026, §3.4.3]({_RSI_SOURCE_URL}); "
+        "scores read off Figure 3.4.3.A.")
+
     _render_rsi_survey()
 
 
@@ -5087,11 +5099,12 @@ def _render_rsi_survey():
     st.subheader("Anthropic internal staff survey on speedup")
 
     rows = load_rsi_survey()
-    base = rows[0]['date']
-    days = np.array([(r['date'] - base).days for r in rows], dtype=float)
-    logs = np.log(np.array([r['uplift'] for r in rows]))
+    surveyed = [r for r in rows if not r.get('estimated')]
+    base = surveyed[0]['date']
+    days = np.array([(r['date'] - base).days for r in surveyed], dtype=float)
+    logs = np.log(np.array([r['uplift'] for r in surveyed]))
     intercept, slope = fit_line(days, logs)
-    cur = rows[-1]
+    cur = surveyed[-1]
 
     fig = go.Figure()
 
@@ -5146,12 +5159,17 @@ def _render_rsi_survey():
                 x=[r['date'], r['date']], y=[r['lo'], r['hi']],
                 mode='lines', line=dict(color='#4F8DFD', width=1.5),
                 opacity=0.35, hoverinfo='skip', showlegend=False))
+        _est = r.get('estimated', False)
         fig.add_trace(go.Scatter(
             x=[r['date']], y=[r['uplift']], mode='markers+text',
-            marker=dict(color='#4F8DFD', size=13,
-                        line=dict(color='white', width=2)),
-            text=[r['name']], textposition='top center',
-            textfont=dict(size=10, color='#1a1a2e'),
+            marker=dict(color='white' if _est else '#4F8DFD', size=13,
+                        line=dict(color='#4F8DFD', width=2) if _est
+                        else dict(color='white', width=2)),
+            text=[r['name'] + (' (est.)' if _est else '')],
+            # Below the marker for the estimate: the median projection passes
+            # just above it, and a top label lands on the line.
+            textposition='bottom center' if _est else 'top center',
+            textfont=dict(size=10, color='#999999' if _est else '#1a1a2e'),
             hovertext=f"{r['name']}<br>{r['date'].strftime('%b %Y')}<br>"
                       f"~{r['uplift']:g}x output vs no AI<br>{r['note']}",
             hoverinfo='text', showlegend=False))
@@ -5160,7 +5178,8 @@ def _render_rsi_survey():
         height=480, margin=dict(l=50, r=60, t=40, b=40),
         font=dict(color='#1a1a2e'),
         xaxis=dict(title="Survey round",
-                   range=[base - timedelta(days=30), x_end + timedelta(days=30)],
+                   range=[base - timedelta(days=30),
+                          max(x_end, rows[-1]['date']) + timedelta(days=30)],
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         yaxis=dict(title="Self-reported output vs. no AI assistance",
@@ -5182,7 +5201,9 @@ def _render_rsi_survey():
         "Anthropic surveys its own technical staff on productivity uplift per frontier "
         "model; the rounds differ in who was sampled and which statistic was reported "
         "(hover a point), and Mythos Preview is the most recent — no new survey was run "
-        "for Mythos 5. The trend is three self-reported points fitted on the log of the "
+        "for Mythos 5 or for Model 2 (internal), which is shown hollow at the ~4x "
+        "Mythos Preview reported and is not part of the fit. The trend is three "
+        "self-reported points fitted on the log of the "
         "multiple and projected the same way the CoBench fan above is, but only a year "
         "out — compounded further it leaves the chart, which is a fact about the fit "
         "rather than about the future. Source: "

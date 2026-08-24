@@ -282,13 +282,13 @@ research staff — not a benchmark ceiling). Four things are load-bearing:
    a line from a bend, so there is no piecewise or superexponential option and no
    backtest vantage-point selector. Don't add them by copying another tab.
 3. **The default rate CI is widened, not the convention.** The two segments disagree
-   by ~8x (Opus 4.6 → Mythos Preview is ~22d odds-doubling, Mythos Preview → Model 2
+   by ~8x (Opus 4.6 → Mythos Preview is ~22d odds-doubling, Mythos Preview → Model 2 (internal)
    ~189d), so `_rsi_dt_ci()` takes the usual fit/2..fit×2 interval and widens it to
    span both segment rates. It can only widen — `test_dt_ci_default_spans_both_segment_rates`
    holds that.
 4. **`date_known` drives the "~" prefix** via `_rsi_date_label()`. Mythos Preview has
    no published release record (its date is carried over from AISI's narrow cyber
-   figure, as in `aisi_cyber_tlo.csv`) and Model 2 is unreleased with its name
+   figure, as in `aisi_cyber_tlo.csv`) and Model 2 (internal) is unreleased with its name
    redacted; Mythos 5 ships with Fable 5 on 2026-06-09, which puts it *below* the
    running max and off the frontier.
 
@@ -307,7 +307,11 @@ fitted and projected on **log(multiple)** — a multiple has no ceiling to bound
 against, so it compounds the way METR's horizon does rather than saturating like
 a percentage. Three things are load-bearing. Opus 4's round is not carried at
 all: it reported no number, only that the result fell under the pre-set 3x median
-rule-out threshold, and a bound is not a point on a trend. The rounds do not
+rule-out threshold, and a bound is not a point on a trend. Model 2 (internal)
+has an `estimated` point at Mythos Preview's ~4x — no round was run for it —
+which draws hollow and is **excluded from the fit**: an assumed value must not
+set the slope, and this one would flatten it, so the chart shows it sitting
+below the fan rather than bending the fan down to meet it. The rounds do not
 report the same statistic on the same sample (medians on superusers, then on a
 broader sample, then a geometric mean on an opt-in poll), so each point carries
 its `note` on hover and the caption says the rounds differ — and the survey is
