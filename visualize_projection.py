@@ -436,7 +436,7 @@ def load_eci_frontier(_mtime=None, country=None, orgs=None):
 def load_eci_compute(_mtime=None):
     """Models that have BOTH an ECI score and a training-compute (FLOP) figure.
 
-    Used by the Compute vs Capabilities tab to regress ECI on log10(training
+    Used by the Compute/capabilities/diffusion tab to regress ECI on log10(training
     FLOP) and time. Returns a list of dicts sorted by date:
     {date, eci, log10_flop, name, organization, country, is_eci_frontier}.
     The frontier flag is the running-max ECI within this compute-having subset.
@@ -1088,7 +1088,7 @@ _DC_METRICS = {
 #   • Training finished  — +one training run (the metric's `run_days`: a run
 #                          started at availability finishes that much later)
 #   • Model release      — + run + ~1mo post-training/eval lag (matches the
-#                          Compute vs Capabilities tab's model-release dating)
+#                          Compute/capabilities/diffusion tab's model-release dating)
 _DC_TIMING_OPTIONS = (
     "Data center construction",
     "Training run finished",
@@ -7194,7 +7194,7 @@ _DC_NETWORK_OPTIONS = {
     "Every site (implausible)": 'all',
 }
 
-# Compute vs Capabilities tab
+# Compute/capabilities/diffusion tab
 _CC_RESET_KEYS = ["cc_future", "cc_run", "cc_end_year", "cc_bd_anchor",
                   "cc_company"]
 _CC_DEFAULTS = {"cc_future": True, "cc_run": "2-month run",
@@ -8255,7 +8255,7 @@ def render_data_centers():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# Compute vs Capabilities — does data-center FLOP predict ECI?
+# Compute/capabilities/diffusion — does data-center FLOP predict ECI?
 # ══════════════════════════════════════════════════════════════════════════
 
 def _cc_logop_yaxis(fig, title):

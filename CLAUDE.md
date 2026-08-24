@@ -48,7 +48,7 @@ Ten-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTI
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; ends with a US-vs-China by-country projection (`_dc_render_country_panel()`) |
-| Compute/capabilities/diffusion (docs still say "Compute vs Capabilities"; slug stays `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; ends with China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) |
+| Compute/capabilities/diffusion (slug `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; ends with China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | date each entity first commands a threshold-scale training run |
 
 ### Data Sources and How to Update
@@ -161,7 +161,7 @@ Load-bearing:
    sites first.
 2. **The raw `dc_all` keeps single membership.** `dc.get('companies', [company])`
    fallback means any code path not going through `_dc_with_party` — notably the
-   Compute vs Capabilities tab — behaves exactly as before. `test_shared_site_counts_
+   Compute/capabilities/diffusion tab — behaves exactly as before. `test_shared_site_counts_
    under_every_tenant` pins both halves.
 3. **Hidden/unattributed sets are recomputed on the view**, so under 'operator' the
    size gate re-admits owners like Oracle (Stargate Abilene) that the tenant view
@@ -206,7 +206,7 @@ Four things are load-bearing:
    QTS and DayOne carry the mark. Solid-vs-dashed is already actual-vs-planned, hence a
    glyph rather than a line style. The scope caption is built from the companies actually
    plotted, so it can't drift from the data.
-4. **The Compute vs Capabilities tab keeps the unconditional exclusion.** `_cc_trainflop_
+4. **The Compute/capabilities/diffusion tab keeps the unconditional exclusion.** `_cc_trainflop_
    frontier()` still drops every name in `_DC_EXCLUDE_COMPANIES`: it is the compute half of
    a compute-vs-capability comparison, so each point has to be attributable to a lab that
    ships models, and QTS/DayOne sites have no recorded tenant at all. Crediting their
@@ -380,7 +380,7 @@ The tab's *Project through* year caps the recorded data for every country alike;
 planned buildout off gives a trend-only projection from today. `TestDcByCountry` (unit)
 and `TestDataCentersByCountry` (integration).
 
-### Compute vs Capabilities — the buildout-vs-release-timing panel
+### Compute/capabilities/diffusion — the buildout-vs-release-timing panel
 
 `_cc_company_buildout()` (bottom of the Data Centers tab) is a **pure timing test**: each
 capacity step of a lab's largest single data center, shifted forward `_CC_RELEASE_LAG_DAYS`
@@ -420,7 +420,7 @@ Load-bearing:
 
 `TestCcForwardMatch` and `TestCcCompanyAllReleases` guard all of the above.
 
-### Compute vs Capabilities — how it derives from the Data Centers tab
+### Compute/capabilities/diffusion — how it derives from the Data Centers tab
 
 The CC tab's compute inputs are the DC tab's machinery, not a parallel implementation.
 Four contracts, each guarded:
@@ -464,7 +464,7 @@ a constant scale-and-slide, same leaders (`test_run_window_scales_levels_only`);
 China's capacity band scales by the window ratio; `_cc_country_pace_check` stays
 on 2-month (paces identical).
 
-### Compute vs Capabilities — China's ETA to a target ECI
+### Compute/capabilities/diffusion — China's ETA to a target ECI
 
 `_render_cc_china_target()` answers "when does China cross `_CC_CN_TARGET_ECI`" (161) with a
 date distribution rather than the gap metrics above it. Three things are load-bearing:
