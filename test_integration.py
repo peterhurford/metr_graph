@@ -1173,6 +1173,42 @@ class TestPacingTab:
         md = " ".join(str(m.value) for m in at.markdown)
         assert "largest domestic cluster" in md or "domestic pace only" in md
 
+    def test_advanced_cutoff_dates_delay_the_controls(self):
+        """The advanced sliders date each control. Default is 'Now' (= the
+        checkbox alone); pushing a cut-off out gives China more time on
+        that channel, so its crossing lands between 'no control' and
+        'cut today' — never outside that bracket."""
+        at = self._app()
+
+        def _surpass_mo(at):
+            m = next(m for m in at.metric
+                     if "Time for China to surpass" in str(m.label))
+            return float(str(m.value).strip("~ mo"))
+
+        assert at.select_slider(key="pc_dist_when").value == "Now"
+        assert at.select_slider(key="pc_remote_when").value == "Now"
+        base = _surpass_mo(at)
+
+        at.checkbox(key="pc_stop_dist").check().run()
+        _assert_no_error(at, "Pacing / distillation cut today")
+        now_d = _surpass_mo(at)
+        late = at.select_slider(key="pc_dist_when").options[-1]
+        at.select_slider(key="pc_dist_when").set_value(late).run()
+        _assert_no_error(at, "Pacing / distillation cut late")
+        assert base - 1 <= _surpass_mo(at) <= now_d + 1
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert f"cut {late}" in md
+        at.checkbox(key="pc_stop_dist").uncheck().run()
+
+        at.checkbox(key="pc_stop_remote").check().run()
+        _assert_no_error(at, "Pacing / remote cut today")
+        now_r = _surpass_mo(at)
+        at.select_slider(key="pc_remote_when").set_value(late).run()
+        _assert_no_error(at, "Pacing / remote cut late")
+        assert base - 1 <= _surpass_mo(at) <= now_r + 1
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert late in md
+
     def test_pause_dates_follow_timing_in_lockstep(self):
         """'Date points at' shifts both countries' pause-panel dates to the
         chosen milestone (construction → release ≈ run + 1 mo later), while

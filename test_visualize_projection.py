@@ -2823,6 +2823,25 @@ class TestCcCnCrossingSim:
             150.0, 160.0, comp_dead=(0.0, 50.0), **common)
         assert np.nanmedian(y_dead) > np.nanmedian(y_on)
 
+    def test_comp_slow_only_bites_after_its_cut(self):
+        """comp_slow drops the compute term from t_cut on: cutting at t=0 is
+        the same as sampling the slow band throughout, and a cut past the
+        horizon is inert."""
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
+                      us_anchor=165.0, us_rate=25.0)
+        slow = np.full(self.KW['n'], self.KW['a_partial'] * 0.05)
+        y_none, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
+        y_now, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, comp_slow=(0.0, slow), **common)
+        y_late, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, comp_slow=(50.0, slow), **common)
+        assert np.nanmedian(y_now) > np.nanmedian(y_none)
+        assert abs(np.nanmedian(y_late) - np.nanmedian(y_none)) < 0.06
+        y_mid, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, comp_slow=(0.5, slow), **common)
+        assert np.nanmedian(y_none) <= np.nanmedian(y_mid) + 0.06
+        assert np.nanmedian(y_mid) <= np.nanmedian(y_now) + 0.06
+
     def test_comp_dead_past_window_is_inert(self):
         common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
                       us_anchor=165.0, us_rate=25.0)
@@ -4182,6 +4201,27 @@ class TestPacing:
         assert vp._PC_DEFAULTS["pc_run"] in vp._PC_RUN_OPTIONS
         keys, _ = vp._all_tracked()
         assert "pc_threshold" in keys and "pc_run" in keys
+
+    def test_cutoff_slider_labels_round_trip(self):
+        """The advanced cut-off sliders are month labels (URL- and
+        reset-safe): first option is the constant default, every other
+        option parses back to a first-of-month at or after today, and the
+        list stops at the horizon."""
+        today = datetime(2026, 8, 24)
+        opts = vp._pc_when_options(today)
+        assert opts[0] == vp._PC_WHEN_NOW == vp._PC_DEFAULTS["pc_dist_when"]
+        assert opts[0] == vp._PC_DEFAULTS["pc_remote_when"]
+        assert opts[1] == "Sep 2026" and opts[-1] == "Dec 2031"
+        assert len(set(opts)) == len(opts)
+        dates = [vp._pc_when_date(o, today) for o in opts]
+        assert dates[0] == today
+        assert dates == sorted(dates)
+        assert all(d.day == 1 and d > today for d in dates[1:])
+        assert dates[-1] <= vp._PC_HORIZON
+        # A stale bookmarked label never parses into a date the sliders
+        # can't show; unknown text falls back to today rather than raising.
+        assert vp._pc_when_date("nonsense", today) == today
+        assert vp._pc_when_date(None, today) == today
 
     def test_plan_crossing_is_first_step_at_or_above(self):
         steps = [(datetime(2025, 1, 1), 5e26, "Site A"),

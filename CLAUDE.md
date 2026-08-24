@@ -573,7 +573,16 @@ compute as a *level setback* (`comp_dead`): China's largest run falls back to it
 biggest domestic cluster, the compute term is dead until the domestic buildout regrows
 the lost OOMs at its catalogued pace, domestic band thereafter (also suppresses the
 China-accessible sensitivity, whose premise it removes). The pace band deliberately
-stays on the default compute band — it is shared with the CC crossing. An **Assumes**
+stays on the default compute band — it is shared with the CC crossing.
+An *Advanced* expander dates the two cuts (`pc_dist_when` / `pc_remote_when`,
+`_pc_when_options` month labels — strings, so they round-trip through the URL and
+reset to a constant `Now` = the checkbox alone; a stale label is dropped like
+`pc_threshold`). Sliders are `disabled` without their checkbox. A dated remote cut
+must not slow the years *before* it: the band stays on the export-control default
+until the cut and `comp_slow=(t_cut, a_partial·g_domestic)` takes over after, while
+the setback is sized at the cut date (today's OOM gap widened by `(g_mid − g_dom)`
+per year of lead), so a later cut costs more to regrow but is never worse for China
+overall. Cutting *at* today keeps the old global band cap instead. An **Assumes**
 line (not buried in the caption) states weight security (theft would put China at the
 bar), the drying channels, and the compute band. The panel adds **no release-queue
 wait** (unlike the CC 161 section — a queue delays both sides alike); dates follow the

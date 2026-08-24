@@ -9683,7 +9683,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         release_gap_days=None, n=None, horizon_yrs=12.0,
                         us_pause_level=None, pure_lo=None, pure_hi=None,
                         t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS,
-                        t_dist_stop=None, comp_dead=None, dist_teacher=None):
+                        t_dist_stop=None, comp_dead=None, comp_slow=None,
+                        dist_teacher=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -9705,6 +9706,10 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     in years zeroes the compute term inside that window — a level setback:
     capacity lost at `start` must be regrown (the window's length = lost
     OOM / regrowth pace) before further growth adds capability again.
+    `comp_slow` (t_cut, comp_after) replaces the
+    compute term from `t_cut` on — the slower pace left once a channel
+    closes — so a cut dated years out doesn't retroactively slow the years
+    before it.
     `dist_teacher` (scalar or per-sample) caps the level the distillation
     gap sees: the best *queryable* model when the true frontier is withheld,
     so distillation dries up at the teacher's level, below the bar.
@@ -9755,9 +9760,11 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                    np.clip(1.0 - (grid[i - 1] - tp) / diff_absorb_yrs,
                            0.0, 1.0))
         d_on = 1.0 if (t_dist_stop is None or grid[i - 1] < t_dist_stop) else 0.0
+        comp_t = (comp if comp_slow is None or grid[i - 1] < comp_slow[0]
+                  else comp_slow[1])
         c_on = (0.0 if comp_dead is not None
                 and comp_dead[0] <= grid[i - 1] < comp_dead[1] else 1.0)
-        rate = pace * (comp * c_on + pure + diffu * d_avail
+        rate = pace * (comp_t * c_on + pure + diffu * d_avail
                        + dist * d_on * np.minimum(1.0, gap / gap0))
         e = e + rate * dt
         traj[:, i] = e
@@ -11031,15 +11038,52 @@ _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
 _PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_stop_dist",
-                  "pc_stop_remote", "pc_withhold"]
+                  "pc_stop_remote", "pc_withhold",
+                  "pc_dist_when", "pc_remote_when"]
+_PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
 _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "2-month run",
                 "pc_pool": "Nearby + announced fabric",
                 "pc_party": "Tenant (who trains there)",
                 "pc_timing": "Training run finished",
                 "pc_end_year": _PC_HORIZON.year,
                 "pc_stop_dist": False, "pc_stop_remote": False,
-                "pc_withhold": True}
+                "pc_withhold": True,
+                "pc_dist_when": _PC_WHEN_NOW,
+                "pc_remote_when": _PC_WHEN_NOW}
 _PC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
+
+
+def _pc_when_options(today, end=_PC_HORIZON):
+    """['Now', 'Sep 2026', …]: month labels for the cut-off date sliders.
+
+    Month strings rather than dates so the value round-trips through the URL
+    and the reset default is a constant. Built from `today`, so a stale
+    bookmarked label is dropped by the caller's guard, as `pc_threshold` is.
+    """
+    opts, d = [_PC_WHEN_NOW], datetime(today.year, today.month, 1)
+    while True:
+        d = datetime(d.year + d.month // 12, d.month % 12 + 1, 1)
+        if d > end:
+            return opts
+        opts.append(f"{d:%b %Y}")
+
+
+def _pc_tri(lo, hi, n, pad=0.01):
+    """Symmetric triangular draw over [lo, hi], as _cc_cn_crossing_sim does it."""
+    lo, hi = min(lo, hi), max(lo, hi)
+    if hi - lo < 1e-6:
+        lo, hi = lo - pad, hi + pad
+    return np.random.triangular(lo, 0.5 * (lo + hi), hi, n)
+
+
+def _pc_when_date(label, today):
+    """A `_pc_when_options` label back to a date; 'Now' (or unknown) → today."""
+    if not label or label == _PC_WHEN_NOW:
+        return today
+    try:
+        return datetime.strptime(label, "%b %Y")
+    except ValueError:
+        return today
 
 
 def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
@@ -11236,6 +11280,32 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
              "domestic cluster (a level setback the domestic buildout must "
              "first regrow), and grows at the domestic catalogued pace "
              "thereafter.")
+    with st.expander("Advanced — when the controls bite"):
+        _opts = _pc_when_options(today)
+        for _k in ("pc_dist_when", "pc_remote_when"):
+            if st.session_state.get(_k, _PC_WHEN_NOW) not in _opts:
+                st.session_state.pop(_k, None)
+        s1, s2 = st.columns(2)
+        dist_when = s1.select_slider(
+            "Distillation cut off", options=_opts,
+            value=_PC_DEFAULTS["pc_dist_when"], key="pc_dist_when",
+            disabled=not stop_dist,
+            help="Enforcement takes time. Until this date China keeps "
+                 "distilling under the gap-decay law; after it the channel "
+                 "is gone. Needs the checkbox above.")
+        remote_when = s2.select_slider(
+            "Remote access cut off", options=_opts,
+            value=_PC_DEFAULTS["pc_remote_when"], key="pc_remote_when",
+            disabled=not stop_remote,
+            help="China's compute grows on the export-control band until "
+                 "this date, then takes the setback and continues at the "
+                 "domestic pace — so a later cut costs more OOM to regrow. "
+                 "Needs the checkbox above.")
+        st.caption("Both default to *Now*, which is what the checkboxes on "
+                   "their own mean. Moving a slider right buys China more "
+                   "time on that channel before it closes.")
+    d_dist = _pc_when_date(dist_when, today)
+    d_remote = _pc_when_date(remote_when, today)
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
     eci_all = load_eci_frontier(_mtime=_eci_mtime())
     us_fr = _cc_country_frontier(eci_all, 'United States of America')
@@ -11329,16 +11399,21 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
     # Three-channel algorithmic engine: distillation decays with the gap,
     # diffusion over ~a year after the pause (published stock absorbed),
     # innovation never. The checkboxes tighten two channels: distillation
-    # cut at today (not at the gap's close), and remote compute cut as a
-    # *level setback* — losing the sites abroad drops China's largest run
-    # back to its biggest domestic cluster, so the compute term contributes
-    # nothing until the domestic buildout regrows the lost OOMs at its own
-    # catalogued pace, and runs at that pace thereafter. The pace band
-    # above stays on the default band on purpose — it is shared with the
-    # CC tab's crossing, and a scenario toggle must not re-tune the
-    # reality-check factor.
+    # cut at `d_dist` (not at the gap's close), and remote compute cut at
+    # `d_remote` as a *level setback* — losing the sites abroad drops
+    # China's largest run back to its biggest domestic cluster, so the
+    # compute term contributes nothing until the domestic buildout regrows
+    # the lost OOMs at its own catalogued pace, and runs at that pace
+    # thereafter. A cut dated later costs *more* to regrow (the two paces
+    # diverge until then) but leaves the band untouched until it bites, so
+    # a later cut is never worse for China. The pace band above stays on
+    # the default band on purpose — it is shared with the CC tab's
+    # crossing, and a scenario toggle must not re-tune the reality-check
+    # factor.
     g_lo_eff, g_hi_eff = _CC_CN_COMPUTE_LO, _CC_CN_COMPUTE_HI
-    comp_dead, dlvl_oom = None, 0.0
+    comp_dead, comp_slow, dlvl_oom = None, None, 0.0
+    g_dom_lo = g_dom_hi = None       # domestic band, for the Assumes line
+    t_cut_r = max((d_remote - anchor_d).days, 0) / 365.25
     chk_dom = chk_pace.get(_DC_CTY_CN_DOMESTIC)
     if stop_remote and chk_dom is not None:
         _ser = _dc_series_for_metric(dc_all, 'train_flop')
@@ -11354,18 +11429,32 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
         acc = _cur_level(_grp.get(_DC_CTY_CN_ACCESS, []))
         dom = _cur_level([n for n in _ser if _cty.get(n) == _DC_CTY_CN])
         g_dom = max(chk_dom['g'], 0.05)
-        g_hi_eff = min(g_hi_eff, g_dom)
-        g_lo_eff = min(g_lo_eff, g_hi_eff)
+        g_dom_hi = min(g_hi_eff, g_dom)
+        g_dom_lo = min(g_lo_eff, g_dom_hi)
+        if t_cut_r <= t_today:
+            # Bites now: the whole sim runs on the domestic band.
+            g_lo_eff, g_hi_eff = g_dom_lo, g_dom_hi
+        else:
+            # Export-control band until the cut, domestic band after it.
+            comp_slow = (t_cut_r,
+                         a_partial * _pc_tri(g_dom_lo, g_dom_hi, n_s))
         if acc and dom and acc > dom:
-            dlvl_oom = float(np.log10(acc / dom))
-            comp_dead = (t_today, t_today + dlvl_oom / g_dom)
+            # The setback is the gap at the cut date: today's gap, widened
+            # by however far the two paces diverge before the cut bites.
+            dlvl_oom = max(float(np.log10(acc / dom))
+                           + (g_mid - g_dom) * max(t_cut_r - t_today, 0.0),
+                           0.0)
+            comp_dead = (max(t_cut_r, t_today),
+                         max(t_cut_r, t_today) + dlvl_oom / g_dom)
     pure = _cc_pure_innovation_band(cc_rows, eci_all)
     kw = dict(us_anchor=us_best[1], us_rate=us_rate_s, us_pause_level=level_s,
               a_partial=a_partial, g_lo=g_lo_eff,
               g_hi=g_hi_eff, algo_lo=a_lo, algo_mid=a_mid,
               algo_hi=a_hi, pace_lo=pace_lo, pace_hi=pace_hi,
               n=n_s, t_pause=t_pause_s, comp_dead=comp_dead,
-              t_dist_stop=t_today if stop_dist else None,
+              comp_slow=comp_slow,
+              t_dist_stop=(max((d_dist - anchor_d).days, 0) / 365.25
+                           if stop_dist else None),
               dist_teacher=teacher_s if withhold else None,
               **({'pure_lo': pure[0], 'pure_hi': pure[1]} if pure else {}))
     if horizon is not None:
@@ -11439,20 +11528,26 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
                "points at* — both countries move together, so the gap "
                "between them never changes (and no release-queue wait is "
                "added: a queue delays both sides alike).")
+    _when_r = "today" if d_remote <= today else f"**{d_remote:%b %Y}**"
+    _dom_hi = g_hi_eff if g_dom_hi is None else g_dom_hi
+    _dom_lo = g_lo_eff if g_dom_hi is None else g_dom_lo
     if comp_dead is not None:
-        _asm_comp = (f"compute — falls back **{dlvl_oom:.1f} OOM** to the "
-                     f"largest domestic cluster, "
-                     f"~{comp_dead[1] - t_today:.1f} yr to regrow at "
-                     f"×{10 ** g_hi_eff:.1f}/yr (checkbox)")
+        _asm_comp = (f"compute — from {_when_r}, falls back "
+                     f"**{dlvl_oom:.1f} OOM** to the largest domestic "
+                     f"cluster, ~{comp_dead[1] - comp_dead[0]:.1f} yr to "
+                     f"regrow at ×{10 ** _dom_hi:.1f}/yr (checkbox)")
     elif stop_remote:
-        _asm_comp = (f"compute — domestic pace only, "
-                     f"×{10 ** g_lo_eff:.1f}–{10 ** g_hi_eff:.1f}/yr "
+        _asm_comp = (f"compute — domestic pace only from {_when_r}, "
+                     f"×{10 ** _dom_lo:.1f}–{10 ** _dom_hi:.1f}/yr "
                      "(checkbox)")
     else:
         _asm_comp = (f"compute — keeps growing ×{10 ** g_lo_eff:.1f}–"
                      f"{10 ** g_hi_eff:.1f}/yr (export-control band)")
     if stop_dist:
-        _asm_dist = "distillation — **cut today** (checkbox)"
+        _asm_dist = ("distillation — **cut today** (checkbox)"
+                     if d_dist <= today else
+                     f"distillation — **cut {d_dist:%b %Y}** (checkbox); "
+                     "the gap-decay law until then")
     elif withhold:
         _asm_dist = ("distillation — release freeze from pause-run start "
                      f"(checkbox): the teacher is the last pre-freeze "
