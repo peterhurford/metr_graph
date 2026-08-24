@@ -4328,6 +4328,19 @@ class TestPacing:
             assert prev is None or med > prev
             prev = med
 
+    def test_report_lag_moves_only_the_release_dated_milestones(self):
+        """METR/ECI/RLI are dated off released, benchmarked models; CoBench and
+        the staff survey are internal and already on the run-finished clock."""
+        days = np.full(20000, 500.0)
+        lo, hi = vp._PC_REPORT_LAG_DAYS
+        shifted = vp._pc_report_lag(days, True, "Training run finished")
+        assert (shifted <= 500 - lo).all() and (shifted >= 500 - hi).all()
+        assert abs(shifted.mean() - (500 - (lo + hi) / 2)) < 1.0
+        # Internal milestones never move, and nothing moves on the release clock.
+        assert vp._pc_report_lag(days, False, "Training run finished") is days
+        assert vp._pc_report_lag(days, True, vp._PC_TIMING_RELEASE) is days
+        assert vp._PC_TIMING_RELEASE in vp._DC_TIMING_OPTIONS
+
     def test_rsi_blend_mixes_distributions_not_medians(self):
         """A mixture keeps each component's spread: shifting weight onto a
         later milestone moves the blend into its cluster, and the 80% band

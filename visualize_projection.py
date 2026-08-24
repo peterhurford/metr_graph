@@ -11575,6 +11575,25 @@ _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 # The Pacing tab adds a third attribution: entities are countries, with China
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
+# Five of the milestones are dated off *released, publicly benchmarked* models
+# — METR horizons, ECI scores, RLI scores. The other two are not: CoBench and
+# the staff survey are internal evaluations, and Anthropic reports them for
+# models it has not shipped. So when the tab's *Date points at* is anything but
+# "Model release", the five have to come back by the report lag to sit on the
+# same clock as everything else on the page; the other two already do.
+# Sampled over the range rather than fixed, so the spread lands in the CI.
+_PC_REPORT_LAG_DAYS = (30.0, 60.0)
+_PC_TIMING_RELEASE = "Model release"
+
+
+def _pc_report_lag(days_to, release_dated, timing_label, n=None):
+    """Pull a release-dated milestone back onto the run-finished clock."""
+    if not release_dated or timing_label == _PC_TIMING_RELEASE:
+        return days_to
+    lo, hi = _PC_REPORT_LAG_DAYS
+    return days_to - np.random.uniform(lo, hi, n or len(days_to))
+
+
 # The tentative RSI blend. Each milestone is one operationalization of "the
 # recursive-self-improvement threshold"; the weight is how much credence it
 # gets, and the result is the *mixture* of their date distributions, not an
@@ -11830,14 +11849,6 @@ def _pc_render_rsi_blend(components, origin):
         "Median": _pc_eta_dates(a, d)[1].strftime('%b %Y'),
         "80% CI": "{:%b %Y} \u2013 {:%b %Y}".format(*_pc_eta_dates(a, d)[::2]),
     } for slug, lab, a, d in components])
-
-    st.caption(
-        "No single benchmark defines recursive self-improvement, so this treats each "
-        "milestone as one candidate definition and the weight as how much credence it "
-        "gets. The result is the mixture of their date distributions, not an average "
-        "of the medians — each component keeps its own spread, so a late and uncertain "
-        "milestone widens the blend rather than just pushing it back. The weights are "
-        "a starting point, not a result; edit them below.")
 
     with st.expander("Set your own weights"):
         # Assign the defaults rather than popping the keys: a popped key is
@@ -12816,22 +12827,25 @@ def render_pacing():
     st.header("Pacing")
 
     # ── Capability milestones: METR 40h, ECI 170, RLI 90%, CoBench 85% and 10x staff speedup ──
+    # (slug, label, eta, release_dated) — see `_pc_report_lag`.
     _cap = [(f"metr_{lab}", f"METR {lab} horizon reaches 40h",
-             _pc_metr_eta(frontier_all, k, samples=True))
+             _pc_metr_eta(frontier_all, k, samples=True), True)
             for lab, k in _PC_METR_LEVELS]
     _eci_fr = _eci_entity_data("US best")[1]
     _cap += [(f"eci_{t:.0f}", f"US ECI reaches {t:.0f}",
-              _pc_eci_eta(_eci_fr, t, samples=True)) for t in _PC_ECI_TARGETS]
+              _pc_eci_eta(_eci_fr, t, samples=True), True)
+             for t in _PC_ECI_TARGETS]
     _cap.append((f"rli_{_PC_RLI_TARGET_PCT:.0f}",
                  f"RLI reaches {_PC_RLI_TARGET_PCT:.0f}%",
-                 _pc_rli_eta(rli_frontier_all, samples=True)))
+                 _pc_rli_eta(rli_frontier_all, samples=True), True))
     _cap.append((f"cobench_{_RSI_SUBSTITUTION_BAR:.0f}",
                  f"CoBench reaches {_RSI_SUBSTITUTION_BAR:.0f}%",
-                 _pc_rsi_eta(rsi_frontier_all, samples=True)))
+                 _pc_rsi_eta(rsi_frontier_all, samples=True), False))
     _cap.append((f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x",
                  f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
-                 _pc_rsi_survey_eta(load_rsi_survey(), samples=True)))
-    _cap = [(slug, lab, r[0], r[1]) for slug, lab, r in _cap if r is not None]
+                 _pc_rsi_survey_eta(load_rsi_survey(), samples=True), False))
+    _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label))
+            for slug, lab, r, rel in _cap if r is not None]
     if _cap:
         st.subheader("Capabilities Milestones")
         # Two rows: seven cards on one line squeeze every label to two words.
@@ -12843,6 +12857,19 @@ def render_pacing():
                 with col:
                     st.metric(lab, med.strftime('%b %Y'))
                     st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")
+
+        _lag_note = ("" if timing_label == _PC_TIMING_RELEASE else
+                     " METR, ECI and RLI are dated off released, benchmarked "
+                     f"models, so they are pulled back {_PC_REPORT_LAG_DAYS[0] / 30:.0f}"
+                     f"\u2013{_PC_REPORT_LAG_DAYS[1] / 30:.0f} months onto the "
+                     f"\u201c{timing_label.lower()}\u201d clock; CoBench and the staff "
+                     "survey are internal and already on it.")
+        st.caption(
+            "Each milestone reproduces its own tab at that tab's defaults, so the two "
+            "cannot quote different dates for the same bar." + _lag_note +
+            " The blend below treats each as one candidate definition of the threshold "
+            "and mixes their date distributions — weighted by credence, not averaged, "
+            "so an uncertain milestone widens the range instead of only shifting it.")
 
         _pc_render_rsi_blend(_cap, _today)
 

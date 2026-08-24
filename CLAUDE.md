@@ -608,7 +608,14 @@ milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
 `test_rli_eta_reproduces_the_rli_tab_defaults` and
 `test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that; the cross-tab
 `test_pacing_quotes_the_same_milestone` compares the two CoBench dates with a
-tolerance, since both are Monte Carlo medians off an unseeded RNG. Under the cards sits *RSI projection (tentative)* (`_pc_render_rsi_blend()`):
+tolerance, since both are Monte Carlo medians off an unseeded RNG. Five of the seven are dated off *released, publicly benchmarked* models (METR,
+ECI, RLI); CoBench and the staff survey are internal evaluations Anthropic
+reports for models it has not shipped. So `_pc_report_lag()` pulls the five back
+by `_PC_REPORT_LAG_DAYS` (1–2 months, sampled over the range so the spread lands
+in the CI) whenever *Date points at* is not `_PC_TIMING_RELEASE`; the other two
+are already on that clock and must not be shifted twice.
+
+Under the cards sits *RSI projection (tentative)* (`_pc_render_rsi_blend()`):
 no single benchmark defines the threshold, so each milestone is treated as one
 candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets. The result
 is `_pc_rsi_blend()`, the **mixture of their date distributions, not an average
