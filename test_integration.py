@@ -824,11 +824,13 @@ class TestComputeVsCapabilities:
     def test_forecast_section_renders_milestones(self):
         at = self._cc_app()
         # Section 2 projects to end-2029 with year-end milestone cards and a
-        # China distillation-scenario table.
+        # China distillation-scenario table carrying all four channel rows.
         labels = " ".join(str(m.label) for m in at.metric)
         assert "End 2029" in labels
         text = " ".join(str(m.value) for m in at.markdown).lower()
         assert "distillation scenario" in text
+        assert "no external distillation" in text
+        assert "indigenous only" in text
 
     def test_has_two_engine_metrics(self):
         at = self._cc_app()

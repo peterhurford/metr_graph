@@ -488,10 +488,13 @@ date distribution rather than the gap metrics above it. Three things are load-be
    median-crossing diamond sits *right* of where the fan meets the target line — the fan is
    the smooth capability path, the diamond and vertical band are release-inclusive. Not a
    plotting bug; don't "fix" it by aligning them.
-4. **Distillation decays as the gap closes.** The headline uses `_cc_cn_crossing_sim`:
-   the algorithmic term falls from the measured rate to an indigenous band
-   (`_cc_innovation_algo_band` — the ±3 frontier-grade b_time, floored at the
-   pretraining prior, up to the top iso-compute band) as gap/gap₀ shrinks.
+4. **Three-channel algorithmic engine.** `_cc_cn_crossing_sim` splits the measured
+   rate into innovation (`_cc_pure_innovation_band`, never decays) + diffusion
+   (nodist − pure, decays only after a pause, `_CC_DIFF_ABSORB_YRS` absorption ramp
+   via `t_pause`) + distillation (algo − nodist, decays with gap/gap₀). With
+   `pure_lo=None` or `t_pause=None` it reduces to the two-channel law, so the
+   moving-US 161 crossing is unchanged; the split bites in the Pacing pause panel
+   and the scenario table's four rows.
    `_cc_cn_target_years` stays as the constant-rate comparison quoted in the caption.
    `TestCcCnCrossingSim` pins the limits (saturated = constant-rate; frozen US = slower;
    pause-to-frozen-bar later than 161-with-US-moving). The pace band is shared via

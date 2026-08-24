@@ -2680,6 +2680,17 @@ class TestCcCnPaceBand:
         assert (lo, hi, obs) == (0.85, 1.15, None)
 
 
+class TestCcPureInnovationBand:
+    def test_pure_band_sits_below_the_diffusion_intact_band(self):
+        cc = vp.load_eci_compute()
+        eci = vp.load_eci_frontier()
+        nodist = vp._cc_innovation_algo_band(cc, eci)
+        pure = vp._cc_pure_innovation_band(cc, eci)
+        assert pure is not None and nodist is not None
+        assert 0 < pure[0] <= pure[1]
+        assert pure[1] <= nodist[0] + 1e-9
+
+
 class TestCcCnCrossingSim:
     KW = dict(a_partial=8.0, g_lo=0.15, g_hi=0.30, algo_lo=11.0,
               algo_mid=12.5, algo_hi=13.0, pace_lo=0.9, pace_hi=1.1, n=4000)
@@ -2741,6 +2752,29 @@ class TestCcCnCrossingSim:
         y_pause, _, _ = vp._cc_cn_crossing_sim(
             cn_best[1], us_best[1], us_anchor=us_best[1], us_rate=0.0, **kw)
         assert np.nanmedian(y_pause) >= np.nanmedian(y_cc)
+
+    def test_diffusion_decay_slows_a_pause(self):
+        """With a pause, splitting the no-distillation band into diffusion
+        (drying up on the publication clock) and innovation makes the same
+        crossing later than treating it all as never-decaying."""
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0)
+        y_two, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, us_anchor=160.0, us_rate=0.0, **common)
+        y_three, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, us_anchor=160.0, us_rate=0.0,
+            pure_lo=3.0, pure_hi=4.0, t_pause=0.0, **common)
+        assert np.nanmedian(y_three) > np.nanmedian(y_two)
+
+    def test_diffusion_split_is_inert_without_a_pause(self):
+        """t_pause=None keeps D(t)=1, so the three-channel law reduces to the
+        two-channel one whatever the pure band says."""
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0)
+        y_two, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, us_anchor=165.0, us_rate=15.0, **common)
+        y_three, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, us_anchor=165.0, us_rate=15.0,
+            pure_lo=3.0, pure_hi=4.0, **common)
+        assert abs(np.nanmedian(y_three) - np.nanmedian(y_two)) < 0.06
 
     def test_crossing_is_later_for_a_higher_pause_bar(self):
         """us_pause_level: the US climbs to the bar then freezes; a higher

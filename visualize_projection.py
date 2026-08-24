@@ -8555,6 +8555,9 @@ def _cc_iso_compute_rate(rows, country, halfwidth=0.4):
 # Epoch's estimate of pure pretraining algorithmic efficiency (~doubling every
 # 8-9 months) — the floor for frontier progress with no stronger teacher.
 _CC_PRETRAIN_ALGO_OOM = 0.4
+# How long the already-published methods stock keeps paying out after a pause
+# stops new publications — the diffusion channel's absorption ramp.
+_CC_DIFF_ABSORB_YRS = 1.0
 
 
 def _cc_frontier_grade_algo(cc_rows, eci_all, margin=5.0):
@@ -8625,6 +8628,25 @@ def _cc_innovation_algo_band(cc_rows, eci_all=None):
     lo = _CC_PRETRAIN_ALGO_OOM * a_ref
     if fg3:
         lo = max(lo, fg3['b_time'])
+    return (min(lo, hi), max(lo, hi))
+
+
+def _cc_pure_innovation_band(cc_rows, eci_all=None):
+    """(lo, hi) ECI/yr for innovation alone — no distillation *and* no
+    diffusion of others' methods: the pretraining-efficiency prior × the
+    frontier-grade exchange rate, up to the no-external-distillation band's
+    own floor (which still includes diffusion, hence the ceiling). None when
+    the underlying fits are unavailable."""
+    band = _cc_innovation_algo_band(cc_rows, eci_all)
+    dec = _cc_decomp(cc_rows)
+    if band is None or dec is None:
+        return None
+    if eci_all is None:
+        eci_all = load_eci_frontier(_mtime=_eci_mtime())
+    fg3 = _cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
+    a_ref = fg3['a_partial'] if fg3 else dec['a_partial']
+    lo = _CC_PRETRAIN_ALGO_OOM * a_ref
+    hi = band[0]
     return (min(lo, hi), max(lo, hi))
 
 
@@ -9386,10 +9408,15 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             e = min(e + r * (dt_bd[i] - dt_bd[i - 1]), float(us_ceiling[i]))
             cn_traj_cn.append(e)
         cn_traj_cn = np.array(cn_traj_cn)
-        # Indigenous-only counterfactual: no distillation and no diffusion of
-        # future methods — the innovation band's midpoint plus compute.
+        # Two stripped counterfactuals: no *external* distillation (diffusion
+        # of methods intact — the inno_band midpoint), and innovation alone
+        # (no distillation and no diffusion — the pure band midpoint).
         cn_traj_inno = (cn_anchor + (compute_term_cn + inno_mid) * dt_bd
                         if inno_band else None)
+        pure_band = _cc_pure_innovation_band(cc_rows, eci_all)
+        pure_mid = 0.5 * (pure_band[0] + pure_band[1]) if pure_band else None
+        cn_traj_pure = (cn_anchor + (compute_term_cn + pure_mid) * dt_bd
+                        if pure_mid is not None else None)
 
         us_end = float(us_ceiling[-1])
         cn_end_us = float(cn_traj_us[-1])
@@ -9412,10 +9439,19 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             mo_inno = ((us_end - cn_end_inno) / us_eci_smid * 12
                        if us_eci_smid > 0 else float('nan'))
             rows_md.append(
-                f"| **Indigenous only** (no distillation/diffusion) | "
-                f"{inno_mid:.1f} pts/yr | "
+                f"| **No external distillation** (diffusion intact — model "
+                f"access cut, papers still flowing) | {inno_mid:.1f} pts/yr | "
                 f"{inno_mid + compute_term_cn:.1f} pts/yr | ~{cn_end_inno:.0f} "
                 f"| ~{mo_inno:.0f} mo |")
+        if cn_traj_pure is not None:
+            cn_end_pure = float(cn_traj_pure[-1])
+            mo_pure = ((us_end - cn_end_pure) / us_eci_smid * 12
+                       if us_eci_smid > 0 else float('nan'))
+            rows_md.append(
+                f"| **Indigenous only** (no distillation, no diffusion) | "
+                f"{pure_mid:.1f} pts/yr | "
+                f"{pure_mid + compute_term_cn:.1f} pts/yr | ~{cn_end_pure:.0f} "
+                f"| ~{mo_pure:.0f} mo |")
         st.markdown("\n".join(rows_md))
 
         # Chart: the two China trajectories (backdated to Jan 2025) vs the US
@@ -9446,7 +9482,14 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             figd.add_trace(go.Scatter(
                 x=bd_dates, y=list(cn_traj_inno), mode='lines',
                 line=dict(color='#6B6B6B', width=2, dash='dashdot'),
-                name=f"China · indigenous only (~{inno_mid:.0f})",
+                name=f"China · no ext. distillation (~{inno_mid:.0f})",
+                hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                              '<extra>no ext. distillation</extra>'))
+        if cn_traj_pure is not None:
+            figd.add_trace(go.Scatter(
+                x=bd_dates, y=list(cn_traj_pure), mode='lines',
+                line=dict(color='#9E9E9E', width=2, dash='dot'),
+                name=f"China · indigenous only (~{pure_mid:.0f})",
                 hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                               '<extra>indigenous</extra>'))
         figd.update_layout(
@@ -9477,9 +9520,11 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             "it; the dashed line rides the US-*measured* rate (mid-compute US "
             "models, themselves teacher-fed — a follower rate, not the US "
             "frontier engine)"
-            + (f"; the grey dash-dot line strips distillation and "
-               f"future-method diffusion entirely (indigenous "
-               f"~{inno_mid:.0f} ECI/yr)" if cn_traj_inno is not None else "")
+            + (f"; the grey dash-dot line cuts model access but keeps "
+               f"method diffusion (~{inno_mid:.0f} ECI/yr)"
+               if cn_traj_inno is not None else "")
+            + (f"; the dotted grey line strips diffusion too — innovation "
+               f"alone (~{pure_mid:.0f})" if cn_traj_pure is not None else "")
             + ". The edge buys "
             f"earlier *parity*, not a lead. Fits: n={n_us_iso} US / n={n_cn_iso} "
             "China within ±0.4 dex of median compute — so few same-budget US "
@@ -9560,18 +9605,23 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         g_lo, g_hi, algo_lo, algo_mid, algo_hi,
                         inno_lo, inno_hi, pace_lo, pace_hi,
                         release_gap_days=None, n=None, horizon_yrs=12.0,
-                        us_pause_level=None):
-    """_cc_cn_target_years with distillation decay.
+                        us_pause_level=None, pure_lo=None, pure_hi=None,
+                        t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS):
+    """_cc_cn_target_years with a three-channel algorithmic engine.
 
-    The algorithmic term is gap-dependent:
-        rate = pace · (a_partial·g + inno + (algo − inno) · min(1, gap/gap₀))
-    with gap = max(US(t) − CN(t), 0), US(t) = us_anchor + us_rate·t, and gap₀
-    today's gap — the full measured rate applies at today's gap and decays to
-    the indigenous `inno` band as China closes on the frontier it distills
-    from. us_rate=0 models a US pause: the frozen stock stays distillable
-    while a gap remains, then China runs on `inno` + compute alone.
-    `us_pause_level` caps US(t): the US climbs at `us_rate` until that level,
-    then freezes there — the pause-at-a-future-threshold scenario.
+        rate = pace · (a_partial·g + pure + diff·D(t)
+                       + dist · min(1, gap/gap₀))
+
+    Per sample: `nodist` ~ the [inno_lo, inno_hi] band (the rate with no
+    *external* teacher, diffusion intact), `pure` ~ [pure_lo, pure_hi]
+    (innovation alone), dist = algo − nodist, diff = nodist − pure. The
+    distillation channel decays with the capability gap (you can't overtake
+    your teacher; gap vs US(t) = us_anchor + us_rate·t, capped at
+    `us_pause_level`); the diffusion channel decays only after a pause —
+    D(t) ramps 1→0 over `diff_absorb_yrs` from `t_pause` (years, scalar or
+    per-sample), the published stock being absorbed. With `pure_lo=None` or
+    `t_pause=None`, diffusion never decays and the law reduces to the
+    two-channel model.
 
     Returns (years, grid_yrs, traj): crossing years incl. the release wait
     (NaN = not crossed within horizon), the monthly time grid, and the
@@ -9588,8 +9638,16 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     algo = _tri(algo_lo, algo_mid, algo_hi, 0.05)
     g = _tri(g_lo, 0.5 * (g_lo + g_hi), g_hi, 0.01)
     pace = np.maximum(_tri(pace_lo, 1.0, pace_hi, 0.05), 0.0)
-    inno = np.minimum(_tri(inno_lo, 0.5 * (inno_lo + inno_hi), inno_hi, 0.05),
-                      algo)
+    nodist = np.minimum(
+        _tri(inno_lo, 0.5 * (inno_lo + inno_hi), inno_hi, 0.05), algo)
+    if pure_lo is None:
+        pure = nodist
+    else:
+        pure = np.minimum(
+            _tri(pure_lo, 0.5 * (pure_lo + pure_hi), pure_hi, 0.05), nodist)
+    dist = algo - nodist
+    diffu = nodist - pure
+    tp = None if t_pause is None else np.asarray(t_pause)
     comp = a_partial * g
     gap0 = max(us_anchor - anchor_eci, 1e-6)
     dt = 1.0 / 12.0
@@ -9605,7 +9663,11 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         if us_pause_level is not None:
             us_level = np.minimum(us_level, us_pause_level)
         gap = np.maximum(us_level - e, 0.0)
-        rate = pace * (comp + inno + (algo - inno) * np.minimum(1.0, gap / gap0))
+        d_avail = (1.0 if tp is None else
+                   np.clip(1.0 - (grid[i - 1] - tp) / diff_absorb_yrs,
+                           0.0, 1.0))
+        rate = pace * (comp + pure + diffu * d_avail
+                       + dist * np.minimum(1.0, gap / gap0))
         e = e + rate * dt
         traj[:, i] = e
         hit = np.isnan(years) & (e >= target)
@@ -11087,11 +11149,16 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
     # per sample, so pace uncertainty widens both the date and the bar.
     level_s = us_best[1] + us_rate_s * t_pause_s
     lvl50 = float(np.median(level_s))
+    # Three-channel algorithmic engine: distillation decays with the gap,
+    # diffusion over ~a year after the pause (published stock absorbed),
+    # innovation never.
+    pure = _cc_pure_innovation_band(cc_rows, eci_all)
     kw = dict(us_anchor=us_best[1], us_rate=us_rate_s, us_pause_level=level_s,
               a_partial=a_partial, g_lo=_CC_CN_COMPUTE_LO,
               g_hi=_CC_CN_COMPUTE_HI, algo_lo=a_lo, algo_mid=a_mid,
               algo_hi=a_hi, pace_lo=pace_lo, pace_hi=pace_hi,
-              release_gap_days=gap_d, n=n_s)
+              release_gap_days=gap_d, n=n_s, t_pause=t_pause_s,
+              **({'pure_lo': pure[0], 'pure_hi': pure[1]} if pure else {}))
     years, grid_yrs, traj = _cc_cn_crossing_sim(
         anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1], **kw)
     # Sensitivity: China's compute term at the catalogued China-accessible
@@ -11211,9 +11278,14 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
         f"sidebar's {run_days // 30}-month length — a shorter run needs "
         "proportionally more cluster on the same capacity fit, so it pauses "
         f"later *and higher* — freezing at **ECI ~{lvl50:.0f}** (median), "
-        "the bar China must cross. The paused stock stays distillable while "
-        "a gap remains; China's algorithmic term then decays to an "
-        f"indigenous **{inno[0]:.0f}–{inno[1]:.0f} ECI/yr**, its compute "
+        "the bar China must cross. China's algorithmic engine then winds "
+        "down in stages: distillation decays as the gap to the paused stock "
+        f"closes, method diffusion over ~{_CC_DIFF_ABSORB_YRS:.0f} year as "
+        "the published stock is absorbed"
+        + (f", down to indigenous innovation "
+           f"(**{pure[0]:.0f}–{pure[1]:.0f} ECI/yr**)" if pure else
+           f" (floor **{inno[0]:.0f}–{inno[1]:.0f} ECI/yr**)")
+        + "; its compute "
         f"term unchanged ({_CC_CN_COMPUTE_LO * a_partial:.1f}–"
         f"{_CC_CN_COMPUTE_HI * a_partial:.1f} ECI/yr — export-control-bound), "
         "plus the release-cadence wait (the diamond sits right of where the "
