@@ -48,7 +48,7 @@ Ten-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTI
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; ends with a US-vs-China by-country projection (`_dc_render_country_panel()`) |
-| Compute vs Capabilities | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; ends with China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) |
+| Compute/capabilities/diffusion (docs still say "Compute vs Capabilities"; slug stays `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; ends with China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | date each entity first commands a threshold-scale training run |
 
 ### Data Sources and How to Update

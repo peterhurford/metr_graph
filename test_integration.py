@@ -805,7 +805,7 @@ class TestComputeVsCapabilities:
     def _cc_app(self):
         at = _fresh_app()
         at.run()
-        _switch_tab(at, "Compute vs Capabilities")
+        _switch_tab(at, "Compute/capabilities/diffusion")
         return at
 
     def test_renders(self):

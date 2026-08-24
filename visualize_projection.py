@@ -1940,8 +1940,8 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "UK Cyber", "Employment", "Revenue", "Data Centers", "Compute vs Capabilities", "Pacing"]
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "UK Cyber": "ukcyber", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute vs Capabilities": "computecap", "Pacing": "pacing"}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "UK Cyber", "Employment", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing"]
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "UK Cyber": "ukcyber", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute/capabilities/diffusion": "computecap", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 
 # Read ?tab= from URL for deep-linking
@@ -7901,7 +7901,7 @@ def render_data_centers():
             f"year ({_and_list([_dc_co_label(c, unattributed) for c in _shown_hosts])}).")
         if _shown_unattr:
             _note += " **†** = no recorded tenant; the landlord is named, not a lab."
-        _note += " The Compute vs Capabilities tab excludes all hosts."
+        _note += " The Compute/capabilities/diffusion tab excludes all hosts."
         st.caption(_note)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -10476,7 +10476,7 @@ def render_compute_capabilities():
     _today = datetime.now()
 
     with st.sidebar:
-        st.header("Compute vs Capabilities")
+        st.header("Compute/capabilities/diffusion")
         include_future = st.checkbox("Include planned future buildout",
                                      value=True, key="cc_future")
         # Run-length options are the Pacing tab's, verbatim.
@@ -10497,7 +10497,7 @@ def render_compute_capabilities():
             st.session_state.update(_CC_DEFAULTS)
             st.rerun()
 
-    st.header("Compute vs Capabilities")
+    st.header("Compute/capabilities/diffusion")
     horizon = datetime(cc_end_year, 12, 31)
     run_key = _PC_RUN_OPTIONS[run_label]
     run_days = _DAYS_6MO if run_key == 'train_flop_6mo' else _DAYS_2MO
@@ -11365,8 +11365,8 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
         f"term unchanged ({_CC_CN_COMPUTE_LO * a_partial:.1f}–"
         f"{_CC_CN_COMPUTE_HI * a_partial:.1f} ECI/yr — export-control-bound), "
         "plus the release-cadence wait (the diamond sits right of where the "
-        "fan meets the bar). Same sim and pace band as the Compute vs "
-        "Capabilities crossing section — which lands *earlier*: its bar is "
+        "fan meets the bar). Same sim and pace band as the "
+        "Compute/capabilities/diffusion crossing section — which lands *earlier*: its bar is "
         f"lower ({_CC_CN_TARGET_ECI:.0f}) and distillation never dries up "
         "there."
         + (f" Sensitivity: if Chinese labs sustained the catalogued "
@@ -11668,7 +11668,7 @@ if not os.environ.get("_VP_TESTING"):
         render_eci_gap()
     elif active_tab == "Data Centers":
         render_data_centers()
-    elif active_tab == "Compute vs Capabilities":
+    elif active_tab == "Compute/capabilities/diffusion":
         render_compute_capabilities()
     elif active_tab == "Pacing":
         render_pacing()
