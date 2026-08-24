@@ -4820,7 +4820,7 @@ def render_rli():
 # ── RSI (CoBench: automating Anthropic's own AI R&D) ─────────────────────
 
 _RSI_RESET_KEYS = [
-    "rsi_labels", "rsi_show_bar", "rsi_end_year",
+    "rsi_labels", "rsi_show_bar", "rsi_end_year", "rsi_timing",
     "rsi_custom_dt_lo", "rsi_custom_dt_hi", "rsi_custom_dt_dist",
     "rsi_custom_pos_lo", "rsi_custom_pos_hi",
 ]
@@ -4829,6 +4829,7 @@ _RSI_DEFAULTS = {
     "rsi_labels": True,
     "rsi_show_bar": True,
     "rsi_end_year": 2028,
+    "rsi_timing": "Training run finished",
     "rsi_custom_dt_dist": "Lognormal",
 }
 
@@ -4925,6 +4926,13 @@ def render_rsi():
         st.header("RSI Projection")
         rsi_end_year = st.selectbox("Project through", [2027, 2028, 2029, 2030, 2031],
                                     key="rsi_end_year")
+        if st.session_state.get("rsi_timing") not in _DC_TIMING_OPTIONS:
+            st.session_state["rsi_timing"] = _RSI_DEFAULTS["rsi_timing"]
+        rsi_timing = st.selectbox(
+            "Milestone dates point at", list(_DC_TIMING_OPTIONS), key="rsi_timing",
+            help="Which moment the Capabilities Milestone dates mean. Benchmark "
+                 "milestones are dated off released models, so anything earlier "
+                 "than release pulls them back — see the note under the cards.")
         rsi_labels = st.checkbox("Show model labels", key="rsi_labels")
         rsi_show_bar = st.checkbox(
             f"Show {_RSI_SUBSTITUTION_BAR:.0f}% substitution bar", key="rsi_show_bar",
@@ -4958,7 +4966,9 @@ def render_rsi():
                 float(round(min(99.0, current['cobench'] + 10), 1)),
                 min_value=0.5, max_value=99.5, step=1.0)
 
-    st.header("CoBench: diagnosing real Anthropic R&D issues")
+    st.header("RSI")
+
+    st.subheader("CoBench")
     st.markdown(
         "Recursive self-improvement runs through a lab automating its own research. "
         "CoBench is Anthropic's internal measure of that: a model is dropped into a "
@@ -5087,6 +5097,9 @@ def render_rsi():
         "scores read off Figure 3.4.3.A.")
 
     _render_rsi_survey()
+
+    st.markdown("---")
+    _pc_render_milestones(rsi_timing, datetime.now())
 
 
 def _render_rsi_survey():
@@ -11874,6 +11887,56 @@ def _pc_render_rsi_blend(components, origin):
                    "defaults above.")
 
 
+def _pc_render_milestones(timing_label, today):
+    """Capabilities Milestones + the RSI blend. Rendered on the RSI tab.
+
+    Still named `_pc_*` with the ETA helpers it calls; it moved to the RSI tab
+    but the milestone machinery is unchanged.
+    """
+    # (slug, label, eta, release_dated) — see `_pc_report_lag`.
+    _cap = [(f"metr_{lab}", f"METR {lab} horizon reaches 40h",
+             _pc_metr_eta(frontier_all, k, samples=True), True)
+            for lab, k in _PC_METR_LEVELS]
+    _eci_fr = _eci_entity_data("US best")[1]
+    _cap += [(f"eci_{t:.0f}", f"US ECI reaches {t:.0f}",
+              _pc_eci_eta(_eci_fr, t, samples=True), True)
+             for t in _PC_ECI_TARGETS]
+    _cap.append((f"rli_{_PC_RLI_TARGET_PCT:.0f}",
+                 f"RLI reaches {_PC_RLI_TARGET_PCT:.0f}%",
+                 _pc_rli_eta(rli_frontier_all, samples=True), True))
+    _cap.append((f"cobench_{_RSI_SUBSTITUTION_BAR:.0f}",
+                 f"CoBench reaches {_RSI_SUBSTITUTION_BAR:.0f}%",
+                 _pc_rsi_eta(rsi_frontier_all, samples=True), False))
+    _cap.append((f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x",
+                 f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
+                 _pc_rsi_survey_eta(load_rsi_survey(), samples=True), False))
+    _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label))
+            for slug, lab, r, rel in _cap if r is not None]
+    if _cap:
+        st.subheader("Capabilities Milestones")
+        # Two rows: seven cards on one line squeeze every label to two words.
+        _per_row = -(-len(_cap) // 2)
+        for _start in range(0, len(_cap), _per_row):
+            _chunk = _cap[_start:_start + _per_row]
+            for col, (_, lab, _anchor, _days) in zip(st.columns(_per_row), _chunk):
+                early, med, late = _pc_eta_dates(_anchor, _days)
+                with col:
+                    st.metric(lab, med.strftime('%b %Y'))
+                    st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")
+
+        _lag_note = ("" if timing_label == _PC_TIMING_RELEASE else
+                     " METR, ECI and RLI are dated off released, benchmarked "
+                     f"models, so they are pulled back {_PC_REPORT_LAG_DAYS[0] / 30:.0f}"
+                     f"\u2013{_PC_REPORT_LAG_DAYS[1] / 30:.0f} months onto the "
+                     f"\u201c{timing_label.lower()}\u201d clock; CoBench and the staff "
+                     "survey are internal.")
+        st.caption(
+            "Each milestone reproduces its own tab at that tab's defaults, so the two "
+            "cannot quote different dates for the same bar." + _lag_note)
+
+        _pc_render_rsi_blend(_cap, today)
+
+
 def _pc_when(rec, horizon=None):
     """One phrase for when an entity crosses, whatever its state."""
     if rec['crossed']:
@@ -12896,49 +12959,6 @@ def render_pacing():
     st.header("Pacing")
 
     # ── Capability milestones: METR 40h, ECI 170, RLI 90%, CoBench 85% and 10x staff speedup ──
-    # (slug, label, eta, release_dated) — see `_pc_report_lag`.
-    _cap = [(f"metr_{lab}", f"METR {lab} horizon reaches 40h",
-             _pc_metr_eta(frontier_all, k, samples=True), True)
-            for lab, k in _PC_METR_LEVELS]
-    _eci_fr = _eci_entity_data("US best")[1]
-    _cap += [(f"eci_{t:.0f}", f"US ECI reaches {t:.0f}",
-              _pc_eci_eta(_eci_fr, t, samples=True), True)
-             for t in _PC_ECI_TARGETS]
-    _cap.append((f"rli_{_PC_RLI_TARGET_PCT:.0f}",
-                 f"RLI reaches {_PC_RLI_TARGET_PCT:.0f}%",
-                 _pc_rli_eta(rli_frontier_all, samples=True), True))
-    _cap.append((f"cobench_{_RSI_SUBSTITUTION_BAR:.0f}",
-                 f"CoBench reaches {_RSI_SUBSTITUTION_BAR:.0f}%",
-                 _pc_rsi_eta(rsi_frontier_all, samples=True), False))
-    _cap.append((f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x",
-                 f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
-                 _pc_rsi_survey_eta(load_rsi_survey(), samples=True), False))
-    _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label))
-            for slug, lab, r, rel in _cap if r is not None]
-    if _cap:
-        st.subheader("Capabilities Milestones")
-        # Two rows: seven cards on one line squeeze every label to two words.
-        _per_row = -(-len(_cap) // 2)
-        for _start in range(0, len(_cap), _per_row):
-            _chunk = _cap[_start:_start + _per_row]
-            for col, (_, lab, _anchor, _days) in zip(st.columns(_per_row), _chunk):
-                early, med, late = _pc_eta_dates(_anchor, _days)
-                with col:
-                    st.metric(lab, med.strftime('%b %Y'))
-                    st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")
-
-        _lag_note = ("" if timing_label == _PC_TIMING_RELEASE else
-                     " METR, ECI and RLI are dated off released, benchmarked "
-                     f"models, so they are pulled back {_PC_REPORT_LAG_DAYS[0] / 30:.0f}"
-                     f"\u2013{_PC_REPORT_LAG_DAYS[1] / 30:.0f} months onto the "
-                     f"\u201c{timing_label.lower()}\u201d clock; CoBench and the staff "
-                     "survey are internal.")
-        st.caption(
-            "Each milestone reproduces its own tab at that tab's defaults, so the two "
-            "cannot quote different dates for the same bar." + _lag_note)
-
-        _pc_render_rsi_blend(_cap, _today)
-
     # ── Entities and projections ──
     run_days = _DAYS_6MO if key == 'train_flop_6mo' else _DAYS_2MO
     shift_days = _dc_timing_shift(timing_label, run_days)

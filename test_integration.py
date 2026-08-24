@@ -937,20 +937,35 @@ class TestRsiTab:
         _assert_no_error(at, "RSI / deep link")
         assert at.session_state["_active_tab"] == "RSI"
 
-    def test_pacing_quotes_the_same_milestone(self):
-        """The Pacing tab's CoBench card is this tab's own fit, so the two
-        cannot date the milestone differently. Compared with a tolerance, not
-        by string: both are Monte Carlo medians off an unseeded RNG."""
+    def test_metr_40h_panel_renders_at_the_top(self):
+        """p80 only: p50 is too weak a bar to be a candidate RSI threshold."""
         at = self._rsi_app()
-        here = datetime.strptime(
-            [m for m in at.metric if m.label == "Median"][0].value, "%b %Y")
-        at2 = _fresh_app()
-        at2.run()
-        _switch_tab(at2, "Pacing")
-        there = datetime.strptime(
-            [m for m in at2.metric
-             if m.label == "CoBench reaches 85%"][0].value, "%b %Y")
+        labels = [str(m.label) for m in at.metric]
+        assert "METR p80 horizon reaches 40h" in labels
+        assert "METR p50 horizon reaches 40h" not in labels
+        assert "US ECI reaches 170" in labels
+        assert "US ECI reaches 195" in labels
+        assert "RLI reaches 90%" in labels
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert caps.count("80% CI:") >= 4
+
+
+    def test_milestone_card_matches_the_cobench_panel(self):
+        """The CoBench milestone card is this tab's own fit, so the card and
+        the panel below cannot date it differently. Compared with a tolerance,
+        not by string: both are Monte Carlo medians off an unseeded RNG, and
+        the card also carries the report-lag shift."""
+        at = self._rsi_app()
+        labels = {str(m.label): m.value for m in at.metric}
+        here = datetime.strptime(labels["Median"], "%b %Y")
+        there = datetime.strptime(labels["CoBench reaches 85%"], "%b %Y")
         assert abs((here - there).days) <= 62
+
+    def test_blend_renders(self):
+        at = self._rsi_app()
+        labels = {str(m.label) for m in at.metric}
+        assert {"Blended median", "80% CI"} <= labels
+        assert any("RSI projection (tentative)" in h.value for h in at.subheader)
 
     def test_toggles(self):
         at = self._rsi_app()
@@ -1174,18 +1189,6 @@ class TestPacingTab:
         """The race table, picked by its columns — the pause panel's own
         breakdown table renders after it, so position is not an address."""
         return next(t.value for t in at.table if "Entity" in t.value.columns)
-
-    def test_metr_40h_panel_renders_at_the_top(self):
-        """p80 only: p50 is too weak a bar to be a candidate RSI threshold."""
-        at = self._app()
-        labels = [str(m.label) for m in at.metric]
-        assert "METR p80 horizon reaches 40h" in labels
-        assert "METR p50 horizon reaches 40h" not in labels
-        assert "US ECI reaches 170" in labels
-        assert "US ECI reaches 195" in labels
-        assert "RLI reaches 90%" in labels
-        caps = " ".join(str(c.value) for c in at.caption)
-        assert caps.count("80% CI:") >= 4
 
     def test_us_pause_panel_renders(self):
         """The US-pause counterfactual renders with its crossing metric,
@@ -1450,9 +1453,7 @@ class TestPacingTab:
         for yr in (2028, 2031):
             at.radio(key="pc_end_year").set_value(yr).run()
             _assert_no_error(at, f"Pacing / through {yr}")
-            # Chart 0 is the RSI blend's date distribution, which is scaled
-            # to its own samples rather than to the projection range.
-            ends = _ends(at)[-2:]
+            ends = _ends(at)
             assert len(ends) == 2, ends
             # The timeline pads a few months past the grid; the pause chart
             # stops on it exactly.

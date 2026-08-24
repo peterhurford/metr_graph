@@ -271,7 +271,10 @@ purpose-built fabric is the criterion for the levels that claim a link exists.
 
 ### RSI tab
 
-`render_rsi()` plots CoBench — Anthropic's internal AI R&D eval — against release
+`render_rsi()` is titled *RSI* and runs CoBench, then the staff survey, then
+*Capabilities Milestones* + *RSI projection (tentative)* (`_pc_render_milestones()`,
+moved here from the Pacing tab). The CoBench section plots that eval — Anthropic's
+internal AI R&D benchmark — against release
 date, with a fitted trend, a projection fan and an ETA to `_RSI_SUBSTITUTION_BAR`
 (85%, Anthropic's own stated score for a model that could fully substitute for its
 research staff — not a benchmark ceiling). Four things are load-bearing:
@@ -582,8 +585,10 @@ length (`_PC_RUN_OPTIONS`, default 2mo, reusing the loader's `train_flop*` colum
 utilization, Epoch 8-bit OP/s). Deliberately thin: it reuses the Data Centers tab's
 machinery rather than growing its own.
 
-The tab opens with *Capabilities Milestones*, six cards independent of every
-control below: `_pc_metr_eta()` for the METR frontier reaching 40h at p80
+*Capabilities Milestones* and the RSI blend live at the **bottom of the RSI
+tab** (`_pc_render_milestones()`), not here — they are still named `_pc_*` with
+the ETA helpers they call, and the machinery is unchanged. Six cards, driven by
+the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_eta()` for the METR frontier reaching 40h at p80
 (`_PC_METR_LEVELS`; p50 is deliberately not shown — it dates the horizon a model
 clears half the time, too weak a bar for a candidate RSI threshold, and it fired
 ~9 months ahead of everything else), `_pc_eci_eta()` for the US-best ECI frontier reaching each of
@@ -615,7 +620,7 @@ Four of the six are dated off *released, publicly benchmarked* models (METR,
 ECI, RLI); CoBench and the staff survey are internal evaluations Anthropic
 reports for models it has not shipped. So `_pc_report_lag()` pulls the four back
 by `_PC_REPORT_LAG_DAYS` (1–2 months, sampled over the range so the spread lands
-in the CI) whenever *Date points at* is not `_PC_TIMING_RELEASE`; the other two
+in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other two
 are already on that clock and must not be shifted twice.
 
 Under the cards sits *RSI projection (tentative)* (`_pc_render_rsi_blend()`):
