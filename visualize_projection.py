@@ -11626,10 +11626,10 @@ def _pc_report_lag(days_to, release_dated, timing_label, n=None):
 # late-but-uncertain milestone widens the answer instead of just shifting it.
 # Keyed by slug because the card labels are built from the target constants.
 _PC_RSI_WEIGHTS = {
-    "metr_p50": 10.0,
-    "metr_p80": 10.0,
+    "metr_p50": 5.0,
+    "metr_p80": 20.0,
     "eci_170": 5.0,
-    "eci_195": 20.0,
+    "eci_195": 15.0,
     "rli_90": 20.0,
     "cobench_85": 15.0,
     "staff_10x": 20.0,

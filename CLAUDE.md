@@ -589,7 +589,7 @@ machinery rather than growing its own.
 tab** (`_pc_render_milestones()`), not here — they are still named `_pc_*` with
 the ETA helpers they call, and the machinery is unchanged. Seven cards, driven by
 the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_eta()` for the METR frontier reaching 174h — about one
-work-month — at each of `_PC_METR_LEVELS` (p50 and p80, 10% blend weight each;
+work-month — at each of `_PC_METR_LEVELS` (p50 at 5% blend weight, p80 at 20%;
 at the month-scale bar p50's earlier firing is its own card and weight rather
 than the exclusion it got at the old 40h bar), `_pc_eci_eta()` for the US-best ECI frontier reaching each of
 `_PC_ECI_TARGETS` — 170, the top line of `_ECI_US_MILESTONES`, and 195, above
