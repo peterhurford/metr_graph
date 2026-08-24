@@ -12961,8 +12961,8 @@ def render_pacing():
     pc_horizon = datetime(pc_end_year, 12, 1)
 
     st.header("Pacing")
+    st.warning("Warning: under construction, not final.")
 
-    # ── Capability milestones: METR 40h, ECI 170, RLI 90%, CoBench 85% and 10x staff speedup ──
     # ── Entities and projections ──
     run_days = _DAYS_6MO if key == 'train_flop_6mo' else _DAYS_2MO
     shift_days = _dc_timing_shift(timing_label, run_days)
