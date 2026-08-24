@@ -11029,10 +11029,10 @@ _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
 _PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold"]
-_PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run",
+_PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "2-month run",
                 "pc_pool": "Nearby + announced fabric",
                 "pc_party": "Tenant (who trains there)",
-                "pc_timing": "Data center construction",
+                "pc_timing": "Training run finished",
                 "pc_end_year": _PC_HORIZON.year,
                 "pc_stop_dist": False, "pc_stop_remote": False,
                 "pc_withhold": True}

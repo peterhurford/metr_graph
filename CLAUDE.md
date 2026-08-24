@@ -518,7 +518,7 @@ Scatter under 20 points to `lines+markers`, studding the band outline with stray
 
 `render_pacing()` answers "when can each entity first mount one ≥T-op training job",
 for T from `_PC_THRESHOLDS` (a user-specified menu: 1e27…1e29) and a 2mo/6mo run
-length (`_PC_RUN_OPTIONS`, reusing the loader's `train_flop*` columns — 30%
+length (`_PC_RUN_OPTIONS`, default 2mo, reusing the loader's `train_flop*` columns — 30%
 utilization, Epoch 8-bit OP/s). Deliberately thin: it reuses the Data Centers tab's
 machinery rather than growing its own.
 
@@ -549,8 +549,8 @@ machinery rather than growing its own.
    is "already there" via `_pc_plan_crossing`, not the Monte Carlo. A *Date points
    at* selectbox (`pc_timing`, `_DC_TIMING_OPTIONS` verbatim) shifts the input
    series by `_dc_timing_shift(label, run_days)` before rows are built, exactly as
-   the DC tab does — default is capacity-online, with the run length (and +30d for
-   release) one click away; the fine print states which milestone the dates mean.
+   the DC tab does — default is run-finished (capacity-online, or +30d for
+   release, one click away); the fine print states which milestone the dates mean.
 
 The tab ends with `_pc_render_us_pause()`: the US pauses when it *completes its
 first threshold-scale run* of the sidebar's run length, on the **sidebar-pooled US

@@ -1133,8 +1133,8 @@ class TestPacingTab:
         assert "indigenous" in caps
         md = " ".join(str(m.value) for m in at.markdown)
         assert "weights stay secure" in md
-        # The clock line follows the sidebar default (construction).
-        assert "Dates = training runs start" in caps
+        # The clock line follows the sidebar default (run finished).
+        assert "Dates = training runs finish" in caps
 
     def test_pause_scenario_checkboxes(self):
         """Both scenario checkboxes render unchecked; cutting distillation
@@ -1176,7 +1176,8 @@ class TestPacingTab:
     def test_pause_dates_follow_timing_in_lockstep(self):
         """'Date points at' shifts both countries' pause-panel dates to the
         chosen milestone (construction → release ≈ run + 1 mo later), while
-        the US–China gap stays put."""
+        the US–China gap stays put. The default is run-finished, so start
+        from construction."""
         from datetime import datetime as _dt
 
         at = self._app()
@@ -1191,13 +1192,16 @@ class TestPacingTab:
                      if "Time for China to surpass" in str(m.label))
             return float(str(m.value).strip("~ mo"))
 
+        at.selectbox(key="pc_timing").set_value(
+            "Data center construction").run()
+        _assert_no_error(at, "Pacing / pause on construction clock")
         d_con, s_con = _cross_date(at), _surpass_mo(at)
         at.selectbox(key="pc_timing").set_value("Model release").run()
         _assert_no_error(at, "Pacing / pause on release clock")
         d_rel, s_rel = _cross_date(at), _surpass_mo(at)
-        # 6-mo run + 30d prep ≈ 7 months later, ±MC/rounding jitter.
+        # 2-mo run + 30d prep ≈ 3 months later, ±MC/rounding jitter.
         diff_mo = ((d_rel.year - d_con.year) * 12 + d_rel.month - d_con.month)
-        assert 5 <= diff_mo <= 9
+        assert 1 <= diff_mo <= 5
         assert abs(s_rel - s_con) <= 1
         caps = " ".join(str(c.value) for c in at.caption)
         assert "Dates = model releases" in caps
@@ -1213,12 +1217,12 @@ class TestPacingTab:
                        if "paused US frontier" in str(m.label))
             return float(lab.split("ECI")[-1].strip(" ~)"))
 
-        bar_6mo = _bar(at)
-        at.radio(key="pc_run").set_value("2-month run").run()
-        _assert_no_error(at, "Pacing / pause with 2-month run")
-        assert _bar(at) > bar_6mo
+        bar_2mo = _bar(at)
         caps = " ".join(str(c.value) for c in at.caption)
         assert "2-month" in caps and "-op run" in caps
+        at.radio(key="pc_run").set_value("6-month run").run()
+        _assert_no_error(at, "Pacing / pause with 6-month run")
+        assert _bar(at) < bar_2mo
 
     def test_projection_range(self):
         """'Project through' moves the crossing-search horizon."""
@@ -1251,7 +1255,7 @@ class TestPacingTab:
                 if "First over" in str(m.value)]
         assert len(head) == 1 and "1e28" in head[0]
         assert at.selectbox(key="pc_threshold").value == "1e28"
-        assert at.radio(key="pc_run").value == "6-month run"
+        assert at.radio(key="pc_run").value == "2-month run"
         table = at.table[-1].value
         ents = list(table["Entity"])
         # The default roster is companies only; countries live under the
@@ -1280,19 +1284,21 @@ class TestPacingTab:
 
     def test_run_length_toggle_renders(self):
         at = self._app()
-        at.radio(key="pc_run").set_value("2-month run").run()
-        _assert_no_error(at, "Pacing / 2-month run")
+        at.radio(key="pc_run").set_value("6-month run").run()
+        _assert_no_error(at, "Pacing / 6-month run")
 
     def test_timing_toggle_shifts_the_dates(self):
-        """'Training run finished' pushes every crossing out by one run
-        length (6mo at the default run), so a plan crossing moves later."""
+        """The default dates a crossing at 'Training run finished';
+        going back to 'Data center construction' takes off one run length
+        (2mo at the default run), so a plan crossing moves earlier."""
         at = self._app()
         assert at.selectbox(key="pc_timing").value == \
-            "Data center construction"
+            "Training run finished"
         base = dict(zip(at.table[-1].value["Entity"],
                         at.table[-1].value["Plan crosses"]))
-        at.selectbox(key="pc_timing").set_value("Training run finished").run()
-        _assert_no_error(at, "Pacing / training finished")
+        at.selectbox(key="pc_timing").set_value(
+            "Data center construction").run()
+        _assert_no_error(at, "Pacing / construction")
         shifted = dict(zip(at.table[-1].value["Entity"],
                            at.table[-1].value["Plan crosses"]))
         import datetime as _dt
@@ -1302,7 +1308,7 @@ class TestPacingTab:
                 continue
             d0 = _dt.datetime.strptime(val, "%b %Y")
             d1 = _dt.datetime.strptime(shifted[ent], "%b %Y")
-            assert d1 > d0, ent
+            assert d1 < d0, ent
             moved += 1
         assert moved > 0
         at.selectbox(key="pc_timing").set_value("Model release").run()
@@ -1339,4 +1345,4 @@ class TestPacingTab:
         assert at.selectbox(key="pc_pool").value == \
             "Nearby + announced fabric"
         assert at.selectbox(key="pc_timing").value == \
-            "Data center construction"
+            "Training run finished"
