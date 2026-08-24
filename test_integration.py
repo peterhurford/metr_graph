@@ -1232,6 +1232,29 @@ class TestPacingTab:
         at.radio(key="pc_end_year").set_value(2035).run()
         _assert_no_error(at, "Pacing / through 2035")
 
+    def test_both_charts_end_at_the_projection_range(self):
+        """Timeline and pause charts both run to *Project through*, like
+        every other tab's projection chart."""
+        import json
+
+        def _ends(at):
+            out = []
+            for el in at.get("plotly_chart"):
+                rng = json.loads(el.proto.spec)["layout"]["xaxis"]["range"]
+                out.append(int(str(rng[1])[:4]))
+            return out
+
+        at = self._app()
+        for yr in (2029, 2035):
+            at.radio(key="pc_end_year").set_value(yr).run()
+            _assert_no_error(at, f"Pacing / through {yr}")
+            ends = _ends(at)
+            assert len(ends) == 2, ends
+            # The timeline pads a few months past the grid; the pause chart
+            # stops on it exactly.
+            assert ends[0] in (yr, yr + 1), ends
+            assert ends[1] == yr, ends
+
     def test_us_pause_bar_syncs_with_sidebar_threshold(self):
         """The pause bar follows the sidebar's training-run threshold: a
         bigger run maps to a higher ECI bar via the exchange rate."""

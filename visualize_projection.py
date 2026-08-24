@@ -11176,7 +11176,7 @@ _PC_SHIP_LAG_DAYS = 60
 
 
 def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
-                        timing_label=_DC_TIMING_OPTIONS[0]):
+                        timing_label=_DC_TIMING_OPTIONS[0], horizon=None):
     """If the US paused: China's catch-up to the paused frontier, in ECI.
 
     `us_steps` is the sidebar-pooled US country series (capacity-online
@@ -11205,6 +11205,11 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
     wait is added anywhere (deliberately unlike the CC tab's 161 section):
     a queue delays both countries alike, so it would widen the window
     without moving the gap.
+
+    `horizon` is the sidebar's *Project through* date: it bounds the sim's
+    search grid and the chart's x-axis alike, so this panel ends where the
+    timeline chart above it does. A crossing past it is reported as "not
+    by <year>" rather than searched for anyway.
     """
     st.subheader("If the US paused: when does China catch up?")
     cb1, cb2, cb3 = st.columns(3)
@@ -11360,6 +11365,10 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
               t_dist_stop=t_today if stop_dist else None,
               dist_teacher=teacher_s if withhold else None,
               **({'pure_lo': pure[0], 'pure_hi': pure[1]} if pure else {}))
+    if horizon is not None:
+        # Search only as far as the sidebar's projection range, keeping at
+        # least a year of grid so a near-term horizon still draws.
+        kw['horizon_yrs'] = max((horizon - anchor_d).days / 365.25, 1.0)
     years, grid_yrs, traj = _cc_cn_crossing_sim(
         anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1], **kw)
     # Sensitivity: China's compute term at the catalogued China-accessible
@@ -11379,7 +11388,10 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
                 days=float(np.percentile(ok_ca, 50)) * 365.25)
     yr_ok = years[np.isfinite(years)]
     if len(yr_ok) < 100:
-        st.info("Sampled rates were too weak to give a crossing date.")
+        st.info(f"China does not reach the paused US frontier by "
+                f"{horizon.year} in most samples — widen *Project through*."
+                if horizon is not None else
+                "Sampled rates were too weak to give a crossing date.")
         return
     d10, d50, d90 = (anchor_d + timedelta(days=float(np.percentile(yr_ok, p))
                                           * 365.25) for p in (10, 50, 90))
@@ -11457,7 +11469,9 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
     # catches up and crosses. The whole chart rides the sidebar milestone:
     # every date (actual points included) carries its side's lockstep
     # offset, so the diamond, the window and the metric cards agree. ──
-    x_end = v90 + timedelta(days=150)
+    # The x-axis ends at the sidebar's projection range (as on every other
+    # tab), falling back to just past the 90th-percentile crossing.
+    x_end = horizon if horizon is not None else v90 + timedelta(days=150)
     grid_d = [anchor_d + off_cn + timedelta(days=y * 365.25)
               for y in grid_yrs]
     keep = [i for i, d in enumerate(grid_d) if d <= x_end]
@@ -11762,10 +11776,10 @@ def render_pacing():
     fig.add_annotation(x=_today, yref='paper', y=1.04, text="today",
                        showarrow=False, font=dict(size=11, color='gray'))
     x_lo = min([_today] + [r['plan'] for r in recs if r['crossed']])
-    xs_hi = ([r['hi'] or grid[-1] for r in recs if not r['crossed']]
-             + [_today + timedelta(days=365)])
-    x_hi = min(max(xs_hi) + timedelta(days=120),
-               grid[-1] + timedelta(days=120))
+    # Ends at the sidebar's projection range, like every other tab's chart —
+    # so both graphs here span the same window and a "not crossed" marker
+    # sits at the year the P(cross) column is quoted for.
+    x_hi = grid[-1] + timedelta(days=120)
     fig.update_yaxes(categoryorder='array',
                      categoryarray=list(reversed(order)))
     fig.update_xaxes(range=[x_lo - timedelta(days=90), x_hi])
@@ -11829,7 +11843,8 @@ def render_pacing():
         series_unshifted, _us_names, 'site' if cluster_of == {} else 'company',
         cluster_of)
     _pc_render_us_pause(_today, float(threshold_label), run_days,
-                        us_steps=_us_steps_raw, timing_label=timing_label)
+                        us_steps=_us_steps_raw, timing_label=timing_label,
+                        horizon=pc_horizon)
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
