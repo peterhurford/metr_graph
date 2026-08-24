@@ -487,7 +487,12 @@ date distribution rather than the gap metrics above it. Three things are load-be
    inter-release gap) adds an exponential wait on top of the smooth crossing. That's why the
    median-crossing diamond sits *right* of where the fan meets the target line — the fan is
    the smooth capability path, the diamond and vertical band are release-inclusive. Not a
-   plotting bug; don't "fix" it by aligning them.
+   plotting bug; don't "fix" it by aligning them. The *months-behind* card is ship-to-ship
+   on both sides and must stay so: a "smooth" variant that interpolated the US released
+   steps was tried and read ~1.4 mo low — across a same-day release pair the interpolation
+   collapses to the ship date, silently carrying the US's real wait (GPT-5.5 Pro's run
+   finished ~2 mo before it shipped, per the Mythos model card; the wait is paid in prep
+   and overshoot, invisible in released steps) while charging China none.
 4. **Three-channel algorithmic engine.** `_cc_cn_crossing_sim` splits the measured
    rate into innovation (`_cc_pure_innovation_band`, never decays) + diffusion
    (nodist − pure, decays only after a pause, `_CC_DIFF_ABSORB_YRS` absorption ramp
@@ -554,6 +559,27 @@ so the networking selector, threshold and run length all move the pause — froz
 whatever its compute-derived climb reached by then, per sample (`us_pause_level`
 and the sim target are arrays). A caption sensitivity reruns China's compute term
 at the catalogued China-accessible pace (sites abroad) vs the export-control band.
+The bar is the best model the US has *trained* by the pause: the released-frontier
+climb (measured from us_best's release date, not the China-anchored grid) plus
+`_PC_SHIP_LAG_DAYS` (60d — the realized trained→shipped lag, GPT-5.5 Pro / Mythos card)
+of extra climb. Three scenario checkboxes: `pc_withhold` (default **on**) — a US
+*release freeze from pause-run start*: nothing ships once the final run begins, so
+distillation's teacher is the released frontier as of run start (`dist_teacher`, ~one
+run's climb + ship lag below the bar); labs do ship during big runs, so this is a
+policy assumption, not a pipeline fact — hence the label says freeze;
+`pc_stop_dist` and `pc_stop_remote` (default off) — cut the
+distillation channel at today (`t_dist_stop` in `_cc_cn_crossing_sim`), and cut remote
+compute as a *level setback* (`comp_dead`): China's largest run falls back to its
+biggest domestic cluster, the compute term is dead until the domestic buildout regrows
+the lost OOMs at its catalogued pace, domestic band thereafter (also suppresses the
+China-accessible sensitivity, whose premise it removes). The pace band deliberately
+stays on the default compute band — it is shared with the CC crossing. An **Assumes**
+line (not buried in the caption) states weight security (theft would put China at the
+bar), the drying channels, and the compute band. The panel adds **no release-queue
+wait** (unlike the CC 161 section — a queue delays both sides alike); dates follow the
+sidebar's *Date points at* in lockstep (US events run-finished + `shift − run`, ECI
+release dates + `shift − run − 30d`), so the US–China gap is milestone-invariant; the
+chart (actual points included) rides the same clock, x-axis titled by milestone.
 China
 races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the
 paused stock stays distillable while a gap remains, then China runs on its

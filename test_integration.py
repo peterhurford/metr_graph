@@ -1131,6 +1131,76 @@ class TestPacingTab:
         assert "Time for China to surpass after US pause" in labels
         caps = " ".join(str(c.value) for c in at.caption)
         assert "indigenous" in caps
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert "weights stay secure" in md
+        # The clock line follows the sidebar default (construction).
+        assert "Dates = training runs start" in caps
+
+    def test_pause_scenario_checkboxes(self):
+        """Both scenario checkboxes render unchecked; cutting distillation
+        pushes China's crossing later, and cutting remote compute (on top)
+        renders and never pulls it earlier."""
+        at = self._app()
+
+        def _surpass_mo(at):
+            m = next(m for m in at.metric
+                     if "Time for China to surpass" in str(m.label))
+            return float(str(m.value).strip("~ mo"))
+
+        assert at.checkbox(key="pc_withhold").value is True
+        assert at.checkbox(key="pc_stop_dist").value is False
+        assert at.checkbox(key="pc_stop_remote").value is False
+        base = _surpass_mo(at)
+        # Serving the paused frontier publicly restores the full teacher:
+        # China can only cross sooner (or the same, within MC jitter).
+        at.checkbox(key="pc_withhold").uncheck().run()
+        _assert_no_error(at, "Pacing / paused models served")
+        assert _surpass_mo(at) <= base + 1
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert "stays queryable" in md
+        at.checkbox(key="pc_withhold").check().run()
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert "release freeze" in md
+        at.checkbox(key="pc_stop_dist").check().run()
+        _assert_no_error(at, "Pacing / distillation stopped")
+        dist_off = _surpass_mo(at)
+        assert dist_off > base
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert "cut today" in md
+        at.checkbox(key="pc_stop_remote").check().run()
+        _assert_no_error(at, "Pacing / remote compute cut")
+        assert _surpass_mo(at) >= dist_off - 1  # MC jitter guard
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert "largest domestic cluster" in md or "domestic pace only" in md
+
+    def test_pause_dates_follow_timing_in_lockstep(self):
+        """'Date points at' shifts both countries' pause-panel dates to the
+        chosen milestone (construction → release ≈ run + 1 mo later), while
+        the US–China gap stays put."""
+        from datetime import datetime as _dt
+
+        at = self._app()
+
+        def _cross_date(at):
+            m = next(m for m in at.metric
+                     if "paused US frontier" in str(m.label))
+            return _dt.strptime(str(m.value), "%b %Y")
+
+        def _surpass_mo(at):
+            m = next(m for m in at.metric
+                     if "Time for China to surpass" in str(m.label))
+            return float(str(m.value).strip("~ mo"))
+
+        d_con, s_con = _cross_date(at), _surpass_mo(at)
+        at.selectbox(key="pc_timing").set_value("Model release").run()
+        _assert_no_error(at, "Pacing / pause on release clock")
+        d_rel, s_rel = _cross_date(at), _surpass_mo(at)
+        # 6-mo run + 30d prep ≈ 7 months later, ±MC/rounding jitter.
+        diff_mo = ((d_rel.year - d_con.year) * 12 + d_rel.month - d_con.month)
+        assert 5 <= diff_mo <= 9
+        assert abs(s_rel - s_con) <= 1
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "Dates = model releases" in caps
 
     def test_pause_date_respects_run_length(self):
         """The US pauses at its first *completed* threshold run: a 2-month

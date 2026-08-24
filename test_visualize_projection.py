@@ -2794,6 +2794,61 @@ class TestCcCnCrossingSim:
         assert traj.shape == (self.KW['n'], len(grid))
         assert (np.diff(traj, axis=1) >= -1e-9).all()
 
+    def test_distillation_stop_slows_the_crossing(self):
+        """t_dist_stop cuts the teacher channel at that time; with a real
+        distillation edge (algo > nodist) the same bar takes longer, even
+        while the US keeps the gap wide (where gap decay never bites)."""
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
+                      us_anchor=165.0, us_rate=25.0)
+        y_on, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
+        y_off, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, t_dist_stop=0.0, **common)
+        assert np.nanmedian(y_off) > np.nanmedian(y_on)
+
+    def test_distillation_stop_beyond_horizon_is_inert(self):
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
+                      us_anchor=165.0, us_rate=25.0)
+        y_none, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
+        y_far, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, t_dist_stop=50.0, **common)
+        assert abs(np.nanmedian(y_far) - np.nanmedian(y_none)) < 0.06
+
+    def test_comp_dead_window_slows_the_crossing(self):
+        """comp_dead zeroes the compute term inside its window (a level
+        setback being regrown), so the same bar takes longer to cross."""
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
+                      us_anchor=165.0, us_rate=25.0)
+        y_on, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
+        y_dead, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, comp_dead=(0.0, 50.0), **common)
+        assert np.nanmedian(y_dead) > np.nanmedian(y_on)
+
+    def test_comp_dead_past_window_is_inert(self):
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
+                      us_anchor=165.0, us_rate=25.0)
+        y_none, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
+        y_late, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, comp_dead=(40.0, 50.0), **common)
+        assert abs(np.nanmedian(y_late) - np.nanmedian(y_none)) < 0.06
+
+    def test_withheld_teacher_slows_the_crossing(self):
+        """dist_teacher below the bar dries distillation early — the last
+        stretch runs without the teacher, so the crossing lands later."""
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
+                      us_anchor=165.0, us_rate=25.0)
+        y_open, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
+        y_held, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, dist_teacher=152.0, **common)
+        assert np.nanmedian(y_held) > np.nanmedian(y_open)
+
+    def test_teacher_at_or_above_the_us_level_is_inert(self):
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
+                      us_anchor=165.0, us_rate=25.0)
+        y_none, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
+        y_high, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, dist_teacher=1e9, **common)
+        assert abs(np.nanmedian(y_high) - np.nanmedian(y_none)) < 0.06
+
 
 class TestCcReleaseGapDays:
     """_cc_release_gap_days: how often a frontier actually steps up."""

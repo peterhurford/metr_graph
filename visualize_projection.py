@@ -9682,7 +9682,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         inno_lo, inno_hi, pace_lo, pace_hi,
                         release_gap_days=None, n=None, horizon_yrs=12.0,
                         us_pause_level=None, pure_lo=None, pure_hi=None,
-                        t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS):
+                        t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS,
+                        t_dist_stop=None, comp_dead=None, dist_teacher=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -9697,7 +9698,16 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     D(t) ramps 1→0 over `diff_absorb_yrs` from `t_pause` (years, scalar or
     per-sample), the published stock being absorbed. With `pure_lo=None` or
     `t_pause=None`, diffusion never decays and the law reduces to the
-    two-channel model.
+    two-channel model. `t_dist_stop` (years, scalar) cuts the distillation
+    channel abruptly at that time — an enforcement action (API-level
+    controls), unlike absorption, so no ramp — leaving the other channels
+    untouched; None keeps the gap-decay law alone. `comp_dead` (start, end)
+    in years zeroes the compute term inside that window — a level setback:
+    capacity lost at `start` must be regrown (the window's length = lost
+    OOM / regrowth pace) before further growth adds capability again.
+    `dist_teacher` (scalar or per-sample) caps the level the distillation
+    gap sees: the best *queryable* model when the true frontier is withheld,
+    so distillation dries up at the teacher's level, below the bar.
 
     Returns (years, grid_yrs, traj): crossing years incl. the release wait
     (NaN = not crossed within horizon), the monthly time grid, and the
@@ -9738,16 +9748,29 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         us_level = us_anchor + us_rate * grid[i - 1]
         if us_pause_level is not None:
             us_level = np.minimum(us_level, us_pause_level)
-        gap = np.maximum(us_level - e, 0.0)
+        t_level = (us_level if dist_teacher is None
+                   else np.minimum(us_level, dist_teacher))
+        gap = np.maximum(t_level - e, 0.0)
         d_avail = (1.0 if tp is None else
                    np.clip(1.0 - (grid[i - 1] - tp) / diff_absorb_yrs,
                            0.0, 1.0))
-        rate = pace * (comp + pure + diffu * d_avail
-                       + dist * np.minimum(1.0, gap / gap0))
+        d_on = 1.0 if (t_dist_stop is None or grid[i - 1] < t_dist_stop) else 0.0
+        c_on = (0.0 if comp_dead is not None
+                and comp_dead[0] <= grid[i - 1] < comp_dead[1] else 1.0)
+        rate = pace * (comp * c_on + pure + diffu * d_avail
+                       + dist * d_on * np.minimum(1.0, gap / gap0))
         e = e + rate * dt
         traj[:, i] = e
         hit = np.isnan(years) & (e >= target)
-        years[hit] = grid[i]
+        if np.any(hit):
+            # Interpolate the crossing inside the step: snapping to grid[i]
+            # quantizes every crossing to the monthly grid, which swallows
+            # sub-month differences between nearby scenarios.
+            prev = traj[hit, i - 1]
+            tgt = target[hit] if np.ndim(target) else target
+            frac = np.clip((tgt - prev) / np.maximum(e[hit] - prev, 1e-12),
+                           0.0, 1.0)
+            years[hit] = grid[i - 1] + frac * dt
     if release_gap_days and release_gap_days > 0:
         years = years + np.random.exponential(release_gap_days / 365.25, n)
     return years, grid, traj
@@ -9848,7 +9871,14 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
 
     # Lag behind the US at the *same* level: when did (or will) the US frontier
     # first hit this bar? Measured off actual models where one exists, else
-    # extrapolated at the US mid rate.
+    # extrapolated at the US mid rate. Ship-to-ship on BOTH sides: China's
+    # crossing keeps its release wait because the US release date embeds the
+    # US's own — GPT-5.5 Pro shipped at 161.7 roughly two months after its run
+    # finished (Mythos model card), the wait paid in prep and overshoot,
+    # invisible in the released steps. A "smooth" variant that interpolated
+    # the US steps was tried and read ~1.4 mo low: across a same-day release
+    # pair the interpolation collapses to the ship date, charging China no
+    # wait while the US date silently carried all of its own.
     us_hit = _cc_first_reached(us_fr, target)
     if us_hit is not None:
         us_hit_d, us_hit_name = us_hit
@@ -9856,9 +9886,9 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
     elif us_eci_smid > 0:
         us_hit_d = us_best[0] + timedelta(
             days=(target - us_best[1]) / us_eci_smid * 365.25)
-        us_hit_name, us_hit_txt = None, f"projected {us_hit_d:%b %Y}"
+        us_hit_txt = f"projected {us_hit_d:%b %Y}"
     else:
-        us_hit_d, us_hit_name, us_hit_txt = None, None, "—"
+        us_hit_d, us_hit_txt = None, "—"
     lag_mo = ((d50 - us_hit_d).days / 30.44) if us_hit_d else float('nan')
 
     m1, m2, m3 = st.columns(3)
@@ -9868,16 +9898,17 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
               f"from {pretty(anchor_name)} at {anchor_eci:.0f}", delta_color="off")
     # The 80% CI rides under each card's delta line rather than replacing it: the
     # delta says *what the number is measured from* (the anchor model, the US
-    # model that set the bar), which the range can't carry. Both come off the same
+    # model that set the bar), which the range can't carry. All come off the same
     # d10/d90 as card 1, so the three cards can't disagree.
     m2.caption(f"80% CI: {(d10 - today).days / 30.44:.0f}–"
                f"{(d90 - today).days / 30.44:.0f} mo")
     m3.metric(f"Months behind US when reaching ECI {target:.0f}",
-              "—" if us_hit_d is None else f"~{lag_mo:.0f} mo",
+              "—" if us_hit_d is None else f"~{lag_mo:.1f} mo",
               f"US: {us_hit_txt}", delta_color="off")
     if us_hit_d is not None:
         m3.caption(f"80% CI: {(d10 - us_hit_d).days / 30.44:.0f}–"
-                   f"{(d90 - us_hit_d).days / 30.44:.0f} mo")
+                   f"{(d90 - us_hit_d).days / 30.44:.0f} mo · shipped model "
+                   "to shipped model")
 
     # ── Chart: China's fan against the fixed target bar ───────────────────────
     # The fan is the smooth *capability* path (rates only). The vertical band and
@@ -10996,12 +11027,15 @@ _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
 _PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party",
-                  "pc_timing", "pc_end_year"]
+                  "pc_timing", "pc_end_year", "pc_stop_dist",
+                  "pc_stop_remote", "pc_withhold"]
 _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "6-month run",
                 "pc_pool": "Nearby + announced fabric",
                 "pc_party": "Tenant (who trains there)",
                 "pc_timing": "Data center construction",
-                "pc_end_year": _PC_HORIZON.year}
+                "pc_end_year": _PC_HORIZON.year,
+                "pc_stop_dist": False, "pc_stop_remote": False,
+                "pc_withhold": True}
 _PC_END_YEARS = [2029, 2031, 2033, 2035]
 
 
@@ -11132,7 +11166,17 @@ def _pc_when(rec, horizon=None):
     return f"~{rec['med']:%b %Y}"
 
 
-def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
+# Realized ship lag of a US frontier model — run finished to public release,
+# prep plus queue: GPT-5.5 Pro's run finished ~Feb 2026 and shipped Apr 23
+# (Mythos model card). The released frontier trails the trained one by this,
+# so a bar meaning "best model *trained* by the pause" sits this much climb
+# above the released-frontier extrapolation. Deliberately larger than the
+# 30-day `_CC_RUN_COMPLETION_LAG` prep constant, which excludes the queue.
+_PC_SHIP_LAG_DAYS = 60
+
+
+def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
+                        timing_label=_DC_TIMING_OPTIONS[0]):
     """If the US paused: China's catch-up to the paused frontier, in ECI.
 
     `us_steps` is the sidebar-pooled US country series (capacity-online
@@ -11143,13 +11187,47 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
     run length: hardware needs 2-month capacity of thr_ops × (2mo/run) on
     the σ-sampled DC fit, then the run itself — so both the threshold and
     the run length move the pause date. Until then its frontier climbs at
-    the compute-derived rate, and it freezes at whatever level that climb
-    has reached (per sample), which is the bar China must cross. The paused
+    the compute-derived rate, and the bar China must cross is the best model
+    the US has *trained* by the pause: that climb plus `_PC_SHIP_LAG_DAYS`
+    of extra climb, since the trained frontier leads the released one (that
+    the climb is calibrated on) by the realized ship lag. The paused
     stock stays distillable while a gap remains, then China runs on its
     indigenous algorithmic rate (_cc_innovation_algo_band) plus its compute
     term alone.
+
+    Dates follow `timing_label` (the sidebar's *Date points at*): both
+    countries' events shift in lockstep to the chosen milestone — run
+    starts / run finishes / model releases — so the US–China gap never
+    depends on the setting. Internally the math runs on natural clocks (the
+    pause at run completion, China's ECI data at release dates); the
+    display offsets are `shift − run` for compute-side events and
+    `shift − run − 30d` for release-dated ones. No stochastic release-queue
+    wait is added anywhere (deliberately unlike the CC tab's 161 section):
+    a queue delays both countries alike, so it would widen the window
+    without moving the gap.
     """
     st.subheader("If the US paused: when does China catch up?")
+    cb1, cb2, cb3 = st.columns(3)
+    withhold = cb1.checkbox(
+        "US freezes releases at pause-run start", key="pc_withhold",
+        value=True,
+        help="A release freeze: once the final threshold run starts, the US "
+             "ships nothing new, so the best queryable teacher is the last "
+             "generation released before run start — one run's climb (plus "
+             "the ship lag) below the bar. Uncheck to let the US keep "
+             "serving right up to (and including) the paused frontier.")
+    stop_dist = cb2.checkbox(
+        "Stop Chinese distillation as of today", key="pc_stop_dist",
+        help="API-level controls that block training against US model "
+             "outputs: the distillation channel is cut from today onward, "
+             "instead of decaying only as the gap closes.")
+    stop_remote = cb3.checkbox(
+        "Cut Chinese remote access to compute abroad", key="pc_stop_remote",
+        help="Chinese labs lose the DayOne Johor-class sites and rented "
+             "clusters abroad: their largest run falls back to the biggest "
+             "domestic cluster (a level setback the domestic buildout must "
+             "first regrow), and grows at the domestic catalogued pace "
+             "thereafter.")
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
     eci_all = load_eci_frontier(_mtime=_eci_mtime())
     us_fr = _cc_country_frontier(eci_all, 'United States of America')
@@ -11183,13 +11261,14 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
     # above races — falling back to the single-site country fit. σ-sampled,
     # so the pause date and bar carry the pace uncertainty.
     plan_end = today + timedelta(days=_DC_CTY_PLAN_HORIZON_DAYS)
+    chk_pace = _cc_country_pace_check(today)
     us_fit, pooled = None, False
     if us_steps:
         us_fit = _dc_cty_fit(us_steps, since=_DC_DEFAULTS["dc_cty_since"],
                              t_end=plan_end)
         pooled = us_fit is not None
     if us_fit is None:
-        us_fit = _cc_country_pace_check(today).get(_DC_CTY_US)
+        us_fit = chk_pace.get(_DC_CTY_US)
     n_s = N_SAMPLES
     if us_fit is not None:
         g_s = np.maximum(
@@ -11200,7 +11279,6 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
         g_s = None
         us_rate = _cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1)) or 15.0
         us_rate_s = np.full(n_s, us_rate)
-    gap_d = _cc_release_gap_days(cn_fr, since=today - timedelta(days=730))
     g_mid = 0.5 * (_CC_CN_COMPUTE_LO + _CC_CN_COMPUTE_HI)
     pace_lo, pace_hi, _obs = _cc_cn_pace_band(cn_fr, a_mid + a_partial * g_mid)
     # First completed thr_ops run of this length, no earlier than today, run
@@ -11221,28 +11299,76 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
         t_pause_s = np.maximum(t_cap_s, t_today) + run_days / 365.25
     else:
         t_pause_s = np.full(n_s, t_today + run_days / 365.25)
-    # The US freezes at whatever its frontier reached by run completion —
-    # per sample, so pace uncertainty widens both the date and the bar.
-    level_s = us_best[1] + us_rate_s * t_pause_s
+    # The bar is the best model the US has *trained* by the pause — the
+    # 1e28 flagship itself. The released frontier trails the trained one by
+    # the realized ship lag (_PC_SHIP_LAG_DAYS), and the climb is measured
+    # from us_best's own release date (the time grid is anchored on China's
+    # last release, ~a month later — omitting that offset understated the
+    # released level too). Per sample, so pace uncertainty widens both the
+    # date and the bar.
+    _us_dt = ((anchor_d - us_best[0]).days + _PC_SHIP_LAG_DAYS) / 365.25
+    level_s = us_best[1] + us_rate_s * (t_pause_s + _us_dt)
     lvl50 = float(np.median(level_s))
+    # Best *queryable* model under the release freeze: the released frontier
+    # as of the pause run's start — the freeze means nothing new ships while
+    # the final run proceeds, so distillation dries at this level, about one
+    # run's climb (plus the ship lag) below the bar. A released level, so no
+    # ship-lag term — only the anchor-date offset.
+    teacher_s = us_best[1] + us_rate_s * (
+        np.maximum(t_pause_s - run_days / 365.25, 0.0)
+        + (anchor_d - us_best[0]).days / 365.25)
+    teach50 = float(np.median(teacher_s))
     # Three-channel algorithmic engine: distillation decays with the gap,
     # diffusion over ~a year after the pause (published stock absorbed),
-    # innovation never.
+    # innovation never. The checkboxes tighten two channels: distillation
+    # cut at today (not at the gap's close), and remote compute cut as a
+    # *level setback* — losing the sites abroad drops China's largest run
+    # back to its biggest domestic cluster, so the compute term contributes
+    # nothing until the domestic buildout regrows the lost OOMs at its own
+    # catalogued pace, and runs at that pace thereafter. The pace band
+    # above stays on the default band on purpose — it is shared with the
+    # CC tab's crossing, and a scenario toggle must not re-tune the
+    # reality-check factor.
+    g_lo_eff, g_hi_eff = _CC_CN_COMPUTE_LO, _CC_CN_COMPUTE_HI
+    comp_dead, dlvl_oom = None, 0.0
+    chk_dom = chk_pace.get(_DC_CTY_CN_DOMESTIC)
+    if stop_remote and chk_dom is not None:
+        _ser = _dc_series_for_metric(dc_all, 'train_flop')
+        _cty = {dc['name']: _dc_site_country(dc) for dc in dc_all}
+        _grp = _dc_country_groups(_ser, _cty, 'abroad')
+
+        def _cur_level(names):
+            vals = [v for d, v, *_ in
+                    _dc_country_steps(_ser, names, 'site', {})
+                    if d <= today and v > 0]
+            return vals[-1] if vals else None
+
+        acc = _cur_level(_grp.get(_DC_CTY_CN_ACCESS, []))
+        dom = _cur_level([n for n in _ser if _cty.get(n) == _DC_CTY_CN])
+        g_dom = max(chk_dom['g'], 0.05)
+        g_hi_eff = min(g_hi_eff, g_dom)
+        g_lo_eff = min(g_lo_eff, g_hi_eff)
+        if acc and dom and acc > dom:
+            dlvl_oom = float(np.log10(acc / dom))
+            comp_dead = (t_today, t_today + dlvl_oom / g_dom)
     pure = _cc_pure_innovation_band(cc_rows, eci_all)
     kw = dict(us_anchor=us_best[1], us_rate=us_rate_s, us_pause_level=level_s,
-              a_partial=a_partial, g_lo=_CC_CN_COMPUTE_LO,
-              g_hi=_CC_CN_COMPUTE_HI, algo_lo=a_lo, algo_mid=a_mid,
+              a_partial=a_partial, g_lo=g_lo_eff,
+              g_hi=g_hi_eff, algo_lo=a_lo, algo_mid=a_mid,
               algo_hi=a_hi, pace_lo=pace_lo, pace_hi=pace_hi,
-              release_gap_days=gap_d, n=n_s, t_pause=t_pause_s,
+              n=n_s, t_pause=t_pause_s, comp_dead=comp_dead,
+              t_dist_stop=t_today if stop_dist else None,
+              dist_teacher=teacher_s if withhold else None,
               **({'pure_lo': pure[0], 'pure_hi': pure[1]} if pure else {}))
     years, grid_yrs, traj = _cc_cn_crossing_sim(
         anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1], **kw)
     # Sensitivity: China's compute term at the catalogued China-accessible
     # buildout pace (Chinese labs' sites abroad included) instead of the
     # export-control band — the channel where "remote" compute would bite.
-    chk_ca = _cc_country_pace_check(today).get(_DC_CTY_CN_ACCESS)
+    # Moot when the remote-access checkbox has cut that channel.
+    chk_ca = chk_pace.get(_DC_CTY_CN_ACCESS)
     d50_ca = None
-    if chk_ca:
+    if chk_ca and not stop_remote:
         y_ca, _gc, _tc = _cc_cn_crossing_sim(
             anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
             **dict(kw, g_lo=max(chk_ca['g'] - chk_ca['sigma_g'], 0.05),
@@ -11259,60 +11385,121 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
                                           * 365.25) for p in (10, 50, 90))
     d_pause = anchor_d + timedelta(
         days=float(np.percentile(t_pause_s, 50)) * 365.25)
-    # Months from the pause moment (floored at today) to the crossing,
-    # matched per sample so both uncertainties propagate.
+    # Lockstep milestone offsets (see docstring): the pause is naturally a
+    # run-finished date, China's ECI data are release dates; both display at
+    # the sidebar's milestone, so their gap never depends on the setting.
+    shift = _dc_timing_shift(timing_label, run_days)
+    off_us = timedelta(days=shift - run_days)
+    off_cn = timedelta(days=shift - run_days - _CC_RUN_COMPLETION_LAG.days)
+    v10, v50, v90 = d10 + off_cn, d50 + off_cn, d90 + off_cn
+    d_pause_v = d_pause + off_us
+    # Months from the pause to the crossing on a common milestone, matched
+    # per sample so both uncertainties propagate. The release-prep lag nets
+    # out of the gap (rung-invariant: both offsets move together).
     _floor = np.maximum(t_pause_s * 365.25, (today - anchor_d).days)
-    _delta_mo = (years * 365.25 - _floor)[np.isfinite(years)] / 30.44
+    _delta_mo = ((years * 365.25 - _floor)[np.isfinite(years)]
+                 - _CC_RUN_COMPLETION_LAG.days) / 30.44
     s10, s50, s90 = (float(np.percentile(_delta_mo, p)) for p in (10, 50, 90))
     m1, m2 = st.columns(2)
     _ops = f"{thr_ops:.0e}".replace("e+", "e")
     m1.metric(f"China reaches the paused US frontier "
               f"({_ops}, {run_days // 30}-mo run → ECI ~{lvl50:.0f})",
-              f"{d50:%b %Y}", f"{d10:%b %Y} – {d90:%b %Y} (80%)",
+              f"{v50:%b %Y}", f"{v10:%b %Y} – {v90:%b %Y} (80%)",
               delta_color="off")
     m2.metric("Time for China to surpass after US pause",
-              f"~{s50:.0f} mo", f"{s10:.0f} – {s90:.0f} mo (80%)",
+              f"~{s50:.1f} mo", f"{s10:.1f} – {s90:.1f} mo (80%)",
               delta_color="off")
+    _mo = run_days // 30
+    _clock = {
+        "Data center construction":
+            f"**Dates = training runs start** (cluster online); the {_mo}-mo "
+            f"run finishes {_mo} mo later, a release ~1 mo after that.",
+        "Training run finished":
+            "**Dates = training runs finish**; a release follows ~1 mo "
+            "later.",
+        "Model release":
+            f"**Dates = model releases** ({_mo}-mo run + ~1 mo prep).",
+    }[timing_label]
+    st.caption(_clock + " Pick the milestone with the sidebar's *Date "
+               "points at* — both countries move together, so the gap "
+               "between them never changes (and no release-queue wait is "
+               "added: a queue delays both sides alike).")
+    if comp_dead is not None:
+        _asm_comp = (f"compute — falls back **{dlvl_oom:.1f} OOM** to the "
+                     f"largest domestic cluster, "
+                     f"~{comp_dead[1] - t_today:.1f} yr to regrow at "
+                     f"×{10 ** g_hi_eff:.1f}/yr (checkbox)")
+    elif stop_remote:
+        _asm_comp = (f"compute — domestic pace only, "
+                     f"×{10 ** g_lo_eff:.1f}–{10 ** g_hi_eff:.1f}/yr "
+                     "(checkbox)")
+    else:
+        _asm_comp = (f"compute — keeps growing ×{10 ** g_lo_eff:.1f}–"
+                     f"{10 ** g_hi_eff:.1f}/yr (export-control band)")
+    if stop_dist:
+        _asm_dist = "distillation — **cut today** (checkbox)"
+    elif withhold:
+        _asm_dist = ("distillation — release freeze from pause-run start "
+                     f"(checkbox): the teacher is the last pre-freeze "
+                     f"release (ECI ~{teach50:.0f}), so it dries up well "
+                     "below the bar")
+    else:
+        _asm_dist = ("distillation — the paused frontier itself stays "
+                     "queryable, fading only as China closes the gap")
+    st.markdown(
+        "**Assumes** · weights stay secure: China can query the paused US "
+        "models but never steal them (theft = instant catch-up) · the pause "
+        "stops new US models *and* methods: published know-how fully "
+        f"absorbed ~{_CC_DIFF_ABSORB_YRS:.0f} yr after the pause · "
+        f"{_asm_dist} · {_asm_comp}.")
 
     # ── The race, in ECI: US climbs to the bar and freezes; China's fan
-    # catches up and crosses. ──
-    x_end = d90 + timedelta(days=150)
-    grid_d = [anchor_d + timedelta(days=y * 365.25) for y in grid_yrs]
+    # catches up and crosses. The whole chart rides the sidebar milestone:
+    # every date (actual points included) carries its side's lockstep
+    # offset, so the diamond, the window and the metric cards agree. ──
+    x_end = v90 + timedelta(days=150)
+    grid_d = [anchor_d + off_cn + timedelta(days=y * 365.25)
+              for y in grid_yrs]
     keep = [i for i, d in enumerate(grid_d) if d <= x_end]
+    _hover = (lambda d, s, n: f"{pretty(n)}<br>ECI {s:.0f}"
+              + (f"<br>released {d:%b %Y}" if off_cn.days else ""))
     fig = go.Figure()
-    _dc_add_projection_band(fig, today, x_end)
-    fig.add_vrect(x0=d10, x1=d90, fillcolor='rgba(214,39,40,0.10)',
+    _dc_add_projection_band(fig, today + off_cn, x_end)
+    fig.add_vrect(x0=v10, x1=v90, fillcolor='rgba(214,39,40,0.10)',
                   line_width=0, layer='below')
+    fig.add_annotation(x=v50, y=1.0, yref='paper', yanchor='bottom',
+                       text='80% crossing window', showarrow=False,
+                       font=dict(size=10, color='#7F1010'))
     # US: actual frontier, then the climb to the bar, flat after the pause.
     fig.add_trace(go.Scatter(
-        x=[d for d, s, n in us_fr], y=[s for d, s, n in us_fr],
+        x=[d + off_cn for d, s, n in us_fr], y=[s for d, s, n in us_fr],
         mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
         marker=dict(size=4, color='#1F77B4', line=dict(color='white', width=0.5)),
-        text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in us_fr],
+        text=[_hover(d, s, n) for d, s, n in us_fr],
         hoverinfo='text', name='US (actual)'))
     # Two visually distinct segments: the projected climb (dashed, like every
     # projection) and the frozen bar after the pause (thick translucent level).
-    t0_us = max(us_best[0], anchor_d)
-    if d_pause > t0_us:
+    t0_us = max(us_best[0], anchor_d) + off_cn
+    if d_pause_v > t0_us:
         fig.add_trace(go.Scatter(
-            x=[t0_us, d_pause], y=[us_best[1], lvl50], mode='lines',
+            x=[t0_us, d_pause_v], y=[us_best[1], lvl50], mode='lines',
             line=dict(color='#1F77B4', width=2, dash='dash'),
             name='US climb (projected)', hoverinfo='skip'))
     fig.add_trace(go.Scatter(
-        x=[max(d_pause, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
+        x=[max(d_pause_v, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
         line=dict(color='#1F77B4', width=4.5), opacity=0.4,
         name=f'US paused at {lvl50:.0f}', hoverinfo='skip'))
-    if d_pause > anchor_d:
-        fig.add_annotation(x=d_pause, y=lvl50,
-                           text=f'US pauses ~{d_pause:%b %Y}',
+    if d_pause_v > anchor_d + off_cn:
+        fig.add_annotation(x=d_pause_v, y=lvl50,
+                           text=f'US pauses ~{d_pause_v:%b %Y}',
                            showarrow=False, yshift=12,
                            font=dict(size=10, color='#1F77B4'))
     # China: actual frontier, then the sim's fan.
     fig.add_trace(go.Scatter(
-        x=[d for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
+        x=[d + off_cn for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
         mode='lines+markers', line=dict(color='#D62728', width=1.5),
         marker=dict(size=4, color='#D62728', line=dict(color='white', width=0.5)),
-        text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in cn_fr],
+        text=[_hover(d, s, n) for d, s, n in cn_fr],
         hoverinfo='text', name='China (actual)'))
     pct = {p: np.percentile(traj, p, axis=0) for p in (10, 25, 50, 75, 90)}
     xs = [grid_d[i] for i in keep]
@@ -11327,18 +11514,21 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
         line=dict(color='#7F1010', width=2.5), name='China (projected median)',
         hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>China median</extra>'))
     fig.add_trace(go.Scatter(
-        x=[d50], y=[lvl50], mode='markers',
+        x=[v50], y=[lvl50], mode='markers',
         marker=dict(symbol='diamond', size=13, color='#D62728',
                     line=dict(color='white', width=1.5)),
-        name=f'median crossing {d50:%b %Y}', hoverinfo='name'))
+        name=f'median crossing {v50:%b %Y}', hoverinfo='name'))
+    _xtitle = {"Data center construction": "Training runs start",
+               "Training run finished": "Training runs finish",
+               "Model release": "Model releases"}[timing_label]
     fig.update_layout(
         height=440, plot_bgcolor='white', paper_bgcolor='white',
         margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
         legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
                     bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
                     borderwidth=1),
-        xaxis=dict(gridcolor='rgba(0,0,0,0.12)',
-                   range=[datetime(2024, 1, 1), x_end],
+        xaxis=dict(gridcolor='rgba(0,0,0,0.12)', title_text=_xtitle,
+                   range=[datetime(2024, 1, 1) + off_cn, x_end],
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
@@ -11354,25 +11544,20 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
         f"sidebar's {run_days // 30}-month length — a shorter run needs "
         "proportionally more cluster on the same capacity fit, so it pauses "
         f"later *and higher* — freezing at **ECI ~{lvl50:.0f}** (median), "
-        "the bar China must cross. China's algorithmic engine then winds "
-        "down in stages: distillation decays as the gap to the paused stock "
-        f"closes, method diffusion over ~{_CC_DIFF_ABSORB_YRS:.0f} year as "
-        "the published stock is absorbed"
-        + (f", down to indigenous innovation "
-           f"(**{pure[0]:.0f}–{pure[1]:.0f} ECI/yr**)" if pure else
-           f" (floor **{inno[0]:.0f}–{inno[1]:.0f} ECI/yr**)")
-        + "; its compute "
-        f"term unchanged ({_CC_CN_COMPUTE_LO * a_partial:.1f}–"
-        f"{_CC_CN_COMPUTE_HI * a_partial:.1f} ECI/yr — export-control-bound), "
-        "plus the release-cadence wait (the diamond sits right of where the "
-        "fan meets the bar). Same sim and pace band as the "
+        "the bar China must cross. Once distillation and diffusion dry up, "
+        "China runs on indigenous innovation "
+        + (f"(**{pure[0]:.0f}–{pure[1]:.0f} ECI/yr**)" if pure else
+           f"(floor **{inno[0]:.0f}–{inno[1]:.0f} ECI/yr**)")
+        + " plus its compute term. Same sim and pace band as the "
         "Compute/capabilities/diffusion crossing section — which lands *earlier*: its bar is "
-        f"lower ({_CC_CN_TARGET_ECI:.0f}) and distillation never dries up "
-        "there."
+        f"lower ({_CC_CN_TARGET_ECI:.0f}), its clock starts at China's last "
+        "release rather than at the pause, distillation never dries up "
+        "there, and it adds a release-queue wait this panel omits."
         + (f" Sensitivity: if Chinese labs sustained the catalogued "
            f"China-accessible buildout pace (×{10 ** chk_ca['g']:.1f}/yr, "
            "sites abroad included — a from-zero ramp) instead of the "
-           f"export-control band, the crossing moves to ~{d50_ca:%b %Y}."
+           "export-control band, the crossing moves to "
+           f"~{d50_ca + off_cn:%b %Y}."
            if d50_ca is not None else ""))
 
 
@@ -11644,7 +11829,7 @@ def render_pacing():
         series_unshifted, _us_names, 'site' if cluster_of == {} else 'company',
         cluster_of)
     _pc_render_us_pause(_today, float(threshold_label), run_days,
-                        us_steps=_us_steps_raw)
+                        us_steps=_us_steps_raw, timing_label=timing_label)
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
