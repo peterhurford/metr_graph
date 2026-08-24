@@ -11712,6 +11712,36 @@ def _pc_rli_eta(frontier, target_pct=_PC_RLI_TARGET_PCT, n=None):
                  for d in np.percentile(days_to, [10, 50, 90]))
 
 
+# The CoBench companion, on the RSI tab's own frontier. The target is
+# Anthropic's stated full-substitution bar, the milestone that tab dates.
+_PC_RSI_POS_CI = 10.0    # the RSI tab's default position CI, fitted score +/- 10pts
+
+
+def _pc_rsi_eta(frontier, target_pct=_RSI_SUBSTITUTION_BAR, n=None):
+    """(early, median, late) dates for the CoBench frontier to reach `target_pct`.
+
+    The RSI tab at its defaults — single OLS in logit space, odds-doubling time
+    lognormal over `_rsi_dt_ci()` (which widens the usual [DT/2, DT*2] to span
+    both segment rates), position normal over the last frontier score +/-
+    `_PC_RSI_POS_CI` points, also in logit space. Returns None if the fitted
+    slope is flat or negative.
+    """
+    n = n or N_SAMPLES
+    base, intercept, slope = _rsi_fit(frontier)
+    if slope <= 0:
+        return None
+    dt_lo, dt_hi = _rsi_dt_ci(frontier, np.log(2) / slope)
+    proj_slope = np.log(2) / np.maximum(_lognormal_from_ci(dt_lo, dt_hi, n), 1.0)
+    cur = frontier[-1]
+    fitted = intercept + slope * (cur['date'] - base).days
+    pos_lo = _logit(round(max(cur['cobench'] - _PC_RSI_POS_CI, 1.0), 1) / 100)
+    pos_hi = _logit(round(min(cur['cobench'] + _PC_RSI_POS_CI, 99.0), 1) / 100)
+    start = np.random.normal(fitted, max((pos_hi - pos_lo) / (2 * 1.282), 0), n)
+    days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
+    return tuple(cur['date'] + timedelta(days=float(d))
+                 for d in np.percentile(days_to, [10, 50, 90]))
+
+
 # Realized ship lag of a US frontier model — run finished to public release,
 # prep plus queue: GPT-5.5 Pro's run finished ~Feb 2026 and shipped Apr 23
 # (Mythos model card). The released frontier trails the trained one by this,
@@ -12447,7 +12477,7 @@ def render_pacing():
 
     st.header("Pacing")
 
-    # ── Capability milestones: METR 40h, ECI 170 and RLI 90% ──
+    # ── Capability milestones: METR 40h, ECI 170, RLI 90% and CoBench 85% ──
     _cap_etas = [(f"METR {lab} horizon reaches 40h",
                   _pc_metr_eta(frontier_all, k)) for lab, k in _PC_METR_LEVELS]
     _eci_fr = _eci_entity_data("US best")[1]
@@ -12455,6 +12485,8 @@ def render_pacing():
                   for t in _PC_ECI_TARGETS]
     _cap_etas.append((f"RLI reaches {_PC_RLI_TARGET_PCT:.0f}%",
                       _pc_rli_eta(rli_frontier_all)))
+    _cap_etas.append((f"CoBench reaches {_RSI_SUBSTITUTION_BAR:.0f}%",
+                      _pc_rsi_eta(rsi_frontier_all)))
     _cap_etas = [(lab, eta) for lab, eta in _cap_etas if eta is not None]
     if _cap_etas:
         st.subheader("Capabilities Milestones")

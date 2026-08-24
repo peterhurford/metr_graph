@@ -9,6 +9,7 @@ Run: pytest test_integration.py -v
 """
 
 import pytest
+from datetime import datetime
 from streamlit.testing.v1 import AppTest
 
 SCRIPT = "visualize_projection.py"
@@ -963,6 +964,21 @@ class TestRsiTab:
         _assert_no_error(at, "RSI / slow rate")
         after = [m for m in at.metric if m.label == "Median"][0].value
         assert before != after
+
+    def test_pacing_quotes_the_same_milestone(self):
+        """The Pacing tab's CoBench card is this tab's own fit, so the two
+        cannot date the milestone differently. Compared with a tolerance, not
+        by string: both are Monte Carlo medians off an unseeded RNG."""
+        at = self._rsi_app()
+        here = datetime.strptime(
+            [m for m in at.metric if m.label == "Median"][0].value, "%b %Y")
+        at2 = _fresh_app()
+        at2.run()
+        _switch_tab(at2, "Pacing")
+        there = datetime.strptime(
+            [m for m in at2.metric
+             if m.label == "CoBench reaches 85%"][0].value, "%b %Y")
+        assert abs((here - there).days) <= 62
 
     def test_toggles(self):
         at = self._rsi_app()

@@ -294,8 +294,10 @@ research staff — not a benchmark ceiling). Four things are load-bearing:
 
 CoBench is filtered for difficulty (mostly problems Mythos Preview failed at least
 once in three tries) and run at a 300k-token budget, so scores don't compare to
-public AI R&D suites — the fine print has to keep saying so. Guarded by `TestRsi`
-and `TestRsiTab`.
+public AI R&D suites — the fine print has to keep saying so. The Pacing tab's
+*Capabilities Milestones* row dates the same 85% bar through `_pc_rsi_eta()`,
+which reuses this tab's `_rsi_fit()` and `_rsi_dt_ci()` rather than fitting its
+own. Guarded by `TestRsi` and `TestRsiTab`.
 
 ### UK Cyber tab caveats
 
@@ -552,22 +554,29 @@ length (`_PC_RUN_OPTIONS`, default 2mo, reusing the loader's `train_flop*` colum
 utilization, Epoch 8-bit OP/s). Deliberately thin: it reuses the Data Centers tab's
 machinery rather than growing its own.
 
-The tab opens with *Capabilities Milestones*, five cards independent of every
+The tab opens with *Capabilities Milestones*, six cards independent of every
 control below: `_pc_metr_eta()` for the METR frontier reaching 40h at p50 and
 at p80, `_pc_eci_eta()` for the US-best ECI frontier reaching each of
 `_PC_ECI_TARGETS` — 170, the top line of `_ECI_US_MILESTONES`, and 195, above
-anything that tab draws and a long extrapolation of the same fit — and
+anything that tab draws and a long extrapolation of the same fit —
 `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT` (90%, above
-that tab's own milestone table, which stops at 50%). Each reproduces
+that tab's own milestone table, which stops at 50%), and `_pc_rsi_eta()` for
+the CoBench frontier reaching `_RSI_SUBSTITUTION_BAR` (85%, Anthropic's own
+full-substitution bar, which the RSI tab dates too). Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
 [DT/2, DT*2], position over the current model's CI, p50 slope for both levels;
 ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2; RLI: single OLS in
 logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
-± 1 point — rather than
+± 1 point; RSI: single OLS in logit space, odds-doubling time over
+`_rsi_dt_ci()`'s widened interval, position ± `_PC_RSI_POS_CI` (10) points —
+rather than
 fitting its own, so the tabs can't quote different dates for the same
 milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
-`test_eci_eta_reproduces_the_eci_tab_defaults` and
-`test_rli_eta_reproduces_the_rli_tab_defaults` pin that. The compute half's
+`test_eci_eta_reproduces_the_eci_tab_defaults`,
+`test_rli_eta_reproduces_the_rli_tab_defaults` and
+`test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that; the cross-tab
+`test_pacing_quotes_the_same_milestone` compares the two CoBench dates with a
+tolerance, since both are Monte Carlo medians off an unseeded RNG. The compute half's
 headline is the US-vs-China line, so it renders only under the `Country`
 attribution; the threshold reaches the display through the chart title.
 

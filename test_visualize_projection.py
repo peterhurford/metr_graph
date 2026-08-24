@@ -4359,6 +4359,33 @@ class TestPacing:
             assert prev is None or med > prev
             prev = med
 
+    def test_rsi_eta_reproduces_the_rsi_tab_defaults(self):
+        """The CoBench 85% card is the RSI tab at its defaults: single OLS in
+        logit space, odds-doubling time over that tab's widened rate CI."""
+        fr = vp.rsi_frontier_all
+        base, intercept, slope = vp._rsi_fit(fr)
+        fitted = intercept + slope * (fr[-1]['date'] - base).days
+        dt_lo, dt_hi = vp._rsi_dt_ci(fr, np.log(2) / slope)
+        dt = np.sqrt(dt_lo * dt_hi)           # lognormal CI's central value
+        prev = None
+        for target in (70.0, 80.0, vp._RSI_SUBSTITUTION_BAR):
+            early, med, late = vp._pc_rsi_eta(fr, target, n=20000)
+            assert early < med < late
+            want = fr[-1]['date'] + timedelta(
+                days=(vp._logit(target / 100) - fitted) / (np.log(2) / dt))
+            assert abs((med - want).days) < 45
+            # A higher bar is never reached earlier.
+            assert prev is None or med > prev
+            prev = med
+
+    def test_rsi_card_targets_anthropics_own_bar(self):
+        """Not an invented milestone: the card dates the score Anthropic says
+        a fully-substituting model would reach."""
+        assert vp._PC_RSI_POS_CI == 10.0
+        early, med, late = vp._pc_rsi_eta(vp.rsi_frontier_all)
+        assert vp._pc_rsi_eta(vp.rsi_frontier_all, vp._RSI_SUBSTITUTION_BAR)
+        assert med > max(m['date'] for m in vp.rsi_frontier_all)
+
     def test_rli_target_is_above_the_rli_tabs_own_milestones(self):
         """90% is a deliberate extrapolation past the tab's top milestone."""
         assert vp._PC_RLI_TARGET_PCT > 50
