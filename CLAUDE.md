@@ -522,12 +522,17 @@ length (`_PC_RUN_OPTIONS`, default 2mo, reusing the loader's `train_flop*` colum
 utilization, Epoch 8-bit OP/s). Deliberately thin: it reuses the Data Centers tab's
 machinery rather than growing its own.
 
-The tab opens with `_pc_metr_eta()`: median + 80% CI for the METR frontier to
-reach 40h at p50 and at p80, a capability clock beside the compute one and
-independent of every control below. It reproduces `render_metr()` at its
-defaults (GPT-4o-broken segment, DT over [DT/2, DT*2], position over the
-current model's CI, p50 slope for both levels) rather than fitting its own —
-`test_metr_eta_reproduces_the_metr_tab_defaults` pins that. The compute half's
+The tab opens with *Capabilities Milestones*, four cards independent of every
+control below: `_pc_metr_eta()` for the METR frontier reaching 40h at p50 and
+at p80, and `_pc_eci_eta()` for the US-best ECI frontier reaching each of
+`_PC_ECI_TARGETS` — 170, the top line of `_ECI_US_MILESTONES`, and 195, above
+anything that tab draws and a long extrapolation of the same fit. Each reproduces
+its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
+[DT/2, DT*2], position over the current model's CI, p50 slope for both levels;
+ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2 — rather than
+fitting its own, so the tabs can't quote different dates for the same
+milestone. `test_metr_eta_reproduces_the_metr_tab_defaults` and
+`test_eci_eta_reproduces_the_eci_tab_defaults` pin that. The compute half's
 headline is the US-vs-China line, so it renders only under the `Country`
 attribution; the threshold reaches the display through the chart title.
 

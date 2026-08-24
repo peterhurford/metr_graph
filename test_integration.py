@@ -1132,8 +1132,10 @@ class TestPacingTab:
         labels = [str(m.label) for m in at.metric]
         assert "METR p50 horizon reaches 40h" in labels
         assert "METR p80 horizon reaches 40h" in labels
+        assert "US ECI reaches 170" in labels
+        assert "US ECI reaches 195" in labels
         caps = " ".join(str(c.value) for c in at.caption)
-        assert caps.count("80% CI:") >= 2
+        assert caps.count("80% CI:") >= 4
 
     def test_us_pause_panel_renders(self):
         """The US-pause counterfactual renders with its crossing metric,

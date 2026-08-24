@@ -4230,6 +4230,33 @@ class TestPacing:
         p80 = vp._pc_metr_eta(vp.frontier_all, 'p80_min', n=20000)
         assert all(b > a for a, b in zip(p50, p80))
 
+    def test_eci_eta_reproduces_the_eci_tab_defaults(self):
+        """The ECI 170 card is the ECI tab's own milestone row: single OLS on
+        the US-best frontier, +Pts/Yr over [PPY/2, PPY*2]."""
+        fr = vp._eci_entity_data("US best")[1]
+        days = np.array([(m['date'] - fr[0]['date']).days for m in fr],
+                        dtype=float)
+        scores = np.array([m['eci_score'] for m in fr])
+        slope = vp.fit_line(days, scores)[1]
+        fitted = np.mean(scores - slope * days) + slope * days[-1]
+        prev = None
+        for target in vp._PC_ECI_TARGETS:
+            early, med, late = vp._pc_eci_eta(fr, target, n=20000)
+            assert early < med < late
+            want = fr[-1]['date'] + timedelta(
+                days=(target - fitted) * (365.25 / round(slope * 365.25, 1)))
+            assert abs((med - want).days) < 30
+            # A higher bar is never reached earlier.
+            assert prev is None or med > prev
+            prev = med
+
+    def test_eci_targets_straddle_the_eci_tabs_top_milestone(self):
+        """170 is the bar both tabs quote, so the ECI tab's own line moves it;
+        195 sits deliberately above anything that tab draws."""
+        top = max(s for s, _l, _c in vp._ECI_US_MILESTONES)
+        assert top in vp._PC_ECI_TARGETS
+        assert max(vp._PC_ECI_TARGETS) > top
+
     def test_cutoff_slider_labels_round_trip(self):
         """The advanced cut-off sliders are month labels (URL- and
         reset-safe): first option is the constant default, every other

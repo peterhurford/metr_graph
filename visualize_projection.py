@@ -11327,6 +11327,38 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None):
                  for d in np.percentile(days_to, [10, 50, 90]))
 
 
+# The ECI companions, on the US-best frontier the ECI tab defaults to. 170 is
+# the top line of `_ECI_US_MILESTONES`, so the two tabs quote the same bar;
+# 195 is above anything the ECI tab draws and is a pure extrapolation of the
+# same fit, a long way outside the frontier's observed range.
+_PC_ECI_TARGETS = (170.0, 195.0)
+_PC_ECI_POS_CI = 2.0     # the ECI tab's default position CI, fitted score +/- 2
+
+
+def _pc_eci_eta(frontier, target, n=None):
+    """(early, median, late) dates for an ECI frontier to reach `target`.
+
+    The ECI tab at its defaults — single OLS, +Pts/Yr lognormal over
+    [PPY/2, PPY*2], position normal over the fitted score +/- `_PC_ECI_POS_CI`.
+    Returns None if the fitted slope is flat or negative.
+    """
+    n = n or N_SAMPLES
+    base = frontier[0]['date']
+    days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+    scores = np.array([m['eci_score'] for m in frontier])
+    slope = fit_line(days, scores)[1]
+    if slope <= 0:
+        return None
+    ppy = round(slope * 365.25, 1)
+    proj_dpp = _lognormal_from_ci(365.25 / round(ppy * 2, 1),
+                                  365.25 / round(ppy / 2, 1), n)
+    fitted = np.mean(scores - slope * days) + slope * days[-1]
+    start = np.random.normal(fitted, _PC_ECI_POS_CI / 1.282, n)
+    days_to = np.maximum((target - start) * proj_dpp, 0.0)
+    return tuple(frontier[-1]['date'] + timedelta(days=float(d))
+                 for d in np.percentile(days_to, [10, 50, 90]))
+
+
 # Realized ship lag of a US frontier model — run finished to public release,
 # prep plus queue: GPT-5.5 Pro's run finished ~Feb 2026 and shipped Apr 23
 # (Mythos model card). The released frontier trails the trained one by this,
@@ -12062,16 +12094,19 @@ def render_pacing():
 
     st.header("Pacing")
 
-    # ── METR 40-hour crossings ──
-    _metr_etas = [(lab, _pc_metr_eta(frontier_all, k))
-                  for lab, k in _PC_METR_LEVELS]
-    if all(e is not None for _, e in _metr_etas):
+    # ── Capability milestones: METR 40h and ECI 170 ──
+    _cap_etas = [(f"METR {lab} horizon reaches 40h",
+                  _pc_metr_eta(frontier_all, k)) for lab, k in _PC_METR_LEVELS]
+    _eci_fr = _eci_entity_data("US best")[1]
+    _cap_etas += [(f"US ECI reaches {t:.0f}", _pc_eci_eta(_eci_fr, t))
+                  for t in _PC_ECI_TARGETS]
+    _cap_etas = [(lab, eta) for lab, eta in _cap_etas if eta is not None]
+    if _cap_etas:
         st.subheader("Capabilities Milestones")
         for col, (lab, (early, med, late)) in zip(
-                st.columns(len(_metr_etas)), _metr_etas):
+                st.columns(len(_cap_etas)), _cap_etas):
             with col:
-                st.metric(f"METR {lab} horizon reaches 40h",
-                          med.strftime('%b %Y'))
+                st.metric(lab, med.strftime('%b %Y'))
                 st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")
 
     # ── Entities and projections ──
