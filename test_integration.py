@@ -951,10 +951,20 @@ class TestRsiTab:
         assert "Median" in labels and "80% CI" in labels
         assert "–" in labels["80% CI"]
 
-    def test_no_table(self):
-        """The tab is a chart, not a listing."""
+    def test_the_only_table_is_the_staff_survey(self):
+        """The CoBench half is a chart, not a listing; the survey half is a
+        table because the source disclaims plotting it as one series."""
         at = self._rsi_app()
-        assert len(at.get("table")) == 0
+        tables = at.get("table")
+        assert len(tables) == 1
+        assert any("Comparable metric: the internal staff survey" in h.value
+                   for h in at.subheader)
+        body = " ".join(md.value for md in at.markdown)
+        assert "Comparability: partial, and degrading." in body
+        for head in ("The sample changes.",
+                     "The substitution question changes.",
+                     "Anthropic itself now distrusts the series."):
+            assert head in body
 
     def test_slower_rate_pushes_the_bar_out(self):
         at = self._rsi_app()

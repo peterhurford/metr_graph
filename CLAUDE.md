@@ -294,7 +294,20 @@ research staff — not a benchmark ceiling). Four things are load-bearing:
 
 CoBench is filtered for difficulty (mostly problems Mythos Preview failed at least
 once in three tries) and run at a 300k-token budget, so scores don't compare to
-public AI R&D suites — the fine print has to keep saying so. The Pacing tab's
+public AI R&D suites — the fine print has to keep saying so.
+
+The tab's second half (`_render_rsi_survey()`) carries the report's other
+substitution series, the internal staff survey (§3.4.2), as `_RSI_SURVEY` plus
+`_RSI_SURVEY_NOTES`. It is a **table, not a chart, on purpose**: the sample and
+the substitution question both change between rounds — superusers, then a broader
+sample, then a self-selected opt-in poll; "could it automate a junior researcher
+today" became "could it be made into a drop-in L4 within 3 months" — so one line
+through the numbers would assert a trend the source disclaims, and Anthropic has
+deprioritized the series itself. The rounds that were never run are rows, not
+omissions; `test_survey_rows_are_uniform_and_cover_the_discontinuation` keeps
+them there.
+
+The Pacing tab's
 *Capabilities Milestones* row dates the same 85% bar through `_pc_rsi_eta()`,
 which reuses this tab's `_rsi_fit()` and `_rsi_dt_ci()` rather than fitting its
 own. Guarded by `TestRsi` and `TestRsiTab`.

@@ -3175,6 +3175,25 @@ class TestRsi:
         assert slope == pytest.approx(expect[1])
         assert intercept == pytest.approx(expect[0])
 
+    def test_survey_rows_are_uniform_and_cover_the_discontinuation(self):
+        """The table's value is the gaps as much as the numbers: the rounds
+        that were never run are rows, not omissions."""
+        cols = set(vp._RSI_SURVEY[0])
+        assert cols == {"Model (date)", "n", "Question", "Uplift vs no AI",
+                        "Drop-in replacement?"}
+        for r in vp._RSI_SURVEY:
+            assert set(r) == cols
+            assert all(str(v).strip() for v in r.values())
+        models = [r["Model (date)"] for r in vp._RSI_SURVEY]
+        assert models[0].startswith("Opus 4 ")
+        assert any("not run" in r["Question"] for r in vp._RSI_SURVEY)
+        assert "Mythos 5" in models[-1] and "not run" in vp._RSI_SURVEY[-1]["Question"]
+
+    def test_survey_notes_are_head_and_body_pairs(self):
+        assert len(vp._RSI_SURVEY_NOTES) == 3
+        for head, body in vp._RSI_SURVEY_NOTES:
+            assert head.endswith(".") and len(body) > 40
+
     def test_dt_ci_default_spans_both_segment_rates(self):
         """Three points whose segments disagree ~8x: the conventional
         fit/2..fit*2 interval must widen, never narrow."""

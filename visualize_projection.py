@@ -580,6 +580,77 @@ def _rsi_date_label(m, fmt='%b %d, %Y'):
     return ("" if m['date_known'] else "~") + m['date'].strftime(fmt)
 
 
+# The internal researcher survey — the other series in the report's section on
+# substituting models for Anthropic staff (§3.4.2), run per frontier model from
+# Opus 4 through Mythos Preview and then discontinued. Kept as a table rather
+# than a second chart: the report's own comparability caveats (`_RSI_SURVEY_
+# NOTES`) say the sample and the question both move underneath the numbers, so
+# plotting them as one series would assert a trend the source disclaims.
+
+_RSI_SURVEY = [
+    {"Model (date)": "Opus 4 (May 2025)",
+     "n": "4",
+     "Question": "Could this model completely automate a junior ML researcher? "
+                 "(after \u22652h hands-on evaluation)",
+     "Uplift vs no AI": "Below the pre-set 3x median rule-out threshold",
+     "Drop-in replacement?": "0 of 4 yes"},
+    {"Model (date)": "Opus 4.1 (Aug 2025)",
+     "n": "\u2014", "Question": "not run",
+     "Uplift vs no AI": "\u2014", "Drop-in replacement?": "\u2014"},
+    {"Model (date)": "Opus 4.5 (Nov 2025)",
+     "n": "18, recruited from the top ~30 staff by internal Claude Code usage",
+     "Question": "same protocol",
+     "Uplift vs no AI": "9 of 18 reported \u2265100%; median 100%, mean 220%",
+     "Drop-in replacement?": "0 of 18 believed it crossed AI R&D-4; 2 called it a "
+                             "near-complete entry-level replacement with meaningful caveats"},
+    {"Model (date)": "Opus 4.6 (Feb 2026)",
+     "n": "16, deliberately broadened to general-research and infra/maintenance roles",
+     "Question": "Could it be made a drop-in replacement for an entry-level (L4) "
+                 "researcher with \u22643 months of scaffolding/tooling, at >50% "
+                 "probability?",
+     "Uplift vs no AI": "range 30\u2013700%, mean 152%, median 100% \u2014 more modest "
+                        "than previous surveys, which focused on superusers",
+     "Drop-in replacement?": "11 unlikely / 3 likely-with-3-months / 2 already-possible; "
+                             "all 5 affirmative respondents were contacted and all "
+                             "revised or had been answering a different question"},
+    {"Model (date)": "Mythos Preview (Apr 2026), poll A",
+     "n": "130 reactions (opt-in Slack poll)",
+     "Question": "How much did AI-powered systems accelerate your work output over the "
+                 "past week vs. no model access?",
+     "Uplift vs no AI": "geometric mean \u2248 4x",
+     "Drop-in replacement?": "n/a"},
+    {"Model (date)": "Mythos Preview (Apr 2026), poll B",
+     "n": "18 (Google Form, 11 L4 capability dimensions)",
+     "Question": "already here / likely within 3 months of scaffolding / unlikely",
+     "Uplift vs no AI": "n/a",
+     "Drop-in replacement?": "1 of 18 said a drop-in entry-level replacement already "
+                             "exists; 4 of 18 gave \u226550% odds within 3 months of "
+                             "scaffolding iteration"},
+    {"Model (date)": "Opus 4.7, Opus 4.8, Mythos 5, Opus 5",
+     "n": "\u2014",
+     "Question": "not run; each card refers back to the Mythos Preview surveys",
+     "Uplift vs no AI": "\u2014", "Drop-in replacement?": "\u2014"},
+]
+
+# Why the series above doesn't stack, in the report's own terms.
+_RSI_SURVEY_NOTES = [
+    ("The sample changes.", "Opus 4.5 surveyed superusers, Opus 4.6 was deliberately "
+     "broader and produced lower numbers, and Mythos Preview's 4x came from a "
+     "self-selected opt-in poll with 130 responders."),
+    ("The substitution question changes.", "\"Could it completely automate a junior ML "
+     "researcher *today*\" (Opus 4 / 4.5) became \"could it be *made into* a drop-in L4 "
+     "within 3 months of scaffolding, at >50% probability\" (Opus 4.6, Mythos Preview). "
+     "The second is a forecast, and Anthropic flags that respondents are untrained "
+     "forecasters given ~10 minutes."),
+    ("Anthropic itself now distrusts the series.", "Per the Aug 2026 Risk Report, "
+     "respondents may overestimate uplift on tasks they chose to delegate and "
+     "underestimate it where the gain is in latency; uplift on individual tasks does "
+     "not translate directly into acceleration of research progress; and the surveys "
+     "are \"somewhat informative\" but have been deprioritized in favour of the other "
+     "evidence in \u00a73.4."),
+]
+
+
 @st.cache_data
 def load_rsi_data():
     models = [{
@@ -5022,6 +5093,39 @@ def render_rsi():
         "release date isn't on the record: Mythos Preview has no published release "
         "record, and Model 2 is unreleased with its name redacted. "
         f"Source: [Anthropic, Redacted Risk Report, August 2026, §3.4.3]({_RSI_SOURCE_URL}).")
+
+    _render_rsi_survey()
+
+
+def _render_rsi_survey():
+    """The other substitution series in the report: the internal staff survey.
+
+    Deliberately a table, not a chart — see `_RSI_SURVEY`.
+    """
+    st.markdown("---")
+    st.subheader("Comparable metric: the internal staff survey")
+    st.markdown(
+        "The most directly labor-substitution-relevant series Anthropic has run: a "
+        "survey of its own technical staff, per frontier model from Opus 4 through "
+        "Mythos Preview, then discontinued.")
+    st.table(_RSI_SURVEY)
+
+    st.markdown("**Comparability: partial, and degrading.** "
+                "The uplift question — how much faster are you with the model than "
+                "with no AI assistance — is stable across every round, and the "
+                "numbers are roughly stackable: median 100% at Opus 4.5, median 100% "
+                "at Opus 4.6, geometric mean ~4x at Mythos Preview. Three things move "
+                "underneath it.")
+    for i, (head, body) in enumerate(_RSI_SURVEY_NOTES, 1):
+        st.markdown(f"{i}. **{head}** {body}")
+
+    st.caption(
+        "Fine print: per-model rows come from the corresponding Claude system cards; "
+        "the Mythos Preview polls and the assessment of the series are from "
+        f"[Anthropic, Redacted Risk Report, August 2026, §3.4.2]({_RSI_SOURCE_URL}). "
+        "The series is not charted on purpose — the sample and the question both "
+        "change between rounds, so a single line through these numbers would assert "
+        "a trend the source itself disclaims.")
 
 
 # ── UK Cyber (AISI narrow cyber tasks) ───────────────────────────────────
