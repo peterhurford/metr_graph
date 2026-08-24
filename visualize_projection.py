@@ -9677,6 +9677,10 @@ def _cc_cn_target_years(anchor_eci, target, algo_lo, algo_mid, algo_hi,
     return years, rates
 
 
+# The four rate terms of _cc_cn_crossing_sim, in the order they are summed.
+_CC_CHANNELS = ('compute', 'innovation', 'diffusion', 'distillation')
+
+
 def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         g_lo, g_hi, algo_lo, algo_mid, algo_hi,
                         inno_lo, inno_hi, pace_lo, pace_hi,
@@ -9684,7 +9688,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         us_pause_level=None, pure_lo=None, pure_hi=None,
                         t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS,
                         t_dist_stop=None, comp_dead=None, comp_slow=None,
-                        dist_teacher=None):
+                        dist_teacher=None, channels=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -9713,6 +9717,11 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     `dist_teacher` (scalar or per-sample) caps the level the distillation
     gap sees: the best *queryable* model when the true frontier is withheld,
     so distillation dries up at the teacher's level, below the bar.
+
+    Pass a dict as `channels` to have it filled with the four rate terms'
+    *cumulative* ECI contributions, each an (n, len(grid)) array summing to
+    `traj − anchor_eci` — what the Pacing tab's breakdown reads to say which
+    channel closed the gap. Off by default: four more arrays of traj's size.
 
     Returns (years, grid_yrs, traj): crossing years incl. the release wait
     (NaN = not crossed within horizon), the monthly time grid, and the
@@ -9746,6 +9755,9 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     grid = np.arange(steps + 1) * dt
     traj = np.empty((n, steps + 1))
     traj[:, 0] = anchor_eci
+    if channels is not None:
+        for _k in _CC_CHANNELS:
+            channels[_k] = np.zeros((n, steps + 1))
     e = np.full(n, float(anchor_eci))
     years = np.full(n, np.nan)
     us_rate = np.asarray(us_rate)      # scalar or per-sample array
@@ -9764,8 +9776,12 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                   else comp_slow[1])
         c_on = (0.0 if comp_dead is not None
                 and comp_dead[0] <= grid[i - 1] < comp_dead[1] else 1.0)
-        rate = pace * (comp_t * c_on + pure + diffu * d_avail
-                       + dist * d_on * np.minimum(1.0, gap / gap0))
+        parts = (pace * comp_t * c_on, pace * pure, pace * diffu * d_avail,
+                 pace * dist * d_on * np.minimum(1.0, gap / gap0))
+        rate = parts[0] + parts[1] + parts[2] + parts[3]
+        if channels is not None:
+            for _k, _p in zip(_CC_CHANNELS, parts):
+                channels[_k][:, i] = channels[_k][:, i - 1] + _p * dt
         e = e + rate * dt
         traj[:, i] = e
         hit = np.isnan(years) & (e >= target)
@@ -11093,6 +11109,22 @@ def _pc_cross_years(traj, grid, target):
     return np.where(ok, np.where(idx == 0, 0.0, years), np.nan)
 
 
+def _pc_at_years(cum, grid, years):
+    """Per-sample value of a cumulative (n, len(grid)) array at `years`.
+
+    Linear inside the step, matching `_pc_cross_years`' own interpolation, so
+    a channel's contribution is read at exactly the crossing that channel
+    helped produce. NaN where `years` is NaN (never crossed).
+    """
+    yr = np.nan_to_num(np.asarray(years, dtype=float), nan=0.0)
+    dt = grid[1] - grid[0] if len(grid) > 1 else 1.0
+    idx = np.clip((yr / dt).astype(int), 0, len(grid) - 2)
+    rows = np.arange(len(cum))
+    frac = np.clip((yr - grid[idx]) / dt, 0.0, 1.0)
+    out = cum[rows, idx] + frac * (cum[rows, idx + 1] - cum[rows, idx])
+    return np.where(np.isnan(years), np.nan, out)
+
+
 def _pc_tri(lo, hi, n, pad=0.01):
     """Symmetric triangular draw over [lo, hi], as _cc_cn_crossing_sim does it."""
     lo, hi = min(lo, hi), max(lo, hi)
@@ -11245,6 +11277,92 @@ def _pc_when(rec, horizon=None):
 # above the released-frontier extrapolation. Deliberately larger than the
 # 30-day `_CC_RUN_COMPLETION_LAG` prep constant, which excludes the queue.
 _PC_SHIP_LAG_DAYS = 60
+
+
+# Display names for the four rate terms, in _CC_CHANNELS order.
+_PC_CHANNEL_LABELS = {
+    'compute': "Compute — China's own cluster buildout",
+    'innovation': "Indigenous innovation — never dries up",
+    'diffusion': "Diffusion — published US methods, drying up after the pause",
+    'distillation': "Distillation — training against US model outputs",
+}
+
+
+def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
+                   cn_gain, cn_extra, cn_run_mo, us_run_mo, anchor_name,
+                   anchor_d, anchor_eci, horizon_year, notes=()):
+    """Bottom-of-panel breakdown: which channel closed how much of the gap.
+
+    Two readings of the same sampled paths, because neither alone answers
+    "why X months". *ECI closed* is each rate term's cumulative contribution
+    at its own sample's crossing (they sum to the gap exactly — that's the
+    accounting identity the sim is built on). *Without it* re-crosses the
+    path with that term's cumulative subtracted, which is the number a
+    policy question actually asks, and is deliberately **not** additive: the
+    channels interact, so removing compute leaves the gap wider and the
+    distillation term stronger for longer. Both are stated as such.
+
+    `years` is the final crossing (run-length shift included), `years_base`
+    the same without that shift, `target0`/`traj0`/`grid0` the organic bar
+    and paths the channels accumulated against.
+    """
+    ok = np.isfinite(years)
+    if ok.sum() < 100:
+        return
+    total_mo = float(np.median(years[ok])) * 12.0
+
+    def _delta(alt):
+        """Median paired months between an alternative crossing and the real
+        one; None when the alternative mostly never crosses."""
+        both = np.isfinite(alt) & ok
+        return (float(np.median((alt - years)[both])) * 12.0
+                if both.sum() >= 100 else None)
+
+    contrib, rows = {}, []
+    for k in _CC_CHANNELS:
+        contrib[k] = float(np.nanmedian(
+            _pc_at_years(chan[k], grid0, years - cn_extra)))
+    if cn_run_mo != us_run_mo:
+        contrib['run'] = cn_gain
+    total_eci = sum(contrib.values())
+    for k, eci in sorted(contrib.items(), key=lambda kv: -kv[1]):
+        if k == 'run':
+            label = (f"Longer training run — {cn_run_mo} mo instead of "
+                     f"{us_run_mo}")
+            d = _delta(years_base)
+        else:
+            label = _PC_CHANNEL_LABELS[k]
+            d = _delta(_pc_cross_years(traj0 - chan[k], grid0, target0)
+                       + cn_extra)
+        rows.append({
+            "Channel": label,
+            "ECI closed": f"{eci:+.1f}",
+            "Share": f"{eci / total_eci:.0%}" if total_eci else "—",
+            "Without it": (f"not by {horizon_year}" if d is None else
+                           f"{d:+.1f} mo"),
+        })
+    rows.append({"Channel": f"**Total** — the whole gap, closed over "
+                            f"**{total_mo:.1f} months** from "
+                            f"{pretty(anchor_name)} ({anchor_d:%b %Y}, ECI "
+                            f"{anchor_eci:.0f})",
+                 "ECI closed": f"{total_eci:+.1f}",
+                 "Share": "100%", "Without it": "—"})
+    st.markdown("##### Why that long?")
+    st.table(rows)
+    st.caption(
+        f"The {total_mo:.1f} months run from China's last frontier model; "
+        "the card above counts from the *US pause* instead, which falls "
+        "later. Same samples as the chart, so this is a decomposition "
+        "rather than a "
+        "second model. **ECI closed** is each term's cumulative contribution "
+        "at its own sample's crossing; the four sum to the gap by "
+        "construction, which is why the shares are exact. **Without it** "
+        "re-crosses the same paths with that term removed — the number a "
+        "policy question asks — and does *not* add up: kill compute and the "
+        "gap stays wider, so distillation keeps running at full strength "
+        "longer, and the shortfalls partly cover for each other. Median over "
+        "samples, so a row's two columns need not agree in rank."
+        + ("  " + "  ".join(notes) if notes else ""))
 
 
 def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
@@ -11520,14 +11638,18 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
         # Search only as far as the sidebar's projection range, keeping at
         # least a year of grid so a near-term horizon still draws.
         kw['horizon_yrs'] = max((horizon - anchor_d).days / 365.25, 1.0)
+    chan = {}
     years, grid_yrs, traj = _cc_cn_crossing_sim(
-        anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1], **kw)
+        anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
+        channels=chan, **kw)
     # The run-length trade-off, read off the *same* sampled paths so the
     # comparison is paired (no MC noise between the two answers): the bar
-    # drops by cn_gain, then the extra wall clock is added back.
-    years_base = years
+    # drops by cn_gain, then the extra wall clock is added back. The organic
+    # paths are kept for the breakdown, whose channels accumulated on them.
+    years_base, traj0, grid0, target0 = years, traj, grid_yrs, level_s
     if cn_run_mo != us_run_mo:
-        years = _pc_cross_years(traj, grid_yrs, level_s - cn_gain) + cn_extra
+        target0 = level_s - cn_gain
+        years = _pc_cross_years(traj, grid_yrs, target0) + cn_extra
         traj = traj + cn_gain
         grid_yrs = grid_yrs + cn_extra
     # Sensitivity: China's compute term at the catalogued China-accessible
@@ -11755,6 +11877,32 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
            "export-control band, the crossing moves to "
            f"~{d50_ca + off_cn:%b %Y}."
            if d50_ca is not None else ""))
+
+    # ── Why that long? The same samples, decomposed by rate term. ──
+    _notes = []
+    if stop_dist:
+        _notes.append(
+            "Distillation is cut "
+            + ("today" if d_dist <= today else f"{d_dist:%b %Y}")
+            + ", so its row counts only what it closed before then.")
+    if comp_dead is not None:
+        _notes.append(
+            f"Compute contributes nothing between "
+            f"{anchor_d + timedelta(days=comp_dead[0] * 365.25):%b %Y} and "
+            f"{anchor_d + timedelta(days=comp_dead[1] * 365.25):%b %Y} "
+            f"while the {dlvl_oom:.1f} OOM setback is regrown.")
+    elif stop_remote:
+        _notes.append("Compute runs at the domestic pace only.")
+    _notes.append(f"Every row is scaled by the pace band "
+                  f"(×{pace_lo:.2f}–{pace_hi:.2f}), the reality check "
+                  "against China's own observed frontier slope.")
+    _pc_render_why(
+        chan, grid0, traj0, target0, years, years_base,
+        cn_gain=cn_gain, cn_extra=cn_extra, cn_run_mo=cn_run_mo,
+        us_run_mo=us_run_mo, anchor_name=anchor_name, anchor_d=anchor_d,
+        anchor_eci=anchor_eci,
+        horizon_year=(horizon.year if horizon is not None else _PC_HORIZON.year),
+        notes=_notes)
 
 
 def render_pacing():

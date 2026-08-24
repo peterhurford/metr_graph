@@ -1120,6 +1120,12 @@ class TestPacingTab:
         _switch_tab(at, "Pacing")
         return at
 
+    @staticmethod
+    def _entities(at):
+        """The race table, picked by its columns — the pause panel's own
+        breakdown table renders after it, so position is not an address."""
+        return next(t.value for t in at.table if "Entity" in t.value.columns)
+
     def test_us_pause_panel_renders(self):
         """The US-pause counterfactual renders with its crossing metric,
         race chart and assumption caption."""
@@ -1237,6 +1243,44 @@ class TestPacingTab:
         assert mid < base            # a moderate stretch pays
         assert long_run > mid        # a year of wall clock does not
 
+    def test_why_breakdown_tracks_the_sliders(self):
+        """The bottom breakdown decomposes the same crossing: shares sum to
+        the whole gap, and cutting a channel collapses its row — which is
+        the point of having it."""
+        at = self._app()
+
+        def _rows(at):
+            t = next(x.value for x in at.table if "Channel" in x.value.columns)
+            return {r["Channel"].split(" —")[0]:
+                    (float(r["ECI closed"]), r["Share"], r["Without it"])
+                    for _, r in t.iterrows()}
+
+        base = _rows(at)
+        assert set(base) >= {"Compute", "Indigenous innovation", "Diffusion",
+                             "Distillation", "**Total**"}
+        gap = base["**Total**"][0]
+        parts = sum(v[0] for k, v in base.items() if k != "**Total**")
+        assert parts == pytest.approx(gap, abs=0.15)
+        assert all(v[0] > 0 for v in base.values())
+        # Every channel is load-bearing: removing it costs months.
+        for k, v in base.items():
+            if k == "**Total**":
+                continue
+            assert v[2] == "not by 2031" or float(v[2].rstrip(" mo")) > 0, k
+
+        at.checkbox(key="pc_stop_dist").check().run()
+        _assert_no_error(at, "Pacing / why with distillation cut")
+        cut = _rows(at)
+        assert cut["Distillation"][0] < base["Distillation"][0] / 2
+        assert cut["**Total**"][0] == pytest.approx(gap, abs=1.0)
+
+        at.checkbox(key="pc_stop_dist").uncheck().run()
+        at.slider(key="pc_cn_run").set_value(6).run()
+        _assert_no_error(at, "Pacing / why with a 6-month run")
+        run = _rows(at)
+        assert "Longer training run" in run
+        assert run["Longer training run"][0] > 0
+
     def test_pause_dates_follow_timing_in_lockstep(self):
         """'Date points at' shifts both countries' pause-panel dates to the
         chosen milestone (construction → release ≈ run + 1 mo later), while
@@ -1343,7 +1387,7 @@ class TestPacingTab:
         assert len(head) == 1 and "1e28" in head[0]
         assert at.selectbox(key="pc_threshold").value == "1e28"
         assert at.radio(key="pc_run").value == "2-month run"
-        table = at.table[-1].value
+        table = self._entities(at)
         ents = list(table["Entity"])
         # The default roster is companies only; countries live under the
         # 'Country' attribution instead.
@@ -1355,7 +1399,7 @@ class TestPacingTab:
         at = self._app()
         at.radio(key="pc_party").set_value("Country").run()
         _assert_no_error(at, "Pacing / country")
-        ents = list(at.table[-1].value["Entity"])
+        ents = list(self._entities(at)["Entity"])
         assert "United States" in ents
         assert "China-accessible" in ents
         assert "China (domestic only)" in ents
@@ -1381,13 +1425,13 @@ class TestPacingTab:
         at = self._app()
         assert at.selectbox(key="pc_timing").value == \
             "Training run finished"
-        base = dict(zip(at.table[-1].value["Entity"],
-                        at.table[-1].value["Plan crosses"]))
+        base = dict(zip(self._entities(at)["Entity"],
+                        self._entities(at)["Plan crosses"]))
         at.selectbox(key="pc_timing").set_value(
             "Data center construction").run()
         _assert_no_error(at, "Pacing / construction")
-        shifted = dict(zip(at.table[-1].value["Entity"],
-                           at.table[-1].value["Plan crosses"]))
+        shifted = dict(zip(self._entities(at)["Entity"],
+                           self._entities(at)["Plan crosses"]))
         import datetime as _dt
         moved = 0
         for ent, val in base.items():
@@ -1410,11 +1454,11 @@ class TestPacingTab:
 
     def test_operator_attribution_changes_the_roster(self):
         at = self._app()
-        tenant_ents = set(at.table[-1].value["Entity"])
+        tenant_ents = set(self._entities(at)["Entity"])
         at.radio(key="pc_party").set_value(
             "Operator (who owns the building)").run()
         _assert_no_error(at, "Pacing / operator")
-        op_ents = set(at.table[-1].value["Entity"])
+        op_ents = set(self._entities(at)["Entity"])
         # Anthropic's biggest clusters are leased (Colossus, Lake Mariner);
         # under operator attribution the landlords appear instead.
         assert op_ents != tenant_ents

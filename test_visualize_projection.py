@@ -4223,6 +4223,46 @@ class TestPacing:
         assert vp._pc_when_date("nonsense", today) == today
         assert vp._pc_when_date(None, today) == today
 
+    def test_channels_account_for_the_whole_climb(self):
+        """The four channel cumulatives are an exact decomposition of the
+        path — that identity is what makes the breakdown's shares real
+        rather than a second, looser model."""
+        kw = dict(a_partial=8.0, g_lo=0.15, g_hi=0.30, algo_lo=11.0,
+                  algo_mid=12.0, algo_hi=13.0, pace_lo=0.8, pace_hi=1.1,
+                  n=120, inno_lo=8.0, inno_hi=10.0, us_anchor=165.0,
+                  us_rate=25.0, pure_lo=3.0, pure_hi=4.0, t_pause=0.5)
+        chan = {}
+        _, grid, traj = vp._cc_cn_crossing_sim(
+            150.0, 160.0, channels=chan, **kw)
+        assert set(chan) == set(vp._CC_CHANNELS)
+        total = sum(chan[k] for k in vp._CC_CHANNELS)
+        assert np.allclose(total, traj - 150.0)
+        assert all((np.diff(chan[k], axis=1) >= -1e-9).all()
+                   for k in vp._CC_CHANNELS)
+        # Cutting a channel zeroes its column and nothing else's.
+        chan2 = {}
+        vp._cc_cn_crossing_sim(150.0, 160.0, channels=chan2,
+                               t_dist_stop=0.0, **kw)
+        assert chan2['distillation'][:, -1].max() < 1e-9
+        assert chan2['innovation'][:, -1].min() > 0
+        # Omitting the dict costs nothing and changes no result.
+        assert vp._cc_cn_crossing_sim(150.0, 160.0, **kw)[2].shape == \
+            traj.shape
+
+    def test_at_years_reads_a_cumulative_at_the_crossing(self):
+        """_pc_at_years interpolates inside the step, like the crossing
+        itself, and passes NaN through for samples that never cross."""
+        grid = np.arange(5) * 0.25
+        cum = np.array([[0.0, 1.0, 2.0, 3.0, 4.0],
+                        [0.0, 2.0, 4.0, 6.0, 8.0]])
+        got = vp._pc_at_years(cum, grid, np.array([0.375, np.nan]))
+        assert got[0] == pytest.approx(1.5)
+        assert np.isnan(got[1])
+        # Clamped at both ends rather than wrapping.
+        edges = vp._pc_at_years(cum, grid, np.array([0.0, 99.0]))
+        assert edges[0] == pytest.approx(0.0)
+        assert edges[1] == pytest.approx(8.0)   # sample 1's own last step
+
     def test_cross_years_reproduces_the_sims_own_crossings(self):
         """_pc_cross_years re-reads sampled paths against a second bar; on
         the bar the sim itself used it must return the sim's answer, else

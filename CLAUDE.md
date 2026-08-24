@@ -600,6 +600,19 @@ wait** (unlike the CC 161 section — a queue delays both sides alike); dates fo
 sidebar's *Date points at* in lockstep (US events run-finished + `shift − run`, ECI
 release dates + `shift − run − 30d`), so the US–China gap is milestone-invariant; the
 chart (actual points included) rides the same clock, x-axis titled by milestone.
+The panel ends with `_pc_render_why()`, a **decomposition of the same samples**, not a
+second model: `_cc_cn_crossing_sim` fills an optional `channels` dict with the four rate
+terms' cumulative ECI (`_CC_CHANNELS`, summing to `traj − anchor` exactly —
+`test_channels_account_for_the_whole_climb`), `_pc_at_years` reads each at its own
+sample's crossing for the *ECI closed* / *Share* columns, and *Without it* re-crosses
+`traj − channel` via `_pc_cross_years`. The two columns answer different questions and
+**Without it is deliberately non-additive** — kill compute and the gap stays wider, so
+distillation runs at full strength longer; the caption says so. The total's months run
+from China's last model, not from the pause the cards count from — also captioned. A
+longer Chinese run appears as its own row (`years_base` is its counterfactual). Live at
+defaults: innovation 50% (without it, no crossing by 2031), diffusion 19%, compute 17%,
+distillation 14%. Note for tests: this table renders *after* the race table, so address
+the race table by its columns (`TestPacingTab._entities`), never by position.
 China
 races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the
 paused stock stays distillable while a gap remains, then China runs on its
