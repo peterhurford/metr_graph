@@ -4328,6 +4328,42 @@ class TestPacing:
             assert prev is None or med > prev
             prev = med
 
+    def test_rsi_blend_mixes_distributions_not_medians(self):
+        """A mixture keeps each component's spread: shifting weight onto a
+        later milestone moves the blend into its cluster, and the 80% band
+        spans both components rather than collapsing to their mean."""
+        origin = datetime(2026, 8, 24)
+        comps = [("early", "early", origin, np.full(4000, 100.0)),
+                 ("late", "late", origin, np.full(4000, 900.0))]
+        _, med_early, _ = vp._pc_rsi_blend(
+            comps, {"early": 80, "late": 20}, origin, n=8000)
+        lo, med_late, hi = vp._pc_rsi_blend(
+            comps, {"early": 20, "late": 80}, origin, n=8000)
+        assert (med_early - origin).days == 100
+        assert (med_late - origin).days == 900
+        # p10 in one component, p90 in the other — not an average of medians.
+        assert (lo - origin).days == 100 and (hi - origin).days == 900
+
+    def test_rsi_blend_normalises_and_survives_all_zero(self):
+        origin = datetime(2026, 8, 24)
+        comps = [("a", "a", origin, np.full(2000, 100.0)),
+                 ("b", "b", origin, np.full(2000, 300.0))]
+        scaled = vp._pc_rsi_blend(comps, {"a": 300, "b": 100}, origin, n=6000)
+        unscaled = vp._pc_rsi_blend(comps, {"a": 3, "b": 1}, origin, n=6000)
+        assert scaled == unscaled            # only the ratio matters
+        # All-zero falls back to the defaults rather than dividing by zero.
+        assert vp._pc_rsi_blend(comps, {"a": 0, "b": 0}, origin, n=100) is None
+        real = [(s, s, origin, np.full(500, 100.0)) for s in vp._PC_RSI_WEIGHTS]
+        assert vp._pc_rsi_blend(real, {s: 0 for s in vp._PC_RSI_WEIGHTS},
+                                origin, n=500) is not None
+
+    def test_rsi_blend_weights_are_tracked_and_default_to_the_stated_mix(self):
+        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100
+        keys, defaults = vp._all_tracked()
+        for slug, w in vp._PC_RSI_WEIGHTS.items():
+            k = vp._PC_RSI_W_KEY + slug
+            assert k in keys and defaults[k] == w
+
     def test_rsi_eta_reproduces_the_rsi_tab_defaults(self):
         """The CoBench 85% card is the RSI tab at its defaults: single OLS in
         logit space, odds-doubling time over that tab's widened rate CI."""

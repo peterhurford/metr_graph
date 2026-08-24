@@ -11575,10 +11575,29 @@ _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 # The Pacing tab adds a third attribution: entities are countries, with China
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
+# The tentative RSI blend. Each milestone is one operationalization of "the
+# recursive-self-improvement threshold"; the weight is how much credence it
+# gets, and the result is the *mixture* of their date distributions, not an
+# average of their medians — a mixture keeps each component's own spread, so a
+# late-but-uncertain milestone widens the answer instead of just shifting it.
+# Keyed by slug because the card labels are built from the target constants.
+_PC_RSI_WEIGHTS = {
+    "metr_p50": 5.0,
+    "metr_p80": 20.0,
+    "eci_170": 5.0,
+    "eci_195": 20.0,
+    "rli_90": 15.0,
+    "cobench_85": 15.0,
+    "staff_10x": 20.0,
+}
+_PC_RSI_W_KEY = "pc_rsiw_"        # session-state prefix, one float per slug
+
+
 _PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold",
-                  "pc_dist_when", "pc_remote_when", "pc_cn_run"]
+                  "pc_dist_when", "pc_remote_when", "pc_cn_run"] + \
+                 [_PC_RSI_W_KEY + s for s in _PC_RSI_WEIGHTS]
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
 _PC_CN_RUN_MAX = 12           # months: longest Chinese catch-up training run
 _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "2-month run",
@@ -11590,7 +11609,8 @@ _PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "2-month run",
                 "pc_withhold": True,
                 "pc_dist_when": _PC_WHEN_NOW,
                 "pc_remote_when": _PC_WHEN_NOW,
-                "pc_cn_run": 2}
+                "pc_cn_run": 2,
+                **{_PC_RSI_W_KEY + s: w for s, w in _PC_RSI_WEIGHTS.items()}}
 _PC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
 
@@ -11784,6 +11804,60 @@ def _pc_projection(rows, dcs, today, since=None, ref_steps=None,
     return grid, out
 
 
+def _pc_render_rsi_blend(components, origin):
+    """The weighted blend of the milestone ETAs, plus its own weights editor."""
+    # Read before the editor renders: Streamlit has already applied any change
+    # to session state by the time this run reaches the widgets below.
+    weights = {slug: float(st.session_state.get(_PC_RSI_W_KEY + slug,
+                                                _PC_RSI_WEIGHTS.get(slug, 0.0)))
+               for slug, _, _, _ in components}
+    blend = _pc_rsi_blend(components, weights, origin)
+    if blend is None:
+        return
+    early, med, late = blend
+
+    st.subheader("RSI projection (tentative)")
+    _b1, _b2 = st.columns(2)
+    with _b1:
+        st.metric("Blended median", med.strftime('%b %Y'))
+    with _b2:
+        st.metric("80% CI", f"{early:%b %Y} \u2013 {late:%b %Y}")
+
+    _total = sum(weights.values()) or 1.0
+    st.table([{
+        "Milestone": lab,
+        "Weight": f"{weights[slug] / _total * 100:.0f}%",
+        "Median": _pc_eta_dates(a, d)[1].strftime('%b %Y'),
+        "80% CI": "{:%b %Y} \u2013 {:%b %Y}".format(*_pc_eta_dates(a, d)[::2]),
+    } for slug, lab, a, d in components])
+
+    st.caption(
+        "No single benchmark defines recursive self-improvement, so this treats each "
+        "milestone as one candidate definition and the weight as how much credence it "
+        "gets. The result is the mixture of their date distributions, not an average "
+        "of the medians — each component keeps its own spread, so a late and uncertain "
+        "milestone widens the blend rather than just pushing it back. The weights are "
+        "a starting point, not a result; edit them below.")
+
+    with st.expander("Set your own weights"):
+        # Assign the defaults rather than popping the keys: a popped key is
+        # re-hydrated straight back out of the URL on the next run, so the
+        # reset would never take on a shared link.
+        st.button("Reset weights", key="reset_pc_rsiw",
+                  on_click=lambda: st.session_state.update(
+                      {_PC_RSI_W_KEY + s: _PC_RSI_WEIGHTS.get(s, 0.0)
+                       for s, _, _, _ in components}))
+        cols = st.columns(min(len(components), 4))
+        for i, (slug, lab, _, _) in enumerate(components):
+            _ss_number_input(
+                cols[i % len(cols)], lab, _PC_RSI_W_KEY + slug,
+                _PC_RSI_WEIGHTS.get(slug, 0.0),
+                min_value=0.0, max_value=100.0, step=5.0)
+        st.caption(f"Entered weights total {sum(weights.values()):.0f}; they are "
+                   "normalised, so any scale works. All zero falls back to the "
+                   "defaults above.")
+
+
 def _pc_when(rec, horizon=None):
     """One phrase for when an entity crosses, whatever its state."""
     if rec['crossed']:
@@ -11799,7 +11873,25 @@ _PC_METR_TARGET_HRS = 40.0
 _PC_METR_LEVELS = (("p50", "p50_min"), ("p80", "p80_min"))
 
 
-def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None):
+def _pc_eta_out(anchor_date, days_to, samples):
+    """Milestone ETA output: percentile dates, or the raw samples.
+
+    The RSI blend below mixes these distributions, so it needs the samples
+    themselves — and must read the *same* draw the card above it reports,
+    or the blend and its own row would disagree.
+    """
+    if samples:
+        return anchor_date, days_to
+    return _pc_eta_dates(anchor_date, days_to)
+
+
+def _pc_eta_dates(anchor_date, days_to):
+    return tuple(anchor_date + timedelta(days=float(d))
+                 for d in np.percentile(days_to, [10, 50, 90]))
+
+
+def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
+                 samples=False):
     """(early, median, late) dates for the METR frontier to reach `target_hrs`.
 
     Reproduces `render_metr()` at its defaults — piecewise linear broken at
@@ -11828,8 +11920,7 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None):
     sigma = max((np.log(pos_hi) - np.log(pos_lo)) / (2 * 1.282), 0.0)
     start_hrs = np.random.lognormal(np.log(fitted_hrs), sigma, n)
     days_to = np.log2(target_hrs / start_hrs) * proj_dt
-    return tuple(cur['date'] + timedelta(days=float(d))
-                 for d in np.percentile(days_to, [10, 50, 90]))
+    return _pc_eta_out(cur['date'], days_to, samples)
 
 
 # The ECI companions, on the US-best frontier the ECI tab defaults to. 170 is
@@ -11840,7 +11931,7 @@ _PC_ECI_TARGETS = (170.0, 195.0)
 _PC_ECI_POS_CI = 2.0     # the ECI tab's default position CI, fitted score +/- 2
 
 
-def _pc_eci_eta(frontier, target, n=None):
+def _pc_eci_eta(frontier, target, n=None, samples=False):
     """(early, median, late) dates for an ECI frontier to reach `target`.
 
     The ECI tab at its defaults — single OLS, +Pts/Yr lognormal over
@@ -11860,8 +11951,7 @@ def _pc_eci_eta(frontier, target, n=None):
     fitted = np.mean(scores - slope * days) + slope * days[-1]
     start = np.random.normal(fitted, _PC_ECI_POS_CI / 1.282, n)
     days_to = np.maximum((target - start) * proj_dpp, 0.0)
-    return tuple(frontier[-1]['date'] + timedelta(days=float(d))
-                 for d in np.percentile(days_to, [10, 50, 90]))
+    return _pc_eta_out(frontier[-1]['date'], days_to, samples)
 
 
 # The RLI companion, on the same frontier its tab charts. 90% is above the
@@ -11871,7 +11961,7 @@ _PC_RLI_TARGET_PCT = 90.0
 _PC_RLI_POS_CI = 1.0     # the RLI tab's default position CI, fitted score +/- 1pt
 
 
-def _pc_rli_eta(frontier, target_pct=_PC_RLI_TARGET_PCT, n=None):
+def _pc_rli_eta(frontier, target_pct=_PC_RLI_TARGET_PCT, n=None, samples=False):
     """(early, median, late) dates for the RLI frontier to reach `target_pct`.
 
     The RLI tab at its defaults — single OLS in logit space, odds-doubling
@@ -11895,8 +11985,7 @@ def _pc_rli_eta(frontier, target_pct=_PC_RLI_TARGET_PCT, n=None):
     pos_hi = _logit(round(cur + _PC_RLI_POS_CI, 2) / 100)
     start = np.random.normal(fitted, max((pos_hi - pos_lo) / (2 * 1.282), 0), n)
     days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
-    return tuple(frontier[-1]['date'] + timedelta(days=float(d))
-                 for d in np.percentile(days_to, [10, 50, 90]))
+    return _pc_eta_out(frontier[-1]['date'], days_to, samples)
 
 
 # The CoBench companion, on the RSI tab's own frontier. The target is
@@ -11904,7 +11993,7 @@ def _pc_rli_eta(frontier, target_pct=_PC_RLI_TARGET_PCT, n=None):
 _PC_RSI_POS_CI = 10.0    # the RSI tab's default position CI, fitted score +/- 10pts
 
 
-def _pc_rsi_eta(frontier, target_pct=_RSI_SUBSTITUTION_BAR, n=None):
+def _pc_rsi_eta(frontier, target_pct=_RSI_SUBSTITUTION_BAR, n=None, samples=False):
     """(early, median, late) dates for the CoBench frontier to reach `target_pct`.
 
     The RSI tab at its defaults — single OLS in logit space, odds-doubling time
@@ -11925,8 +12014,7 @@ def _pc_rsi_eta(frontier, target_pct=_RSI_SUBSTITUTION_BAR, n=None):
     pos_hi = _logit(round(min(cur['cobench'] + _PC_RSI_POS_CI, 99.0), 1) / 100)
     start = np.random.normal(fitted, max((pos_hi - pos_lo) / (2 * 1.282), 0), n)
     days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
-    return tuple(cur['date'] + timedelta(days=float(d))
-                 for d in np.percentile(days_to, [10, 50, 90]))
+    return _pc_eta_out(cur['date'], days_to, samples)
 
 
 # The staff-survey companion: when do Anthropic researchers self-report this
@@ -11936,7 +12024,8 @@ def _pc_rsi_eta(frontier, target_pct=_RSI_SUBSTITUTION_BAR, n=None):
 _PC_RSI_SURVEY_TARGET_X = 10.0
 
 
-def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None):
+def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
+                       samples=False):
     """(early, median, late) dates for self-reported speedup to reach `target_x`.
 
     The RSI tab's survey fan at its defaults — OLS on log(multiple), doubling
@@ -11957,8 +12046,38 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None):
     fitted = intercept + slope * (rows[-1]['date'] - base).days
     start = np.random.normal(fitted, np.log(_RSI_SURVEY_POS_FACTOR) / 1.282, n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
-    return tuple(rows[-1]['date'] + timedelta(days=float(d))
-                 for d in np.percentile(days_to, [10, 50, 90]))
+    return _pc_eta_out(rows[-1]['date'], days_to, samples)
+
+
+def _pc_rsi_blend(components, weights, origin, n=None):
+    """Mix the milestone ETAs into one date distribution.
+
+    `components` is [(slug, label, anchor_date, days_to)]; weights need not sum
+    to anything in particular — zero-weight components drop out, and all-zero
+    falls back to the default weighting rather than dividing by zero. Returns
+    (early, median, late) dates, or None if nothing is left to mix.
+    """
+    n = n or N_SAMPLES
+    picks = [(c, max(float(weights.get(c[0], 0.0)), 0.0)) for c in components]
+    total = sum(w for _, w in picks)
+    if total <= 0:
+        picks = [(c, _PC_RSI_WEIGHTS.get(c[0], 0.0)) for c in components]
+        total = sum(w for _, w in picks)
+    picks = [(c, w) for c, w in picks if w > 0]
+    if not picks:
+        return None
+    # Everything on one clock so components with different anchors can mix.
+    pools = [np.array([(c[2] - origin).days], dtype=float) + c[3]
+             for c, _ in picks]
+    p = np.array([w for _, w in picks], dtype=float) / total
+    idx = np.random.choice(len(pools), size=n, p=p)
+    out = np.empty(n, dtype=float)
+    for i, pool in enumerate(pools):
+        m = idx == i
+        if m.any():
+            out[m] = np.random.choice(pool, int(m.sum()), replace=True)
+    return tuple(origin + timedelta(days=float(d))
+                 for d in np.percentile(out, [10, 50, 90]))
 
 
 # Realized ship lag of a US frontier model — run finished to public release,
@@ -12697,29 +12816,35 @@ def render_pacing():
     st.header("Pacing")
 
     # ── Capability milestones: METR 40h, ECI 170, RLI 90%, CoBench 85% and 10x staff speedup ──
-    _cap_etas = [(f"METR {lab} horizon reaches 40h",
-                  _pc_metr_eta(frontier_all, k)) for lab, k in _PC_METR_LEVELS]
+    _cap = [(f"metr_{lab}", f"METR {lab} horizon reaches 40h",
+             _pc_metr_eta(frontier_all, k, samples=True))
+            for lab, k in _PC_METR_LEVELS]
     _eci_fr = _eci_entity_data("US best")[1]
-    _cap_etas += [(f"US ECI reaches {t:.0f}", _pc_eci_eta(_eci_fr, t))
-                  for t in _PC_ECI_TARGETS]
-    _cap_etas.append((f"RLI reaches {_PC_RLI_TARGET_PCT:.0f}%",
-                      _pc_rli_eta(rli_frontier_all)))
-    _cap_etas.append((f"CoBench reaches {_RSI_SUBSTITUTION_BAR:.0f}%",
-                      _pc_rsi_eta(rsi_frontier_all)))
-    _cap_etas.append((f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
-                      _pc_rsi_survey_eta(load_rsi_survey())))
-    _cap_etas = [(lab, eta) for lab, eta in _cap_etas if eta is not None]
-    if _cap_etas:
+    _cap += [(f"eci_{t:.0f}", f"US ECI reaches {t:.0f}",
+              _pc_eci_eta(_eci_fr, t, samples=True)) for t in _PC_ECI_TARGETS]
+    _cap.append((f"rli_{_PC_RLI_TARGET_PCT:.0f}",
+                 f"RLI reaches {_PC_RLI_TARGET_PCT:.0f}%",
+                 _pc_rli_eta(rli_frontier_all, samples=True)))
+    _cap.append((f"cobench_{_RSI_SUBSTITUTION_BAR:.0f}",
+                 f"CoBench reaches {_RSI_SUBSTITUTION_BAR:.0f}%",
+                 _pc_rsi_eta(rsi_frontier_all, samples=True)))
+    _cap.append((f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x",
+                 f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
+                 _pc_rsi_survey_eta(load_rsi_survey(), samples=True)))
+    _cap = [(slug, lab, r[0], r[1]) for slug, lab, r in _cap if r is not None]
+    if _cap:
         st.subheader("Capabilities Milestones")
         # Two rows: seven cards on one line squeeze every label to two words.
-        _per_row = -(-len(_cap_etas) // 2)
-        for _start in range(0, len(_cap_etas), _per_row):
-            _chunk = _cap_etas[_start:_start + _per_row]
-            for col, (lab, (early, med, late)) in zip(
-                    st.columns(_per_row), _chunk):
+        _per_row = -(-len(_cap) // 2)
+        for _start in range(0, len(_cap), _per_row):
+            _chunk = _cap[_start:_start + _per_row]
+            for col, (_, lab, _anchor, _days) in zip(st.columns(_per_row), _chunk):
+                early, med, late = _pc_eta_dates(_anchor, _days)
                 with col:
                     st.metric(lab, med.strftime('%b %Y'))
                     st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")
+
+        _pc_render_rsi_blend(_cap, _today)
 
     # ── Entities and projections ──
     run_days = _DAYS_6MO if key == 'train_flop_6mo' else _DAYS_2MO

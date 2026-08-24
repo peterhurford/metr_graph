@@ -608,7 +608,21 @@ milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
 `test_rli_eta_reproduces_the_rli_tab_defaults` and
 `test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that; the cross-tab
 `test_pacing_quotes_the_same_milestone` compares the two CoBench dates with a
-tolerance, since both are Monte Carlo medians off an unseeded RNG. The compute half's
+tolerance, since both are Monte Carlo medians off an unseeded RNG. Under the cards sits *RSI projection (tentative)* (`_pc_render_rsi_blend()`):
+no single benchmark defines the threshold, so each milestone is treated as one
+candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets. The result
+is `_pc_rsi_blend()`, the **mixture of their date distributions, not an average
+of their medians** — each component keeps its own spread, so a late-but-uncertain
+milestone widens the blend instead of only shifting it, which an average of the
+medians cannot express. Three things are load-bearing. The eta functions take
+`samples=True` (via `_pc_eta_out`) so the blend mixes the *same* draw the cards
+report, rather than re-rolling and disagreeing with its own table. Weights are
+keyed by slug, not by the card label, because the labels are built from the
+target constants. And the weights editor's reset **assigns the defaults rather
+than popping the keys** — a popped key is re-hydrated straight back out of the
+URL on the next run, so on a shared link the reset would never take.
+
+The compute half's
 headline is the US-vs-China line, so it renders only under the `Country`
 attribution; the threshold reaches the display through the chart title.
 
