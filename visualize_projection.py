@@ -541,6 +541,65 @@ def load_rli_data():
     return models
 
 
+# ── CoBench (Anthropic internal AI R&D eval) ─────────────────────────────
+# CoBench places a model at a historical snapshot of Anthropic's codebase,
+# logs, internal messaging and docs and asks it to diagnose the root cause of
+# an issue Anthropic engineers actually solved; 449 problems, model-graded
+# against the root cause found in practice. The set is filtered for difficulty
+# (mostly problems Mythos Preview failed at least once in three tries) and run
+# at a 300k-token budget, so scores are not comparable to public AI R&D
+# suites. Anthropic states that a model able to fully substitute for its
+# research staff would score at least _RSI_SUBSTITUTION_BAR.
+#
+# Source: Anthropic, Redacted Risk Report (August 2026), §3.4.3 / Fig 3.4.3.A.
+# Scores are read off that figure; Anthropic prints no table.
+#
+# `date_known` False marks a release date the record does not pin down, and is
+# what puts the "~" in front of a date wherever it renders. Mythos Preview has
+# no published release record (its date is carried over from AISI's narrow
+# cyber figure, same as in aisi_cyber_tlo.csv); Model 2 is unreleased and its
+# name redacted in the report, so its date is an estimate.
+
+_RSI_SOURCE_URL = ("https://www-cdn.anthropic.com/f61d49fa5596956a5dec75fea0e973bf6a6a8378/"
+                   "Redacted%20Risk%20Report%20August%202026%20.pdf#page=98.55")
+
+# Anthropic's own bar: the score it thinks a model that could fully substitute
+# for its Research Scientists and Engineers would reach.
+_RSI_SUBSTITUTION_BAR = 85.0
+
+_RSI_RAW = [
+    {"name": "Claude Opus 4.6",       "date": "2026-02-05", "cobench": 15.6, "date_known": True},
+    {"name": "Claude Mythos Preview", "date": "2026-04-07", "cobench": 54.8, "date_known": False},
+    {"name": "Claude Mythos 5",       "date": "2026-06-09", "cobench": 50.3, "date_known": True},
+    {"name": "Model 2",               "date": "2026-07-06", "cobench": 62.8, "date_known": False},
+]
+
+
+def _rsi_date_label(m, fmt='%b %d, %Y'):
+    """Date string, prefixed "~" when the release date isn't on the record."""
+    return ("" if m['date_known'] else "~") + m['date'].strftime(fmt)
+
+
+@st.cache_data
+def load_rsi_data():
+    models = [{
+        'name': r['name'],
+        'date': datetime.strptime(r['date'], '%Y-%m-%d'),
+        'cobench': r['cobench'],
+        'date_known': r['date_known'],
+    } for r in _RSI_RAW]
+    models.sort(key=lambda m: m['date'])
+
+    # Frontier detection: running max, same convention as every other tab.
+    max_score = -float('inf')
+    for m in models:
+        m['is_frontier'] = m['cobench'] > max_score
+        if m['is_frontier']:
+            max_score = m['cobench']
+
+    return models
+
+
 # ── AISI narrow cyber tasks ──────────────────────────────────────────────
 # Average success rate on 70 of AISI's narrow cyber tasks. Unlike every other
 # feed in this app, AISI publishes no numbers for this chart -- the values in
@@ -1931,6 +1990,9 @@ rli_all = load_rli_data()
 rli_frontier_all = [m for m in rli_all if m['is_frontier']]
 rli_frontier_names = [m['name'] for m in rli_frontier_all]
 
+rsi_all = load_rsi_data()
+rsi_frontier_all = [m for m in rsi_all if m['is_frontier']]
+
 dc_all = load_data_centers(_mtime=_dc_mtime())
 
 ukc_all = load_ukcyber(_mtime=_ukc_mtime())
@@ -1940,8 +2002,8 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "UK Cyber", "Employment", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing"]
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "UK Cyber": "ukcyber", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute/capabilities/diffusion": "computecap", "Pacing": "pacing"}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "RSI", "UK Cyber", "Employment", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing"]
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "RSI": "rsi", "UK Cyber": "ukcyber", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute/capabilities/diffusion": "computecap", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 
 # Read ?tab= from URL for deep-linking
@@ -4705,6 +4767,261 @@ def render_rli():
             st.table(arrival_rows)
 
     st.caption("Fine print: RLI = Remote Labor Index (remotelabor.ai). Projections use logit-space fitting to keep scores bounded 0\u2013100%." + PROJ_DISCLAIMER)
+
+
+# ── RSI (CoBench: automating Anthropic's own AI R&D) ─────────────────────
+
+_RSI_RESET_KEYS = [
+    "rsi_labels", "rsi_show_bar", "rsi_end_year",
+    "rsi_custom_dt_lo", "rsi_custom_dt_hi", "rsi_custom_dt_dist",
+    "rsi_custom_pos_lo", "rsi_custom_pos_hi",
+]
+
+_RSI_DEFAULTS = {
+    "rsi_labels": True,
+    "rsi_show_bar": True,
+    "rsi_end_year": 2028,
+    "rsi_custom_dt_dist": "Lognormal",
+}
+
+
+def _rsi_fit(frontier):
+    """OLS through the frontier in logit space.
+
+    CoBench is a bounded success rate, so the trend is fitted on the log-odds
+    the way RLI and UK Cyber are — a score-space line runs through 100%.
+    Returns (base_date, intercept, slope_per_day).
+    """
+    base = frontier[0]['date']
+    days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+    logit = _logit(np.array([m['cobench'] / 100 for m in frontier]))
+    if len(frontier) < 2:
+        return base, logit[0], 0.0
+    params = fit_line(days, logit)
+    return base, params[0], params[1]
+
+
+def _rsi_dt_ci(frontier, fit_dt):
+    """Default 80% CI on the odds-doubling time, in days.
+
+    Every other tab defaults to the fitted rate halved and doubled, which
+    assumes enough points for the fit to mean something. Three frontier points
+    whose two segments disagree by ~8x do not, so the consecutive-segment rates
+    widen that interval wherever they fall outside it — never narrow it.
+    """
+    lo, hi = max(5.0, fit_dt / 2), fit_dt * 2
+    for a, b in zip(frontier, frontier[1:]):
+        d = (b['date'] - a['date']).days
+        gain = _logit(b['cobench'] / 100) - _logit(a['cobench'] / 100)
+        if d <= 0 or gain <= 0:
+            continue
+        seg_dt = np.log(2) * d / gain
+        lo, hi = min(lo, seg_dt), max(hi, seg_dt)
+    return float(round(max(5.0, lo))), float(round(hi))
+
+
+def render_rsi():
+    if st.session_state.pop("_reset_rsi", False):
+        for k in _RSI_RESET_KEYS:
+            st.session_state.pop(k, None)
+        st.session_state.update(_RSI_DEFAULTS)
+        st.rerun()
+
+    for k, v in _RSI_DEFAULTS.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+    _base, _intercept, _slope = _rsi_fit(rsi_frontier_all)
+    _fit_dt = round(np.log(2) / _slope) if _slope > 0 else 200
+    current = rsi_frontier_all[-1]
+
+    with st.sidebar:
+        st.header("RSI Projection")
+        rsi_end_year = st.selectbox("Project through", [2027, 2028, 2029, 2030, 2031],
+                                    key="rsi_end_year")
+        rsi_labels = st.checkbox("Show model labels", key="rsi_labels")
+        rsi_show_bar = st.checkbox(
+            f"Show {_RSI_SUBSTITUTION_BAR:.0f}% substitution bar", key="rsi_show_bar",
+            help="Anthropic's stated score for a model that could fully substitute "
+                 "for its Research Scientists and Engineers.")
+
+        with st.expander("Advanced options"):
+            st.button("Reset to defaults", key="reset_rsi",
+                      on_click=lambda: st.session_state.update(_reset_rsi=True))
+            _default_dt_lo, _default_dt_hi = _rsi_dt_ci(rsi_frontier_all, _fit_dt)
+            _dt_lo_col, _dt_hi_col = st.columns(2)
+            rsi_dt_lo = _ss_number_input(
+                _dt_lo_col, "Odds 2x time CI low (days)", "rsi_custom_dt_lo",
+                _default_dt_lo, min_value=5.0, max_value=2000.0,
+                step=5.0, help="Fast scenario: days for the odds p/(1-p) to double.")
+            rsi_dt_hi = _ss_number_input(
+                _dt_hi_col, "Odds 2x time CI high (days)", "rsi_custom_dt_hi",
+                _default_dt_hi, min_value=5.0, max_value=5000.0, step=5.0,
+                help="Slow scenario. The default 80% CI is the fitted rate halved "
+                     "and doubled, widened to span the consecutive-segment rates.")
+            rsi_dt_dist = st.selectbox("Rate distribution", ["Lognormal", "Normal"],
+                                       key="rsi_custom_dt_dist")
+            _pos_lo_col, _pos_hi_col = st.columns(2)
+            rsi_pos_lo = _ss_number_input(
+                _pos_lo_col, "Start CI low (%)", "rsi_custom_pos_lo",
+                float(round(max(1.0, current['cobench'] - 10), 1)),
+                min_value=0.5, max_value=99.0, step=1.0,
+                help="80% CI on where the frontier actually stands today.")
+            rsi_pos_hi = _ss_number_input(
+                _pos_hi_col, "Start CI high (%)", "rsi_custom_pos_hi",
+                float(round(min(99.0, current['cobench'] + 10), 1)),
+                min_value=0.5, max_value=99.5, step=1.0)
+
+    st.header("CoBench: diagnosing real Anthropic R&D issues")
+    st.markdown(
+        "Recursive self-improvement runs through a lab automating its own research. "
+        "CoBench is Anthropic's internal measure of that: a model is dropped into a "
+        "historical snapshot of Anthropic's codebase, logs, internal messaging and "
+        "docs, and asked to diagnose the root cause of an issue Anthropic engineers "
+        "actually solved. 449 problems, model-graded against the root cause found in "
+        "practice.")
+
+    best = max(rsi_all, key=lambda m: m['cobench'])
+    _c1, _c2, _c3 = st.columns(3)
+    with _c1:
+        st.metric("Best CoBench score", f"{best['cobench']:.1f}%")
+        st.caption(f"{best['name']} · {_rsi_date_label(best, '%b %Y')}")
+    with _c2:
+        st.metric("Full-substitution bar", f"{_RSI_SUBSTITUTION_BAR:.0f}%")
+        st.caption("Anthropic's own estimate")
+    with _c3:
+        st.metric("Gap remaining",
+                  f"{_RSI_SUBSTITUTION_BAR - best['cobench']:.1f} pts")
+        st.caption("From the best measured model")
+
+    # ── Trajectories ─────────────────────────────────────────────────────
+    if rsi_dt_lo > rsi_dt_hi:
+        rsi_dt_lo, rsi_dt_hi = rsi_dt_hi, rsi_dt_lo
+    if rsi_pos_lo > rsi_pos_hi:
+        rsi_pos_lo, rsi_pos_hi = rsi_pos_hi, rsi_pos_lo
+
+    n = N_SAMPLES
+    proj_dt = (_lognormal_from_ci(rsi_dt_lo, rsi_dt_hi, n) if rsi_dt_dist == "Lognormal"
+               else _normal_from_ci(rsi_dt_lo, rsi_dt_hi, n))
+    proj_dt = np.maximum(proj_dt, 1.0)
+    proj_slope = np.log(2) / proj_dt
+
+    _pos_sigma = (_logit(rsi_pos_hi / 100) - _logit(rsi_pos_lo / 100)) / (2 * 1.282)
+    _fitted_logit = _intercept + _slope * (current['date'] - _base).days
+    proj_start_logit = np.random.normal(_fitted_logit, max(_pos_sigma, 0), n)
+
+    proj_end_date = datetime(rsi_end_year, 12, 31)
+    proj_days = np.arange(0, (proj_end_date - current['date']).days + 1, dtype=float)
+    proj_dates = [current['date'] + timedelta(days=int(d)) for d in proj_days]
+    traj = _inv_logit(proj_start_logit[:, None] + proj_days[None, :] * proj_slope[:, None]) * 100
+
+    pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
+
+    fig = go.Figure()
+    for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
+                                 (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
+                                 (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+        fig.add_trace(go.Scatter(
+            x=proj_dates + proj_dates[::-1],
+            y=list(pct[hi]) + list(pct[lo][::-1]),
+            fill='toself', fillcolor=color, line=dict(width=0),
+            name=label, hoverinfo='skip', showlegend=True))
+
+    # Fitted trend through the recorded frontier, then the median projection.
+    _hist_days = np.arange(0, (current['date'] - _base).days + 1, dtype=float)
+    _hist_y = _inv_logit(_intercept + _slope * _hist_days) * 100
+    _hist_dates = [_base + timedelta(days=int(d)) for d in _hist_days]
+    fig.add_trace(go.Scatter(
+        x=_hist_dates, y=_hist_y.tolist(), mode='lines',
+        line=dict(color='#2c3e50', width=2.5),
+        name=f"Fitted trend (2x odds: {_fit_dt:.0f}d)",
+        hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
+                   for d, y in zip(_hist_dates, _hist_y)],
+        hoverinfo='text'))
+    fig.add_trace(go.Scatter(
+        x=proj_dates, y=pct[50].tolist(), mode='lines',
+        line=dict(color='#2c3e50', width=2.5, dash='dash'),
+        name='Median projection',
+        hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}%"
+                   for d, y in zip(proj_dates, pct[50])],
+        hoverinfo='text'))
+
+    for m in rsi_all:
+        _is_fr = m['is_frontier']
+        fig.add_trace(go.Scatter(
+            x=[m['date']], y=[m['cobench']],
+            mode='markers' + ('+text' if rsi_labels else ''),
+            marker=dict(color='#4F8DFD' if _is_fr else '#aaaaaa', size=12,
+                        symbol='circle' if _is_fr else 'circle-open',
+                        line=dict(color='white' if _is_fr else '#777777', width=2)),
+            text=[m['name']] if rsi_labels else None,
+            textposition='top center',
+            textfont=dict(size=10, color='#1a1a2e' if _is_fr else '#999999'),
+            hovertext=f"{m['name']}<br>{_rsi_date_label(m)}<br>"
+                      f"CoBench: {m['cobench']:.1f}%",
+            hoverinfo='text', showlegend=False))
+
+    if rsi_show_bar:
+        fig.add_hline(
+            y=_RSI_SUBSTITUTION_BAR, line=dict(color='#e74c3c', width=1.5, dash='dash'),
+            annotation_text=f"{_RSI_SUBSTITUTION_BAR:.0f}% — full substitution for "
+                            "Anthropic research staff",
+            annotation_position="top left",
+            annotation_font=dict(size=11, color='#e74c3c'))
+
+    fig.update_layout(
+        height=600,
+        margin=dict(l=50, r=60, t=50, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(title="Release date",
+                   range=[rsi_all[0]['date'] - timedelta(days=25),
+                          proj_end_date + timedelta(days=25)],
+                   gridcolor='rgba(0,0,0,0.1)',
+                   tickfont=dict(color='#1a1a2e'), zeroline=False,
+                   title_font=dict(color='#1a1a2e')),
+        yaxis=dict(title="CoBench score (%)", range=[0, 100],
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False, ticksuffix='%',
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        hovermode='closest',
+        legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
+                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+        plot_bgcolor='white', paper_bgcolor='white')
+    st.plotly_chart(fig, width="stretch")
+
+    # ── When does the trend reach the substitution bar? ───────────────────
+    st.subheader(f"When does CoBench reach {_RSI_SUBSTITUTION_BAR:.0f}%?")
+    _needed = _logit(_RSI_SUBSTITUTION_BAR / 100) - proj_start_logit
+    _days_to = np.maximum(_needed / proj_slope, 0)
+    _p10, _p50, _p90 = np.percentile(_days_to, [10, 50, 90])
+    _dates = [current['date'] + timedelta(days=float(min(d, 365 * 40)))
+              for d in (_p10, _p50, _p90)]
+    _e1, _e2 = st.columns(2)
+    with _e1:
+        st.metric("Median", _dates[1].strftime('%b %Y'))
+        st.caption(f"From {current['name']} at {current['cobench']:.1f}%")
+    with _e2:
+        st.metric("80% CI",
+                  f"{_dates[0].strftime('%b %Y')} – {_dates[2].strftime('%b %Y')}")
+        st.caption("From the rate and start CIs in the sidebar")
+
+    st.caption(
+        f"Method: a single OLS line through the {len(rsi_frontier_all)} frontier "
+        "points, fitted on the log-odds so the trend stays bounded below 100%. "
+        "Three points cannot distinguish a straight line from a bend, so no "
+        "piecewise or superexponential basis is offered here. The fit is "
+        "dominated by the one large Opus 4.6 → Mythos Preview jump, so the "
+        "default rate CI is widened to span both segment rates — Mythos Preview "
+        "→ Model 2 is the slow end." + PROJ_DISCLAIMER)
+
+    st.caption(
+        "Fine print: CoBench is an internal Anthropic evaluation, moderately filtered "
+        "for difficulty — the set is mostly restricted to problems Mythos Preview "
+        "failed at least once in three tries — and run at a 300k-token budget, so "
+        "scores are not comparable to public AI R&D suites. Scores are read off "
+        "Figure 3.4.3.A; Anthropic prints no table. A \"~\" on a date means the "
+        "release date isn't on the record: Mythos Preview has no published release "
+        "record, and Model 2 is unreleased with its name redacted. "
+        f"Source: [Anthropic, Redacted Risk Report, August 2026, §3.4.3]({_RSI_SOURCE_URL}).")
 
 
 # ── UK Cyber (AISI narrow cyber tasks) ───────────────────────────────────
@@ -10958,6 +11275,7 @@ def _all_tracked():
         (_eci_tab_reset_keys("eci"), _eci_tab_defaults("eci")),
         (_eci_tab_reset_keys("ecicn"), _eci_tab_defaults("ecicn")),
         (_RLI_RESET_KEYS, _RLI_DEFAULTS),
+        (_RSI_RESET_KEYS, _RSI_DEFAULTS),
         (_UKC_RESET_KEYS, _UKC_DEFAULTS),
         (_EMP_RESET_KEYS, _EMP_DEFAULTS),
         (_REV_TRACKED_KEYS, _REV_DEFAULTS),
@@ -11355,6 +11673,41 @@ def _pc_eci_eta(frontier, target, n=None):
     fitted = np.mean(scores - slope * days) + slope * days[-1]
     start = np.random.normal(fitted, _PC_ECI_POS_CI / 1.282, n)
     days_to = np.maximum((target - start) * proj_dpp, 0.0)
+    return tuple(frontier[-1]['date'] + timedelta(days=float(d))
+                 for d in np.percentile(days_to, [10, 50, 90]))
+
+
+# The RLI companion, on the same frontier its tab charts. 90% is above the
+# tab's own milestone table (which stops at 50%), so the card is a long
+# extrapolation of the same logit fit.
+_PC_RLI_TARGET_PCT = 90.0
+_PC_RLI_POS_CI = 1.0     # the RLI tab's default position CI, fitted score +/- 1pt
+
+
+def _pc_rli_eta(frontier, target_pct=_PC_RLI_TARGET_PCT, n=None):
+    """(early, median, late) dates for the RLI frontier to reach `target_pct`.
+
+    The RLI tab at its defaults — single OLS in logit space, odds-doubling
+    time lognormal over [DT/2, DT*2] (floored at 5 days as the sidebar input
+    is), position normal over the fitted score +/- `_PC_RLI_POS_CI` points,
+    also in logit space. Returns None if the fitted slope is flat or negative.
+    """
+    n = n or N_SAMPLES
+    base = frontier[0]['date']
+    days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+    logit = _logit(np.array([m['rli_score'] / 100 for m in frontier]))
+    slope = fit_line(days, logit)[1]
+    if slope <= 0:
+        return None
+    dt = round(np.log(2) / slope)
+    proj_slope = np.log(2) / _lognormal_from_ci(
+        float(round(max(5.0, dt / 2), 0)), float(round(dt * 2, 0)), n)
+    fitted = np.mean(logit - slope * days) + slope * days[-1]
+    cur = frontier[-1]['rli_score']
+    pos_lo = _logit(round(max(cur - _PC_RLI_POS_CI, 0.1), 2) / 100)
+    pos_hi = _logit(round(cur + _PC_RLI_POS_CI, 2) / 100)
+    start = np.random.normal(fitted, max((pos_hi - pos_lo) / (2 * 1.282), 0), n)
+    days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
     return tuple(frontier[-1]['date'] + timedelta(days=float(d))
                  for d in np.percentile(days_to, [10, 50, 90]))
 
@@ -12094,12 +12447,14 @@ def render_pacing():
 
     st.header("Pacing")
 
-    # ── Capability milestones: METR 40h and ECI 170 ──
+    # ── Capability milestones: METR 40h, ECI 170 and RLI 90% ──
     _cap_etas = [(f"METR {lab} horizon reaches 40h",
                   _pc_metr_eta(frontier_all, k)) for lab, k in _PC_METR_LEVELS]
     _eci_fr = _eci_entity_data("US best")[1]
     _cap_etas += [(f"US ECI reaches {t:.0f}", _pc_eci_eta(_eci_fr, t))
                   for t in _PC_ECI_TARGETS]
+    _cap_etas.append((f"RLI reaches {_PC_RLI_TARGET_PCT:.0f}%",
+                      _pc_rli_eta(rli_frontier_all)))
     _cap_etas = [(lab, eta) for lab, eta in _cap_etas if eta is not None]
     if _cap_etas:
         st.subheader("Capabilities Milestones")
@@ -12311,6 +12666,8 @@ if not os.environ.get("_VP_TESTING"):
         render_eci()
     elif active_tab == "Remote Labor Index":
         render_rli()
+    elif active_tab == "RSI":
+        render_rsi()
     elif active_tab == "UK Cyber":
         render_ukcyber()
     elif active_tab == "Revenue":

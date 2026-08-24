@@ -916,6 +916,73 @@ class TestComputeVsCapabilities:
 # UK Cyber (AISI narrow cyber tasks)
 # ===========================================================================
 
+class TestRsiTab:
+    """CoBench score vs release date, plus the fitted trend."""
+
+    def _rsi_app(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "RSI")
+        return at
+
+    def test_renders(self):
+        at = self._rsi_app()
+        _assert_no_error(at, "RSI / default")
+
+    def test_deep_link_slug(self):
+        at = _fresh_app()
+        at.query_params["tab"] = "rsi"
+        at.run()
+        _assert_no_error(at, "RSI / deep link")
+        assert at.session_state["_active_tab"] == "RSI"
+
+    def test_headline_metrics(self):
+        at = self._rsi_app()
+        labels = {m.label: m.value for m in at.metric}
+        assert labels["Best CoBench score"] == "62.8%"
+        assert labels["Full-substitution bar"] == "85%"
+        assert labels["Gap remaining"] == "22.2 pts"
+
+    def test_projection_to_the_substitution_bar_is_shown(self):
+        at = self._rsi_app()
+        assert any("When does CoBench reach 85%?" in h.value for h in at.subheader)
+        labels = {m.label: m.value for m in at.metric}
+        assert "Median" in labels and "80% CI" in labels
+        assert "–" in labels["80% CI"]
+
+    def test_no_table(self):
+        """The tab is a chart, not a listing."""
+        at = self._rsi_app()
+        assert len(at.get("table")) == 0
+
+    def test_slower_rate_pushes_the_bar_out(self):
+        at = self._rsi_app()
+        before = [m for m in at.metric if m.label == "Median"][0].value
+        at.number_input(key="rsi_custom_dt_lo").set_value(300.0).run()
+        at.number_input(key="rsi_custom_dt_hi").set_value(900.0).run()
+        _assert_no_error(at, "RSI / slow rate")
+        after = [m for m in at.metric if m.label == "Median"][0].value
+        assert before != after
+
+    def test_toggles(self):
+        at = self._rsi_app()
+        at.checkbox(key="rsi_labels").set_value(False).run()
+        _assert_no_error(at, "RSI / labels hidden")
+        at.checkbox(key="rsi_show_bar").set_value(False).run()
+        _assert_no_error(at, "RSI / substitution bar hidden")
+
+    def test_horizon_selector(self):
+        at = self._rsi_app()
+        at.selectbox(key="rsi_end_year").set_value(2031).run()
+        _assert_no_error(at, "RSI / project through 2031")
+
+    def test_source_and_tilde_are_explained(self):
+        at = self._rsi_app()
+        caps = " ".join(c.value for c in at.caption)
+        assert "Redacted Risk Report" in caps
+        assert "~" in caps
+
+
 class TestUkCyberTab:
     """Frontier projection + open-weight lag."""
 
@@ -1134,8 +1201,9 @@ class TestPacingTab:
         assert "METR p80 horizon reaches 40h" in labels
         assert "US ECI reaches 170" in labels
         assert "US ECI reaches 195" in labels
+        assert "RLI reaches 90%" in labels
         caps = " ".join(str(c.value) for c in at.caption)
-        assert caps.count("80% CI:") >= 4
+        assert caps.count("80% CI:") >= 5
 
     def test_us_pause_panel_renders(self):
         """The US-pause counterfactual renders with its crossing metric,

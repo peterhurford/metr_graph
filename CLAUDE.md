@@ -34,7 +34,7 @@ No build system, no CI/CD, no package manager beyond requirements.txt (`streamli
 
 ## Architecture
 
-Ten-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `ukcyber`, `employment`, `revenue`, `datacenters`, `computecap`, `pacing`.
+Eleven-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `rsi`, `ukcyber`, `employment`, `revenue`, `datacenters`, `computecap`, `pacing`.
 
 ### Tabs and Render Functions
 
@@ -43,6 +43,7 @@ Ten-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTI
 | METR Horizon | `render_metr()` | `benchmark_results_1_1.yaml` → `load_frontier()` | log₂(minutes) |
 | Epoch ECI | `render_eci()` | `epoch_capabilities_index.csv` → `load_eci_frontier()` | linear score |
 | Remote Labor Index | `render_rli()` | `_RLI_RAW` → `load_rli_data()` | logit-transformed score |
+| RSI | `render_rsi()` | `_RSI_RAW` → `load_rsi_data()` | CoBench score % (logit-projected) |
 | UK Cyber | `render_ukcyber()` | `aisi_cyber_narrow.csv` → `load_ukcyber()`; `aisi_cyber_tlo.csv` → `load_ukcyber_tlo()` | success rate % + open-weight lag in months; plus a TLO cyber-range cross-check in steps (`_render_ukcyber_tlo()`) and a callout for models only the range has measured (`_render_ukcyber_newest_open()`) |
 | Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` | ARR in billions |
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
@@ -63,6 +64,7 @@ recipe, including the AISI cyber data deliberately *not* ingested.
 | `data_centers.csv` | Epoch AI | Overwrite from `https://epoch.ai/data/data_centers/data_centers.csv` |
 | `data_center_timelines.csv` | Epoch AI | Same, `…/data_center_timelines.csv`. Column order varies between pulls; the loader uses `DictReader`, so that's safe. **One curated deletion — see below** |
 | `_RLI_RAW` (hardcoded) | Scale Labs RLI leaderboard (`labs.scale.com/leaderboard/rli`) / `remotelabor.ai` | Hand-edit rows |
+| `_RSI_RAW` (hardcoded) | Anthropic, Redacted Risk Report (Aug 2026), §3.4.3 Fig 3.4.3.A (`_RSI_SOURCE_URL`) | **Not downloadable** — scores read off the figure, Anthropic prints no table. Hand-edit rows |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | Press reports | Hand-edit `(date, ARR_in_billions)` tuples |
 | `aisi_cyber_tlo.csv` | UK AISI Figure 2 + [Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) | **Not downloadable** — 9 rows digitized from `fig2-ranges.png`, one value quoted from prose. Calibration and validation checks are in the file's `#` header, guarded by `TestUkCyberTlo`. Dates are **published release dates**; the figure's x-axis is tokens |
 | `aisi_cyber_narrow.csv` | UK AISI [open-weight cyber gap post](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) | **Not downloadable** — AISI publishes no numbers; values digitized from `fig1-narrow.png` by pixel analysis. Refreshing is a *figure-unchanged check*: re-fetch the PNG, confirm gridline rows and marker colours still match, re-digitize only if the figure changed. `test_digitized_dates_match_known_releases` and `test_optimistic_bracket_reproduces_aisi_published_lags` are the calibration guards. Hand-editing a row is fine if AISI states a number in prose |
@@ -80,7 +82,7 @@ Roughly in file order: shared helpers (`pretty()`, `fit_line()`, distribution sa
 (`_backtest_*`); loaders (`load_frontier()`, `load_eci_frontier()` / `load_eci_compute()`,
 `load_rli_data()`, `load_data_centers()`, `load_ukcyber()`); data-center aggregation
 (`_dc_envelope()`, `_dc_company_series()`, `_dc_company_networked_series()`); UK Cyber lag
-(`_ukc_*`, `ukc_*`); compute-vs-capabilities (`_cc_*`); data init and tab selector; the nine
+(`_ukc_*`, `ukc_*`); compute-vs-capabilities (`_cc_*`); data init and tab selector; the ten
 `render_*()` functions (grep `^def render_`); dispatch at end of file (skipped when `_VP_TESTING=1`).
 
 ### Projection Engine (repeated per tab)
@@ -266,6 +268,34 @@ own cluster and never pools. Six things are load-bearing:
 Don't widen a `'proximity'` or `'fabric'` cluster to "same company, same region": the
 cross-site link has to carry the data-parallel gradient all-reduce, so metro fibre or a
 purpose-built fabric is the criterion for the levels that claim a link exists.
+
+### RSI tab
+
+`render_rsi()` plots CoBench — Anthropic's internal AI R&D eval — against release
+date, with a fitted trend, a projection fan and an ETA to `_RSI_SUBSTITUTION_BAR`
+(85%, Anthropic's own stated score for a model that could fully substitute for its
+research staff — not a benchmark ceiling). Four things are load-bearing:
+
+1. **The fit is logit-space**, like RLI and UK Cyber: CoBench is a bounded success
+   rate and a score-space line runs through 100%.
+2. **Only a single OLS basis is offered.** Three frontier points cannot distinguish
+   a line from a bend, so there is no piecewise or superexponential option and no
+   backtest vantage-point selector. Don't add them by copying another tab.
+3. **The default rate CI is widened, not the convention.** The two segments disagree
+   by ~8x (Opus 4.6 → Mythos Preview is ~22d odds-doubling, Mythos Preview → Model 2
+   ~189d), so `_rsi_dt_ci()` takes the usual fit/2..fit×2 interval and widens it to
+   span both segment rates. It can only widen — `test_dt_ci_default_spans_both_segment_rates`
+   holds that.
+4. **`date_known` drives the "~" prefix** via `_rsi_date_label()`. Mythos Preview has
+   no published release record (its date is carried over from AISI's narrow cyber
+   figure, as in `aisi_cyber_tlo.csv`) and Model 2 is unreleased with its name
+   redacted; Mythos 5 ships with Fable 5 on 2026-06-09, which puts it *below* the
+   running max and off the frontier.
+
+CoBench is filtered for difficulty (mostly problems Mythos Preview failed at least
+once in three tries) and run at a 300k-token budget, so scores don't compare to
+public AI R&D suites — the fine print has to keep saying so. Guarded by `TestRsi`
+and `TestRsiTab`.
 
 ### UK Cyber tab caveats
 
@@ -522,17 +552,22 @@ length (`_PC_RUN_OPTIONS`, default 2mo, reusing the loader's `train_flop*` colum
 utilization, Epoch 8-bit OP/s). Deliberately thin: it reuses the Data Centers tab's
 machinery rather than growing its own.
 
-The tab opens with *Capabilities Milestones*, four cards independent of every
+The tab opens with *Capabilities Milestones*, five cards independent of every
 control below: `_pc_metr_eta()` for the METR frontier reaching 40h at p50 and
-at p80, and `_pc_eci_eta()` for the US-best ECI frontier reaching each of
+at p80, `_pc_eci_eta()` for the US-best ECI frontier reaching each of
 `_PC_ECI_TARGETS` — 170, the top line of `_ECI_US_MILESTONES`, and 195, above
-anything that tab draws and a long extrapolation of the same fit. Each reproduces
+anything that tab draws and a long extrapolation of the same fit — and
+`_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT` (90%, above
+that tab's own milestone table, which stops at 50%). Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
 [DT/2, DT*2], position over the current model's CI, p50 slope for both levels;
-ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2 — rather than
+ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2; RLI: single OLS in
+logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
+± 1 point — rather than
 fitting its own, so the tabs can't quote different dates for the same
-milestone. `test_metr_eta_reproduces_the_metr_tab_defaults` and
-`test_eci_eta_reproduces_the_eci_tab_defaults` pin that. The compute half's
+milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
+`test_eci_eta_reproduces_the_eci_tab_defaults` and
+`test_rli_eta_reproduces_the_rli_tab_defaults` pin that. The compute half's
 headline is the US-vs-China line, so it renders only under the `Country`
 attribution; the threshold reaches the display through the chart title.
 

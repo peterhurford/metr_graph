@@ -3108,6 +3108,87 @@ class TestUkCyberTargetEta:
         assert vp.ukc_target_eta_direct(one, 90.0) is None
 
 
+class TestRsi:
+    """CoBench, the RSI tab's only feed."""
+
+    def test_tab_registered_between_rli_and_ukcyber(self):
+        i = vp._TAB_OPTIONS.index("RSI")
+        assert vp._TAB_OPTIONS[i - 1] == "Remote Labor Index"
+        assert vp._TAB_OPTIONS[i + 1] == "UK Cyber"
+        assert vp._SLUG_FOR_TAB["RSI"] == "rsi"
+        assert vp._TAB_OPTIONS[vp._TAB_SLUG["rsi"]] == "RSI"
+
+    def test_defaults_and_url_tracking_cover_the_widgets(self):
+        keys, defaults = vp._all_tracked()
+        for k in vp._RSI_RESET_KEYS:
+            assert k in keys
+        assert set(vp._RSI_DEFAULTS) <= set(vp._RSI_RESET_KEYS)
+        for k, v in vp._RSI_DEFAULTS.items():
+            assert defaults[k] == v
+
+    def test_loader_sorts_and_flags_running_max(self):
+        rows = vp.load_rsi_data()
+        assert [m['name'] for m in rows] == [
+            "Claude Opus 4.6", "Claude Mythos Preview",
+            "Claude Mythos 5", "Model 2"]
+        assert [m['date'] for m in rows] == sorted(m['date'] for m in rows)
+        best = -float('inf')
+        for m in rows:
+            assert m['is_frontier'] == (m['cobench'] > best)
+            best = max(best, m['cobench'])
+
+    def test_scores_match_the_report(self):
+        by_name = {m['name']: m['cobench'] for m in vp.load_rsi_data()}
+        assert by_name == {"Claude Opus 4.6": 15.6, "Claude Mythos Preview": 54.8,
+                           "Claude Mythos 5": 50.3, "Model 2": 62.8}
+
+    def test_mythos_5_ships_with_fable_5(self):
+        """Same release as Fable 5, matching the AISI cyber CSVs."""
+        by_name = {m['name']: m['date'] for m in vp.load_rsi_data()}
+        assert by_name["Claude Mythos 5"] == datetime(2026, 6, 9)
+        assert by_name["Claude Mythos 5"] > by_name["Claude Mythos Preview"]
+        # ...which puts Mythos 5 below the running max, off the frontier.
+        off = [m['name'] for m in vp.load_rsi_data() if not m['is_frontier']]
+        assert off == ["Claude Mythos 5"]
+
+    def test_unknown_dates_render_with_a_tilde(self):
+        by_name = {m['name']: m for m in vp.load_rsi_data()}
+        assert vp._rsi_date_label(by_name["Claude Opus 4.6"]) == "Feb 05, 2026"
+        assert vp._rsi_date_label(by_name["Claude Mythos 5"]) == "Jun 09, 2026"
+        assert vp._rsi_date_label(by_name["Claude Mythos Preview"]) == "~Apr 07, 2026"
+        assert vp._rsi_date_label(by_name["Model 2"], '%b %Y') == "~Jul 2026"
+
+    def test_no_model_has_reached_the_substitution_bar(self):
+        """The tab's headline gap; if a refresh crosses 85 the caption text
+        about a remaining gap goes stale."""
+        assert vp._RSI_SUBSTITUTION_BAR == 85.0
+        assert max(m['cobench'] for m in vp.load_rsi_data()) < vp._RSI_SUBSTITUTION_BAR
+
+    def test_fit_is_a_logit_ols_through_the_frontier(self):
+        fr = [m for m in vp.load_rsi_data() if m['is_frontier']]
+        base, intercept, slope = vp._rsi_fit(fr)
+        assert base == fr[0]['date']
+        assert slope > 0
+        days = np.array([(m['date'] - base).days for m in fr], dtype=float)
+        logit = vp._logit(np.array([m['cobench'] / 100 for m in fr]))
+        expect = vp.fit_line(days, logit)
+        assert slope == pytest.approx(expect[1])
+        assert intercept == pytest.approx(expect[0])
+
+    def test_dt_ci_default_spans_both_segment_rates(self):
+        """Three points whose segments disagree ~8x: the conventional
+        fit/2..fit*2 interval must widen, never narrow."""
+        fr = [m for m in vp.load_rsi_data() if m['is_frontier']]
+        _, _, slope = vp._rsi_fit(fr)
+        fit_dt = np.log(2) / slope
+        lo, hi = vp._rsi_dt_ci(fr, fit_dt)
+        assert lo <= max(5.0, fit_dt / 2) and hi >= fit_dt * 2
+        for a, b in zip(fr, fr[1:]):
+            seg = np.log(2) * (b['date'] - a['date']).days / (
+                vp._logit(b['cobench'] / 100) - vp._logit(a['cobench'] / 100))
+            assert lo <= round(seg) <= hi
+
+
 class TestUkCyberTlo:
     """Cyber range "The Last Ones" -- AISI's long-horizon cyber measure.
 
@@ -4256,6 +4337,32 @@ class TestPacing:
         top = max(s for s, _l, _c in vp._ECI_US_MILESTONES)
         assert top in vp._PC_ECI_TARGETS
         assert max(vp._PC_ECI_TARGETS) > top
+
+    def test_rli_eta_reproduces_the_rli_tab_defaults(self):
+        """The RLI 90% card is the RLI tab at its defaults: single OLS in
+        logit space, odds-doubling time over [DT/2, DT*2]."""
+        fr = vp.rli_frontier_all
+        days = np.array([(m['date'] - fr[0]['date']).days for m in fr],
+                        dtype=float)
+        logit = vp._logit(np.array([m['rli_score'] / 100 for m in fr]))
+        slope = vp.fit_line(days, logit)[1]
+        fitted = np.mean(logit - slope * days) + slope * days[-1]
+        dt = round(np.log(2) / slope)
+        prev = None
+        for target in (25.0, 50.0, vp._PC_RLI_TARGET_PCT):
+            early, med, late = vp._pc_rli_eta(fr, target, n=20000)
+            assert early < med < late
+            want = fr[-1]['date'] + timedelta(
+                days=(vp._logit(target / 100) - fitted) / (np.log(2) / dt))
+            assert abs((med - want).days) < 45
+            # A higher bar is never reached earlier.
+            assert prev is None or med > prev
+            prev = med
+
+    def test_rli_target_is_above_the_rli_tabs_own_milestones(self):
+        """90% is a deliberate extrapolation past the tab's top milestone."""
+        assert vp._PC_RLI_TARGET_PCT > 50
+        assert vp._PC_RLI_TARGET_PCT < 100
 
     def test_cutoff_slider_labels_round_trip(self):
         """The advanced cut-off sliders are month labels (URL- and
