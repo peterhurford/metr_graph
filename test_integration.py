@@ -1450,7 +1450,9 @@ class TestPacingTab:
         for yr in (2028, 2031):
             at.radio(key="pc_end_year").set_value(yr).run()
             _assert_no_error(at, f"Pacing / through {yr}")
-            ends = _ends(at)
+            # Chart 0 is the RSI blend's date distribution, which is scaled
+            # to its own samples rather than to the projection range.
+            ends = _ends(at)[-2:]
             assert len(ends) == 2, ends
             # The timeline pads a few months past the grid; the pause chart
             # stops on it exactly.

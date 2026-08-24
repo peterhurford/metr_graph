@@ -11830,10 +11830,12 @@ def _pc_render_rsi_blend(components, origin):
     weights = {slug: float(st.session_state.get(_PC_RSI_W_KEY + slug,
                                                 _PC_RSI_WEIGHTS.get(slug, 0.0)))
                for slug, _, _, _ in components}
-    blend = _pc_rsi_blend(components, weights, origin)
-    if blend is None:
+    # One draw feeds the cards and the plot, so they cannot disagree.
+    blend_days = _pc_rsi_blend_samples(components, weights, origin)
+    if blend_days is None:
         return
-    early, med, late = blend
+    early, med, late = (origin + timedelta(days=float(d))
+                        for d in np.percentile(blend_days, [10, 50, 90]))
 
     st.subheader("RSI projection (tentative)")
     _b1, _b2 = st.columns(2)
@@ -11841,6 +11843,10 @@ def _pc_render_rsi_blend(components, origin):
         st.metric("Blended median", med.strftime('%b %Y'))
     with _b2:
         st.metric("80% CI", f"{early:%b %Y} \u2013 {late:%b %Y}")
+
+    _dist = _pc_rsi_dist_fig(blend_days, origin, early, med, late)
+    if _dist is not None:
+        st.plotly_chart(_dist, width="stretch")
 
     _total = sum(weights.values()) or 1.0
     st.table([{
@@ -12060,13 +12066,13 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
     return _pc_eta_out(rows[-1]['date'], days_to, samples)
 
 
-def _pc_rsi_blend(components, weights, origin, n=None):
-    """Mix the milestone ETAs into one date distribution.
+def _pc_rsi_blend_samples(components, weights, origin, n=None):
+    """Mix the milestone ETAs into one distribution, in days from `origin`.
 
     `components` is [(slug, label, anchor_date, days_to)]; weights need not sum
     to anything in particular — zero-weight components drop out, and all-zero
     falls back to the default weighting rather than dividing by zero. Returns
-    (early, median, late) dates, or None if nothing is left to mix.
+    None if nothing is left to mix.
     """
     n = n or N_SAMPLES
     picks = [(c, max(float(weights.get(c[0], 0.0)), 0.0)) for c in components]
@@ -12087,8 +12093,77 @@ def _pc_rsi_blend(components, weights, origin, n=None):
         m = idx == i
         if m.any():
             out[m] = np.random.choice(pool, int(m.sum()), replace=True)
+    return out
+
+
+def _pc_rsi_blend(components, weights, origin, n=None):
+    """(early, median, late) dates for the blend. See `_pc_rsi_blend_samples`."""
+    out = _pc_rsi_blend_samples(components, weights, origin, n)
+    if out is None:
+        return None
     return tuple(origin + timedelta(days=float(d))
                  for d in np.percentile(out, [10, 50, 90]))
+
+
+def _pc_month_starts(first, last):
+    """First-of-month datetimes covering [first, last] inclusive."""
+    out, d = [], datetime(first.year, first.month, 1)
+    while d <= last:
+        out.append(d)
+        d = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return out
+
+
+def _pc_rsi_dist_fig(days, origin, early, med, late):
+    """Monthly probability of the blend landing in each month.
+
+    A histogram rather than a smooth curve on purpose: the blend is a mixture
+    of seven milestones, and the lumps are where its components sit — a kernel
+    would smooth away the structure the single median already hides. Bins run to
+    the 99.5th percentile but the axis stops at the 97th: past that the bars are
+    a flat sub-1%/month tail that takes half the width and hides the shape. The
+    80% CI above still states the full spread.
+    """
+    lo_d = origin + timedelta(days=float(np.percentile(days, 0.5)))
+    hi_d = origin + timedelta(days=float(np.percentile(days, 99.5)))
+    starts = _pc_month_starts(lo_d, hi_d)
+    if len(starts) < 2:
+        return None
+    edges = [(d - origin).days for d in starts] + [
+        (starts[-1] - origin).days + 31]
+    counts, _ = np.histogram(days, bins=edges)
+    share = counts / len(days) * 100
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=starts, y=share.tolist(),
+        marker=dict(color='#4F8DFD', line=dict(width=0)),
+        hovertext=[f"{d:%b %Y}<br>{v:.1f}% of samples"
+                   for d, v in zip(starts, share)],
+        hoverinfo='text', showlegend=False))
+    fig.add_vrect(x0=early, x1=late, fillcolor='rgba(52,152,219,0.10)',
+                  line_width=0, layer='below')
+    # add_vline's own annotation averages the x endpoints, which throws on a
+    # datetime axis; place it separately against the paper y-axis instead.
+    fig.add_vline(x=med, line=dict(color='#2c3e50', width=2, dash='dash'))
+    _x_end = min(origin + timedelta(days=float(np.percentile(days, 97))),
+                 starts[-1] + timedelta(days=31))
+    fig.add_annotation(x=med, y=1.0, yref='paper', yanchor='bottom',
+                       xanchor='left', xshift=4, showarrow=False,
+                       text=f"median {med:%b %Y}",
+                       font=dict(size=11, color='#2c3e50'))
+    fig.update_layout(
+        height=260, margin=dict(l=50, r=30, t=30, b=35), bargap=0.15,
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(range=[starts[0], _x_end],
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e')),
+        yaxis=dict(title="Share of samples", ticksuffix='%',
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'),
+                   title_font=dict(color='#1a1a2e')),
+        plot_bgcolor='white', paper_bgcolor='white')
+    return fig
 
 
 # Realized ship lag of a US frontier model — run finished to public release,
@@ -12863,13 +12938,10 @@ def render_pacing():
                      f"models, so they are pulled back {_PC_REPORT_LAG_DAYS[0] / 30:.0f}"
                      f"\u2013{_PC_REPORT_LAG_DAYS[1] / 30:.0f} months onto the "
                      f"\u201c{timing_label.lower()}\u201d clock; CoBench and the staff "
-                     "survey are internal and already on it.")
+                     "survey are internal.")
         st.caption(
             "Each milestone reproduces its own tab at that tab's defaults, so the two "
-            "cannot quote different dates for the same bar." + _lag_note +
-            " The blend below treats each as one candidate definition of the threshold "
-            "and mixes their date distributions — weighted by credence, not averaged, "
-            "so an uncertain milestone widens the range instead of only shifting it.")
+            "cannot quote different dates for the same bar." + _lag_note)
 
         _pc_render_rsi_blend(_cap, _today)
 

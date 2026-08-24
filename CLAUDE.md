@@ -619,7 +619,11 @@ Under the cards sits *RSI projection (tentative)* (`_pc_render_rsi_blend()`):
 no single benchmark defines the threshold, so each milestone is treated as one
 candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets. The result
 is `_pc_rsi_blend()`, the **mixture of their date distributions, not an average
-of their medians** — each component keeps its own spread, so a late-but-uncertain
+of their medians**, drawn as a monthly histogram (`_pc_rsi_dist_fig()`) between
+the cards and the weights table — a histogram, not a smooth curve, because the
+lumps *are* the components; and binned to the 99.5th percentile but axis-clipped
+to the 97th, since past that the bars are a flat sub-1%/month tail that takes
+half the width. Each component keeps its own spread, so a late-but-uncertain
 milestone widens the blend instead of only shifting it, which an average of the
 medians cannot express. Three things are load-bearing. The eta functions take
 `samples=True` (via `_pc_eta_out`) so the blend mixes the *same* draw the cards
