@@ -6055,6 +6055,8 @@ _REV_MILESTONES = [
 
 def render_revenue():
     st.header("Revenue Projections (ARR)")
+    st.warning("Warning: projections assume lines go up indefinitely, which is "
+               "obviously not realistic.")
 
     openai_dates, openai_vals = _parse_revenue(_OPENAI_REVENUE)
     anthropic_dates, anthropic_vals = _parse_revenue(_ANTHROPIC_REVENUE)
