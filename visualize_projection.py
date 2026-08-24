@@ -9936,7 +9936,10 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
                    annotation_text=f"ECI {target:.0f}",
                    annotation_position='top left',
                    annotation_font=dict(size=11, color='#111'))
-    for lo_p, hi_p, alpha, label in ((10, 90, 0.10, '80% CI'), (25, 75, 0.20, '50% CI')):
+    # 0.16 on the outer band, not the 0.10 the other fans use: the eye
+    # otherwise reads the inner 50% band as "the fan" and finds it much
+    # narrower than the 80% crossing window beside it.
+    for lo_p, hi_p, alpha, label in ((10, 90, 0.16, '80% CI'), (25, 75, 0.20, '50% CI')):
         # mode='lines' is load-bearing: this fan spans only ~6 quarters, and under
         # 20 points plotly defaults a Scatter to lines+markers — which would stud
         # the band's outline with stray default-blue dots.
@@ -11517,7 +11520,7 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
         hoverinfo='text', name='China (actual)'))
     pct = {p: np.percentile(traj, p, axis=0) for p in (10, 25, 50, 75, 90)}
     xs = [grid_d[i] for i in keep]
-    for lo_p, hi_p, alpha in ((10, 90, 0.10), (25, 75, 0.20)):
+    for lo_p, hi_p, alpha in ((10, 90, 0.16), (25, 75, 0.20)):
         fig.add_trace(go.Scatter(
             x=xs + xs[::-1], mode='lines',
             y=[pct[hi_p][i] for i in keep] + [pct[lo_p][i] for i in keep][::-1],
