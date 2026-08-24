@@ -838,6 +838,17 @@ class TestComputeVsCapabilities:
         assert "Algorithmic efficiency" in labels
         assert "Share of growth of compute" in labels
 
+    def test_distillation_anchor_dropdown(self):
+        """The scenario-lines anchor toggles between today and the Jan-2025
+        backtest, and the caption follows."""
+        at = self._cc_app()
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "From today's frontiers" in caps
+        at.selectbox(key="cc_bd_anchor").set_value("Jan 2025 (backtest)").run()
+        _assert_no_error(at, "Compute vs Capabilities / backdated scenario")
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "Backdated to" in caps
+
     def test_include_future_toggle(self):
         at = self._cc_app()
         at.checkbox(key="cc_future").set_value(False).run()

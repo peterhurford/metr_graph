@@ -7195,9 +7195,12 @@ _DC_NETWORK_OPTIONS = {
 }
 
 # Compute vs Capabilities tab
-_CC_RESET_KEYS = ["cc_future", "cc_run", "cc_end_year", "cc_company"]
+_CC_RESET_KEYS = ["cc_future", "cc_run", "cc_end_year", "cc_bd_anchor",
+                  "cc_company"]
 _CC_DEFAULTS = {"cc_future": True, "cc_run": "2-month run",
-                "cc_end_year": 2029, "cc_company": "OpenAI"}
+                "cc_end_year": 2029, "cc_bd_anchor": "Today",
+                "cc_company": "OpenAI"}
+_CC_BD_OPTIONS = ("Today", "Jan 2025 (backtest)")
 _CC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
 # Fixed segment boundaries for the frontier-compute growth breakdown. Each entry
@@ -9341,11 +9344,29 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         premium = cn_algo - us_algo
         premium_pct = (premium / us_algo * 100) if us_algo else 0.0
 
-        # The scenario lines emanate from today's frontiers; the actual data
-        # points stay on the chart as history.
-        anchor_date = today
-        cn_anchor = cn_best[1]
-        us_anchor = us_best[1]
+        # Anchor selector: project forward from today, or backdate to Jan
+        # 2025 so the own-rate line doubles as a backtest against China's
+        # actual points.
+        if st.session_state.get("cc_bd_anchor") not in _CC_BD_OPTIONS:
+            st.session_state.pop("cc_bd_anchor", None)
+        bd_label = st.selectbox(
+            "Scenario lines start from", list(_CC_BD_OPTIONS),
+            index=_CC_BD_OPTIONS.index(_CC_DEFAULTS["cc_bd_anchor"]),
+            key="cc_bd_anchor",
+            help="Today projects forward; Jan 2025 backdates the lines so "
+                 "the own-rate one can be checked against China's actual "
+                 "frontier since then.")
+        if bd_label == "Today":
+            anchor_date, cn_anchor, us_anchor = today, cn_best[1], us_best[1]
+        else:
+            anchor_date = datetime(2025, 1, 1)
+
+            def _fr_at(fr, d):
+                vals = [s for dd, s, n in fr if dd <= d]
+                return max(vals) if vals else fr[0][1]
+
+            cn_anchor = _fr_at(cn_fr, anchor_date)
+            us_anchor = _fr_at(us_fr, anchor_date)
         bd_dates = [anchor_date] + _cc_quarter_ends(anchor_date, horizon)
         dt_bd = np.array([(d - anchor_date).days / 365.25 for d in bd_dates])
 
@@ -9441,9 +9462,13 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                        tickfont=dict(color='#222'), title_font=dict(color='#222')))
         st.plotly_chart(figd, use_container_width=True)
         st.caption(
-            f"From today's frontiers (US {us_anchor:.0f}, China "
-            f"{cn_anchor:.0f}; actual points are history). Both China lines "
-            "share the "
+            (f"From today's frontiers (US {us_anchor:.0f}, China "
+             f"{cn_anchor:.0f}; actual points are history). "
+             if bd_label == "Today" else
+             f"Backdated to **Jan 2025** (China ≈{cn_anchor:.0f} then) so "
+             "the edge accumulates over its full period and the own-rate "
+             "line can be read against China's actual points. ")
+            + "Both China lines share the "
             f"compute term (~{compute_term_cn:.1f} ECI/yr) and differ only "
             "algorithmically: the **solid line** uses China's own measured rate "
             f"({cn_algo:.1f} vs {us_algo:.1f} ECI/yr, ~+{premium_pct:.0f}%), its "
