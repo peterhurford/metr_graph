@@ -10969,8 +10969,12 @@ def _pc_when(rec, horizon=None):
     return f"~{rec['med']:%b %Y}"
 
 
-def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
+def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None):
     """If the US paused: China's catch-up to the paused frontier, in ECI.
+
+    `us_steps` is the sidebar-pooled US country series (capacity-online
+    dates, run-length units) so the feasibility clock and climb pace follow
+    the tab's networking selector; single-site fallback without it.
 
     The US pauses when it *completes its first thr_ops run* of the sidebar's
     run length: hardware needs 2-month capacity of thr_ops × (2mo/run) on
@@ -11011,15 +11015,23 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
     else:
         a_lo, a_hi = min(us_algo, cn_algo), max(us_algo, cn_algo)
         a_mid = cn_algo
-    # The US climb to the bar: the compute↔ECI engine on the DC tab's fitted
-    # US largest-site pace — sampled with that fit's own sigma_g, so the pause
-    # date inherits the DC engine's pace uncertainty, not just its center.
-    chk_us = _cc_country_pace_check(today).get(_DC_CTY_US)
+    # The US pace and hardware clock come from the sidebar-pooled US series
+    # (capacity-online dates, run-length units) — the same roster the table
+    # above races — falling back to the single-site country fit. σ-sampled,
+    # so the pause date and bar carry the pace uncertainty.
+    plan_end = today + timedelta(days=_DC_CTY_PLAN_HORIZON_DAYS)
+    us_fit, pooled = None, False
+    if us_steps:
+        us_fit = _dc_cty_fit(us_steps, since=_DC_DEFAULTS["dc_cty_since"],
+                             t_end=plan_end)
+        pooled = us_fit is not None
+    if us_fit is None:
+        us_fit = _cc_country_pace_check(today).get(_DC_CTY_US)
     n_s = N_SAMPLES
-    if chk_us:
+    if us_fit is not None:
         g_s = np.maximum(
-            np.random.normal(chk_us['g'], chk_us['sigma_g'], n_s), 0.05)
-        us_rate = b_algo + a_partial * chk_us['g']
+            np.random.normal(us_fit['g'], us_fit['sigma_g'], n_s), 0.05)
+        us_rate = b_algo + a_partial * us_fit['g']
         us_rate_s = np.maximum(b_algo + a_partial * g_s, 1.0)
     else:
         g_s = None
@@ -11028,14 +11040,21 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
     gap_d = _cc_release_gap_days(cn_fr, since=today - timedelta(days=730))
     g_mid = 0.5 * (_CC_CN_COMPUTE_LO + _CC_CN_COMPUTE_HI)
     pace_lo, pace_hi, _obs = _cc_cn_pace_band(cn_fr, a_mid + a_partial * g_mid)
-    # First completed thr_ops run of this length: 2-month capacity must reach
-    # thr_ops × (2mo/run) on the σ-sampled DC fit, no earlier than today, and
-    # the run itself follows — run length moves both terms.
+    # First completed thr_ops run of this length, no earlier than today, run
+    # included. On the pooled series (already in run-length units) the
+    # catalogued plan answers directly where it crosses; the fit extrapolates
+    # beyond it. The single-site fallback stores 2-month values, so the need
+    # scales by 2mo/run there — either way run length moves both terms.
     t_today = max((today - anchor_d).days, 0) / 365.25
-    if chk_us is not None and g_s is not None:
-        need_lf = np.log10(thr_ops * _DAYS_2MO / run_days)
-        t0_yrs = (chk_us['t0'] - anchor_d).days / 365.25
-        t_cap_s = t0_yrs + (need_lf - np.log10(chk_us['v0'])) / g_s
+    if us_fit is not None and g_s is not None:
+        plan_d = _pc_plan_crossing(us_steps, thr_ops)[0] if pooled else None
+        if plan_d is not None:
+            t_cap_s = np.full(n_s, (plan_d - anchor_d).days / 365.25)
+        else:
+            need_lf = np.log10(thr_ops if pooled
+                               else thr_ops * _DAYS_2MO / run_days)
+            t0_yrs = (us_fit['t0'] - anchor_d).days / 365.25
+            t_cap_s = t0_yrs + (need_lf - np.log10(us_fit['v0'])) / g_s
         t_pause_s = np.maximum(t_cap_s, t_today) + run_days / 365.25
     else:
         t_pause_s = np.full(n_s, t_today + run_days / 365.25)
@@ -11050,6 +11069,20 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
               release_gap_days=gap_d, n=n_s)
     years, grid_yrs, traj = _cc_cn_crossing_sim(
         anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1], **kw)
+    # Sensitivity: China's compute term at the catalogued China-accessible
+    # buildout pace (Chinese labs' sites abroad included) instead of the
+    # export-control band — the channel where "remote" compute would bite.
+    chk_ca = _cc_country_pace_check(today).get(_DC_CTY_CN_ACCESS)
+    d50_ca = None
+    if chk_ca:
+        y_ca, _gc, _tc = _cc_cn_crossing_sim(
+            anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
+            **dict(kw, g_lo=max(chk_ca['g'] - chk_ca['sigma_g'], 0.05),
+                   g_hi=chk_ca['g'] + chk_ca['sigma_g']))
+        ok_ca = y_ca[np.isfinite(y_ca)]
+        if len(ok_ca) >= 100:
+            d50_ca = anchor_d + timedelta(
+                days=float(np.percentile(ok_ca, 50)) * 365.25)
     yr_ok = years[np.isfinite(years)]
     if len(yr_ok) < 100:
         st.info("Sampled rates were too weak to give a crossing date.")
@@ -11143,10 +11176,10 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     st.plotly_chart(fig, use_container_width=True)
 
-    _rate_src = (f"({b_algo:.0f} algo + {a_partial:.0f} pts/×10 × the "
-                 f"DC-engine ×{10 ** chk_us['g']:.1f}/yr US compute pace, "
-                 "sampled with that fit's own σ so the pause date carries "
-                 "its uncertainty)" if chk_us else "(observed US frontier slope)")
+    _rate_src = ((f"({b_algo:.0f} algo + {a_partial:.0f} pts/×10 × the "
+                  f"{'sidebar-pooled' if pooled else 'largest-site'} US "
+                  f"series' ×{10 ** us_fit['g']:.1f}/yr pace, σ-sampled)")
+                 if us_fit else "(observed US frontier slope)")
     st.caption(
         f"Counterfactual: the US climbs at ~{us_rate:.0f} ECI/yr "
         f"{_rate_src} until it *completes its first {_ops}-op run* of the "
@@ -11162,7 +11195,12 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO):
         "fan meets the bar). Same sim and pace band as the Compute vs "
         "Capabilities crossing section — which lands *earlier*: its bar is "
         f"lower ({_CC_CN_TARGET_ECI:.0f}) and distillation never dries up "
-        "there.")
+        "there."
+        + (f" Sensitivity: if Chinese labs sustained the catalogued "
+           f"China-accessible buildout pace (×{10 ** chk_ca['g']:.1f}/yr, "
+           "sites abroad included — a from-zero ramp) instead of the "
+           f"export-control band, the crossing moves to ~{d50_ca:%b %Y}."
+           if d50_ca is not None else ""))
 
 
 def render_pacing():
@@ -11248,6 +11286,7 @@ def render_pacing():
     shift_days = _dc_timing_shift(timing_label, run_days)
     dc_view = _dc_with_party(dc_all, party)
     series_all = _dc_series_for_metric(dc_view, key, cap_date=None)
+    series_unshifted = series_all      # capacity-online dates, for the pause panel
     if shift_days:
         series_all = {n: {**v, 'pts': [(d + timedelta(days=shift_days), val)
                                        for d, val in v['pts']]}
@@ -11428,7 +11467,11 @@ def render_pacing():
         "[Epoch AI, Frontier Data Centers](https://epoch.ai/data/data-centers) "
         "(CC-BY).")
 
-    _pc_render_us_pause(_today, float(threshold_label), run_days)
+    _us_steps_raw = _dc_country_steps(
+        series_unshifted, _us_names, 'site' if cluster_of == {} else 'company',
+        cluster_of)
+    _pc_render_us_pause(_today, float(threshold_label), run_days,
+                        us_steps=_us_steps_raw)
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────

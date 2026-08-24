@@ -545,10 +545,13 @@ machinery rather than growing its own.
    release) one click away; the fine print states which milestone the dates mean.
 
 The tab ends with `_pc_render_us_pause()`: the US pauses when it *completes its
-first threshold-scale run* of the sidebar's run length (2-mo capacity of
-thr × 2mo/run on the σ-sampled DC fit, plus the run), frozen at whatever its
-compute-derived climb reached by then — per sample, so run length moves both the
-pause date and the bar (`us_pause_level` and the sim target are arrays). China
+first threshold-scale run* of the sidebar's run length, on the **sidebar-pooled US
+series** (catalogued plan first, σ-sampled fit beyond it; single-site fallback) —
+so the networking selector, threshold and run length all move the pause — frozen at
+whatever its compute-derived climb reached by then, per sample (`us_pause_level`
+and the sim target are arrays). A caption sensitivity reruns China's compute term
+at the catalogued China-accessible pace (sites abroad) vs the export-control band.
+China
 races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the
 paused stock stays distillable while a gap remains, then China runs on its
 indigenous band plus its export-control-bound compute term. A *Projection range*
