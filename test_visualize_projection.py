@@ -4253,7 +4253,7 @@ class TestPacing:
         assert "pc_threshold" in keys and "pc_run" in keys
 
     def test_metr_eta_reproduces_the_metr_tab_defaults(self):
-        """The 40h panel is the METR tab's own milestone row, not a second
+        """The METR cards are the METR tab's own milestone row, not a second
         model: same GPT-4o-broken segment, same DT and position priors."""
         fr = vp.frontier_all
         days = np.array([(m['date'] - fr[0]['date']).days
@@ -4273,7 +4273,7 @@ class TestPacing:
                 days=np.log2(vp._PC_METR_TARGET_HRS / fitted) * dt)
             assert abs((med - want).days) < 45
 
-    def test_metr_p80_crosses_40h_after_p50(self):
+    def test_metr_p80_crosses_the_bar_after_p50(self):
         """p80 is the more demanding bar, so it arrives later at every
         percentile."""
         p50 = vp._pc_metr_eta(vp.frontier_all, 'p50_min', n=20000)
@@ -4369,6 +4369,34 @@ class TestPacing:
         real = [(s, s, origin, np.full(500, 100.0)) for s in vp._PC_RSI_WEIGHTS]
         assert vp._pc_rsi_blend(real, {s: 0 for s in vp._PC_RSI_WEIGHTS},
                                 origin, n=500) is not None
+
+    def test_condition_on_today_truncates_and_reweights(self):
+        """The reality check: samples dating a milestone before today are
+        rejected (not clamped), the survival fraction is reported so the
+        blend can down-weight the component, and a milestone with no future
+        mass drops out entirely."""
+        today = datetime(2026, 8, 24)
+        early = today - timedelta(days=100)
+        comps = [("half", "half", early, np.arange(1.0, 201.0)),
+                 ("future", "future", today, np.full(50, 30.0)),
+                 ("crossed", "crossed", early, np.full(50, 10.0))]
+        out, surv = vp._pc_condition_on_today(comps, today)
+        assert surv == {"half": 0.5, "future": 1.0, "crossed": 0.0}
+        by = {c[0]: c[3] for c in out}
+        assert set(by) == {"half", "future"}
+        assert len(by["half"]) == 100 and (by["half"] > 100).all()
+        assert len(by["future"]) == 50
+        # Mixed with weight x survival — mixture-level rejection — the dead
+        # component contributes nothing even at full prior weight.
+        w = {"half": 50, "future": 25, "crossed": 100}
+        days = vp._pc_rsi_blend_samples(
+            out, {s: w[s] * surv[s] for s in w}, today, n=4000)
+        assert days.min() > 0
+
+    def test_condition_flag_is_tracked_and_defaults_on(self):
+        assert vp._RSI_DEFAULTS["rsi_notyet"] is True
+        keys, defaults = vp._all_tracked()
+        assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
 
     def test_rsi_blend_weights_are_tracked_and_default_to_the_stated_mix(self):
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100

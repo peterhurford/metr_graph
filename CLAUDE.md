@@ -587,11 +587,11 @@ machinery rather than growing its own.
 
 *Capabilities Milestones* and the RSI blend live at the **bottom of the RSI
 tab** (`_pc_render_milestones()`), not here — they are still named `_pc_*` with
-the ETA helpers they call, and the machinery is unchanged. Six cards, driven by
-the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_eta()` for the METR frontier reaching 40h at p80
-(`_PC_METR_LEVELS`; p50 is deliberately not shown — it dates the horizon a model
-clears half the time, too weak a bar for a candidate RSI threshold, and it fired
-~9 months ahead of everything else), `_pc_eci_eta()` for the US-best ECI frontier reaching each of
+the ETA helpers they call, and the machinery is unchanged. Seven cards, driven by
+the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_eta()` for the METR frontier reaching 174h — about one
+work-month — at each of `_PC_METR_LEVELS` (p50 and p80, 10% blend weight each;
+at the month-scale bar p50's earlier firing is its own card and weight rather
+than the exclusion it got at the old 40h bar), `_pc_eci_eta()` for the US-best ECI frontier reaching each of
 `_PC_ECI_TARGETS` — 170, the top line of `_ECI_US_MILESTONES`, and 195, above
 anything that tab draws and a long extrapolation of the same fit —
 `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT` (90%, above
@@ -616,12 +616,24 @@ milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
 `test_pacing_quotes_the_same_milestone` compares the two CoBench dates with a
 tolerance, since both are Monte Carlo medians off an unseeded RNG.
 
-Four of the six are dated off *released, publicly benchmarked* models (METR,
+Five of the seven are dated off *released, publicly benchmarked* models (METR,
 ECI, RLI); CoBench and the staff survey are internal evaluations Anthropic
-reports for models it has not shipped. So `_pc_report_lag()` pulls the four back
+reports for models it has not shipped. So `_pc_report_lag()` pulls the five back
 by `_PC_REPORT_LAG_DAYS` (1–2 months, sampled over the range so the spread lands
 in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other two
 are already on that clock and must not be shifted twice.
+
+A sidebar checkbox (`rsi_notyet`, default on) conditions the cards and blend on
+"not crossed yet": `_pc_condition_on_today()` rejects samples dating a milestone
+at or before today — moving the samplers' own `days_to ≥ 0` truncation from the
+(stale) anchor date to the present, by rejection rather than clamping — and the
+blend mixes with each weight × survival, which together are exactly the mixture
+conditioned on the observation, so a definition that put mass in the past loses
+credence in proportion (the table's *P(already crossed)* column shows how much;
+a fully-crossed component drops out, generalizing the by-hand removal METR p50
+once got at the 40h bar).
+Assumes a crossing would be known by now — weaker for the internal evals, and
+the checkbox help says so. `test_condition_on_today_truncates_and_reweights`.
 
 Under the cards sits *RSI projection (tentative)* (`_pc_render_rsi_blend()`):
 no single benchmark defines the threshold, so each milestone is treated as one

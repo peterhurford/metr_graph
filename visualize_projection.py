@@ -4820,7 +4820,7 @@ def render_rli():
 # ── RSI (CoBench: automating Anthropic's own AI R&D) ─────────────────────
 
 _RSI_RESET_KEYS = [
-    "rsi_labels", "rsi_show_bar", "rsi_end_year", "rsi_timing",
+    "rsi_labels", "rsi_show_bar", "rsi_end_year", "rsi_timing", "rsi_notyet",
     "rsi_custom_dt_lo", "rsi_custom_dt_hi", "rsi_custom_dt_dist",
     "rsi_custom_pos_lo", "rsi_custom_pos_hi",
 ]
@@ -4830,6 +4830,7 @@ _RSI_DEFAULTS = {
     "rsi_show_bar": True,
     "rsi_end_year": 2028,
     "rsi_timing": "Training run finished",
+    "rsi_notyet": True,
     "rsi_custom_dt_dist": "Lognormal",
 }
 
@@ -4933,6 +4934,13 @@ def render_rsi():
             help="Which moment the Capabilities Milestone dates mean. Benchmark "
                  "milestones are dated off released models, so anything earlier "
                  "than release pulls them back — see the note under the cards.")
+        rsi_notyet = st.checkbox(
+            "Condition milestones on “not crossed yet”",
+            key="rsi_notyet",
+            help="Bayesian reality check: samples dating a milestone before "
+                 "today are dropped and the rest renormalized, and the RSI "
+                 "blend down-weights each milestone by the mass it put in "
+                 "the past. Assumes a crossing would be known by now.")
         rsi_labels = st.checkbox("Show model labels", key="rsi_labels")
         rsi_show_bar = st.checkbox(
             f"Show {_RSI_SUBSTITUTION_BAR:.0f}% substitution bar", key="rsi_show_bar",
@@ -5101,7 +5109,7 @@ def render_rsi():
     _render_rsi_survey()
 
     st.markdown("---")
-    _pc_render_milestones(rsi_timing, datetime.now())
+    _pc_render_milestones(rsi_timing, datetime.now(), condition=rsi_notyet)
 
 
 def _render_rsi_survey():
@@ -11618,7 +11626,8 @@ def _pc_report_lag(days_to, release_dated, timing_label, n=None):
 # late-but-uncertain milestone widens the answer instead of just shifting it.
 # Keyed by slug because the card labels are built from the target constants.
 _PC_RSI_WEIGHTS = {
-    "metr_p80": 20.0,
+    "metr_p50": 10.0,
+    "metr_p80": 10.0,
     "eci_170": 5.0,
     "eci_195": 20.0,
     "rli_90": 20.0,
@@ -11839,15 +11848,23 @@ def _pc_projection(rows, dcs, today, since=None, ref_steps=None,
     return grid, out
 
 
-def _pc_render_rsi_blend(components, origin):
-    """The weighted blend of the milestone ETAs, plus its own weights editor."""
+def _pc_render_rsi_blend(components, origin, survival=None):
+    """The weighted blend of the milestone ETAs, plus its own weights editor.
+
+    `survival` (from `_pc_condition_on_today`) multiplies each entered weight
+    for the mix only — with the components already truncated, that pair is
+    the mixture conditioned on "nothing has crossed yet". The editor and the
+    table's Weight column keep showing the entered priors.
+    """
     # Read before the editor renders: Streamlit has already applied any change
     # to session state by the time this run reaches the widgets below.
     weights = {slug: float(st.session_state.get(_PC_RSI_W_KEY + slug,
                                                 _PC_RSI_WEIGHTS.get(slug, 0.0)))
                for slug, _, _, _ in components}
+    mix = (weights if survival is None else
+           {s: w * survival.get(s, 1.0) for s, w in weights.items()})
     # One draw feeds the cards and the plot, so they cannot disagree.
-    blend_days = _pc_rsi_blend_samples(components, weights, origin)
+    blend_days = _pc_rsi_blend_samples(components, mix, origin)
     if blend_days is None:
         return
     early, med, late = (origin + timedelta(days=float(d))
@@ -11868,9 +11885,17 @@ def _pc_render_rsi_blend(components, origin):
     st.table([{
         "Milestone": lab,
         "Weight": f"{weights[slug] / _total * 100:.0f}%",
+        **({} if survival is None else
+           {"P(already crossed)":
+            f"{(1 - survival.get(slug, 1.0)) * 100:.0f}%"}),
         "Median": _pc_eta_dates(a, d)[1].strftime('%b %Y'),
         "80% CI": "{:%b %Y} \u2013 {:%b %Y}".format(*_pc_eta_dates(a, d)[::2]),
     } for slug, lab, a, d in components])
+    if survival is not None:
+        st.caption("Conditioned on \u201cnot crossed yet\u201d: the blend "
+                   "multiplies each weight by 1 \u2212 P(already crossed), so "
+                   "a milestone claiming RSI should already be here loses "
+                   "credence in proportion.")
 
     with st.expander("Set your own weights"):
         # Assign the defaults rather than popping the keys: a popped key is
@@ -11891,14 +11916,18 @@ def _pc_render_rsi_blend(components, origin):
                    "defaults above.")
 
 
-def _pc_render_milestones(timing_label, today):
+def _pc_render_milestones(timing_label, today, condition=True):
     """Capabilities Milestones + the RSI blend. Rendered on the RSI tab.
 
     Still named `_pc_*` with the ETA helpers it calls; it moved to the RSI tab
-    but the milestone machinery is unchanged.
+    but the milestone machinery is unchanged. With `condition` (the sidebar's
+    "not crossed yet" checkbox, default on) the cards and the blend below are
+    conditioned on the present via `_pc_condition_on_today` — the cards read
+    the same conditioned draws the blend mixes, so they cannot disagree.
     """
     # (slug, label, eta, release_dated) — see `_pc_report_lag`.
-    _cap = [(f"metr_{lab}", f"METR {lab} horizon reaches 40h",
+    _cap = [(f"metr_{lab}",
+             f"METR {lab} horizon reaches {_PC_METR_TARGET_HRS:.0f}h",
              _pc_metr_eta(frontier_all, k, samples=True), True)
             for lab, k in _PC_METR_LEVELS]
     _eci_fr = _eci_entity_data("US best")[1]
@@ -11916,6 +11945,9 @@ def _pc_render_milestones(timing_label, today):
                  _pc_rsi_survey_eta(load_rsi_survey(), samples=True), False))
     _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label))
             for slug, lab, r, rel in _cap if r is not None]
+    survival = None
+    if condition:
+        _cap, survival = _pc_condition_on_today(_cap, today)
     if _cap:
         st.subheader("Capabilities Milestones")
         # Two rows: seven cards on one line squeeze every label to two words.
@@ -11934,11 +11966,14 @@ def _pc_render_milestones(timing_label, today):
                      f"\u2013{_PC_REPORT_LAG_DAYS[1] / 30:.0f} months onto the "
                      f"\u201c{timing_label.lower()}\u201d clock; CoBench and the staff "
                      "survey are internal.")
+        _cond_note = (" Dates are conditioned on the milestone not having "
+                      "crossed by today: samples in the past are dropped and "
+                      "the rest renormalized." if condition else "")
         st.caption(
             "Each milestone reproduces its own tab at that tab's defaults, so the two "
-            "cannot quote different dates for the same bar." + _lag_note)
+            "cannot quote different dates for the same bar." + _lag_note + _cond_note)
 
-        _pc_render_rsi_blend(_cap, today)
+        _pc_render_rsi_blend(_cap, today, survival)
 
 
 def _pc_when(rec, horizon=None):
@@ -11950,14 +11985,16 @@ def _pc_when(rec, horizon=None):
     return f"~{rec['med']:%b %Y}"
 
 
-# METR time-horizon milestone quoted at the top of the tab: one work-week, the
-# first entry in the METR tab's own milestone table. p80 only — p50 dates the
-# horizon a model clears half the time, too weak a bar to be a candidate RSI
-# threshold, and it fired ~9 months ahead of every other milestone here.
-# `_pc_metr_eta` still fits on p50 (that is the METR tab's own default) and
-# takes the displayed series as `val_key`.
-_PC_METR_TARGET_HRS = 40.0
-_PC_METR_LEVELS = (("p80", "p80_min"),)
+# METR time-horizon milestone quoted at the top of the tab: 174h, about one
+# work-month (1mo = 176h in this repo's work-time units). Both reliability
+# levels are cards — at a month-scale bar p50 is a credible candidate
+# definition, so its earlier firing is expressed as its own card and blend
+# weight rather than by exclusion (at the old 40h bar it was dropped as too
+# weak, firing ~9 months ahead of everything else). `_pc_metr_eta` still fits
+# on p50 (the METR tab's own default) and takes the displayed series as
+# `val_key`.
+_PC_METR_TARGET_HRS = 174.0
+_PC_METR_LEVELS = (("p50", "p50_min"), ("p80", "p80_min"))
 
 
 def _pc_eta_out(anchor_date, days_to, samples):
@@ -12134,6 +12171,28 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
     start = np.random.normal(fitted, np.log(_RSI_SURVEY_POS_FACTOR) / 1.282, n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
     return _pc_eta_out(rows[-1]['date'], days_to, samples)
+
+
+def _pc_condition_on_today(components, today):
+    """Condition each milestone on not having crossed by `today`.
+
+    Every ETA sampler already truncates at its own anchor (`days_to >= 0`);
+    this moves the truncation point to the present, by rejection rather than
+    clamping: samples dating the crossing at or before today are dropped and
+    the survivors are the conditional distribution P(T = t | T > today).
+    Returns (conditioned components, {slug: survival fraction}); a component
+    with no surviving samples drops out entirely. The blend must then mix
+    with each weight multiplied by its survival — that pair is exactly the
+    mixture conditioned on "nothing has crossed yet", so a definition that
+    put mass in the past loses credence in proportion.
+    """
+    out, survival = [], {}
+    for slug, lab, anchor, days in components:
+        keep = days + (anchor - today).days > 0
+        survival[slug] = float(np.mean(keep))
+        if keep.any():
+            out.append((slug, lab, anchor, days[keep]))
+    return out, survival
 
 
 def _pc_rsi_blend_samples(components, weights, origin, n=None):

@@ -937,12 +937,13 @@ class TestRsiTab:
         _assert_no_error(at, "RSI / deep link")
         assert at.session_state["_active_tab"] == "RSI"
 
-    def test_metr_40h_panel_renders_at_the_top(self):
-        """p80 only: p50 is too weak a bar to be a candidate RSI threshold."""
+    def test_metr_174h_panel_renders_at_the_top(self):
+        """Both reliability levels at the month-scale bar, as their own cards."""
         at = self._rsi_app()
         labels = [str(m.label) for m in at.metric]
-        assert "METR p80 horizon reaches 40h" in labels
-        assert "METR p50 horizon reaches 40h" not in labels
+        assert "METR p50 horizon reaches 174h" in labels
+        assert "METR p80 horizon reaches 174h" in labels
+        assert not any("40h" in l for l in labels)
         assert "US ECI reaches 170" in labels
         assert "US ECI reaches 195" in labels
         assert "RLI reaches 90%" in labels
@@ -966,6 +967,18 @@ class TestRsiTab:
         labels = {str(m.label) for m in at.metric}
         assert {"Blended median", "80% CI"} <= labels
         assert any("RSI projection (tentative)" in h.value for h in at.subheader)
+
+    def test_notyet_conditioning_toggle(self):
+        """Default on: the blend table carries the reality-check column;
+        toggling off removes it and still renders."""
+        at = self._rsi_app()
+        assert at.checkbox(key="rsi_notyet").value is True
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns)
+        assert "P(already crossed)" in t.columns
+        at.checkbox(key="rsi_notyet").set_value(False).run()
+        _assert_no_error(at, "RSI / conditioning off")
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns)
+        assert "P(already crossed)" not in t.columns
 
     def test_toggles(self):
         at = self._rsi_app()
