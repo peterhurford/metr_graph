@@ -296,19 +296,27 @@ CoBench is filtered for difficulty (mostly problems Mythos Preview failed at lea
 once in three tries) and run at a 300k-token budget, so scores don't compare to
 public AI R&D suites — the fine print has to keep saying so.
 
+Both halves end with an ECI-style row of projected values (`_rsi_proj_row()` over
+`_rsi_eoy_targets()`), anchored on the last measured point rather than on the
+fit's own start.
+
 The tab's second half (`_render_rsi_survey()`) charts the report's other
 substitution series, the internal staff survey (§3.4.2): self-reported output
-multiple against no AI assistance, from `_RSI_SURVEY` via `load_rsi_survey()`.
-Two things are load-bearing. Opus 4's round reported **no number** — only that
-the result fell under the pre-set 3x median rule-out threshold — so `stat` is
-`'bound'`, it draws as a hollow caret and is left off the connecting line
-(`test_opus_4_is_the_only_bound`). And the rounds do not report the same
-statistic on the same sample (medians on superusers, then on a broader sample,
-then a geometric mean on an opt-in poll), so each point carries its `note` on
-hover and the two-sentence caption says the rounds differ; the survey has not
-been discontinued — the report says only that no new round was run for Mythos 5,
-and `test_survey_caption_does_not_claim_discontinuation` keeps the caption from
-saying otherwise.
+multiple against no AI assistance, from `_RSI_SURVEY` via `load_rsi_survey()`,
+fitted and projected on **log(multiple)** — a multiple has no ceiling to bound it
+against, so it compounds the way METR's horizon does rather than saturating like
+a percentage. Three things are load-bearing. Opus 4's round is not carried at
+all: it reported no number, only that the result fell under the pre-set 3x median
+rule-out threshold, and a bound is not a point on a trend. The rounds do not
+report the same statistic on the same sample (medians on superusers, then on a
+broader sample, then a geometric mean on an opt-in poll), so each point carries
+its `note` on hover and the caption says the rounds differ — and the survey is
+not discontinued, the report says only that no new round was run for Mythos 5.
+And the fan runs `_RSI_SURVEY_HORIZON_DAYS` (365) past the last round rather than
+to the tab's *Project through* year: at a 138-day doubling the median reaches
+~10^3x by end-2029, which on a log axis squashes the three actual points into the
+bottom decile. The projected-values row still quotes those far columns, via
+`_rsi_fmt_x()` so a seven-figure upper tail reads as `~2.0Mx`.
 
 The Pacing tab's
 *Capabilities Milestones* row dates the same 85% bar through `_pc_rsi_eta()`,
@@ -576,16 +584,20 @@ at p80, `_pc_eci_eta()` for the US-best ECI frontier reaching each of
 `_PC_ECI_TARGETS` — 170, the top line of `_ECI_US_MILESTONES`, and 195, above
 anything that tab draws and a long extrapolation of the same fit —
 `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT` (90%, above
-that tab's own milestone table, which stops at 50%), and `_pc_rsi_eta()` for
+that tab's own milestone table, which stops at 50%), `_pc_rsi_eta()` for
 the CoBench frontier reaching `_RSI_SUBSTITUTION_BAR` (85%, Anthropic's own
-full-substitution bar, which the RSI tab dates too). Each reproduces
+full-substitution bar, which the RSI tab dates too), and `_pc_rsi_survey_eta()`
+for self-reported staff speedup reaching `_PC_RSI_SURVEY_TARGET_X` (10x, about a
+doubling and a half past the most recent round's ~4x). They render in **two
+rows** — seven on one line squeezes every label to two words. Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
 [DT/2, DT*2], position over the current model's CI, p50 slope for both levels;
 ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2; RLI: single OLS in
 logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
-± 1 point; RSI: single OLS in logit space, odds-doubling time over
-`_rsi_dt_ci()`'s widened interval, position ± `_PC_RSI_POS_CI` (10) points —
-rather than
+± 1 point; RSI CoBench: single OLS in logit space, odds-doubling time over
+`_rsi_dt_ci()`'s widened interval, position ± `_PC_RSI_POS_CI` (10) points; RSI
+survey: OLS on log(multiple), doubling time over [DT/2, DT*2], position over the
+fitted multiple ÷ and × `_RSI_SURVEY_POS_FACTOR` — rather than
 fitting its own, so the tabs can't quote different dates for the same
 milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
 `test_eci_eta_reproduces_the_eci_tab_defaults`,

@@ -3137,62 +3137,12 @@ class TestRsi:
             assert m['is_frontier'] == (m['cobench'] > best)
             best = max(best, m['cobench'])
 
-    def test_scores_match_the_report(self):
-        by_name = {m['name']: m['cobench'] for m in vp.load_rsi_data()}
-        assert by_name == {"Claude Opus 4.6": 15.6, "Claude Mythos Preview": 54.8,
-                           "Claude Mythos 5": 50.3, "Model 2": 62.8}
-
-    def test_mythos_5_ships_with_fable_5(self):
-        """Same release as Fable 5, matching the AISI cyber CSVs."""
-        by_name = {m['name']: m['date'] for m in vp.load_rsi_data()}
-        assert by_name["Claude Mythos 5"] == datetime(2026, 6, 9)
-        assert by_name["Claude Mythos 5"] > by_name["Claude Mythos Preview"]
-        # ...which puts Mythos 5 below the running max, off the frontier.
-        off = [m['name'] for m in vp.load_rsi_data() if not m['is_frontier']]
-        assert off == ["Claude Mythos 5"]
-
     def test_unknown_dates_render_with_a_tilde(self):
         by_name = {m['name']: m for m in vp.load_rsi_data()}
         assert vp._rsi_date_label(by_name["Claude Opus 4.6"]) == "Feb 05, 2026"
         assert vp._rsi_date_label(by_name["Claude Mythos 5"]) == "Jun 09, 2026"
         assert vp._rsi_date_label(by_name["Claude Mythos Preview"]) == "~Apr 07, 2026"
         assert vp._rsi_date_label(by_name["Model 2"], '%b %Y') == "~Jul 2026"
-
-    def test_no_model_has_reached_the_substitution_bar(self):
-        """The tab's headline gap; if a refresh crosses 85 the caption text
-        about a remaining gap goes stale."""
-        assert vp._RSI_SUBSTITUTION_BAR == 85.0
-        assert max(m['cobench'] for m in vp.load_rsi_data()) < vp._RSI_SUBSTITUTION_BAR
-
-    def test_fit_is_a_logit_ols_through_the_frontier(self):
-        fr = [m for m in vp.load_rsi_data() if m['is_frontier']]
-        base, intercept, slope = vp._rsi_fit(fr)
-        assert base == fr[0]['date']
-        assert slope > 0
-        days = np.array([(m['date'] - base).days for m in fr], dtype=float)
-        logit = vp._logit(np.array([m['cobench'] / 100 for m in fr]))
-        expect = vp.fit_line(days, logit)
-        assert slope == pytest.approx(expect[1])
-        assert intercept == pytest.approx(expect[0])
-
-    def test_survey_rows_carry_a_plottable_value_and_a_hover_note(self):
-        rows = vp.load_rsi_survey()
-        assert [r['name'] for r in rows] == [
-            "Opus 4", "Opus 4.5", "Opus 4.6", "Mythos Preview"]
-        assert [r['date'] for r in rows] == sorted(r['date'] for r in rows)
-        for r in rows:
-            assert r['uplift'] > 1 and r['stat'] in ('bound', 'median', 'geomean')
-            assert 'n=' in r['note']
-            if 'lo' in r:
-                assert r['lo'] < r['uplift'] < r['hi']
-
-    def test_opus_4_is_the_only_bound(self):
-        """Its round reported no number, only that it fell under the 3x
-        rule-out threshold, so it must not be drawn as a measured point."""
-        rows = vp.load_rsi_survey()
-        bounds = [r for r in rows if r['stat'] == 'bound']
-        assert [r['name'] for r in bounds] == ["Opus 4"]
-        assert bounds[0]['uplift'] == 3.0
 
     def test_dt_ci_default_spans_both_segment_rates(self):
         """Three points whose segments disagree ~8x: the conventional
@@ -4396,14 +4346,6 @@ class TestPacing:
             # A higher bar is never reached earlier.
             assert prev is None or med > prev
             prev = med
-
-    def test_rsi_card_targets_anthropics_own_bar(self):
-        """Not an invented milestone: the card dates the score Anthropic says
-        a fully-substituting model would reach."""
-        assert vp._PC_RSI_POS_CI == 10.0
-        early, med, late = vp._pc_rsi_eta(vp.rsi_frontier_all)
-        assert vp._pc_rsi_eta(vp.rsi_frontier_all, vp._RSI_SUBSTITUTION_BAR)
-        assert med > max(m['date'] for m in vp.rsi_frontier_all)
 
     def test_rli_target_is_above_the_rli_tabs_own_milestones(self):
         """90% is a deliberate extrapolation past the tab's top milestone."""

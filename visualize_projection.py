@@ -582,28 +582,35 @@ def _rsi_date_label(m, fmt='%b %d, %Y'):
 
 # The internal researcher survey — the other series in the report's section on
 # substituting models for Anthropic staff (§3.4.2). Self-reported output
-# multiple against no AI assistance, per frontier model. Opus 4's round set no
-# number: it only established the result was below the pre-set 3x median
-# rule-out threshold, so it plots as an upper bound. `stat` records which
-# statistic each round reported — the rounds are not all the same one, which is
-# the main reason to read the line loosely.
+# multiple against no AI assistance, per frontier model. The rounds do not all
+# report the same statistic on the same sample, so each point carries its own
+# `note` on hover; the numbers are self-reported to one significant figure,
+# hence the "~" everywhere they render. Opus 4 (May 2025) is deliberately not
+# carried: that round reported no number, only that the result fell under the
+# pre-set 3x median rule-out threshold, and a bound is not a point on a trend.
 
 _RSI_SURVEY = [
-    {"name": "Opus 4", "date": "2025-05-22", "uplift": 3.0, "stat": "bound",
-     "note": "n=4 · upper bound: below the pre-set 3x median rule-out threshold"
-             "<br>0 of 4 called it a junior-researcher replacement"},
-    {"name": "Opus 4.5", "date": "2025-11-24", "uplift": 2.0, "stat": "median",
+    {"name": "Opus 4.5", "date": "2025-11-24", "uplift": 2.0,
      "note": "n=18, top ~30 staff by internal Claude Code use · median (mean 3.2x)"
              "<br>0 of 18 thought it crossed AI R&D-4"},
-    {"name": "Opus 4.6", "date": "2026-02-05", "uplift": 2.0, "stat": "median",
-     "lo": 1.3, "hi": 8.0,
+    {"name": "Opus 4.6", "date": "2026-02-05", "uplift": 2.0, "lo": 1.3, "hi": 8.0,
      "note": "n=16, broadened past superusers · median (mean 2.5x), range 1.3\u20138x"
              "<br>2 of 16 said a drop-in L4 was already possible; both revised on "
              "follow-up"},
-    {"name": "Mythos Preview", "date": "2026-04-07", "uplift": 4.0, "stat": "geomean",
+    {"name": "Mythos Preview", "date": "2026-04-07", "uplift": 4.0,
      "note": "n=130, opt-in Slack poll · geometric mean, past week's work output"
              "<br>1 of 18 in a separate poll said a drop-in L4 already exists"},
 ]
+
+# The survey fan's position CI: the fitted multiple divided and multiplied by
+# this. Self-reports to one significant figure don't support anything tighter.
+_RSI_SURVEY_POS_FACTOR = 1.5
+
+# The survey fan runs a year past the last round rather than to the tab's
+# *Project through* year. Three coarse points 4.5 months apart compound to
+# ~10^6x by end-2028, which squashes the data itself into the bottom decile of
+# a log axis; the CoBench half keeps the sidebar horizon.
+_RSI_SURVEY_HORIZON_DAYS = 365
 
 
 @st.cache_data
@@ -4819,6 +4826,44 @@ _RSI_DEFAULTS = {
 }
 
 
+def _rsi_fmt_x(v):
+    """Multiples, compact — the fan's upper tail runs to seven figures."""
+    if v >= 1e6:
+        return f"~{v / 1e6:.1f}Mx"
+    if v >= 1e3:
+        return f"~{v / 1e3:.1f}kx"
+    if v >= 100:
+        return f"~{v:.0f}x"
+    return f"~{v:.1f}x"
+
+
+def _rsi_eoy_targets(anchor_label, anchor_date):
+    """The ECI tab's projection columns, anchored on the last measured point."""
+    return [(f"{anchor_label} ({anchor_date:%b %Y})", anchor_date),
+            ("Projected today",
+             datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
+            ("2026EOY", datetime(2026, 12, 31)),
+            ("2027 Jun EOM", datetime(2027, 6, 30)),
+            ("2027EOY", datetime(2027, 12, 31)),
+            ("2028EOY", datetime(2028, 12, 31)),
+            ("2029EOY", datetime(2029, 12, 31))]
+
+
+def _rsi_proj_row(targets, anchor_date, anchor_value, samples_at, fmt):
+    """One ECI-style row of projected values with 80% CIs.
+
+    `samples_at(elapsed_days)` returns the trajectory samples; the anchor
+    column shows the measured value rather than the fit's own start.
+    """
+    cols = st.columns([1.2] + [1] * (len(targets) - 1))
+    for col, (label, d) in zip(cols, targets):
+        elapsed = (d - anchor_date).days
+        p10, p50, p90 = np.percentile(samples_at(float(elapsed)), [10, 50, 90])
+        with col:
+            st.metric(label, fmt(anchor_value if elapsed == 0 else p50))
+            st.caption(f"80% CI: {fmt(p10)} \u2013 {fmt(p90)}")
+
+
 def _rsi_fit(frontier):
     """OLS through the frontier in logit space.
 
@@ -4915,19 +4960,6 @@ def render_rsi():
         "actually solved. 449 problems, model-graded against the root cause found in "
         "practice.")
 
-    best = max(rsi_all, key=lambda m: m['cobench'])
-    _c1, _c2, _c3 = st.columns(3)
-    with _c1:
-        st.metric("Best CoBench score", f"{best['cobench']:.1f}%")
-        st.caption(f"{best['name']} · {_rsi_date_label(best, '%b %Y')}")
-    with _c2:
-        st.metric("Full-substitution bar", f"{_RSI_SUBSTITUTION_BAR:.0f}%")
-        st.caption("Anthropic's own estimate")
-    with _c3:
-        st.metric("Gap remaining",
-                  f"{_RSI_SUBSTITUTION_BAR - best['cobench']:.1f} pts")
-        st.caption("From the best measured model")
-
     # ── Trajectories ─────────────────────────────────────────────────────
     if rsi_dt_lo > rsi_dt_hi:
         rsi_dt_lo, rsi_dt_hi = rsi_dt_hi, rsi_dt_lo
@@ -5023,7 +5055,7 @@ def render_rsi():
     st.plotly_chart(fig, width="stretch")
 
     # ── When does the trend reach the substitution bar? ───────────────────
-    st.subheader(f"When does CoBench reach {_RSI_SUBSTITUTION_BAR:.0f}%?")
+    st.markdown(f"##### When does CoBench reach {_RSI_SUBSTITUTION_BAR:.0f}%?")
     _needed = _logit(_RSI_SUBSTITUTION_BAR / 100) - proj_start_logit
     _days_to = np.maximum(_needed / proj_slope, 0)
     _p10, _p50, _p90 = np.percentile(_days_to, [10, 50, 90])
@@ -5032,30 +5064,15 @@ def render_rsi():
     _e1, _e2 = st.columns(2)
     with _e1:
         st.metric("Median", _dates[1].strftime('%b %Y'))
-        st.caption(f"From {current['name']} at {current['cobench']:.1f}%")
     with _e2:
         st.metric("80% CI",
                   f"{_dates[0].strftime('%b %Y')} – {_dates[2].strftime('%b %Y')}")
-        st.caption("From the rate and start CIs in the sidebar")
 
-    st.caption(
-        f"Method: a single OLS line through the {len(rsi_frontier_all)} frontier "
-        "points, fitted on the log-odds so the trend stays bounded below 100%. "
-        "Three points cannot distinguish a straight line from a bend, so no "
-        "piecewise or superexponential basis is offered here. The fit is "
-        "dominated by the one large Opus 4.6 → Mythos Preview jump, so the "
-        "default rate CI is widened to span both segment rates — Mythos Preview "
-        "→ Model 2 is the slow end." + PROJ_DISCLAIMER)
-
-    st.caption(
-        "Fine print: CoBench is an internal Anthropic evaluation, moderately filtered "
-        "for difficulty — the set is mostly restricted to problems Mythos Preview "
-        "failed at least once in three tries — and run at a 300k-token budget, so "
-        "scores are not comparable to public AI R&D suites. Scores are read off "
-        "Figure 3.4.3.A; Anthropic prints no table. A \"~\" on a date means the "
-        "release date isn't on the record: Mythos Preview has no published release "
-        "record, and Model 2 is unreleased with its name redacted. "
-        f"Source: [Anthropic, Redacted Risk Report, August 2026, §3.4.3]({_RSI_SOURCE_URL}).")
+    _rsi_proj_row(
+        _rsi_eoy_targets(current['name'], current['date']),
+        current['date'], current['cobench'],
+        lambda e: _inv_logit(proj_start_logit + e * proj_slope) * 100,
+        lambda v: f"{v:.1f}%")
 
     _render_rsi_survey()
 
@@ -5063,21 +5080,65 @@ def render_rsi():
 def _render_rsi_survey():
     """The report's other substitution series: self-reported researcher uplift.
 
-    Opus 4's round reported no number, only that the result was under the 3x
-    rule-out threshold, so it draws as a hollow upper-bound caret and is left
-    off the connecting line.
+    Fitted and projected the same way the CoBench half is, but on log(multiple)
+    rather than log-odds: an output multiple has no ceiling to bound it against,
+    so it compounds the way METR's horizon does.
     """
-    st.markdown("---")
-    st.subheader("Comparable metric: the internal staff survey")
+    st.subheader("Anthropic internal staff survey on speedup")
 
     rows = load_rsi_survey()
-    measured = [r for r in rows if r['stat'] != 'bound']
+    base = rows[0]['date']
+    days = np.array([(r['date'] - base).days for r in rows], dtype=float)
+    logs = np.log(np.array([r['uplift'] for r in rows]))
+    intercept, slope = fit_line(days, logs)
+    cur = rows[-1]
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=[r['date'] for r in measured], y=[r['uplift'] for r in measured],
-        mode='lines', line=dict(color='#4F8DFD', width=2),
-        hoverinfo='skip', showlegend=False))
+
+    if slope > 0:
+        dt = np.log(2) / slope
+        n = N_SAMPLES
+        proj_slope = np.log(2) / np.maximum(
+            _lognormal_from_ci(max(5.0, round(dt / 2)), round(dt * 2), n), 1.0)
+        fitted = intercept + slope * (cur['date'] - base).days
+        sigma = np.log(_RSI_SURVEY_POS_FACTOR) / 1.282
+        start_log = np.random.normal(fitted, sigma, n)
+
+        pdays = np.arange(0, _RSI_SURVEY_HORIZON_DAYS + 1, dtype=float)
+        pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
+        traj = np.exp(start_log[:, None] + pdays[None, :] * proj_slope[:, None])
+        pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
+
+        for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
+                                     (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
+                                     (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+            fig.add_trace(go.Scatter(
+                x=pdates + pdates[::-1],
+                y=list(pct[hi]) + list(pct[lo][::-1]),
+                fill='toself', fillcolor=color, line=dict(width=0),
+                name=label, hoverinfo='skip', showlegend=True))
+
+        hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
+        hdates = [base + timedelta(days=int(d)) for d in hdays]
+        fig.add_trace(go.Scatter(
+            x=hdates, y=np.exp(intercept + slope * hdays).tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5),
+            name=f"Fitted trend (2x: {dt:.0f}d)",
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: ~{y:.1f}x"
+                       for d, y in zip(hdates, np.exp(intercept + slope * hdays))],
+            hoverinfo='text'))
+        fig.add_trace(go.Scatter(
+            x=pdates, y=pct[50].tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5, dash='dash'),
+            name='Median projection',
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: ~{y:.1f}x"
+                       for d, y in zip(pdates, pct[50])],
+            hoverinfo='text'))
+        x_end, y_top = pdates[-1], max(float(pct[95][-1]), 10.0)
+        _samples_at = lambda e: np.exp(start_log + e * proj_slope)
+    else:
+        x_end, y_top = cur['date'], 10.0
+        _samples_at = None
 
     for r in rows:
         if 'lo' in r:
@@ -5085,41 +5146,46 @@ def _render_rsi_survey():
                 x=[r['date'], r['date']], y=[r['lo'], r['hi']],
                 mode='lines', line=dict(color='#4F8DFD', width=1.5),
                 opacity=0.35, hoverinfo='skip', showlegend=False))
-        _bound = r['stat'] == 'bound'
         fig.add_trace(go.Scatter(
             x=[r['date']], y=[r['uplift']], mode='markers+text',
-            marker=dict(color='white' if _bound else '#4F8DFD', size=13,
-                        symbol='triangle-down' if _bound else 'circle',
-                        line=dict(color='#4F8DFD' if _bound else 'white', width=2)),
+            marker=dict(color='#4F8DFD', size=13,
+                        line=dict(color='white', width=2)),
             text=[r['name']], textposition='top center',
             textfont=dict(size=10, color='#1a1a2e'),
             hovertext=f"{r['name']}<br>{r['date'].strftime('%b %Y')}<br>"
-                      f"{'≤' if _bound else ''}{r['uplift']:.1f}x output vs no AI"
-                      f"<br>{r['note']}",
+                      f"~{r['uplift']:g}x output vs no AI<br>{r['note']}",
             hoverinfo='text', showlegend=False))
 
     fig.update_layout(
-        height=420, margin=dict(l=50, r=60, t=40, b=40),
+        height=480, margin=dict(l=50, r=60, t=40, b=40),
         font=dict(color='#1a1a2e'),
         xaxis=dict(title="Survey round",
-                   range=[rows[0]['date'] - timedelta(days=40),
-                          rows[-1]['date'] + timedelta(days=40)],
+                   range=[base - timedelta(days=30), x_end + timedelta(days=30)],
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         yaxis=dict(title="Self-reported output vs. no AI assistance",
-                   range=[0, 9], ticksuffix='x',
+                   type='log', range=[0, np.log10(y_top * 1.3)], ticksuffix='x',
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        hovermode='closest', plot_bgcolor='white', paper_bgcolor='white')
+        hovermode='closest',
+        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
+                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+        plot_bgcolor='white', paper_bgcolor='white')
     st.plotly_chart(fig, width="stretch")
+
+    if _samples_at is not None:
+        _rsi_proj_row(
+            _rsi_eoy_targets(cur['name'], cur['date']),
+            cur['date'], cur['uplift'], _samples_at, _rsi_fmt_x)
 
     st.caption(
         "Anthropic surveys its own technical staff on productivity uplift per frontier "
         "model; the rounds differ in who was sampled and which statistic was reported "
         "(hover a point), and Mythos Preview is the most recent — no new survey was run "
-        "for Mythos 5. Anthropic notes respondents may overstate uplift on tasks they "
-        "chose to delegate, and that per-task uplift doesn't translate directly into "
-        "faster research overall. Source: "
+        "for Mythos 5. The trend is three self-reported points fitted on the log of the "
+        "multiple and projected the same way the CoBench fan above is, but only a year "
+        "out — compounded further it leaves the chart, which is a fact about the fit "
+        "rather than about the future. Source: "
         f"[Redacted Risk Report, August 2026, §3.4.2]({_RSI_SOURCE_URL}) and the "
         "corresponding Claude system cards.")
 
@@ -11842,6 +11908,38 @@ def _pc_rsi_eta(frontier, target_pct=_RSI_SUBSTITUTION_BAR, n=None):
                  for d in np.percentile(days_to, [10, 50, 90]))
 
 
+# The staff-survey companion: when do Anthropic researchers self-report this
+# much speedup. 10x is roughly a doubling and a half past the most recent
+# round's ~4x, so it sits just outside the measured range rather than deep in
+# the extrapolation the RSI tab's own caption warns about.
+_PC_RSI_SURVEY_TARGET_X = 10.0
+
+
+def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None):
+    """(early, median, late) dates for self-reported speedup to reach `target_x`.
+
+    The RSI tab's survey fan at its defaults — OLS on log(multiple), doubling
+    time lognormal over [DT/2, DT*2], position lognormal over the fitted
+    multiple divided and multiplied by `_RSI_SURVEY_POS_FACTOR`. Returns None
+    if the fitted slope is flat or negative.
+    """
+    n = n or N_SAMPLES
+    base = rows[0]['date']
+    days = np.array([(r['date'] - base).days for r in rows], dtype=float)
+    logs = np.log(np.array([r['uplift'] for r in rows]))
+    intercept, slope = fit_line(days, logs)
+    if slope <= 0:
+        return None
+    dt = np.log(2) / slope
+    proj_slope = np.log(2) / np.maximum(
+        _lognormal_from_ci(max(5.0, round(dt / 2)), round(dt * 2), n), 1.0)
+    fitted = intercept + slope * (rows[-1]['date'] - base).days
+    start = np.random.normal(fitted, np.log(_RSI_SURVEY_POS_FACTOR) / 1.282, n)
+    days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
+    return tuple(rows[-1]['date'] + timedelta(days=float(d))
+                 for d in np.percentile(days_to, [10, 50, 90]))
+
+
 # Realized ship lag of a US frontier model — run finished to public release,
 # prep plus queue: GPT-5.5 Pro's run finished ~Feb 2026 and shipped Apr 23
 # (Mythos model card). The released frontier trails the trained one by this,
@@ -12577,7 +12675,7 @@ def render_pacing():
 
     st.header("Pacing")
 
-    # ── Capability milestones: METR 40h, ECI 170, RLI 90% and CoBench 85% ──
+    # ── Capability milestones: METR 40h, ECI 170, RLI 90%, CoBench 85% and 10x staff speedup ──
     _cap_etas = [(f"METR {lab} horizon reaches 40h",
                   _pc_metr_eta(frontier_all, k)) for lab, k in _PC_METR_LEVELS]
     _eci_fr = _eci_entity_data("US best")[1]
@@ -12587,14 +12685,20 @@ def render_pacing():
                       _pc_rli_eta(rli_frontier_all)))
     _cap_etas.append((f"CoBench reaches {_RSI_SUBSTITUTION_BAR:.0f}%",
                       _pc_rsi_eta(rsi_frontier_all)))
+    _cap_etas.append((f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
+                      _pc_rsi_survey_eta(load_rsi_survey())))
     _cap_etas = [(lab, eta) for lab, eta in _cap_etas if eta is not None]
     if _cap_etas:
         st.subheader("Capabilities Milestones")
-        for col, (lab, (early, med, late)) in zip(
-                st.columns(len(_cap_etas)), _cap_etas):
-            with col:
-                st.metric(lab, med.strftime('%b %Y'))
-                st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")
+        # Two rows: seven cards on one line squeeze every label to two words.
+        _per_row = -(-len(_cap_etas) // 2)
+        for _start in range(0, len(_cap_etas), _per_row):
+            _chunk = _cap_etas[_start:_start + _per_row]
+            for col, (lab, (early, med, late)) in zip(
+                    st.columns(_per_row), _chunk):
+                with col:
+                    st.metric(lab, med.strftime('%b %Y'))
+                    st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")
 
     # ── Entities and projections ──
     run_days = _DAYS_6MO if key == 'train_flop_6mo' else _DAYS_2MO

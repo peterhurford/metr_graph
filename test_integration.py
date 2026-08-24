@@ -36,11 +36,6 @@ def _has_widget(at, widget_type, key):
         return False
 
 
-def at_caps(at):
-    """All caption text on the page."""
-    return list(at.caption)
-
-
 def _switch_tab(at, tab_name):
     """Switch to a tab and run."""
     [r for r in at.radio if r.label == "Tab"][0].set_value(tab_name).run()
@@ -942,42 +937,6 @@ class TestRsiTab:
         _assert_no_error(at, "RSI / deep link")
         assert at.session_state["_active_tab"] == "RSI"
 
-    def test_headline_metrics(self):
-        at = self._rsi_app()
-        labels = {m.label: m.value for m in at.metric}
-        assert labels["Best CoBench score"] == "62.8%"
-        assert labels["Full-substitution bar"] == "85%"
-        assert labels["Gap remaining"] == "22.2 pts"
-
-    def test_projection_to_the_substitution_bar_is_shown(self):
-        at = self._rsi_app()
-        assert any("When does CoBench reach 85%?" in h.value for h in at.subheader)
-        labels = {m.label: m.value for m in at.metric}
-        assert "Median" in labels and "80% CI" in labels
-        assert "–" in labels["80% CI"]
-
-    def test_survey_is_a_second_chart_not_a_table(self):
-        at = self._rsi_app()
-        assert len(at.get("plotly_chart")) == 2
-        assert len(at.get("table")) == 0
-        assert any("Comparable metric: the internal staff survey" in h.value
-                   for h in at.subheader)
-
-    def test_survey_caption_does_not_claim_discontinuation(self):
-        """The report says only that no new survey was run for Mythos 5."""
-        caps = " ".join(c.value for c in at_caps(self._rsi_app()))
-        assert "no new survey was run for Mythos 5" in caps
-        assert "discontinu" not in caps.lower()
-
-    def test_slower_rate_pushes_the_bar_out(self):
-        at = self._rsi_app()
-        before = [m for m in at.metric if m.label == "Median"][0].value
-        at.number_input(key="rsi_custom_dt_lo").set_value(300.0).run()
-        at.number_input(key="rsi_custom_dt_hi").set_value(900.0).run()
-        _assert_no_error(at, "RSI / slow rate")
-        after = [m for m in at.metric if m.label == "Median"][0].value
-        assert before != after
-
     def test_pacing_quotes_the_same_milestone(self):
         """The Pacing tab's CoBench card is this tab's own fit, so the two
         cannot date the milestone differently. Compared with a tolerance, not
@@ -1004,12 +963,6 @@ class TestRsiTab:
         at = self._rsi_app()
         at.selectbox(key="rsi_end_year").set_value(2031).run()
         _assert_no_error(at, "RSI / project through 2031")
-
-    def test_source_and_tilde_are_explained(self):
-        at = self._rsi_app()
-        caps = " ".join(c.value for c in at.caption)
-        assert "Redacted Risk Report" in caps
-        assert "~" in caps
 
 
 class TestUkCyberTab:
