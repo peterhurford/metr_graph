@@ -4820,17 +4820,16 @@ def render_rli():
 # ── RSI (CoBench: automating Anthropic's own AI R&D) ─────────────────────
 
 _RSI_RESET_KEYS = [
-    "rsi_labels", "rsi_show_bar", "rsi_end_year", "rsi_timing", "rsi_notyet",
+    "rsi_end_year", "rsi_timing", "rsi_notyet", "rsi_notyet_ramp",
     "rsi_custom_dt_lo", "rsi_custom_dt_hi", "rsi_custom_dt_dist",
     "rsi_custom_pos_lo", "rsi_custom_pos_hi",
 ]
 
 _RSI_DEFAULTS = {
-    "rsi_labels": True,
-    "rsi_show_bar": True,
     "rsi_end_year": 2028,
     "rsi_timing": "Training run finished",
     "rsi_notyet": True,
+    "rsi_notyet_ramp": 30.0,
     "rsi_custom_dt_dist": "Lognormal",
 }
 
@@ -4934,19 +4933,6 @@ def render_rsi():
             help="Which moment the Capabilities Milestone dates mean. Benchmark "
                  "milestones are dated off released models, so anything earlier "
                  "than release pulls them back — see the note under the cards.")
-        rsi_notyet = st.checkbox(
-            "Condition milestones on “not crossed yet”",
-            key="rsi_notyet",
-            help="Bayesian reality check: samples dating a milestone before "
-                 "today are dropped and the rest renormalized, and the RSI "
-                 "blend down-weights each milestone by the mass it put in "
-                 "the past. Assumes a crossing would be known by now.")
-        rsi_labels = st.checkbox("Show model labels", key="rsi_labels")
-        rsi_show_bar = st.checkbox(
-            f"Show {_RSI_SUBSTITUTION_BAR:.0f}% substitution bar", key="rsi_show_bar",
-            help="Anthropic's stated score for a model that could fully substitute "
-                 "for its Research Scientists and Engineers.")
-
         with st.expander("Advanced options"):
             st.button("Reset to defaults", key="reset_rsi",
                       on_click=lambda: st.session_state.update(_reset_rsi=True))
@@ -5043,24 +5029,23 @@ def render_rsi():
         _is_fr = m['is_frontier']
         fig.add_trace(go.Scatter(
             x=[m['date']], y=[m['cobench']],
-            mode='markers' + ('+text' if rsi_labels else ''),
+            mode='markers+text',
             marker=dict(color='#4F8DFD' if _is_fr else '#aaaaaa', size=12,
                         symbol='circle' if _is_fr else 'circle-open',
                         line=dict(color='white' if _is_fr else '#777777', width=2)),
-            text=[m['name']] if rsi_labels else None,
+            text=[m['name']],
             textposition='top center',
             textfont=dict(size=10, color='#1a1a2e' if _is_fr else '#999999'),
             hovertext=f"{m['name']}<br>{_rsi_date_label(m)}<br>"
                       f"CoBench: {m['cobench']:.1f}%",
             hoverinfo='text', showlegend=False))
 
-    if rsi_show_bar:
-        fig.add_hline(
-            y=_RSI_SUBSTITUTION_BAR, line=dict(color='#e74c3c', width=1.5, dash='dash'),
-            annotation_text=f"{_RSI_SUBSTITUTION_BAR:.0f}% — full substitution for "
-                            "Anthropic research staff",
-            annotation_position="top left",
-            annotation_font=dict(size=11, color='#e74c3c'))
+    fig.add_hline(
+        y=_RSI_SUBSTITUTION_BAR, line=dict(color='#e74c3c', width=1.5, dash='dash'),
+        annotation_text=f"{_RSI_SUBSTITUTION_BAR:.0f}% — full substitution for "
+                        "Anthropic research staff",
+        annotation_position="top left",
+        annotation_font=dict(size=11, color='#e74c3c'))
 
     fig.update_layout(
         height=600,
@@ -5109,7 +5094,13 @@ def render_rsi():
     _render_rsi_survey()
 
     st.markdown("---")
-    _pc_render_milestones(rsi_timing, datetime.now(), condition=rsi_notyet)
+    # The conditioning controls render inside the blend's weights expander,
+    # below their consumers — read via session state, like the weights.
+    _pc_render_milestones(rsi_timing, datetime.now(),
+                          condition=st.session_state.get("rsi_notyet", True),
+                          ramp_days=st.session_state.get("rsi_notyet_ramp",
+                                                         30.0),
+                          end_year=rsi_end_year)
 
 
 def _render_rsi_survey():
@@ -11600,11 +11591,11 @@ _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 # The Pacing tab adds a third attribution: entities are countries, with China
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
-# Five of the milestones are dated off *released, publicly benchmarked* models
+# Four of the milestones are dated off *released, publicly benchmarked* models
 # — METR horizons, ECI scores, RLI scores. The other two are not: CoBench and
 # the staff survey are internal evaluations, and Anthropic reports them for
 # models it has not shipped. So when the tab's *Date points at* is anything but
-# "Model release", the five have to come back by the report lag to sit on the
+# "Model release", the four have to come back by the report lag to sit on the
 # same clock as everything else on the page; the other two already do.
 # Sampled over the range rather than fixed, so the spread lands in the CI.
 _PC_REPORT_LAG_DAYS = (30.0, 60.0)
@@ -11628,8 +11619,7 @@ def _pc_report_lag(days_to, release_dated, timing_label, n=None):
 _PC_RSI_WEIGHTS = {
     "metr_p50": 5.0,
     "metr_p80": 20.0,
-    "eci_170": 5.0,
-    "eci_195": 15.0,
+    "eci_195": 20.0,
     "rli_90": 20.0,
     "cobench_85": 15.0,
     "staff_10x": 20.0,
@@ -11848,13 +11838,17 @@ def _pc_projection(rows, dcs, today, since=None, ref_steps=None,
     return grid, out
 
 
-def _pc_render_rsi_blend(components, origin, survival=None):
+def _pc_render_rsi_blend(components, origin, survival=None, horizon=None):
     """The weighted blend of the milestone ETAs, plus its own weights editor.
 
     `survival` (from `_pc_condition_on_today`) multiplies each entered weight
     for the mix only — with the components already truncated, that pair is
     the mixture conditioned on "nothing has crossed yet". The editor and the
-    table's Weight column keep showing the entered priors.
+    table's Weight column keep showing the entered priors. `horizon` (the
+    tab's *Project through* year end) caps the CDF's axis. The conditioning
+    controls render in the weights expander but are consumed a rerun earlier
+    (in `_pc_render_milestones`, via session state), like the weights
+    themselves.
     """
     # Read before the editor renders: Streamlit has already applied any change
     # to session state by the time this run reaches the widgets below.
@@ -11877,7 +11871,8 @@ def _pc_render_rsi_blend(components, origin, survival=None):
     with _b2:
         st.metric("80% CI", f"{early:%b %Y} \u2013 {late:%b %Y}")
 
-    _dist = _pc_rsi_dist_fig(blend_days, origin, early, med, late)
+    _dist = _pc_rsi_dist_fig(blend_days, origin, early, med, late,
+                             horizon=horizon)
     if _dist is not None:
         st.plotly_chart(_dist, width="stretch")
 
@@ -11886,16 +11881,17 @@ def _pc_render_rsi_blend(components, origin, survival=None):
         "Milestone": lab,
         "Weight": f"{weights[slug] / _total * 100:.0f}%",
         **({} if survival is None else
-           {"P(already crossed)":
+           {"P(ruled out)":
             f"{(1 - survival.get(slug, 1.0)) * 100:.0f}%"}),
         "Median": _pc_eta_dates(a, d)[1].strftime('%b %Y'),
         "80% CI": "{:%b %Y} \u2013 {:%b %Y}".format(*_pc_eta_dates(a, d)[::2]),
     } for slug, lab, a, d in components])
     if survival is not None:
-        st.caption("Conditioned on \u201cnot crossed yet\u201d: the blend "
-                   "multiplies each weight by 1 \u2212 P(already crossed), so "
-                   "a milestone claiming RSI should already be here loses "
-                   "credence in proportion.")
+        st.caption("Conditioned on \u201cnot crossed yet\u201d: P(ruled out) is the "
+                   "mass dated at or before today plus the discounted share "
+                   "of the near-term window, and the blend multiplies each "
+                   "weight by 1 \u2212 P(ruled out), so a milestone claiming RSI "
+                   "should already be here loses credence in proportion.")
 
     with st.expander("Set your own weights"):
         # Assign the defaults rather than popping the keys: a popped key is
@@ -11914,9 +11910,24 @@ def _pc_render_rsi_blend(components, origin, survival=None):
         st.caption(f"Entered weights total {sum(weights.values()):.0f}; they are "
                    "normalised, so any scale works. All zero falls back to the "
                    "defaults above.")
+        _notyet = st.checkbox(
+            "Condition milestones on “not crossed yet”",
+            key="rsi_notyet",
+            help="Bayesian reality check: samples dating a milestone before "
+                 "today are dropped and the rest renormalized, and the blend "
+                 "down-weights each milestone by the mass it put in the past. "
+                 "Assumes a crossing would be known by now.")
+        st.number_input(
+            "Also discount the next … days", min_value=0.0, max_value=365.0,
+            step=5.0, key="rsi_notyet_ramp", disabled=not _notyet,
+            help="A crossing this close would already be visible in its "
+                 "run-up, so “no signs today” argues against it: a sample t "
+                 "days out is kept with probability t/N inside the window. "
+                 "0 keeps only the hard cut at today.")
 
 
-def _pc_render_milestones(timing_label, today, condition=True):
+def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
+                          end_year=None):
     """Capabilities Milestones + the RSI blend. Rendered on the RSI tab.
 
     Still named `_pc_*` with the ETA helpers it calls; it moved to the RSI tab
@@ -11947,7 +11958,8 @@ def _pc_render_milestones(timing_label, today, condition=True):
             for slug, lab, r, rel in _cap if r is not None]
     survival = None
     if condition:
-        _cap, survival = _pc_condition_on_today(_cap, today)
+        _cap, survival = _pc_condition_on_today(_cap, today,
+                                                ramp_days=ramp_days)
     if _cap:
         st.subheader("Capabilities Milestones")
         # Two rows: seven cards on one line squeeze every label to two words.
@@ -11966,14 +11978,20 @@ def _pc_render_milestones(timing_label, today, condition=True):
                      f"\u2013{_PC_REPORT_LAG_DAYS[1] / 30:.0f} months onto the "
                      f"\u201c{timing_label.lower()}\u201d clock; CoBench and the staff "
                      "survey are internal.")
-        _cond_note = (" Dates are conditioned on the milestone not having "
+        _cond_note = ("" if not condition else
+                      " Dates are conditioned on the milestone not having "
                       "crossed by today: samples in the past are dropped and "
-                      "the rest renormalized." if condition else "")
+                      "the rest renormalized." +
+                      (f" Crossings within the next {ramp_days:.0f} days are "
+                       "discounted linearly — that close, the run-up would "
+                       "already be visible." if ramp_days > 0 else ""))
         st.caption(
             "Each milestone reproduces its own tab at that tab's defaults, so the two "
             "cannot quote different dates for the same bar." + _lag_note + _cond_note)
 
-        _pc_render_rsi_blend(_cap, today, survival)
+        _pc_render_rsi_blend(_cap, today, survival,
+                             horizon=(datetime(end_year, 12, 31)
+                                      if end_year else None))
 
 
 def _pc_when(rec, horizon=None):
@@ -12047,11 +12065,13 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
     return _pc_eta_out(cur['date'], days_to, samples)
 
 
-# The ECI companions, on the US-best frontier the ECI tab defaults to. 170 is
-# the top line of `_ECI_US_MILESTONES`, so the two tabs quote the same bar;
-# 195 is above anything the ECI tab draws and is a pure extrapolation of the
-# same fit, a long way outside the frontier's observed range.
-_PC_ECI_TARGETS = (170.0, 195.0)
+# The ECI companion, on the US-best frontier the ECI tab defaults to. 195 is
+# above anything the ECI tab draws (its own milestone table tops out at 170)
+# and is a pure extrapolation of the same fit, a long way outside the
+# frontier's observed range. 170 was a card once, but it sits close enough to
+# today's frontier that it dated near-term model releases, not an RSI-scale
+# capability — its weight moved to 195.
+_PC_ECI_TARGETS = (195.0,)
 _PC_ECI_POS_CI = 2.0     # the ECI tab's default position CI, fitted score +/- 2
 
 
@@ -12173,22 +12193,35 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
     return _pc_eta_out(rows[-1]['date'], days_to, samples)
 
 
-def _pc_condition_on_today(components, today):
+def _pc_condition_on_today(components, today, ramp_days=0.0):
     """Condition each milestone on not having crossed by `today`.
 
     Every ETA sampler already truncates at its own anchor (`days_to >= 0`);
     this moves the truncation point to the present, by rejection rather than
     clamping: samples dating the crossing at or before today are dropped and
     the survivors are the conditional distribution P(T = t | T > today).
+
+    `ramp_days` extends the update into the near future as a soft likelihood
+    rather than a wider hard cut: a sample `t` days out is kept with
+    probability t/ramp_days inside the window (1 beyond it) — the closer a
+    crossing, the more visible its run-up would already be, so "no signs
+    today" argues against it in proportion. 0 disables the ramp.
+
     Returns (conditioned components, {slug: survival fraction}); a component
     with no surviving samples drops out entirely. The blend must then mix
-    with each weight multiplied by its survival — that pair is exactly the
-    mixture conditioned on "nothing has crossed yet", so a definition that
-    put mass in the past loses credence in proportion.
+    with each weight multiplied by its survival — survival is the expected
+    likelihood, so that pair is exactly the mixture conditioned on the
+    observation, and a definition that put mass in the ruled-out region
+    loses credence in proportion.
     """
     out, survival = [], {}
     for slug, lab, anchor, days in components:
-        keep = days + (anchor - today).days > 0
+        rel = days + (anchor - today).days
+        if ramp_days > 0:
+            keep = np.random.random(len(days)) < np.clip(
+                rel / float(ramp_days), 0.0, 1.0)
+        else:
+            keep = rel > 0
         survival[slug] = float(np.mean(keep))
         if keep.any():
             out.append((slug, lab, anchor, days[keep]))
@@ -12234,19 +12267,23 @@ def _pc_rsi_blend(components, weights, origin, n=None):
                  for d in np.percentile(out, [10, 50, 90]))
 
 
-def _pc_rsi_dist_fig(days, origin, early, med, late):
+def _pc_rsi_dist_fig(days, origin, early, med, late, horizon=None):
     """Cumulative probability that the blend has landed by each date.
 
-    A CDF rather than a histogram: the blend is a mixture of seven milestones,
+    A CDF rather than a histogram: the blend is a mixture of milestones,
     so a density is lumpy where its components sit and the bin width becomes a
     presentation choice. The cumulative curve has neither problem, and reading
     "X% by date D" off it is the question this section answers. Sampled daily
-    so the hover tracks continuously; the axis stops at the 98th percentile,
-    past which the curve is a flat tail that only costs width.
+    so the hover tracks continuously. `horizon` (the tab's *Project through*
+    year end) sets where the axis stops; without one it falls back to the
+    98th percentile, past which the curve is a flat tail that only costs
+    width. A median past the horizon simply isn't annotated — the curve
+    ending below 50% already says so.
     """
     srt = np.sort(days)
     d0 = float(np.percentile(srt, 0.5))
-    d1 = float(np.percentile(srt, 98))
+    d1 = (float((horizon - origin).days) if horizon is not None
+          else float(np.percentile(srt, 98)))
     if d1 - d0 < 2:
         return None
     grid = np.arange(np.floor(d0), np.ceil(d1) + 1, 1.0)
@@ -12265,11 +12302,12 @@ def _pc_rsi_dist_fig(days, origin, early, med, late):
                   line_width=0, layer='below')
     # add_vline's own annotation averages the x endpoints, which throws on a
     # datetime axis; place it separately against the paper y-axis instead.
-    fig.add_vline(x=med, line=dict(color='#2c3e50', width=2, dash='dash'))
-    fig.add_annotation(x=med, y=1.0, yref='paper', yanchor='bottom',
-                       xanchor='left', xshift=4, showarrow=False,
-                       text=f"median {med:%b %Y}",
-                       font=dict(size=11, color='#2c3e50'))
+    if horizon is None or med <= horizon:
+        fig.add_vline(x=med, line=dict(color='#2c3e50', width=2, dash='dash'))
+        fig.add_annotation(x=med, y=1.0, yref='paper', yanchor='bottom',
+                           xanchor='left', xshift=4, showarrow=False,
+                           text=f"median {med:%b %Y}",
+                           font=dict(size=11, color='#2c3e50'))
     fig.update_layout(
         height=300, margin=dict(l=50, r=30, t=30, b=35),
         font=dict(color='#1a1a2e'),

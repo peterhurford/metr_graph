@@ -4281,8 +4281,8 @@ class TestPacing:
         assert all(b > a for a, b in zip(p50, p80))
 
     def test_eci_eta_reproduces_the_eci_tab_defaults(self):
-        """The ECI 170 card is the ECI tab's own milestone row: single OLS on
-        the US-best frontier, +Pts/Yr over [PPY/2, PPY*2]."""
+        """The ECI card is the ECI tab's own fit: single OLS on the US-best
+        frontier, +Pts/Yr over [PPY/2, PPY*2]."""
         fr = vp._eci_entity_data("US best")[1]
         days = np.array([(m['date'] - fr[0]['date']).days for m in fr],
                         dtype=float)
@@ -4300,12 +4300,11 @@ class TestPacing:
             assert prev is None or med > prev
             prev = med
 
-    def test_eci_targets_straddle_the_eci_tabs_top_milestone(self):
-        """170 is the bar both tabs quote, so the ECI tab's own line moves it;
-        195 sits deliberately above anything that tab draws."""
+    def test_eci_target_sits_above_the_eci_tabs_top_milestone(self):
+        """195 is a deliberate extrapolation past anything the ECI tab draws
+        — a bar near today's frontier dates model releases, not RSI."""
         top = max(s for s, _l, _c in vp._ECI_US_MILESTONES)
-        assert top in vp._PC_ECI_TARGETS
-        assert max(vp._PC_ECI_TARGETS) > top
+        assert min(vp._PC_ECI_TARGETS) > top
 
     def test_rli_eta_reproduces_the_rli_tab_defaults(self):
         """The RLI 90% card is the RLI tab at its defaults: single OLS in
@@ -4393,10 +4392,41 @@ class TestPacing:
             out, {s: w[s] * surv[s] for s in w}, today, n=4000)
         assert days.min() > 0
 
+    def test_condition_ramp_discounts_the_near_future(self):
+        """The soft near-term likelihood: past mass still dies, mass beyond
+        the window is untouched, and mass t days out survives w.p. t/N."""
+        today = datetime(2026, 8, 24)
+        comps = [("past", "past", today, np.full(400, -5.0)),
+                 ("mid", "mid", today, np.full(4000, 15.0)),
+                 ("far", "far", today, np.full(400, 60.0))]
+        out, surv = vp._pc_condition_on_today(comps, today, ramp_days=30.0)
+        assert surv["past"] == 0.0
+        assert surv["far"] == 1.0
+        assert 0.4 < surv["mid"] < 0.6
+        assert {c[0] for c in out} == {"mid", "far"}
+
+    def test_dist_fig_respects_the_horizon(self):
+        """The CDF axis runs to the *Project through* year end when given
+        one (98th-percentile cap otherwise), and a median past the horizon
+        is not annotated — the curve ending below 50% already says so."""
+        origin = datetime(2026, 8, 24)
+        days = np.linspace(1, 2000, 4000)
+        args = (days, origin, origin + timedelta(days=200),
+                origin + timedelta(days=1000), origin + timedelta(days=1800))
+        horizon = datetime(2027, 12, 31)
+        capped = vp._pc_rsi_dist_fig(*args, horizon=horizon)
+        assert max(capped.data[0].x) <= horizon
+        assert not capped.layout.annotations
+        free = vp._pc_rsi_dist_fig(*args)
+        assert max(free.data[0].x) > horizon
+        assert free.layout.annotations
+
     def test_condition_flag_is_tracked_and_defaults_on(self):
         assert vp._RSI_DEFAULTS["rsi_notyet"] is True
+        assert vp._RSI_DEFAULTS["rsi_notyet_ramp"] == 30.0
         keys, defaults = vp._all_tracked()
         assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
+        assert "rsi_notyet_ramp" in keys
 
     def test_rsi_blend_weights_are_tracked_and_default_to_the_stated_mix(self):
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100

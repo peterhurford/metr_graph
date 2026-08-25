@@ -944,8 +944,8 @@ class TestRsiTab:
         assert "METR p50 horizon reaches 174h" in labels
         assert "METR p80 horizon reaches 174h" in labels
         assert not any("40h" in l for l in labels)
-        assert "US ECI reaches 170" in labels
         assert "US ECI reaches 195" in labels
+        assert "US ECI reaches 170" not in labels
         assert "RLI reaches 90%" in labels
         caps = " ".join(str(c.value) for c in at.caption)
         assert caps.count("80% CI:") >= 4
@@ -974,18 +974,13 @@ class TestRsiTab:
         at = self._rsi_app()
         assert at.checkbox(key="rsi_notyet").value is True
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
-        assert "P(already crossed)" in t.columns
+        assert "P(ruled out)" in t.columns
+        at.number_input(key="rsi_notyet_ramp").set_value(0.0).run()
+        _assert_no_error(at, "RSI / ramp off")
         at.checkbox(key="rsi_notyet").set_value(False).run()
         _assert_no_error(at, "RSI / conditioning off")
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
-        assert "P(already crossed)" not in t.columns
-
-    def test_toggles(self):
-        at = self._rsi_app()
-        at.checkbox(key="rsi_labels").set_value(False).run()
-        _assert_no_error(at, "RSI / labels hidden")
-        at.checkbox(key="rsi_show_bar").set_value(False).run()
-        _assert_no_error(at, "RSI / substitution bar hidden")
+        assert "P(ruled out)" not in t.columns
 
     def test_horizon_selector(self):
         at = self._rsi_app()
