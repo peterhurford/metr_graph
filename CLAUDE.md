@@ -605,7 +605,7 @@ read.
 
 *Capabilities Milestones* and the RSI blend live at the **bottom of the RSI
 tab** (`_pc_render_milestones()`), not here — they are still named `_pc_*` with
-the ETA helpers they call, and the machinery is unchanged. Six cards, driven by
+the ETA helpers they call, and the machinery is unchanged. Seven cards, driven by
 the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_eta()` for the METR frontier reaching 174h — about one
 work-month — at each of `_PC_METR_LEVELS` (p50 at 5% blend weight, p80 at 20%;
 at the month-scale bar p50's earlier firing is its own card and weight rather
@@ -615,9 +615,12 @@ close enough to today's frontier that it dated model releases, not RSI, and its
 weight moved to 190), `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT` (90%, above
 that tab's own milestone table, which stops at 50%), `_pc_rsi_eta()` for
 the CoBench frontier reaching `_RSI_SUBSTITUTION_BAR` (85%, Anthropic's own
-full-substitution bar, which the RSI tab dates too), and `_pc_rsi_survey_eta()`
+full-substitution bar, which the RSI tab dates too), `_pc_rsi_survey_eta()`
 for self-reported staff speedup reaching `_PC_RSI_SURVEY_TARGET_X` (10x, about a
-doubling and a half past the most recent round's ~4x). They render in **two rows** — on one line every label squeezes to two words. Each reproduces
+doubling and a half past the most recent round's ~4x), and `_pc_revenue_eta()` for
+the **leading** company's ARR reaching `_PC_REV_TARGET_B` ($1T, the Revenue tab's
+own top milestone) — the one bar here that isn't a benchmark, but still dated off
+released models, since ARR is what shipped models earn. They render in **two rows** — on one line every label squeezes to two words. Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
 [DT/2, DT*2], position over the current model's CI, p50 slope fits the trend;
 ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2; RLI: single OLS in
@@ -627,18 +630,24 @@ logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
 survey: OLS on log(multiple) over every round the tab fits (the carried-over
 `estimated` point included, as on the tab), doubling time over
 `_rsi_survey_dt_ci()`'s t-widened interval, position over the
-fitted multiple ÷ and × `_RSI_SURVEY_POS_FACTOR` — rather than
+fitted multiple ÷ and × `_RSI_SURVEY_POS_FACTOR`; revenue: OLS on
+log2(ARR) over every point, DT lognormal over [max(10, DT×0.65), DT×1.5],
+position normal at the tab's 0.3 log2 σ — rather than
 fitting its own, so the tabs can't quote different dates for the same
-milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
+milestone. The revenue milestone takes whichever company crosses first
+**per sample** (independent draws — a common shock would narrow the answer
+on nothing measured) and re-anchors both to the later of the two series'
+last dates, since they end on different days. `test_metr_eta_reproduces_the_metr_tab_defaults`,
 `test_eci_eta_reproduces_the_eci_tab_defaults`,
 `test_rli_eta_reproduces_the_rli_tab_defaults` and
 `test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that; the cross-tab
 `test_pacing_quotes_the_same_milestone` compares the two CoBench dates with a
 tolerance, since both are Monte Carlo medians off an unseeded RNG.
 
-Four of the six are dated off *released, publicly benchmarked* models (METR,
-ECI, RLI); CoBench and the staff survey are internal evaluations Anthropic
-reports for models it has not shipped. So `_pc_report_lag()` pulls the four back
+Five of the seven are dated off *released* models (METR, ECI, RLI — publicly
+benchmarked — and revenue, since ARR is earned by shipped models); CoBench and the
+staff survey are internal evaluations Anthropic reports for models it has not
+shipped. So `_pc_report_lag()` pulls the five back
 by `_PC_REPORT_LAG_DAYS` (1–2 months, sampled over the range so the spread lands
 in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other two
 are already on that clock and must not be shifted twice.
@@ -675,7 +684,7 @@ candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets. The result
 is `_pc_rsi_blend()`, the **mixture of their date distributions, not an average
 of their medians**, drawn as a CDF (`_pc_rsi_dist_fig()`) between the
 cards and the weights table — cumulative rather than a density because a mixture
-of six components is lumpy where they sit and the bin width becomes a
+of seven components is lumpy where they sit and the bin width becomes a
 presentation choice, while "X% by date D" is the question the section answers.
 Sampled daily with an x-spike so the hover tracks continuously; the axis runs
 to the tab's *Project through* year end (`rsi_end_year`, threaded through as

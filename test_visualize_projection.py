@@ -4578,6 +4578,57 @@ class TestPacing:
             assert prev is None or med > prev
             prev = med
 
+    def test_revenue_eta_reproduces_the_revenue_tab_defaults(self):
+        """The $1T card is the Revenue tab's own fit: OLS on log2(ARR) over
+        every point, DT lognormal over [max(10, DT x 0.65), DT x 1.5]."""
+        series = [vp._OPENAI_REVENUE, vp._ANTHROPIC_REVENUE]
+        anchor = max(vp._parse_revenue(d)[0][-1] for d in series)
+        want = None
+        for data in series:
+            dates, vals = vp._parse_revenue(data)
+            days = np.array([(d - dates[0]).days for d in dates], dtype=float)
+            intercept, slope = vp.fit_line(days, np.log2(np.array(vals)))
+            dt = 1.0 / slope
+            # The lognormal CI's central value, as the sibling tests use.
+            dt_c = np.sqrt(max(10.0, dt * 0.65) * (dt * 1.5))
+            d_to = ((np.log2(vp._PC_REV_TARGET_B)
+                     - (intercept + slope * days[-1])) * dt_c
+                    + (dates[-1] - anchor).days)
+            want = d_to if want is None else min(want, d_to)
+        early, med, late = vp._pc_revenue_eta(series, n=20000)
+        assert early < med < late
+        assert abs((med - (anchor + timedelta(days=want))).days) < 60
+
+    def test_revenue_eta_dates_the_leader_not_an_average(self):
+        """"Leading company" is a per-sample minimum: two identical series
+        give the same answer as one, a slower second company never delays
+        it, and a higher bar is never reached earlier."""
+        fast = vp._ANTHROPIC_REVENUE
+        slow = [(d, v / 50) for d, v in fast]          # same slope, far behind
+        solo = vp._pc_revenue_eta([fast], n=20000)[1]
+        pair = vp._pc_revenue_eta([fast, slow], n=20000)[1]
+        assert abs((pair - solo).days) < 45
+        assert vp._pc_revenue_eta([fast, fast], n=20000)[1] <= \
+            solo + timedelta(days=45)
+        assert vp._pc_revenue_eta(series := [fast], target_b=2000.0,
+                                  n=20000)[1] > \
+            vp._pc_revenue_eta(series, target_b=500.0, n=20000)[1]
+        # A flat or shrinking company contributes no crossing at all.
+        flat = [(d, 1.0) for d, _ in fast]
+        assert vp._pc_revenue_eta([flat]) is None
+
+    def test_revenue_milestone_is_weighted_and_release_dated(self):
+        """ARR is earned by shipped models, so the crossing is on the
+        release clock and comes back by the report lag like METR/ECI/RLI —
+        never on the internal-eval clock, which would double-count it."""
+        assert vp._PC_RSI_WEIGHTS["rev_1t"] == 10.0
+        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100
+        days = np.full(20000, 500.0)
+        lo, hi = vp._PC_REPORT_LAG_DAYS
+        lagged = vp._pc_report_lag(days, True, "Training run finished")
+        assert (lagged <= 500 - lo).all() and (lagged >= 500 - hi).all()
+        assert vp._pc_report_lag(days, True, vp._PC_TIMING_RELEASE) is days
+
     def test_rli_target_is_above_the_rli_tabs_own_milestones(self):
         """90% is a deliberate extrapolation past the tab's top milestone."""
         assert vp._PC_RLI_TARGET_PCT > 50

@@ -969,6 +969,19 @@ class TestRsiTab:
         # 400-sample medians carry real MC scatter; 150d is ~3 sd of it.
         assert abs((here - there).days) <= 150
 
+    def test_revenue_milestone_card_and_blend_row(self):
+        """The $1T card renders alongside the benchmark milestones and gets
+        its own weighted row in the blend."""
+        at = self._rsi_app()
+        labels = {str(m.label) for m in at.metric}
+        assert "Leading company revenue >$1T" in labels
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns)
+        row = t[t["Milestone"] == "Leading company revenue >$1T"]
+        assert len(row) == 1
+        assert row.iloc[0]["Weight"].startswith("10%")
+        # Seven milestones, and the weights editor has an input for each.
+        assert len(t) == 7
+
     def test_blend_renders(self):
         at = self._rsi_app()
         labels = {str(m.label) for m in at.metric}

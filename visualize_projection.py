@@ -11694,11 +11694,12 @@ def _pc_ramp_for(timing_label, ramp_days):
 # Keyed by slug because the card labels are built from the target constants.
 _PC_RSI_WEIGHTS = {
     "metr_p50": 5.0,
-    "metr_p80": 20.0,
+    "metr_p80": 15.0,
     "eci_190": 20.0,
     "rli_90": 20.0,
-    "cobench_85": 15.0,
+    "cobench_85": 10.0,
     "staff_10x": 20.0,
+    "rev_1t": 10.0,
 }
 _PC_RSI_W_KEY = "pc_rsiw_"        # session-state prefix, one float per slug
 
@@ -12081,6 +12082,12 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
     _cap.append((f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x",
                  f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
                  _pc_rsi_survey_eta(load_rsi_survey(), samples=True), False))
+    # Release-dated: ARR is earned by *shipped* models, so a revenue
+    # crossing sits on the release clock exactly as a benchmark score does
+    # — later than the training run behind it, and pulled back the same way.
+    _cap.append(("rev_1t", "Leading company revenue >$1T",
+                 _pc_revenue_eta([_OPENAI_REVENUE, _ANTHROPIC_REVENUE],
+                                 samples=True), True))
     _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label))
             for slug, lab, r, rel in _cap if r is not None]
     survival, _cap_raw = None, None
@@ -12102,11 +12109,11 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                     st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")
 
         _lag_note = ("" if timing_label == _PC_TIMING_RELEASE else
-                     " METR, ECI and RLI are dated off released, benchmarked "
+                     " METR, ECI, RLI and revenue are dated off released "
                      f"models, so they are pulled back {_PC_REPORT_LAG_DAYS[0] / 30:.0f}"
                      f"\u2013{_PC_REPORT_LAG_DAYS[1] / 30:.0f} months onto the "
                      f"\u201c{timing_label.lower()}\u201d clock; CoBench and the staff "
-                     "survey are internal.")
+                     "survey are internal evaluations already on it.")
         _cond_note = ("" if not condition else
                       " Dates are conditioned on the milestone not having "
                       "crossed by today: samples in the past are dropped and "
@@ -12323,6 +12330,60 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
     start = np.random.normal(fitted, np.log(_RSI_SURVEY_POS_FACTOR) / 1.282, n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
     return _pc_eta_out(rows[-1]['date'], days_to, samples)
+
+
+# The revenue companion, and the only milestone here that isn't a benchmark:
+# ARR is a revealed-preference bar. $1T is the Revenue tab's own top
+# milestone (`_REV_MILESTONES`) — roughly a third of today's US software
+# sector bought from one seller, which is hard to explain unless the product
+# substitutes for labour rather than assisting it.
+_PC_REV_TARGET_B = 1000.0
+
+
+def _pc_revenue_eta(series, target_b=_PC_REV_TARGET_B, n=None, samples=False):
+    """(early, median, late) dates for the *leading* company's ARR to reach
+    `target_b` ($B).
+
+    Reproduces `render_revenue()` at its defaults for each company — OLS on
+    log2(ARR) over every point, doubling time lognormal over
+    [max(10, DT x 0.65), DT x 1.5], position normal on the fitted last value
+    with the tab's 0.3 log2 sigma — and then takes whichever company gets
+    there first **per sample**, which is what "the leading company" means:
+    the milestone is a claim about the frontier of commercial scale, not
+    about a particular seller.
+
+    The two companies' draws are independent. They plainly aren't in
+    reality, but a common shock would narrow the answer on nothing measured,
+    and independence is the assumption that doesn't quietly do that.
+
+    `series` is a list of raw (date, ARR) tables. Returns None when no
+    company has a positive fitted slope. The dates come out on the release
+    clock — ARR is earned by shipped models — so the caller lags them like
+    a benchmark score.
+    """
+    n = n or N_SAMPLES
+    anchor = max(_parse_revenue(d)[0][-1] for d in series)
+    best = None
+    for data in series:
+        dates, vals = _parse_revenue(data)
+        if len(vals) < 3:
+            continue
+        base = dates[0]
+        days = np.array([(d - base).days for d in dates], dtype=float)
+        intercept, slope = fit_line(days, np.log2(np.array(vals)))
+        if slope <= 0:
+            continue
+        dt = 1.0 / slope
+        proj_dt = _lognormal_from_ci(max(10.0, dt * 0.65), dt * 1.5, n)
+        start = np.random.normal(intercept + slope * days[-1], 0.3, n)
+        days_to = np.maximum(np.log2(target_b) - start, 0.0) * proj_dt
+        # Onto one anchor, so the per-sample minimum compares like with like:
+        # the companies' series end on different dates.
+        days_to += (dates[-1] - anchor).days
+        best = days_to if best is None else np.minimum(best, days_to)
+    if best is None:
+        return None
+    return _pc_eta_out(anchor, best, samples)
 
 
 def _pc_condition_on_today(components, today, ramp_days=0.0):
