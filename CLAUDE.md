@@ -271,19 +271,41 @@ purpose-built fabric is the criterion for the levels that claim a link exists.
 
 ### Caveats belong on the thing they qualify
 
-Prefer a hover to a paragraph. `st.metric(..., help=…)` renders a `?` next to the
-label with a styled tooltip, so a card's own fit, clock and bar definition ride
-that card instead of piling into a shared caption keyed to nothing the reader can
-see. The *Capabilities Milestones* row is the worked example: seven cards, each
-with its own note (`_notes` by slug, plus `_pc_clock_note()` for the
-release-vs-internal split that used to be a sentence naming every milestone on
-both sides), and a two-line caption under them. Widget `help=` does the same job
-for controls, which is why every sidebar control already has one.
+Prefer a hover to a paragraph — applied across every tab. Keep in the visible
+line only what a reader needs *before* deciding to look closer: the claim the
+section makes, and anything the page would be misleading without. The method, the
+provenance and the caveats go in hovers. Chart **legends stay visible** — they are
+keys, not caveats.
 
-Keep in the visible caption only what a reader needs *before* deciding to look
-closer — what the section shows, and any claim the page would be misleading
-without. `test_every_milestone_card_carries_its_caveats_on_hover` pins the split:
-every card has a hover naming its fit and its clock, and the caption stays short.
+Three mechanisms, in order of preference:
+
+1. **`st.metric(..., help=…)`** where a metric exists. Native tooltip, no raw
+   HTML. The *Capabilities Milestones* row is the worked example: seven cards,
+   each with its own note (`_notes` by slug, plus `_pc_clock_note()` for the
+   release-vs-internal split that used to be a sentence naming every milestone on
+   both sides), and a two-line caption under them. Widget `help=` does the same
+   for controls, which is why every sidebar control has one.
+2. **`_fn_caption(text, *notes)`** for prose qualifying a chart, where there is no
+   widget to hang `help=` on. Each note is a string or a `(marker, note)` pair and
+   renders as a hoverable pill. It stays an `st.caption`, not an `st.markdown` —
+   the element type is what tells fine print from body text, to the reader and to
+   the tests that address one and not the other.
+3. **`_fn_line(...)`** for a body-prominent line that must not read as fine print
+   (the pause panel's *Assumes*, the buildout headline). `st.warning` takes no
+   HTML, so the efficiency caveats use `_fn_line` with a warning glyph instead of
+   a yellow box.
+
+`_fn()` is the marker itself; its CSS lives in the global `<style>` block at the
+top of the file. The bubble is dark in both themes on purpose — it floats above
+the page, and no Streamlit variable reliably tracks the user's theme.
+
+`test_every_milestone_card_carries_its_caveats_on_hover` pins the split for the
+milestone row: every card has a hover naming its fit and its clock, and the
+caption stays short.
+
+**Editing these blocks by script:** a naive paren-counter will not do — an
+f-string like `.split(' (')` puts an unbalanced paren inside a literal, and a
+scan that counts it swallowed 5,500 lines once. Tokenize, or edit by hand.
 
 ### RSI tab
 

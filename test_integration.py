@@ -1122,7 +1122,8 @@ class TestDataCentersByCountry:
         assert list(table["Year end"]) == ["2026", "2027"]
         assert "China-accessible" in table.columns
         assert "China (domestic only)" in table.columns
-        assert "Mainland China alone" in head[0]
+        # The mainland-only figure is a hover on that line now.
+        assert "mainland alone" in head[0]
         assert at.radio(key="dc_cty_since").value == 2024
 
     def test_sits_above_the_buildout_panel_and_shares_the_sidebar_selector(self):
