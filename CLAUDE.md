@@ -286,18 +286,26 @@ Three mechanisms, in order of preference:
    both sides), and a two-line caption under them. Widget `help=` does the same
    for controls, which is why every sidebar control has one.
 2. **`_fn_caption(text, *notes)`** for prose qualifying a chart, where there is no
-   widget to hang `help=` on. Each note is a string or a `(marker, note)` pair and
-   renders as a hoverable pill. It stays an `st.caption`, not an `st.markdown` —
-   the element type is what tells fine print from body text, to the reader and to
-   the tests that address one and not the other.
+   widget to hang `help=` on. Each note is a `(phrase, note)` pair, and **the
+   phrase is looked up in the visible line and made hoverable in place** — a
+   footnote hangs off the words it qualifies, not off a marker parked at the end
+   of the sentence. So write the line to contain the phrase; a phrase that isn't
+   there falls back to a trailing `?`, which is the exception, not the design
+   (`test_footnotes_anchor_to_their_phrase` holds the live app at zero
+   fallbacks). Matching is whole-word: a bare `find` once wrapped "check" inside
+   "Cross-checked", splitting the word across a tag. It stays an `st.caption`, not
+   an `st.markdown` — the element type is what tells fine print from body text, to
+   the reader and to the tests that address one and not the other.
 3. **`_fn_line(...)`** for a body-prominent line that must not read as fine print
    (the pause panel's *Assumes*, the buildout headline). `st.warning` takes no
    HTML, so the efficiency caveats use `_fn_line` with a warning glyph instead of
    a yellow box.
 
-`_fn()` is the marker itself; its CSS lives in the global `<style>` block at the
-top of the file. The bubble is dark in both themes on purpose — it floats above
-the page, and no Streamlit variable reliably tracks the user's theme.
+`_fn_span()` wraps the anchored phrase (dotted underline, `.vp-fn-a`); `_fn()` is
+the standalone fallback marker (`.vp-fn`). Their CSS lives in the global `<style>`
+block at the top of the file. The bubble is dark in both themes on purpose — it
+floats above the page, and no Streamlit variable reliably tracks the user's
+theme.
 
 `test_every_milestone_card_carries_its_caveats_on_hover` pins the split for the
 milestone row: every card has a hover naming its fit and its clock, and the

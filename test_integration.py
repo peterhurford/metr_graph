@@ -1004,6 +1004,27 @@ class TestRsiTab:
         assert helps["METR p50 horizon reaches 174h"] != \
             helps["METR p80 horizon reaches 174h"]
 
+    def test_footnotes_anchor_to_their_phrase(self):
+        """Footnotes hang off the words they qualify, not off markers parked
+        at the end of the line: across every tab, no note falls back to a
+        trailing `?`."""
+        import re
+        tabs = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "RSI",
+                "UK Cyber", "Revenue", "Employment", "ECI Company Gap",
+                "Data Centers", "Compute/capabilities/diffusion", "Pacing"]
+        total = 0
+        for tab in tabs:
+            at = _fresh_app()
+            at.run()
+            _switch_tab(at, tab)
+            for el in list(at.caption) + list(at.markdown):
+                v = str(el.value)
+                total += v.count('class="vp-fn-a')
+                stray = re.findall(r'<span class="vp-fn(?: vp-fn-r)?">([^<]*)<',
+                                   v)
+                assert not stray, (tab, stray)
+        assert total > 50            # the sweep is app-wide, not one tab
+
     def test_blend_renders(self):
         at = self._rsi_app()
         labels = {str(m.label) for m in at.metric}
@@ -1122,8 +1143,8 @@ class TestDataCentersByCountry:
         assert list(table["Year end"]) == ["2026", "2027"]
         assert "China-accessible" in table.columns
         assert "China (domestic only)" in table.columns
-        # The mainland-only figure is a hover on that line now.
-        assert "mainland alone" in head[0]
+        # The mainland-only figure is a hover anchored on that phrase now.
+        assert "Mainland China alone" in head[0]
         assert at.radio(key="dc_cty_since").value == 2024
 
     def test_sits_above_the_buildout_panel_and_shares_the_sidebar_selector(self):
@@ -1261,7 +1282,9 @@ class TestPacingTab:
         # The assumptions are hovers on the *Assumes* line now, so match
         # their bodies rather than the old run-on sentence.
         md = " ".join(str(m.value) for m in at.markdown)
-        assert "**Assumes** secure weights" in md
+        # Footnotes anchor to their phrases, so the line reads
+        # "secure <span>weights</span>, ..." with the note in the bubble.
+        assert "**Assumes**" in md
         assert "never steal them" in md
         # The clock line follows the sidebar default (run finished).
         assert "Dates = training runs finish" in caps
