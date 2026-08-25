@@ -648,10 +648,12 @@ carries a dotted ghost of the unconditioned blend (`raw_days` through
 grid start widens to the ghost's 0.5th percentile so that stays visible). A
 fully-crossed component drops out, generalizing the by-hand removal METR
 p50 once got at the 40h bar. A companion number input (`rsi_notyet_ramp`,
-default 30d, 0 = off) extends the update into the near future as a soft
+default 90d, 0 = off) extends the update into the near future as a soft
 likelihood, not a wider hard cut: a sample t days out is kept w.p. t/N inside
 the window — the closer a crossing, the more visible its run-up would already
-be. Survival stays the expected likelihood, so the weight × survival mixing is
+be. On the release clock an active window grows by `_PC_REPORT_LAG_DAYS[0]`
+(30d) via `_pc_ramp_for()` — a model shipping that soon finished training a
+report lag earlier — and the fine print quotes the window actually applied. Survival stays the expected likelihood, so the weight × survival mixing is
 unchanged. Assumes a crossing would be known by now — weaker for the internal
 evals, and the checkbox help says so.
 `test_condition_on_today_truncates_and_reweights`,

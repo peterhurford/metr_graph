@@ -4479,10 +4479,19 @@ class TestPacing:
 
     def test_condition_flag_is_tracked_and_defaults_on(self):
         assert vp._RSI_DEFAULTS["rsi_notyet"] is True
-        assert vp._RSI_DEFAULTS["rsi_notyet_ramp"] == 30.0
+        assert vp._RSI_DEFAULTS["rsi_notyet_ramp"] == 90.0
         keys, defaults = vp._all_tracked()
         assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
         assert "rsi_notyet_ramp" in keys
+
+    def test_ramp_window_extends_on_the_release_clock(self):
+        """Release dates trail run-finished by a report lag, so an active
+        discount window grows by the lag's lower bound; a window turned off
+        stays off."""
+        assert vp._pc_ramp_for(vp._PC_TIMING_RELEASE, 90.0) == \
+            90.0 + vp._PC_REPORT_LAG_DAYS[0]
+        assert vp._pc_ramp_for("Training run finished", 90.0) == 90.0
+        assert vp._pc_ramp_for(vp._PC_TIMING_RELEASE, 0.0) == 0.0
 
     def test_rsi_blend_weights_are_tracked_and_default_to_the_stated_mix(self):
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100

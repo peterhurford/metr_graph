@@ -4829,7 +4829,7 @@ _RSI_DEFAULTS = {
     "rsi_end_year": 2028,
     "rsi_timing": "Training run finished",
     "rsi_notyet": True,
-    "rsi_notyet_ramp": 30.0,
+    "rsi_notyet_ramp": 90.0,
     "rsi_custom_dt_dist": "Lognormal",
 }
 
@@ -5160,8 +5160,9 @@ def render_rsi():
     # below their consumers — read via session state, like the weights.
     _pc_render_milestones(rsi_timing, datetime.now(),
                           condition=st.session_state.get("rsi_notyet", True),
-                          ramp_days=st.session_state.get("rsi_notyet_ramp",
-                                                         30.0),
+                          ramp_days=st.session_state.get(
+                              "rsi_notyet_ramp",
+                              _RSI_DEFAULTS["rsi_notyet_ramp"]),
                           end_year=rsi_end_year)
 
 
@@ -11672,6 +11673,19 @@ def _pc_report_lag(days_to, release_dated, timing_label, n=None):
     return days_to - np.random.uniform(lo, hi, n or len(days_to))
 
 
+def _pc_ramp_for(timing_label, ramp_days):
+    """The near-term discount window actually applied.
+
+    On the release clock a crossing t days out must already have finished
+    training ~a report lag earlier, so an active window extends by the lag's
+    lower bound (`_PC_REPORT_LAG_DAYS[0]`). A window set to 0 stays 0 — off
+    is off.
+    """
+    if ramp_days > 0 and timing_label == _PC_TIMING_RELEASE:
+        return ramp_days + _PC_REPORT_LAG_DAYS[0]
+    return ramp_days
+
+
 # The tentative RSI blend. Each milestone is one operationalization of "the
 # recursive-self-improvement threshold"; the weight is how much credence it
 # gets, and the result is the *mixture* of their date distributions, not an
@@ -11992,7 +12006,9 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
             help="A crossing this close would already be visible in its "
                  "run-up, so “no signs today” argues against it: a sample t "
                  "days out is kept with probability t/N inside the window. "
-                 "0 keeps only the hard cut at today.")
+                 "On the release clock the window extends by 30 days — a "
+                 "model shipping that soon finished training ~a month "
+                 "earlier. 0 keeps only the hard cut at today.")
 
 
 def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
@@ -12026,6 +12042,7 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
     _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label))
             for slug, lab, r, rel in _cap if r is not None]
     survival, _cap_raw = None, None
+    ramp_days = _pc_ramp_for(timing_label, ramp_days)
     if condition:
         _cap_raw = _cap
         _cap, survival = _pc_condition_on_today(_cap, today,
