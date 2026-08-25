@@ -4274,12 +4274,23 @@ class TestDcCtyPlanSlip:
         assert q is not None and 0.1 < q < 0.9
 
 
+def _all_tracked_keys():
+    return vp._all_tracked()[0]
+
+
 class TestPacing:
     """The Pacing tab: threshold menu, crossing math, and the entity roster."""
 
-    def test_threshold_menu_matches_spec(self):
-        assert [float(t) for t in vp._PC_THRESHOLDS] == \
-            [1e27, 3e27, 5e27, 1e28, 2e28, 5e28, 1e29]
+    def test_race_bar_has_no_control_of_its_own(self):
+        """The race runs to the US's largest training run at the pause, so
+        there is no threshold widget and nothing tracked for one — the
+        constant left is only the floor for a catalogue with no US
+        capacity."""
+        assert not hasattr(vp, "_PC_THRESHOLDS")
+        assert "pc_threshold" not in vp._PC_RESET_KEYS
+        assert "pc_threshold" not in vp._PC_DEFAULTS
+        assert "pc_threshold" not in _all_tracked_keys()
+        assert vp._PC_FALLBACK_THRESHOLD > 0
 
     def test_tab_registered_with_slug(self):
         assert "Pacing" in vp._TAB_OPTIONS
@@ -4288,10 +4299,56 @@ class TestPacing:
 
     def test_defaults_cover_reset_keys_and_url_tracking(self):
         assert set(vp._PC_DEFAULTS) == set(vp._PC_RESET_KEYS)
-        assert vp._PC_DEFAULTS["pc_threshold"] in vp._PC_THRESHOLDS
         assert vp._PC_DEFAULTS["pc_run"] in vp._PC_RUN_OPTIONS
         keys, _ = vp._all_tracked()
-        assert "pc_threshold" in keys and "pc_run" in keys
+        assert "pc_run" in keys and "pc_pause_mo" in keys
+
+    def test_pause_slider_default_is_tracked_and_constant(self):
+        """The pause is months-from-today rather than a month label, so a
+        bookmarked value can never go stale the way the scenario cut-off
+        sliders' options can."""
+        assert 0 <= vp._PC_DEFAULTS["pc_pause_mo"] <= vp._PC_PAUSE_MO_MAX
+        keys, defaults = vp._all_tracked()
+        assert "pc_pause_mo" in keys
+        assert isinstance(defaults["pc_pause_mo"], int)
+
+    def test_add_months_gives_one_distinct_label_per_step(self):
+        """The pause slider labels each position with its date, so the steps
+        must be whole calendar months — distinct, ordered, and clamped into
+        short months rather than spilling into the next one."""
+        start = datetime(2026, 8, 24)
+        got = [vp._pc_add_months(start, m)
+               for m in range(vp._PC_PAUSE_MO_MAX + 1)]
+        assert got[0] == start
+        assert got == sorted(got)
+        labels = [f"{d:%b %Y}" for d in got]
+        assert len(set(labels)) == len(labels)
+        assert labels[1] == "Sep 2026" and labels[18] == "Feb 2028"
+        # Day clamped to the target month, never rolled forward.
+        assert vp._pc_add_months(datetime(2026, 1, 31), 1) == \
+            datetime(2026, 2, 28)
+        assert vp._pc_add_months(datetime(2028, 1, 31), 1) == \
+            datetime(2028, 2, 29)          # leap year
+
+    def test_capacity_at_reads_the_race_projection(self):
+        """The state-of-play capacity is the threshold race's own projection
+        read at one date, not a second fit: bracketed, ordered, and never
+        smaller later."""
+        today = datetime(2026, 8, 1)
+        rows = [r for r in self._rows(party='country')
+                if r[0] in (vp._DC_CTY_US, vp._DC_CTY_CN_ACCESS)]
+        assert len(rows) == 2
+        early = vp._pc_capacity_at(rows, vp.dc_all, today,
+                                   datetime(2027, 6, 1), since=2024)
+        late = vp._pc_capacity_at(rows, vp.dc_all, today,
+                                  datetime(2029, 6, 1), since=2024)
+        for label, (lo, mid, hi) in early.items():
+            assert lo <= mid <= hi
+            assert mid < late[label][1]      # built capacity does not shrink
+        assert early[vp._DC_CTY_US][1] > early[vp._DC_CTY_CN_ACCESS][1]
+        # An entity with nothing recorded is omitted, not zeroed.
+        assert vp._pc_capacity_at([("X", 'country', [], ())], vp.dc_all,
+                                  today, datetime(2028, 1, 1)) == {}
 
     def test_metr_eta_reproduces_the_metr_tab_defaults(self):
         """The METR cards are the METR tab's own milestone row, not a second
@@ -4835,7 +4892,7 @@ class TestPacing:
                                        since=2024)
         for label in (vp._DC_CTY_US, vp._DC_CTY_CN_ACCESS):
             prev = np.zeros(vp.N_SAMPLES)
-            for t in [float(x) for x in vp._PC_THRESHOLDS]:
+            for t in (1e27, 3e27, 1e28, 2e28, 1e29):
                 idx = vp._pc_crossing_idx(traj[label], t)
                 assert (idx >= prev).all(), (label, t)
                 prev = idx

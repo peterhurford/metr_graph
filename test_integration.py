@@ -8,8 +8,10 @@ in number_input, missing session state keys, widget rendering errors).
 Run: pytest test_integration.py -v
 """
 
+import numpy as np
 import pytest
 from datetime import datetime
+from visualize_projection import _pc_add_months
 from streamlit.testing.v1 import AppTest
 
 SCRIPT = "visualize_projection.py"
@@ -1198,6 +1200,12 @@ class TestPacingTab:
         return at
 
     @staticmethod
+    def _state(at):
+        """The pause panel's state-of-play table, picked by its columns."""
+        return next(t.value for t in at.table
+                    if "At the pause" in t.value.columns)
+
+    @staticmethod
     def _entities(at):
         """The race table, picked by its columns — the pause panel's own
         breakdown table renders after it, so position is not an address."""
@@ -1424,23 +1432,49 @@ class TestPacingTab:
         caps = " ".join(str(c.value) for c in at.caption)
         assert "Dates = model releases" in caps
 
-    def test_pause_date_respects_run_length(self):
-        """The US pauses at its first *completed* threshold run: a 2-month
-        run needs 3x the cluster, so the pause comes later and the frozen
-        bar — the US frontier by then — sits higher than under 6-month."""
+    def test_state_of_play_describes_both_sides_at_the_pause(self):
+        """The panel opens with what each side has when the music stops:
+        the US ahead of China on compute and on capability, China's lag in
+        months, and a METR horizon read off the ECI bridge."""
+        at = self._app()
+        t = self._state(at)
+        assert list(t["At the pause"]) == ["United States", "China-accessible"]
+        us, cn = (t.iloc[i] for i in (0, 1))
+        assert float(us["Largest training run"].split()[0]) > \
+            float(cn["Largest training run"].split()[0])
+        assert float(us["Frontier ECI"].split()[0].lstrip("~")) > \
+            float(cn["Frontier ECI"].split()[0].lstrip("~"))
+        assert us["Behind the US"] == "—" and cn["Behind the US"].endswith("mo")
+        # p80 is the more demanding bar, so its horizon is the shorter one.
+        for col in ("METR horizon (p50)", "METR horizon (p80)"):
+            assert all(t[col])
+        assert us["METR horizon (p80)"] != us["METR horizon (p50)"]
+        # The bar the crossing metric quotes is the US row of this table.
+        lab = next(str(m.label) for m in at.metric
+                   if "paused US frontier" in str(m.label))
+        assert abs(float(lab.split("ECI")[-1].strip(" ~)"))
+                   - float(us["Frontier ECI"].split()[0].lstrip("~"))) <= 1
+
+    def test_run_length_moves_the_compute_not_the_pause_date(self):
+        """Run length is no longer what dates the pause — the slider is —
+        but it still sets the window the capacity is quoted in: a 6-month
+        run is ~3x the ops of a 2-month one."""
         at = self._app()
 
-        def _bar(at):
+        def _pause_month(at):
             lab = next(str(m.label) for m in at.metric
                        if "paused US frontier" in str(m.label))
-            return float(lab.split("ECI")[-1].strip(" ~)"))
+            return lab.split("pause ")[1].split(" \u2192")[0]
 
-        bar_2mo = _bar(at)
-        caps = " ".join(str(c.value) for c in at.caption)
-        assert "2-month" in caps and "-op run" in caps
+        def _us_ops(at):
+            return float(self._state(at).iloc[0][
+                "Largest training run"].split()[0])
+
+        month, ops_2mo = _pause_month(at), _us_ops(at)
         at.radio(key="pc_run").set_value("6-month run").run()
         _assert_no_error(at, "Pacing / pause with 6-month run")
-        assert _bar(at) < bar_2mo
+        assert _pause_month(at) == month
+        assert _us_ops(at) - ops_2mo == pytest.approx(np.log10(3), abs=0.1)
 
     def test_projection_range(self):
         """'Project through' moves the crossing-search horizon."""
@@ -1463,19 +1497,32 @@ class TestPacingTab:
             return out
 
         at = self._app()
-        for yr in (2028, 2031):
+        for yr in (2029, 2031):
             at.radio(key="pc_end_year").set_value(yr).run()
             _assert_no_error(at, f"Pacing / through {yr}")
             ends = _ends(at)
             assert len(ends) == 2, ends
-            # The timeline pads a few months past the grid; the pause chart
-            # stops on it exactly.
-            assert ends[0] in (yr, yr + 1), ends
-            assert ends[1] == yr, ends
+            # The pause chart renders first and stops on the grid exactly;
+            # the threshold timeline below it pads a few months past.
+            assert ends[0] == yr, ends
+            assert ends[1] in (yr, yr + 1), ends
 
-    def test_us_pause_bar_syncs_with_sidebar_threshold(self):
-        """The pause bar follows the sidebar's training-run threshold: a
-        bigger run maps to a higher ECI bar via the exchange rate."""
+    def test_horizon_too_narrow_still_describes_the_pause(self):
+        """A pause past the projection range has no crossing to report, so
+        the panel says so — but the state of play at the pause doesn't
+        depend on the crossing and still renders."""
+        at = self._app()
+        at.radio(key="pc_end_year").set_value(2028).run()
+        at.select_slider(key="pc_pause_mo").set_value(48).run()
+        _assert_no_error(at, "Pacing / pause past the projection range")
+        info = " ".join(str(i.value) for i in at.info)
+        assert "does not reach the paused US frontier by 2028" in info
+        assert list(self._state(at)["At the pause"]) == \
+            ["United States", "China-accessible"]
+
+    def test_us_pause_bar_follows_the_pause_slider(self):
+        """The pause is a date the user names: pausing later freezes a
+        better model, so the bar rises and the crossing lands later."""
         at = self._app()
 
         def _bar(at):
@@ -1483,10 +1530,20 @@ class TestPacingTab:
                        if "paused US frontier" in str(m.label))
             return float(lab.split("ECI")[-1].strip(" ~)"))
 
-        base = _bar(at)
-        at.selectbox(key="pc_threshold").set_value("1e29").run()
-        _assert_no_error(at, "Pacing / pause bar at 1e29")
+        def _cross(at):
+            return datetime.strptime(str(next(
+                m.value for m in at.metric
+                if "paused US frontier" in str(m.label))), "%b %Y")
+
+        sl = at.select_slider(key="pc_pause_mo")
+        assert sl.value == 18            # months; the slider labels it a date
+        assert sl.options[18] == f"{_pc_add_months(datetime.now(), 18):%b %Y}"
+        base, base_d = _bar(at), _cross(at)
+        at.select_slider(key="pc_pause_mo").set_value(36).run()
+        _assert_no_error(at, "Pacing / pause 36 months out")
         assert _bar(at) > base
+        assert _cross(at) > base_d
+        at.select_slider(key="pc_pause_mo").set_value(18).run()
 
     def test_renders_with_headline_and_table(self):
         at = self._app()
@@ -1495,7 +1552,6 @@ class TestPacingTab:
         # The US-vs-China headline is a country line; the default roster is
         # companies, so it appears only under the 'Country' attribution.
         assert not [m for m in at.markdown if "China-accessible" in str(m.value)]
-        assert at.selectbox(key="pc_threshold").value == "1e28"
         assert at.radio(key="pc_run").value == "2-month run"
         table = self._entities(at)
         ents = list(table["Entity"])
@@ -1518,16 +1574,32 @@ class TestPacingTab:
         assert "China (domestic only)" in ents
         assert "Anthropic" not in ents
 
-    def test_threshold_drives_the_race(self):
-        """The headline no longer names the threshold, so the chart title
-        is what carries it into the display."""
+    def test_race_bar_is_the_us_run_at_the_pause(self):
+        """No threshold control: the race runs to the *Largest training
+        run* the state-of-play table gives the US, so the chart title, the
+        lead-in caption and that cell all quote one number — and a later
+        pause raises all three together."""
         at = self._app()
-        at.selectbox(key="pc_threshold").set_value("1e29").run()
-        _assert_no_error(at, "Pacing @ 1e29")
         import json
-        titles = [json.loads(el.proto.spec)["layout"].get("title", {}).get("text", "")
-                  for el in at.get("plotly_chart")]
-        assert any("1e29" in str(t) for t in titles)
+
+        def _title(at):
+            return next(json.loads(el.proto.spec)["layout"]
+                        .get("title", {}).get("text", "")
+                        for el in at.get("plotly_chart")
+                        if "by entity" in str(json.loads(el.proto.spec)
+                                              ["layout"].get("title", {})
+                                              .get("text", "")))
+
+        assert not [b for b in at.selectbox if b.key == "pc_threshold"]
+        us_run = self._state(at).iloc[0]["Largest training run"].split(
+            " (")[0]
+        assert us_run in _title(at)
+        assert us_run in " ".join(str(c.value) for c in at.caption)
+        at.select_slider(key="pc_pause_mo").set_value(42).run()
+        _assert_no_error(at, "Pacing / bar at a later pause")
+        later = self._state(at).iloc[0]["Largest training run"].split(" (")[0]
+        assert float(later.split()[0]) > float(us_run.split()[0])
+        assert later in _title(at)
 
     def test_run_length_toggle_renders(self):
         at = self._app()
@@ -1582,12 +1654,12 @@ class TestPacingTab:
 
     def test_reset_restores_defaults(self):
         at = self._app()
-        at.selectbox(key="pc_threshold").set_value("1e27").run()
+        at.select_slider(key="pc_pause_mo").set_value(42).run()
         at.radio(key="pc_party").set_value(
             "Operator (who owns the building)").run()
         [b for b in at.button if b.key == "pc_reset"][0].click().run()
         _assert_no_error(at, "Pacing / reset")
-        assert at.selectbox(key="pc_threshold").value == "1e28"
+        assert at.select_slider(key="pc_pause_mo").value == 18
         assert at.radio(key="pc_party").value == "Tenant (who trains there)"
         assert at.selectbox(key="pc_pool").value == \
             "Nearby + announced fabric"

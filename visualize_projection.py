@@ -11645,7 +11645,9 @@ def _sync_session_to_url():
 
 # The bar a pacing agreement (or an observer) might care about, in total 8-bit
 # ops of one training job. For scale: GPT-5 ≈ 2e25, Mythos ≈ 1e27.
-_PC_THRESHOLDS = ("1e27", "3e27", "5e27", "1e28", "2e28", "5e28", "1e29")
+# The race's bar is normally the US's own largest run at the pause; this is
+# only the floor for a catalogue with no US capacity to read.
+_PC_FALLBACK_THRESHOLD = 1e28
 _PC_RUN_OPTIONS = {"6-month run": "train_flop_6mo", "2-month run": "train_flop"}
 _PC_HORIZON = datetime(2031, 12, 1)   # crossing-search grid end
 _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
@@ -11701,18 +11703,23 @@ _PC_RSI_WEIGHTS = {
 _PC_RSI_W_KEY = "pc_rsiw_"        # session-state prefix, one float per slug
 
 
-_PC_RESET_KEYS = ["pc_threshold", "pc_run", "pc_pool", "pc_party",
-                  "pc_timing", "pc_end_year", "pc_stop_dist",
+_PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
+                  "pc_timing", "pc_end_year", "pc_pause_mo", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold",
                   "pc_dist_when", "pc_remote_when", "pc_cn_run"] + \
                  [_PC_RSI_W_KEY + s for s in _PC_RSI_WEIGHTS]
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
 _PC_CN_RUN_MAX = 12           # months: longest Chinese catch-up training run
-_PC_DEFAULTS = {"pc_threshold": "1e28", "pc_run": "2-month run",
+# The pause is a date the user names, in months from today — an integer, so a
+# bookmarked URL can never carry a label that has gone stale (as the scenario
+# cut-off sliders can) and the reset default stays a constant.
+_PC_PAUSE_MO_MAX = 60
+_PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_pool": "Nearby + announced fabric",
                 "pc_party": "Tenant (who trains there)",
                 "pc_timing": "Training run finished",
                 "pc_end_year": _PC_HORIZON.year,
+                "pc_pause_mo": 18,
                 "pc_stop_dist": False, "pc_stop_remote": False,
                 "pc_withhold": True,
                 "pc_dist_when": _PC_WHEN_NOW,
@@ -11727,7 +11734,7 @@ def _pc_when_options(today, end=_PC_HORIZON):
 
     Month strings rather than dates so the value round-trips through the URL
     and the reset default is a constant. Built from `today`, so a stale
-    bookmarked label is dropped by the caller's guard, as `pc_threshold` is.
+    bookmarked label is dropped by the caller's guard.
     """
     opts, d = [_PC_WHEN_NOW], datetime(today.year, today.month, 1)
     while True:
@@ -11784,6 +11791,19 @@ def _pc_tri(lo, hi, n, pad=0.01):
     return np.random.triangular(lo, 0.5 * (lo + hi), hi, n)
 
 
+def _pc_add_months(d, months):
+    """`d` plus whole calendar months, day clamped to the target month.
+
+    The pause slider labels its positions with the resulting date, so the
+    steps have to be exactly one month apart and never repeat a label — a
+    30.44-day step cannot promise that.
+    """
+    m = d.month - 1 + int(months)
+    y, m = d.year + m // 12, m % 12 + 1
+    last = (datetime(y + m // 12, m % 12 + 1, 1) - timedelta(days=1)).day
+    return d.replace(year=y, month=m, day=min(d.day, last))
+
+
 def _pc_when_date(label, today):
     """A `_pc_when_options` label back to a date; 'Now' (or unknown) → today."""
     if not label or label == _PC_WHEN_NOW:
@@ -11792,6 +11812,30 @@ def _pc_when_date(label, today):
         return datetime.strptime(label, "%b %Y")
     except ValueError:
         return today
+
+
+def _pc_capacity_at(rows, dcs, today, when, since=None, qs=(10, 50, 90)):
+    """Each entity's largest training run at one date: label -> (q10, q50, q90).
+
+    Runs the threshold race's own projection (`_pc_projection`) rather than a
+    second fit, so the state-of-play numbers above the pause chart and the
+    race table below it cannot quote different capacity for the same country,
+    and reads the grid month containing `when`. Entities with nothing
+    recorded are omitted.
+    """
+    rows = [r for r in rows if r[2]]
+    if not rows or dcs is None:
+        return {}
+    grid, traj = _pc_projection(rows, dcs, today, since=since,
+                                horizon=max(when, today + timedelta(days=31)))
+    j = max(bisect.bisect_right(grid, when) - 1, 0)
+    out = {}
+    for label, arr in traj.items():
+        col = arr[:, j]
+        col = col[np.isfinite(col)]
+        if len(col):
+            out[label] = tuple(float(np.percentile(col, q)) for q in qs)
+    return out
 
 
 def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
@@ -12436,6 +12480,11 @@ def _pc_rsi_dist_fig(days, origin, early, med, late, horizon=None,
 # 30-day `_CC_RUN_COMPLETION_LAG` prep constant, which excludes the queue.
 _PC_SHIP_LAG_DAYS = 60
 
+# The ECI->METR bridge is a fit over today's models; a pause dated years out
+# maps to horizons of centuries, which is noise wearing a number's clothes.
+# Past this the state-of-play table says ">10y" instead.
+_PC_METR_CAP_HRS = 10 * 2000
+
 
 # Display names for the four rate terms, in _CC_CHANNELS order.
 _PC_CHANNEL_LABELS = {
@@ -12446,6 +12495,15 @@ _PC_CHANNEL_LABELS = {
     'diffusion': "Diffusion — published US methods, drying up after the pause",
     'distillation': "Distillation — training against US model outputs",
 }
+
+
+def _pc_fmt_horizon(hours):
+    """A METR horizon for the state-of-play table, capped at
+    `_PC_METR_CAP_HRS` — the ECI->METR fit is not worth reading in
+    centuries. The cap reads "10y+", not ">10y": st.table renders markdown,
+    and a leading ">" turns the cell into a blockquote."""
+    return (fmt_hrs(hours) if hours <= _PC_METR_CAP_HRS
+            else f"{fmt_hrs(_PC_METR_CAP_HRS)}+")
 
 
 def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
@@ -12534,25 +12592,37 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         + ("  " + "  ".join(notes) if notes else ""))
 
 
-def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
-                        timing_label=_DC_TIMING_OPTIONS[0], horizon=None):
+def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
+                        us_steps=None, timing_label=_DC_TIMING_OPTIONS[0],
+                        horizon=None):
     """If the US paused: China's catch-up to the paused frontier, in ECI.
 
-    `us_steps` is the sidebar-pooled US country series (capacity-online
-    dates, run-length units) so the feasibility clock and climb pace follow
-    the tab's networking selector; single-site fallback without it.
+    The pause is a **date the user names** (`pc_pause_mo`, rendered by
+    `render_pacing` so the bar it implies is available to both halves of
+    the tab), not a compute threshold: the question the panel answers is
+    "if the US stopped *then*, how long until China is level", and the
+    compute scale reached by then is an output of that choice rather than
+    its input. That scale is what the *Compute Thresholds* race below then
+    uses as its bar — there is no separate threshold control.
 
-    The US pauses when it *completes its first thr_ops run* of the sidebar's
-    run length: hardware needs 2-month capacity of thr_ops × (2mo/run) on
-    the σ-sampled DC fit, then the run itself — so both the threshold and
-    the run length move the pause date. Until then its frontier climbs at
-    the compute-derived rate, and the bar China must cross is the best model
-    the US has *trained* by the pause: that climb plus `_PC_SHIP_LAG_DAYS`
-    of extra climb, since the trained frontier leads the released one (that
-    the climb is calibrated on) by the realized ship lag. The paused
-    stock stays distillable while a gap remains, then China runs on its
-    indigenous algorithmic rate (_cc_innovation_algo_band) plus its compute
-    term alone.
+    `pause_d` is the pause on the run-finished clock and `caps` the
+    `_pc_capacity_at()` reading of each country at that date, both from the
+    caller. `us_steps` is the sidebar-pooled US country series
+    (capacity-online dates, run-length units) so the climb pace follows the
+    tab's networking selector; single-site fallback without it.
+
+    Until the pause the US frontier climbs at the compute-derived rate, and
+    the bar China must cross is the best model the US has *trained* by then:
+    that climb plus `_PC_SHIP_LAG_DAYS` of extra climb, since the trained
+    frontier leads the released one (that the climb is calibrated on) by the
+    realized ship lag. The paused stock stays distillable while a gap
+    remains, then China runs on its indigenous algorithmic rate
+    (_cc_innovation_algo_band) plus its compute term alone.
+
+    The pause arrives on the **run-finished** clock, the panel's natural
+    one; the date shown carries `timing_label`'s offset like every other
+    date here, which is what keeps the US-China gap milestone-invariant
+    (see below).
 
     Dates follow `timing_label` (the sidebar's *Date points at*): both
     countries' events shift in lockstep to the chosen milestone — run
@@ -12570,6 +12640,15 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
     timeline chart above it does. A crossing past it is reported as "not
     by <year>" rather than searched for anyway.
     """
+    # Lockstep milestone offsets (see docstring).
+    shift = _dc_timing_shift(timing_label, run_days)
+    off_us = timedelta(days=shift - run_days)
+    off_cn = timedelta(days=shift - run_days - _CC_RUN_COMPLETION_LAG.days)
+    d_pause_v = pause_d + off_us
+    # Streamlit renders a container where it was created, so the
+    # state-of-play table lands here — between the date the caller drew and
+    # the question the rest of the panel answers.
+    state_box = st.container()
     st.subheader("If the US paused: when does China catch up?")
     cb1, cb2, cb3 = st.columns(3)
     withhold = cb1.checkbox(
@@ -12705,24 +12784,12 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
         us_rate_s = np.full(n_s, us_rate)
     g_mid = 0.5 * (_CC_CN_COMPUTE_LO + _CC_CN_COMPUTE_HI)
     pace_lo, pace_hi, _obs = _cc_cn_pace_band(cn_fr, a_mid + a_partial * g_mid)
-    # First completed thr_ops run of this length, no earlier than today, run
-    # included. On the pooled series (already in run-length units) the
-    # catalogued plan answers directly where it crosses; the fit extrapolates
-    # beyond it. The single-site fallback stores 2-month values, so the need
-    # scales by 2mo/run there — either way run length moves both terms.
+    # The pause is the date the slider names, so every sample pauses
+    # together and only the climb to it is uncertain — the frozen bar
+    # carries the pace spread, the date does not.
     t_today = max((today - anchor_d).days, 0) / 365.25
-    if us_fit is not None and g_s is not None:
-        plan_d = _pc_plan_crossing(us_steps, thr_ops)[0] if pooled else None
-        if plan_d is not None:
-            t_cap_s = np.full(n_s, (plan_d - anchor_d).days / 365.25)
-        else:
-            need_lf = np.log10(thr_ops if pooled
-                               else thr_ops * _DAYS_2MO / run_days)
-            t0_yrs = (us_fit['t0'] - anchor_d).days / 365.25
-            t_cap_s = t0_yrs + (need_lf - np.log10(us_fit['v0'])) / g_s
-        t_pause_s = np.maximum(t_cap_s, t_today) + run_days / 365.25
-    else:
-        t_pause_s = np.full(n_s, t_today + run_days / 365.25)
+    t_pause_s = np.full(n_s, max((pause_d - anchor_d).days, 0) / 365.25)
+    t_pause_s = np.maximum(t_pause_s, t_today)
     # The bar is the best model the US has *trained* by the pause — the
     # 1e28 flagship itself. The released frontier trails the trained one by
     # the realized ship lag (_PC_SHIP_LAG_DAYS), and the climb is measured
@@ -12831,6 +12898,52 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
         years = _pc_cross_years(traj, grid_yrs, target0) + cn_extra
         traj = traj + cn_gain
         grid_yrs = grid_yrs + cn_extra
+    # ── State of play at the pause: what each side has when the music
+    # stops, written into the slot under the slider. Compute comes from the
+    # threshold race's own projection (so the two sections cannot disagree),
+    # capability from the same sampled ECI paths the chart draws, and the
+    # METR horizon from the ECI->METR bridge the ECI tabs use. ──
+    cn_pause_s = _pc_at_years(traj0, grid0, t_pause_s)
+
+    def _state_row(label, eci_s, behind=None):
+        e10, e50, e90 = (float(np.nanpercentile(eci_s, q))
+                         for q in (10, 50, 90))
+        c = caps.get(label)
+        return {
+            "At the pause": label,
+            "Largest training run": (
+                f"{_log_op(c[1])} log OP ({_log_op(c[0])}–{_log_op(c[2])})"
+                if c else "—"),
+            "Frontier ECI": f"~{e50:.0f} ({e10:.0f}–{e90:.0f})",
+            "METR horizon (p50)": _pc_fmt_horizon(
+                _eci_to_metr_p50_min(e50)[0] / 60),
+            "METR horizon (p80)": _pc_fmt_horizon(
+                _eci_to_metr_p80_min(e50)[0] / 60),
+            "Behind the US": ("—" if behind is None
+                              else f"~{behind:.0f} mo" if np.isfinite(behind)
+                              else "—"),
+        }
+
+    cn50 = float(np.nanmedian(cn_pause_s))
+
+    def _us_date_at(score):
+        """When the US line on the chart below reaches `score`: the recorded
+        frontier where it covers the score, this panel's own climb beyond
+        it. Read off the same line the chart draws, so "months behind" and
+        the picture agree."""
+        if score <= us_best[1]:
+            return _ecg_frontier_date_at_score(
+                [(d, sc) for d, sc, _n in us_fr], score)
+        return us_best[0] + timedelta(days=(score - us_best[1])
+                                      / max(us_rate, 1e-6) * 365.25)
+
+    _at = _us_date_at(cn50)
+    _behind = ((pause_d - _at).days / 30.44 if _at is not None
+               else float('nan'))
+    with state_box:
+        st.table([_state_row(_DC_CTY_US, level_s),
+                  _state_row(_DC_CTY_CN_ACCESS, cn_pause_s, _behind)])
+
     # Sensitivity: China's compute term at the catalogued China-accessible
     # buildout pace (Chinese labs' sites abroad included) instead of the
     # export-control band — the channel where "remote" compute would bite.
@@ -12857,16 +12970,11 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
         return
     d10, d50, d90 = (anchor_d + timedelta(days=float(np.percentile(yr_ok, p))
                                           * 365.25) for p in (10, 50, 90))
-    d_pause = anchor_d + timedelta(
-        days=float(np.percentile(t_pause_s, 50)) * 365.25)
-    # Lockstep milestone offsets (see docstring): the pause is naturally a
-    # run-finished date, China's ECI data are release dates; both display at
-    # the sidebar's milestone, so their gap never depends on the setting.
-    shift = _dc_timing_shift(timing_label, run_days)
-    off_us = timedelta(days=shift - run_days)
-    off_cn = timedelta(days=shift - run_days - _CC_RUN_COMPLETION_LAG.days)
+    # Milestone offsets came from the top of the function (the slider's
+    # caption needs them); the pause is naturally a run-finished date and
+    # China's ECI data are release dates, so both display at the sidebar's
+    # milestone and their gap never depends on the setting.
     v10, v50, v90 = d10 + off_cn, d50 + off_cn, d90 + off_cn
-    d_pause_v = d_pause + off_us
     # Months from the pause to the crossing on a common milestone, matched
     # per sample so both uncertainties propagate. The release-prep lag nets
     # out of the gap (rung-invariant: both offsets move together).
@@ -12875,9 +12983,8 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
                  - _CC_RUN_COMPLETION_LAG.days) / 30.44
     s10, s50, s90 = (float(np.percentile(_delta_mo, p)) for p in (10, 50, 90))
     m1, m2 = st.columns(2)
-    _ops = f"{thr_ops:.0e}".replace("e+", "e")
     m1.metric(f"China reaches the paused US frontier "
-              f"({_ops}, {run_days // 30}-mo run → ECI ~{lvl50:.0f})",
+              f"(pause {d_pause_v:%b %Y} → ECI ~{lvl50:.0f})",
               f"{v50:%b %Y}", f"{v10:%b %Y} – {v90:%b %Y} (80%)",
               delta_color="off")
     m2.metric("Time for China to surpass after US pause",
@@ -13037,11 +13144,11 @@ def _pc_render_us_pause(today, thr_ops, run_days=_DAYS_2MO, us_steps=None,
                  if us_fit else "(observed US frontier slope)")
     st.caption(
         f"Counterfactual: the US climbs at ~{us_rate:.0f} ECI/yr "
-        f"{_rate_src} until it *completes its first {_ops}-op run* of the "
-        f"sidebar's {run_days // 30}-month length — a shorter run needs "
-        "proportionally more cluster on the same capacity fit, so it pauses "
-        f"later *and higher* — freezing at **ECI ~{lvl50:.0f}** (median), "
-        "the bar China must cross. Once distillation and diffusion dry up, "
+        f"{_rate_src} until the date the slider names, freezing at **ECI "
+        f"~{lvl50:.0f}** (median) — the bar China must cross. Pausing later "
+        "freezes a better model, so the bar rises with the slider even "
+        "though China gets the same head start. Once distillation and "
+        "diffusion dry up, "
         "China runs on indigenous innovation "
         + (f"(**{pure[0]:.0f}–{pure[1]:.0f} ECI/yr**)" if pure else
            f"(floor **{inno[0]:.0f}–{inno[1]:.0f} ECI/yr**)")
@@ -13098,14 +13205,6 @@ def render_pacing():
     with st.sidebar:
         st.header("Pacing")
         # A bookmarked URL can carry a stale label; drop it rather than raise.
-        if st.session_state.get("pc_threshold") not in _PC_THRESHOLDS:
-            st.session_state.pop("pc_threshold", None)
-        threshold_label = st.selectbox(
-            "Threshold (total training-run ops)", list(_PC_THRESHOLDS),
-            index=_PC_THRESHOLDS.index(_PC_DEFAULTS["pc_threshold"]),
-            key="pc_threshold",
-            help="Total 8-bit ops of one training job. GPT-5 ≈ 2e25; "
-                 "Mythos ≈ 1e27.")
         if st.session_state.get("pc_run") not in _PC_RUN_OPTIONS:
             st.session_state.pop("pc_run", None)
         run_label = st.radio(
@@ -13155,7 +13254,6 @@ def render_pacing():
             st.session_state.update(_PC_DEFAULTS)
             st.rerun()
 
-    threshold = float(threshold_label)
     key = _PC_RUN_OPTIONS[run_label]
     basis = _DC_NETWORK_OPTIONS[net_label]
     party = _PC_PARTY_OPTIONS[party_label]
@@ -13164,12 +13262,58 @@ def render_pacing():
     st.header("Pacing")
     st.warning("Warning: under construction, not final.")
 
-    # ── Entities and projections ──
+    # ── Series shared by both halves of the tab ──
     run_days = _DAYS_6MO if key == 'train_flop_6mo' else _DAYS_2MO
     shift_days = _dc_timing_shift(timing_label, run_days)
     dc_view = _dc_with_party(dc_all, party)
-    series_all = _dc_series_for_metric(dc_view, key, cap_date=None)
-    series_unshifted = series_all      # capacity-online dates, for the pause panel
+    series_unshifted = _dc_series_for_metric(dc_view, key, cap_date=None)
+    cluster_of = ({} if basis == 'none' else None if basis == 'all'
+                  else _dc_network_site_clusters(basis))
+    country_of = {dc['name']: _dc_site_country(dc) for dc in dc_view}
+    _mode = 'site' if cluster_of == {} else 'company'
+    _groups = _dc_country_groups(series_unshifted, country_of, 'abroad')
+    _us_names = _groups.get(_DC_CTY_US, [])
+    _cn_names = _groups.get(_DC_CTY_CN_ACCESS, [])
+    _us_steps_raw = _dc_country_steps(series_unshifted, _us_names, _mode,
+                                      cluster_of)
+    _cn_steps_raw = _dc_country_steps(series_unshifted, _cn_names, _mode,
+                                      cluster_of)
+
+    # ── The pause date drives the whole tab, so it is drawn here rather
+    # than inside the panel: the capacity the US has reached by then is
+    # also the bar the threshold race below runs to. Months from today
+    # under the hood — an int round-trips through the URL and can never go
+    # stale — with every position labelled by the date it means. ──
+    _months = list(range(_PC_PAUSE_MO_MAX + 1))
+    if st.session_state.get("pc_pause_mo") not in _months:
+        st.session_state.pop("pc_pause_mo", None)
+    pause_mo = st.select_slider(
+        "The US pauses", options=_months,
+        value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
+        format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
+        help="The US stops training new frontier models on this date and "
+             "never restarts. Everything below follows from it — the "
+             "compute and capability each side has when the music stops, "
+             "how long China then needs, and the bar the *Compute "
+             "Thresholds* race runs to.")
+    pause_d = _pc_add_months(_today, pause_mo)
+    caps = _pc_capacity_at(
+        [(_DC_CTY_US, 'country', _us_steps_raw, tuple(_us_names)),
+         (_DC_CTY_CN_ACCESS, 'country', _cn_steps_raw, tuple(_cn_names))],
+        dc_view, _today, pause_d, since=_DC_DEFAULTS["dc_cty_since"])
+    # The race's bar is the run the US is mounting when it pauses, so the
+    # two halves of the tab cannot describe different scales. Same units as
+    # the racers (the sidebar's run length), so run length moves both.
+    threshold = (caps[_DC_CTY_US][1] if _DC_CTY_US in caps
+                 else _PC_FALLBACK_THRESHOLD)
+    threshold_label = f"{_log_op(threshold)} log OP"
+
+    _pc_render_us_pause(_today, pause_d, caps, run_days,
+                        us_steps=_us_steps_raw, timing_label=timing_label,
+                        horizon=pc_horizon)
+
+    # ── Entities and projections ──
+    series_all = series_unshifted
     if shift_days:
         series_all = {n: {**v, 'pts': [(d + timedelta(days=shift_days), val)
                                        for d, val in v['pts']]}
@@ -13177,17 +13321,10 @@ def render_pacing():
     hidden = _dc_hidden_companies(dc_view, now=_today)
     series_shown = {n: v for n, v in series_all.items()
                     if v['company'] not in hidden}
-    cluster_of = ({} if basis == 'none' else None if basis == 'all'
-                  else _dc_network_site_clusters(basis))
-    country_of = {dc['name']: _dc_site_country(dc) for dc in dc_view}
     rows = _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
                            unattributed=_dc_unattributed_companies(dc_view),
                            party=party)
-    _us_names = _dc_country_groups(series_all, country_of,
-                                   'abroad').get(_DC_CTY_US, [])
-    ref_steps = _dc_country_steps(
-        series_all, _us_names, 'site' if cluster_of == {} else 'company',
-        cluster_of)
+    ref_steps = _dc_country_steps(series_all, _us_names, _mode, cluster_of)
     grid, traj = _pc_projection(rows, dc_view, _today,
                                 since=_DC_DEFAULTS["dc_cty_since"],
                                 ref_steps=ref_steps, horizon=pc_horizon)
@@ -13213,6 +13350,12 @@ def render_pacing():
 
     # ── Headline ──
     st.subheader("Compute Thresholds")
+    st.caption(
+        f"The actors behind the pause. The bar is the run the US is "
+        f"mounting when it pauses — **{threshold_label}**, the *Largest "
+        f"training run* in the table above — so it moves with the pause "
+        "date and the run length; the attribution picks whether the racers "
+        "are tenants, operators or countries.")
     us = next((r for r in recs if r['label'] == _DC_CTY_US), None)
     cn = next((r for r in recs if r['label'] == _DC_CTY_CN_ACCESS), None)
     if us is not None and cn is not None:
@@ -13293,7 +13436,7 @@ def render_pacing():
     fig.update_xaxes(range=[x_lo - timedelta(days=90), x_hi])
     fig.update_layout(height=max(340, 60 + 30 * len(recs)),
                       margin=dict(l=10, r=10, t=30, b=10),
-                      title=dict(text=f"First ≥{threshold_label}-op run, by "
+                      title=dict(text=f"First ≥{threshold_label} run, by "
                                       "entity", font=dict(size=15)))
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
@@ -13346,13 +13489,6 @@ def render_pacing():
         "Source: "
         "[Epoch AI, Frontier Data Centers](https://epoch.ai/data/data-centers) "
         "(CC-BY).")
-
-    _us_steps_raw = _dc_country_steps(
-        series_unshifted, _us_names, 'site' if cluster_of == {} else 'company',
-        cluster_of)
-    _pc_render_us_pause(_today, float(threshold_label), run_days,
-                        us_steps=_us_steps_raw, timing_label=timing_label,
-                        horizon=pc_horizon)
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────

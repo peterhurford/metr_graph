@@ -50,7 +50,7 @@ Eleven-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; ends with a US-vs-China by-country projection (`_dc_render_country_panel()`) |
 | Compute/capabilities/diffusion (slug `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; ends with China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) |
-| Pacing | `render_pacing()` | data centers (`dc_all`) | date each entity first commands a threshold-scale training run |
+| Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
 
 ### Data Sources and How to Update
 
@@ -589,11 +589,19 @@ Scatter under 20 points to `lines+markers`, studding the band outline with stray
 
 ### Pacing tab
 
-`render_pacing()` answers "when can each entity first mount one ≥T-op training job",
-for T from `_PC_THRESHOLDS` (a user-specified menu: 1e27…1e29) and a 2mo/6mo run
-length (`_PC_RUN_OPTIONS`, default 2mo, reusing the loader's `train_flop*` columns — 30%
-utilization, Epoch 8-bit OP/s). Deliberately thin: it reuses the Data Centers tab's
-machinery rather than growing its own.
+`render_pacing()` renders the pause counterfactual **first**
+(`_pc_render_us_pause()`) and the *Compute Thresholds* race second — the tab's
+question is what a US pause on a chosen date buys, and the race is the per-actor
+detail behind it. That race answers "when can each entity first mount one ≥T-op
+training job", at a 2mo/6mo run length (`_PC_RUN_OPTIONS`, default 2mo, reusing
+the loader's `train_flop*` columns — 30% utilization, Epoch 8-bit OP/s).
+Deliberately thin: it reuses the Data Centers tab's machinery rather than growing
+its own. **T has no control of its own** — it is the US's own largest training run
+at the pause (`caps[_DC_CTY_US]`, the *Largest training run* cell of the
+state-of-play table), so the two halves of the tab cannot describe different
+scales and the bar moves with the pause date and the run length alike.
+`_PC_FALLBACK_THRESHOLD` is only the floor for a catalogue with no US capacity to
+read.
 
 *Capabilities Milestones* and the RSI blend live at the **bottom of the RSI
 tab** (`_pc_render_milestones()`), not here — they are still named `_pc_*` with
@@ -683,7 +691,7 @@ target constants. And the weights editor's reset **assigns the defaults rather
 than popping the keys** — a popped key is re-hydrated straight back out of the
 URL on the next run, so on a shared link the reset would never take.
 
-The compute half's
+The race half's
 headline is the US-vs-China line, so it renders only under the `Country`
 attribution; the threshold reaches the display through the chart title.
 
@@ -717,12 +725,28 @@ attribution; the threshold reaches the display through the chart title.
    the DC tab does — default is run-finished (capacity-online, or +30d for
    release, one click away); the fine print states which milestone the dates mean.
 
-The tab ends with `_pc_render_us_pause()`: the US pauses when it *completes its
-first threshold-scale run* of the sidebar's run length, on the **sidebar-pooled US
-series** (catalogued plan first, σ-sampled fit beyond it; single-site fallback) —
-so the networking selector, threshold and run length all move the pause — frozen at
-whatever its compute-derived climb reached by then, per sample (`us_pause_level`
-and the sim target are arrays). A caption sensitivity reruns China's compute term
+The tab opens with the pause date and `_pc_render_us_pause()`. `pc_pause_mo` and
+the `_pc_capacity_at()` reading it implies are rendered by `render_pacing()`, not
+by the panel, because the race below needs the same bar; the panel takes
+`pause_d` and `caps` as arguments. The US pauses on that date, frozen at whatever
+its compute-derived climb reached by then,
+per sample (`us_pause_level` and the sim target are arrays — only the climb is
+uncertain, the date is chosen). The control is a `select_slider` over
+months-from-today with `format_func` labelling each position with the date
+(`_pc_add_months`, whole calendar months so no label repeats): it reads as a date
+picker while the stored value stays an int, which round-trips through the URL and
+can never go stale the way the scenario cut-off *labels* can. The pause is on the
+**run-finished** clock; the displayed date carries `timing_label`'s
+offset, which is what keeps the US–China gap milestone-invariant. The US climb pace
+still comes from the **sidebar-pooled US series**, so the networking selector moves
+the bar. Between the slider and the subheader sits the *state of play* table, off
+that same `_pc_capacity_at()` reading (the race's own `_pc_projection` at the pause
+date, so the two sections cannot disagree) — each side's
+largest training run, frontier ECI (US = the sim's bar, China = its own sampled
+paths at that date), the ECI→METR p50/p80 horizons (capped at `_PC_METR_CAP_HRS`,
+past which the bridge reads in centuries) and China's lag in months, taken off the
+same US line the chart draws. It renders **before** the crossing bail, so a
+projection range too narrow for a catch-up still describes the pause. A caption sensitivity reruns China's compute term
 at the catalogued China-accessible pace (sites abroad) vs the export-control band.
 The bar is the best model the US has *trained* by the pause: the released-frontier
 climb (measured from us_best's release date, not the China-anchored grid) plus
@@ -742,7 +766,7 @@ stays on the default compute band — it is shared with the CC crossing.
 An *Advanced* expander dates the two cuts (`pc_dist_when` / `pc_remote_when`,
 `_pc_when_options` month labels — strings, so they round-trip through the URL and
 reset to a constant `Now` = the checkbox alone; a stale label is dropped like
-`pc_threshold`). Sliders are `disabled` without their checkbox. It also carries
+`pc_pause_mo`). Sliders are `disabled` without their checkbox. It also carries
 `pc_cn_run` (2–12 months, min = the bar's own run length, default = it): China need
 not match the length the bar was set at. A longer run is a one-off **level** move,
 never a faster rate — ×(L/L_us) compute into one model, worth `a_partial` per ×10 —
