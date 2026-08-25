@@ -12006,14 +12006,26 @@ _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
 _PC_CN_RUN_MAX = 12           # months: longest Chinese catch-up training run
 # The pause is a date the user names, in months from today — an integer, so a
 # bookmarked URL can never carry a label that has gone stale (as the scenario
-# cut-off sliders can) and the reset default stays a constant.
+# cut-off sliders can); the default is the offset to a fixed *date*, so a reset
+# restores that date rather than a month count.
 _PC_PAUSE_MO_MAX = 60
+_PC_PAUSE_DEFAULT_YM = (2027, 7)  # the plan-start date the tab opens on
+
+
+def _pc_pause_default_mo(today=None):
+    """Months from today to `_PC_PAUSE_DEFAULT_YM`, clamped to the slider."""
+    t = today or datetime.now()
+    m = ((_PC_PAUSE_DEFAULT_YM[0] - t.year) * 12
+         + _PC_PAUSE_DEFAULT_YM[1] - t.month)
+    return min(max(m, 0), _PC_PAUSE_MO_MAX)
+
+
 _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_pool": "Nearby + announced fabric",
                 "pc_party": "Tenant (who trains there)",
                 "pc_timing": "Training run finished",
                 "pc_end_year": _PC_HORIZON.year,
-                "pc_pause_mo": 18,
+                "pc_pause_mo": _pc_pause_default_mo(),
                 "pc_stop_dist": False, "pc_stop_remote": False,
                 "pc_withhold": True,
                 "pc_dist_when": _PC_WHEN_NOW,
@@ -13082,10 +13094,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # state-of-play table lands here — between the date the caller drew and
     # the question the rest of the panel answers.
     state_box = st.container()
-    st.subheader("If the US paused: when does China catch up?")
+    st.subheader("If the US paced: when does China catch up?")
+    st.markdown("##### Policy levers")
     cb1, cb2, cb3 = st.columns(3)
     withhold = cb1.checkbox(
-        "US freezes releases at pause-run start", key="pc_withhold",
+        "US does not give access to strongest models at plan start",
+        key="pc_withhold",
         value=True,
         help="A release freeze: once the final threshold run starts, the US "
              "ships nothing new, so the best queryable teacher is the last "
@@ -13333,7 +13347,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         years = _pc_cross_years(traj, grid_yrs, target0) + cn_extra
         traj = traj + cn_gain
         grid_yrs = grid_yrs + cn_extra
-    # ── State of play at the pause: what each side has when the music
+    # ── State of play at plan start: what each side has when the music
     # stops, written into the slot under the slider. Compute comes from the
     # threshold race's own projection (so the two sections cannot disagree),
     # capability from the same sampled ECI paths the chart draws, and the
@@ -13345,7 +13359,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                          for q in (10, 50, 90))
         c = caps.get(label)
         return {
-            "At the pause": label,
+            "At plan start": label,
             "Largest training run": (
                 f"{_log_op(c[1])} log OP ({_log_op(c[0])}–{_log_op(c[2])})"
                 if c else "—"),
@@ -13359,8 +13373,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                               else "—"),
         }
 
-    cn50 = float(np.nanmedian(cn_pause_s))
-
     def _us_date_at(score):
         """When the US line on the chart below reaches `score`: the recorded
         frontier where it covers the score, this panel's own climb beyond
@@ -13372,12 +13384,25 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         return us_best[0] + timedelta(days=(score - us_best[1])
                                       / max(us_rate, 1e-6) * 365.25)
 
-    _at = _us_date_at(cn50)
-    _behind = ((pause_d - _at).days / 30.44 if _at is not None
-               else float('nan'))
+    def _behind_us(eci_s):
+        _at = _us_date_at(float(np.nanmedian(eci_s)))
+        return ((pause_d - _at).days / 30.44 if _at is not None
+                else float('nan'))
+
+    state_rows = [_state_row(_DC_CTY_US, level_s),
+                  _state_row(_DC_CTY_CN_ACCESS, cn_pause_s,
+                             _behind_us(cn_pause_s))]
+    # Domestic-only China is the same sampled paths with the compute the
+    # sites abroad bought subtracted — the shadow term the breakdown below
+    # prices — so the two Chinese rows can never disagree with each other.
+    if 'compute_domestic' in chan:
+        dom_pause_s = _pc_at_years(
+            traj0 - (chan['compute'] - chan['compute_domestic']),
+            grid0, t_pause_s)
+        state_rows.append(_state_row(_DC_CTY_CN_DOMESTIC, dom_pause_s,
+                                     _behind_us(dom_pause_s)))
     with state_box:
-        st.table([_state_row(_DC_CTY_US, level_s),
-                  _state_row(_DC_CTY_CN_ACCESS, cn_pause_s, _behind)])
+        st.table(state_rows)
 
     # Sensitivity: China's compute term at the catalogued China-accessible
     # buildout pace (Chinese labs' sites abroad included) instead of the
@@ -13398,7 +13423,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 days=float(np.percentile(ok_ca, 50)) * 365.25)
     yr_ok = years[np.isfinite(years)]
     if len(yr_ok) < 100:
-        st.info(f"China does not reach the paused US frontier by "
+        st.info(f"China does not reach the paced US frontier by "
                 f"{horizon.year} in most samples — widen *Project through*."
                 if horizon is not None else
                 "Sampled rates were too weak to give a crossing date.")
@@ -13418,11 +13443,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  - _CC_RUN_COMPLETION_LAG.days) / 30.44
     s10, s50, s90 = (float(np.percentile(_delta_mo, p)) for p in (10, 50, 90))
     m1, m2 = st.columns(2)
-    m1.metric(f"China reaches the paused US frontier "
-              f"(pause {d_pause_v:%b %Y} → ECI ~{lvl50:.0f})",
+    m1.metric(f"China reaches paced US frontier "
+              f"(plan start {d_pause_v:%b %Y}, ECI ~{lvl50:.0f})",
               f"{v50:%b %Y}", f"{v10:%b %Y} – {v90:%b %Y} (80%)",
               delta_color="off")
-    m2.metric("Time for China to surpass after US pause",
+    m2.metric("Time for China to surpass",
               f"~{s50:.1f} mo", f"{s10:.1f} – {s90:.1f} mo (80%)",
               delta_color="off")
     _mo = run_days // 30
@@ -13736,10 +13761,14 @@ def render_pacing():
     _groups = _dc_country_groups(series_unshifted, country_of, 'abroad')
     _us_names = _groups.get(_DC_CTY_US, [])
     _cn_names = _groups.get(_DC_CTY_CN_ACCESS, [])
+    _dom_names = [n for n in series_unshifted
+                  if country_of.get(n) == _DC_CTY_CN]
     _us_steps_raw = _dc_country_steps(series_unshifted, _us_names, _mode,
                                       cluster_of)
     _cn_steps_raw = _dc_country_steps(series_unshifted, _cn_names, _mode,
                                       cluster_of)
+    _dom_steps_raw = _dc_country_steps(series_unshifted, _dom_names, _mode,
+                                       cluster_of)
 
     # ── The pause date drives the whole tab, so it is drawn here rather
     # than inside the panel: the capacity the US has reached by then is
@@ -13750,7 +13779,7 @@ def render_pacing():
     if st.session_state.get("pc_pause_mo") not in _months:
         st.session_state.pop("pc_pause_mo", None)
     pause_mo = st.select_slider(
-        "The US pauses", options=_months,
+        "US starts pacing plan", options=_months,
         value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
         format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
         help="The US stops training new frontier models on this date and "
@@ -13761,7 +13790,9 @@ def render_pacing():
     pause_d = _pc_add_months(_today, pause_mo)
     caps = _pc_capacity_at(
         [(_DC_CTY_US, 'country', _us_steps_raw, tuple(_us_names)),
-         (_DC_CTY_CN_ACCESS, 'country', _cn_steps_raw, tuple(_cn_names))],
+         (_DC_CTY_CN_ACCESS, 'country', _cn_steps_raw, tuple(_cn_names)),
+         (_DC_CTY_CN_DOMESTIC, 'country', _dom_steps_raw,
+          tuple(_dom_names))],
         dc_view, _today, pause_d, since=_DC_DEFAULTS["dc_cty_since"])
     # The race's bar is the run the US is mounting when it pauses, so the
     # two halves of the tab cannot describe different scales. Same units as

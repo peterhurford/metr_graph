@@ -11,7 +11,7 @@ Run: pytest test_integration.py -v
 import numpy as np
 import pytest
 from datetime import datetime
-from visualize_projection import _pc_add_months
+from visualize_projection import _pc_add_months, _pc_pause_default_mo
 from streamlit.testing.v1 import AppTest
 
 SCRIPT = "visualize_projection.py"
@@ -1259,9 +1259,9 @@ class TestPacingTab:
 
     @staticmethod
     def _state(at):
-        """The pause panel's state-of-play table, picked by its columns."""
+        """The plan panel's state-of-play table, picked by its columns."""
         return next(t.value for t in at.table
-                    if "At the pause" in t.value.columns)
+                    if "At plan start" in t.value.columns)
 
     @staticmethod
     def _entities(at):
@@ -1274,10 +1274,10 @@ class TestPacingTab:
         race chart and assumption caption."""
         at = self._app()
         subs = " ".join(str(s.value) for s in at.subheader)
-        assert "If the US paused" in subs
+        assert "If the US paced" in subs
         labels = " ".join(str(m.label) for m in at.metric)
-        assert "paused US frontier" in labels
-        assert "Time for China to surpass after US pause" in labels
+        assert "paced US frontier" in labels
+        assert "Time for China to surpass" in labels
         caps = " ".join(str(c.value) for c in at.caption)
         assert "indigenous" in caps
         # The assumptions are hovers on the *Assumes* line now, so match
@@ -1475,7 +1475,7 @@ class TestPacingTab:
 
         def _cross_date(at):
             m = next(m for m in at.metric
-                     if "paused US frontier" in str(m.label))
+                     if "paced US frontier" in str(m.label))
             return _dt.strptime(str(m.value), "%b %Y")
 
         def _surpass_mo(at):
@@ -1503,7 +1503,8 @@ class TestPacingTab:
         months, and a METR horizon read off the ECI bridge."""
         at = self._app()
         t = self._state(at)
-        assert list(t["At the pause"]) == ["United States", "China-accessible"]
+        assert list(t["At plan start"]) == [
+            "United States", "China-accessible", "China (domestic only)"]
         us, cn = (t.iloc[i] for i in (0, 1))
         assert float(us["Largest training run"].split()[0]) > \
             float(cn["Largest training run"].split()[0])
@@ -1516,7 +1517,7 @@ class TestPacingTab:
         assert us["METR horizon (p80)"] != us["METR horizon (p50)"]
         # The bar the crossing metric quotes is the US row of this table.
         lab = next(str(m.label) for m in at.metric
-                   if "paused US frontier" in str(m.label))
+                   if "paced US frontier" in str(m.label))
         assert abs(float(lab.split("ECI")[-1].strip(" ~)"))
                    - float(us["Frontier ECI"].split()[0].lstrip("~"))) <= 1
 
@@ -1528,8 +1529,8 @@ class TestPacingTab:
 
         def _pause_month(at):
             lab = next(str(m.label) for m in at.metric
-                       if "paused US frontier" in str(m.label))
-            return lab.split("pause ")[1].split(" \u2192")[0]
+                       if "paced US frontier" in str(m.label))
+            return lab.split("plan start ")[1].split(",")[0]
 
         def _us_ops(at):
             return float(self._state(at).iloc[0][
@@ -1581,9 +1582,9 @@ class TestPacingTab:
         at.select_slider(key="pc_pause_mo").set_value(48).run()
         _assert_no_error(at, "Pacing / pause past the projection range")
         info = " ".join(str(i.value) for i in at.info)
-        assert "does not reach the paused US frontier by 2028" in info
-        assert list(self._state(at)["At the pause"]) == \
-            ["United States", "China-accessible"]
+        assert "does not reach the paced US frontier by 2028" in info
+        assert list(self._state(at)["At plan start"]) == [
+            "United States", "China-accessible", "China (domestic only)"]
 
     def test_us_pause_bar_follows_the_pause_slider(self):
         """The pause is a date the user names: pausing later freezes a
@@ -1592,16 +1593,16 @@ class TestPacingTab:
 
         def _bar(at):
             lab = next(str(m.label) for m in at.metric
-                       if "paused US frontier" in str(m.label))
+                       if "paced US frontier" in str(m.label))
             return float(lab.split("ECI")[-1].strip(" ~)"))
 
         def _cross(at):
             return datetime.strptime(str(next(
                 m.value for m in at.metric
-                if "paused US frontier" in str(m.label))), "%b %Y")
+                if "paced US frontier" in str(m.label))), "%b %Y")
 
         sl = at.select_slider(key="pc_pause_mo")
-        assert sl.value == 18            # months; the slider labels it a date
+        assert sl.value == _pc_pause_default_mo()   # months; labelled a date
         assert sl.options[18] == f"{_pc_add_months(datetime.now(), 18):%b %Y}"
         base, base_d = _bar(at), _cross(at)
         at.select_slider(key="pc_pause_mo").set_value(36).run()
@@ -1678,8 +1679,16 @@ class TestPacingTab:
         at = self._app()
         assert at.selectbox(key="pc_timing").value == \
             "Training run finished"
+        # The bar is a Monte Carlo median and a crossing snaps to a
+        # catalogued step, so a re-draw between the two runs can move a date
+        # further than the shift does — the US bar currently lands inside a
+        # run of near-equal OpenAI steps. Seed both renders so the bar is
+        # identical and the shift is the only thing that moved.
+        np.random.seed(0)
+        at.run()
         base = dict(zip(self._entities(at)["Entity"],
                         self._entities(at)["Plan crosses"]))
+        np.random.seed(0)
         at.selectbox(key="pc_timing").set_value(
             "Data center construction").run()
         _assert_no_error(at, "Pacing / construction")
@@ -1724,7 +1733,8 @@ class TestPacingTab:
             "Operator (who owns the building)").run()
         [b for b in at.button if b.key == "pc_reset"][0].click().run()
         _assert_no_error(at, "Pacing / reset")
-        assert at.select_slider(key="pc_pause_mo").value == 18
+        assert at.select_slider(key="pc_pause_mo").value == \
+            _pc_pause_default_mo()
         assert at.radio(key="pc_party").value == "Tenant (who trains there)"
         assert at.selectbox(key="pc_pool").value == \
             "Nearby + announced fabric"

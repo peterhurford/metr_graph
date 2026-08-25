@@ -797,15 +797,21 @@ uncertain, the date is chosen). The control is a `select_slider` over
 months-from-today with `format_func` labelling each position with the date
 (`_pc_add_months`, whole calendar months so no label repeats): it reads as a date
 picker while the stored value stays an int, which round-trips through the URL and
-can never go stale the way the scenario cut-off *labels* can. The pause is on the
+can never go stale the way the scenario cut-off *labels* can. The default is
+`_pc_pause_default_mo()`, the offset to `_PC_PAUSE_DEFAULT_YM` (Jul 2027) rather
+than a hardcoded month count, so the reset restores a *date*. The pause is on the
 **run-finished** clock; the displayed date carries `timing_label`'s
 offset, which is what keeps the US–China gap milestone-invariant. The US climb pace
 still comes from the **sidebar-pooled US series**, so the networking selector moves
 the bar. Between the slider and the subheader sits the *state of play* table, off
 that same `_pc_capacity_at()` reading (the race's own `_pc_projection` at the pause
-date, so the two sections cannot disagree) — each side's
+date, so the two sections cannot disagree) — three rows (US, China-accessible,
+China domestic-only) of each side's
 largest training run, frontier ECI (US = the sim's bar, China = its own sampled
-paths at that date), the ECI→METR p50/p80 horizons (capped at `_PC_METR_CAP_HRS`,
+paths at that date, the domestic row those paths less the compute the sites
+abroad bought — `chan['compute'] - chan['compute_domestic']`, the same shadow term
+the breakdown prices, so the two Chinese rows cannot disagree), the ECI→METR
+p50/p80 horizons (capped at `_PC_METR_CAP_HRS`,
 past which the bridge reads in centuries) and China's lag in months, taken off the
 same US line the chart draws. It renders **before** the crossing bail, so a
 projection range too narrow for a catch-up still describes the pause. A caption sensitivity reruns China's compute term
