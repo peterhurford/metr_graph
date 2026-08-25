@@ -12054,6 +12054,23 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
                  "earlier. 0 keeps only the hard cut at today.")
 
 
+def _pc_clock_note(release_dated, timing_label):
+    """The clock sentence appended to a milestone card's hover.
+
+    Which clock a card is on is a per-card fact (`_pc_report_lag`), so it
+    belongs in that card's tooltip rather than in a shared paragraph that
+    has to name every milestone on each side of the split.
+    """
+    if timing_label == _PC_TIMING_RELEASE:
+        return " Dates are model releases."
+    if not release_dated:
+        return " An internal evaluation, already on this clock."
+    return (" Dated off released models, so pulled back "
+            f"{_PC_REPORT_LAG_DAYS[0] / 30:.0f}\u2013"
+            f"{_PC_REPORT_LAG_DAYS[1] / 30:.0f} months onto the "
+            f"\u201c{timing_label.lower()}\u201d clock.")
+
+
 def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                           end_year=None):
     """Capabilities Milestones + the RSI blend. Rendered on the RSI tab.
@@ -12064,32 +12081,79 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
     conditioned on the present via `_pc_condition_on_today` — the cards read
     the same conditioned draws the blend mixes, so they cannot disagree.
     """
-    # (slug, label, eta, release_dated) — see `_pc_report_lag`.
+    # (slug, label, eta, release_dated, note) — see `_pc_report_lag`. The
+    # note is the card's hover: what fit produced the date and what the bar
+    # means, so the caption below stays one line instead of a wall of
+    # caveats keyed to nothing the reader can see.
     _cap = [(f"metr_{lab}",
              f"METR {lab} horizon reaches {_PC_METR_TARGET_HRS:.0f}h",
-             _pc_metr_eta(frontier_all, k, samples=True), True)
+             _pc_metr_eta(frontier_all, k, samples=True), True,
+             f"The horizon at {lab[1:]}% task success. METR tab at its "
+             "defaults: piecewise fit broken at GPT-4o, doubling time over "
+             "[DT/2, DT\u00d72], position over the current model's own CI "
+             "\u2014 the p50 slope sets the trend for both levels, so only "
+             "the intercept and the position CI are re-fit here. "
+             f"{_PC_METR_TARGET_HRS:.0f}h is about one work-month.")
             for lab, k in _PC_METR_LEVELS]
     _eci_fr = _eci_entity_data("US best")[1]
+    _eci_jump = ""
+    if _eci_fr:
+        _from_name, _from = _PC_ECI_JUMP_FROM
+        _top = _eci_fr[-1]
+        _eci_jump = (
+            " {t:g} is two more jumps the size of {a} \u2192 {b} "
+            "({lo:g} \u2192 {hi:.1f}), i.e. +{j:.1f} apiece.".format(
+                t=_PC_ECI_TARGETS[0], a=_from_name,
+                b=str(_top.get('display_name', '')).split(' (')[0],
+                lo=_from, hi=_top['eci_score'],
+                j=(_PC_ECI_TARGETS[0] - _top['eci_score']) / 2))
     _cap += [(f"eci_{t:g}".replace(".", "_"), f"US ECI reaches {t:g}",
-              _pc_eci_eta(_eci_fr, t, samples=True), True)
+              _pc_eci_eta(_eci_fr, t, samples=True), True,
+              "Epoch ECI tab at its defaults: single OLS on the US-best "
+              "frontier, points/yr over [PPY/2, PPY\u00d72], position "
+              f"\u00b1{_PC_ECI_POS_CI:g}." + _eci_jump)
              for t in _PC_ECI_TARGETS]
     _cap.append((f"rli_{_PC_RLI_TARGET_PCT:.0f}",
                  f"RLI reaches {_PC_RLI_TARGET_PCT:.0f}%",
-                 _pc_rli_eta(rli_frontier_all, samples=True), True))
+                 _pc_rli_eta(rli_frontier_all, samples=True), True,
+                 "RLI tab at its defaults: single OLS in logit space, "
+                 "odds-doubling time over [DT/2, DT\u00d72] floored at 5 "
+                 f"days, position \u00b1{_PC_RLI_POS_CI:g} point. "
+                 f"{_PC_RLI_TARGET_PCT:.0f}% is above that tab's own "
+                 "milestone table, which stops at 50%."))
     _cap.append((f"cobench_{_RSI_SUBSTITUTION_BAR:.0f}",
                  f"CoBench reaches {_RSI_SUBSTITUTION_BAR:.0f}%",
-                 _pc_rsi_eta(rsi_frontier_all, samples=True), False))
+                 _pc_rsi_eta(rsi_frontier_all, samples=True), False,
+                 "The CoBench fan above, at its defaults: single OLS in "
+                 "logit space, odds-doubling over that fit's widened rate "
+                 f"CI, position \u00b1{_PC_RSI_POS_CI:g} points. "
+                 f"{_RSI_SUBSTITUTION_BAR:.0f}% is Anthropic's own stated "
+                 "full-substitution bar, not a benchmark ceiling."))
     _cap.append((f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x",
                  f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
-                 _pc_rsi_survey_eta(load_rsi_survey(), samples=True), False))
-    # Release-dated: ARR is earned by *shipped* models, so a revenue
-    # crossing sits on the release clock exactly as a benchmark score does
-    # — later than the training run behind it, and pulled back the same way.
+                 _pc_rsi_survey_eta(load_rsi_survey(), samples=True), False,
+                 "The staff-survey fan above, at its defaults: OLS on "
+                 "log(multiple) over every round fitted, the carried-over "
+                 "estimated point included. The rounds do not report the "
+                 f"same statistic on the same sample. "
+                 f"{_PC_RSI_SURVEY_TARGET_X:.0f}x is about a doubling and a "
+                 "half past the most recent round's ~4x."))
     _cap.append(("rev_1t", "Leading company revenue >$1T",
                  _pc_revenue_eta([_OPENAI_REVENUE, _ANTHROPIC_REVENUE],
-                                 samples=True), True))
+                                 samples=True), True,
+                 "Revenue tab at its defaults, per company: OLS on "
+                 "log2(ARR) over every point, doubling time over "
+                 "[max(10, DT\u00d70.65), DT\u00d71.5], 0.3 log2 position "
+                 "\u03c3 \u2014 then whichever company crosses first. That "
+                 "fit is a near-perfect 3.7-year exponential, so this is "
+                 "much the tightest card here; treat the narrowness as the "
+                 "fit's, not the world's."))
+    # Revenue is release-dated because ARR is earned by *shipped* models, so
+    # a crossing sits on the release clock exactly as a benchmark score does.
+    _notes = {slug: note + _pc_clock_note(rel, timing_label)
+              for slug, _l, r, rel, note in _cap if r is not None}
     _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label))
-            for slug, lab, r, rel in _cap if r is not None]
+            for slug, lab, r, rel, _n in _cap if r is not None]
     survival, _cap_raw = None, None
     ramp_days = _pc_ramp_for(timing_label, ramp_days)
     if condition:
@@ -12102,39 +12166,22 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
         _per_row = -(-len(_cap) // 2)
         for _start in range(0, len(_cap), _per_row):
             _chunk = _cap[_start:_start + _per_row]
-            for col, (_, lab, _anchor, _days) in zip(st.columns(_per_row), _chunk):
+            for col, (slug, lab, _anchor, _days) in zip(st.columns(_per_row),
+                                                         _chunk):
                 early, med, late = _pc_eta_dates(_anchor, _days)
                 with col:
-                    st.metric(lab, med.strftime('%b %Y'))
+                    st.metric(lab, med.strftime('%b %Y'),
+                              help=_notes.get(slug))
                     st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")
 
-        _lag_note = ("" if timing_label == _PC_TIMING_RELEASE else
-                     " METR, ECI, RLI and revenue are dated off released "
-                     f"models, so they are pulled back {_PC_REPORT_LAG_DAYS[0] / 30:.0f}"
-                     f"\u2013{_PC_REPORT_LAG_DAYS[1] / 30:.0f} months onto the "
-                     f"\u201c{timing_label.lower()}\u201d clock; CoBench and the staff "
-                     "survey are internal evaluations already on it.")
         _cond_note = ("" if not condition else
                       " Dates are conditioned on the milestone not having "
-                      "crossed by today: samples in the past are dropped and "
-                      "the rest renormalized." +
-                      (f" Crossings within the next {ramp_days:.0f} days are "
-                       "discounted linearly — that close, the run-up would "
-                       "already be visible." if ramp_days > 0 else ""))
-        _eci_note = ""
-        if _eci_fr and _PC_ECI_TARGETS:
-            _t = _PC_ECI_TARGETS[0]
-            _from_name, _from = _PC_ECI_JUMP_FROM
-            _top = _eci_fr[-1]
-            _to_name = str(_top.get('display_name', '')).split(' (')[0]
-            _eci_note = (f" US ECI {_t:g} is two more jumps the size of "
-                         f"{_from_name} \u2192 {_to_name} "
-                         f"({_from:g} \u2192 {_top['eci_score']:.1f}), "
-                         f"i.e. +{(_t - _top['eci_score']) / 2:.1f} apiece.")
+                      "crossed by today.")
         st.caption(
-            "Each milestone reproduces its own tab at that tab's defaults, so the two "
-            "cannot quote different dates for the same bar." + _eci_note
-            + _lag_note + _cond_note)
+            "Each card reproduces its own tab at that tab's defaults, so the "
+            "two cannot quote different dates for the same bar \u2014 hover a "
+            "card for its fit, its clock and what the bar means."
+            + _cond_note)
 
         _pc_render_rsi_blend(_cap, today, survival,
                              horizon=(datetime(end_year, 12, 31)

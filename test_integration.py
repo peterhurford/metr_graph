@@ -982,6 +982,26 @@ class TestRsiTab:
         # Seven milestones, and the weights editor has an input for each.
         assert len(t) == 7
 
+    def test_every_milestone_card_carries_its_caveats_on_hover(self):
+        """Caveats ride the card they belong to rather than piling into one
+        caption nobody reads: every card has a hover naming its fit and its
+        clock, and the caption under them stays short."""
+        at = self._rsi_app()
+        cards = [m for m in at.metric if "80% CI" not in str(m.label)
+                 and str(m.label) not in ("Blended median", "Median")]
+        helps = {str(m.label): (m.proto.help or "") for m in cards}
+        milestones = {k: v for k, v in helps.items()
+                      if "reaches" in k or "revenue" in k or "acceleration" in k}
+        assert len(milestones) == 7
+        for lab, h in milestones.items():
+            assert "defaults" in h, lab
+            assert "clock" in h or "releases" in h, lab
+        cap = next(str(c.value) for c in at.caption if "hover a card" in str(c.value))
+        assert len(cap) < 300
+        # p50 and p80 differ: same fit, different reliability bar.
+        assert helps["METR p50 horizon reaches 174h"] != \
+            helps["METR p80 horizon reaches 174h"]
+
     def test_blend_renders(self):
         at = self._rsi_app()
         labels = {str(m.label) for m in at.metric}

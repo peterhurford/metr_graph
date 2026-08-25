@@ -4573,6 +4573,19 @@ class TestPacing:
         assert vp._pc_ramp_for("Training run finished", 90.0) == 90.0
         assert vp._pc_ramp_for(vp._PC_TIMING_RELEASE, 0.0) == 0.0
 
+    def test_clock_note_splits_by_milestone_not_by_paragraph(self):
+        """Which clock a card is on is a per-card fact, so it rides that
+        card's hover: release-dated cards say they were pulled back,
+        internal ones say they were not, and on the release clock the
+        distinction is moot for both."""
+        rel_dated = vp._pc_clock_note(True, "Training run finished")
+        internal = vp._pc_clock_note(False, "Training run finished")
+        assert "pulled back" in rel_dated and "training run finished" in rel_dated
+        assert "internal" in internal.lower() and "pulled back" not in internal
+        on_release = {vp._pc_clock_note(r, vp._PC_TIMING_RELEASE)
+                      for r in (True, False)}
+        assert len(on_release) == 1 and "releases" in on_release.pop()
+
     def test_rsi_blend_weights_are_tracked_and_default_to_the_stated_mix(self):
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100
         keys, defaults = vp._all_tracked()

@@ -269,6 +269,22 @@ Don't widen a `'proximity'` or `'fabric'` cluster to "same company, same region"
 cross-site link has to carry the data-parallel gradient all-reduce, so metro fibre or a
 purpose-built fabric is the criterion for the levels that claim a link exists.
 
+### Caveats belong on the thing they qualify
+
+Prefer a hover to a paragraph. `st.metric(..., help=…)` renders a `?` next to the
+label with a styled tooltip, so a card's own fit, clock and bar definition ride
+that card instead of piling into a shared caption keyed to nothing the reader can
+see. The *Capabilities Milestones* row is the worked example: seven cards, each
+with its own note (`_notes` by slug, plus `_pc_clock_note()` for the
+release-vs-internal split that used to be a sentence naming every milestone on
+both sides), and a two-line caption under them. Widget `help=` does the same job
+for controls, which is why every sidebar control already has one.
+
+Keep in the visible caption only what a reader needs *before* deciding to look
+closer — what the section shows, and any claim the page would be misleading
+without. `test_every_milestone_card_carries_its_caveats_on_hover` pins the split:
+every card has a hover naming its fit and its clock, and the caption stays short.
+
 ### RSI tab
 
 `render_rsi()` is titled *RSI* and runs CoBench, then the staff survey, then
