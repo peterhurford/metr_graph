@@ -1642,9 +1642,8 @@ class TestPacingTab:
 
     def test_race_bar_is_the_us_run_at_the_pause(self):
         """No threshold control: the race runs to the *Largest training
-        run* the state-of-play table gives the US, so the chart title, the
-        lead-in caption and that cell all quote one number — and a later
-        pause raises all three together."""
+        run* the state-of-play table gives the US, so the chart title and
+        that cell quote one number — and a later plan start raises both."""
         at = self._app()
         import json
 
@@ -1660,7 +1659,6 @@ class TestPacingTab:
         us_run = self._state(at).iloc[0]["Largest training run"].split(
             " (")[0]
         assert us_run in _title(at)
-        assert us_run in " ".join(str(c.value) for c in at.caption)
         at.select_slider(key="pc_pause_mo").set_value(42).run()
         _assert_no_error(at, "Pacing / bar at a later pause")
         later = self._state(at).iloc[0]["Largest training run"].split(" (")[0]

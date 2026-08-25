@@ -12934,7 +12934,8 @@ _PC_CHANNEL_LABELS = {
     'compute_domestic': "Compute — domestic clusters",
     'compute_abroad': "Compute — remote access to clusters abroad",
     'innovation': "Indigenous innovation — never dries up",
-    'diffusion': "Diffusion — published US methods, drying up after the pause",
+    'diffusion': "Diffusion — published US methods, drying up after "
+                 "pacing plan",
     'distillation': "Distillation — training against US model outputs",
 }
 
@@ -13020,7 +13021,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     st.table(rows)
     _fn_caption(
         f"The {total_mo:.1f} months run from China's last frontier model, not "
-        "from the pause the card above counts from. <b>ECI closed</b> and "
+        "from the pacing plan start. <b>ECI closed</b> and "
         "<b>Without it</b> answer different questions."
         + ("".join(" " + n for n in notes) if notes else ""),
         ("ECI closed", "Each term's cumulative contribution at its own sample's "
@@ -13551,7 +13552,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     fig.add_annotation(x=v50, y=1.0, yref='paper', yanchor='bottom',
                        text='80% crossing window', showarrow=False,
                        font=dict(size=10, color='#7F1010'))
-    # US: actual frontier, then the climb to the bar, flat after the pause.
+    # US: actual frontier, then the climb to the bar, flat once it paces.
     fig.add_trace(go.Scatter(
         x=[d + off_cn for d, s, n in us_fr], y=[s for d, s, n in us_fr],
         mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
@@ -13559,7 +13560,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         text=[_hover(d, s, n) for d, s, n in us_fr],
         hoverinfo='text', name='US (actual)'))
     # Two visually distinct segments: the projected climb (dashed, like every
-    # projection) and the frozen bar after the pause (thick translucent level).
+    # projection) and the frozen bar the plan holds (thick translucent level).
     t0_us = max(us_best[0], anchor_d) + off_cn
     if d_pause_v > t0_us:
         fig.add_trace(go.Scatter(
@@ -13569,10 +13570,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     fig.add_trace(go.Scatter(
         x=[max(d_pause_v, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
         line=dict(color='#1F77B4', width=4.5), opacity=0.4,
-        name=f'US paused at {lvl50:.0f}', hoverinfo='skip'))
+        name=f'US paced at {lvl50:.0f}', hoverinfo='skip'))
     if d_pause_v > anchor_d + off_cn:
         fig.add_annotation(x=d_pause_v, y=lvl50,
-                           text=f'US pauses ~{d_pause_v:%b %Y}',
+                           text=f'US paces ~{d_pause_v:%b %Y}',
                            showarrow=False, yshift=12,
                            font=dict(size=10, color='#1F77B4'))
     # China: actual frontier, then the sim's fan.
@@ -13843,15 +13844,6 @@ def render_pacing():
 
     # ── Headline ──
     st.subheader("Compute Thresholds")
-    _fn_caption(
-        f"The actors behind the pause, racing to <b>{threshold_label}</b> "
-        "\u2014 the run the US is mounting when it pauses. The attribution "
-        "picks who the racers are.",
-        ("the run the US is mounting when it pauses",
-         "The *Largest training run* cell of the state-of-play table above, so "
-         "the bar moves with the pause date and with the run length."),
-        ("The attribution", "The sidebar's *Attribute each site to* selects "
-                            "tenants, operators or countries."))
     us = next((r for r in recs if r['label'] == _DC_CTY_US), None)
     cn = next((r for r in recs if r['label'] == _DC_CTY_CN_ACCESS), None)
     if us is not None and cn is not None:
