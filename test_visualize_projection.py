@@ -4399,10 +4399,31 @@ class TestPacing:
             prev = med
 
     def test_eci_target_sits_above_the_eci_tabs_top_milestone(self):
-        """190 is a deliberate extrapolation past anything the ECI tab draws
-        — a bar near today's frontier dates model releases, not RSI."""
+        """187.5 is a deliberate extrapolation past anything the ECI tab
+        draws — a bar near today's frontier dates model releases, not RSI."""
         top = max(s for s, _l, _c in vp._ECI_US_MILESTONES)
         assert min(vp._PC_ECI_TARGETS) > top
+
+    def test_eci_target_is_two_more_frontier_jumps(self):
+        """The bar means "two more jumps the size of GPT-5 → today's
+        frontier", and the card's footnote says so. Epoch recomputes scores
+        live, so pin the arithmetic here: if a refresh moves either end,
+        retarget `_PC_ECI_TARGETS` / `_PC_ECI_JUMP_FROM` deliberately rather
+        than loosening this."""
+        fr = vp._eci_entity_data("US best")[1]
+        name, score = vp._PC_ECI_JUMP_FROM
+        anchor = next(m for m in fr
+                      if str(m.get('display_name', '')).startswith(name + " "))
+        assert abs(anchor['eci_score'] - score) < 1.0
+        jump = fr[-1]['eci_score'] - anchor['eci_score']
+        assert jump > 0
+        assert abs(vp._PC_ECI_TARGETS[0]
+                   - (fr[-1]['eci_score'] + 2 * jump)) < 1.0
+        # The slug carries the half-point rather than rounding it away —
+        # it keys the blend weight, so "eci_188" would silently unweight it.
+        slug = f"eci_{vp._PC_ECI_TARGETS[0]:g}".replace(".", "_")
+        assert slug == "eci_187_5"
+        assert vp._PC_RSI_WEIGHTS[slug] == 20.0
 
     def test_rli_eta_reproduces_the_rli_tab_defaults(self):
         """The RLI 90% card is the RLI tab at its defaults: single OLS in

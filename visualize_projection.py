@@ -11695,7 +11695,7 @@ def _pc_ramp_for(timing_label, ramp_days):
 _PC_RSI_WEIGHTS = {
     "metr_p50": 5.0,
     "metr_p80": 15.0,
-    "eci_190": 20.0,
+    "eci_187_5": 20.0,
     "rli_90": 20.0,
     "cobench_85": 10.0,
     "staff_10x": 20.0,
@@ -12070,7 +12070,7 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
              _pc_metr_eta(frontier_all, k, samples=True), True)
             for lab, k in _PC_METR_LEVELS]
     _eci_fr = _eci_entity_data("US best")[1]
-    _cap += [(f"eci_{t:.0f}", f"US ECI reaches {t:.0f}",
+    _cap += [(f"eci_{t:g}".replace(".", "_"), f"US ECI reaches {t:g}",
               _pc_eci_eta(_eci_fr, t, samples=True), True)
              for t in _PC_ECI_TARGETS]
     _cap.append((f"rli_{_PC_RLI_TARGET_PCT:.0f}",
@@ -12121,9 +12121,20 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                       (f" Crossings within the next {ramp_days:.0f} days are "
                        "discounted linearly — that close, the run-up would "
                        "already be visible." if ramp_days > 0 else ""))
+        _eci_note = ""
+        if _eci_fr and _PC_ECI_TARGETS:
+            _t = _PC_ECI_TARGETS[0]
+            _from_name, _from = _PC_ECI_JUMP_FROM
+            _top = _eci_fr[-1]
+            _to_name = str(_top.get('display_name', '')).split(' (')[0]
+            _eci_note = (f" US ECI {_t:g} is two more jumps the size of "
+                         f"{_from_name} \u2192 {_to_name} "
+                         f"({_from:g} \u2192 {_top['eci_score']:.1f}), "
+                         f"i.e. +{(_t - _top['eci_score']) / 2:.1f} apiece.")
         st.caption(
             "Each milestone reproduces its own tab at that tab's defaults, so the two "
-            "cannot quote different dates for the same bar." + _lag_note + _cond_note)
+            "cannot quote different dates for the same bar." + _eci_note
+            + _lag_note + _cond_note)
 
         _pc_render_rsi_blend(_cap, today, survival,
                              horizon=(datetime(end_year, 12, 31)
@@ -12202,13 +12213,20 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
     return _pc_eta_out(cur['date'], days_to, samples)
 
 
-# The ECI companion, on the US-best frontier the ECI tab defaults to. 190 is
-# above anything the ECI tab draws (its own milestone table tops out at 170)
-# and is a pure extrapolation of the same fit, a long way outside the
-# frontier's observed range. 170 was a card once, but it sits close enough to
-# today's frontier that it dated near-term model releases, not an RSI-scale
-# capability — its weight moved here.
-_PC_ECI_TARGETS = (190.0,)
+# The ECI companion, on the US-best frontier the ECI tab defaults to. 187.5 is
+# today's frontier plus **two more jumps the size of GPT-5 -> the current
+# frontier** — well above anything the ECI tab draws (its own milestone table
+# tops out at 170) and a pure extrapolation of the same fit, a long way
+# outside the frontier's observed range. 170 was a card once, but it sits
+# close enough to today's frontier that it dated near-term model releases,
+# not an RSI-scale capability — its weight moved here.
+#
+# `_PC_ECI_JUMP_FROM` is the near end of that jump, quoted in the card
+# footnote. Epoch recomputes scores live, so the arithmetic is pinned by
+# `test_eci_target_is_two_more_frontier_jumps` against the live CSV rather
+# than left to rot in prose; retarget both constants if a refresh breaks it.
+_PC_ECI_TARGETS = (187.5,)
+_PC_ECI_JUMP_FROM = ("GPT-5", 150.0)
 _PC_ECI_POS_CI = 2.0     # the ECI tab's default position CI, fitted score +/- 2
 
 

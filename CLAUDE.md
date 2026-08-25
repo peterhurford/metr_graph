@@ -610,9 +610,14 @@ the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_
 work-month — at each of `_PC_METR_LEVELS` (p50 at 5% blend weight, p80 at 20%;
 at the month-scale bar p50's earlier firing is its own card and weight rather
 than the exclusion it got at the old 40h bar), `_pc_eci_eta()` for the US-best ECI frontier reaching
-`_PC_ECI_TARGETS` (190 only — above anything that tab draws; a 170 card sat
-close enough to today's frontier that it dated model releases, not RSI, and its
-weight moved to 190), `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT` (90%, above
+`_PC_ECI_TARGETS` (187.5 only — today's frontier plus **two more jumps the size
+of GPT-5 → the current frontier**, `_PC_ECI_JUMP_FROM` being the near end, quoted
+in the cards' footnote and pinned against the live CSV by
+`test_eci_target_is_two_more_frontier_jumps` since Epoch rescores live; well above
+anything that tab draws, and a 170 card sat close enough to today's frontier that
+it dated model releases, not RSI, so its weight moved here). The slug keeps the
+half-point (`eci_187_5`) — it keys the blend weight, and `{t:.0f}` would round it
+to a slug no weight matches, `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT` (90%, above
 that tab's own milestone table, which stops at 50%), `_pc_rsi_eta()` for
 the CoBench frontier reaching `_RSI_SUBSTITUTION_BAR` (85%, Anthropic's own
 full-substitution bar, which the RSI tab dates too), `_pc_rsi_survey_eta()`
