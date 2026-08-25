@@ -948,8 +948,9 @@ class TestRsiTab:
         assert "METR p50 horizon reaches 174h" in labels
         assert "METR p80 horizon reaches 174h" in labels
         assert not any("40h" in l for l in labels)
-        assert "US ECI reaches 187.5" in labels
-        assert "US ECI reaches 170" not in labels
+        assert "ECI reaches 187.5" in labels
+        assert "ECI reaches 200" in labels
+        assert not any("ECI reaches 170" in l for l in labels)
         assert "RLI reaches 90%" in labels
         caps = " ".join(str(c.value) for c in at.caption)
         assert caps.count("80% CI:") >= 4
@@ -981,8 +982,8 @@ class TestRsiTab:
         row = t[t["Milestone"] == "Leading company revenue >$1T"]
         assert len(row) == 1
         assert row.iloc[0]["Weight"].startswith("10%")
-        # Seven milestones, and the weights editor has an input for each.
-        assert len(t) == 7
+        # Every milestone gets a row, and the weights editor an input each.
+        assert len(t) == 8
 
     def test_every_milestone_card_carries_its_caveats_on_hover(self):
         """Caveats ride the card they belong to rather than piling into one
@@ -994,7 +995,7 @@ class TestRsiTab:
         helps = {str(m.label): (m.proto.help or "") for m in cards}
         milestones = {k: v for k, v in helps.items()
                       if "reaches" in k or "revenue" in k or "acceleration" in k}
-        assert len(milestones) == 7
+        assert len(milestones) == 8
         for lab, h in milestones.items():
             assert "defaults" in h, lab
             assert "clock" in h or "releases" in h, lab

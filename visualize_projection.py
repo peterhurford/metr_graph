@@ -11987,7 +11987,8 @@ def _pc_ramp_for(timing_label, ramp_days):
 _PC_RSI_WEIGHTS = {
     "metr_p50": 5.0,
     "metr_p80": 15.0,
-    "eci_187_5": 20.0,
+    "eci_187_5": 10.0,
+    "eci_200": 10.0,
     "rli_90": 20.0,
     "cobench_85": 10.0,
     "staff_10x": 20.0,
@@ -12390,22 +12391,29 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
              f"{_PC_METR_TARGET_HRS:.0f}h is about one work-month.")
             for lab, k in _PC_METR_LEVELS]
     _eci_fr = _eci_entity_data("US best")[1]
-    _eci_jump = ""
+    # One footnote per bar: each target is a whole number of GPT-5-sized
+    # jumps past today's frontier, and the count is read off the live scores
+    # rather than written into prose that Epoch's rescoring would stale.
+    _eci_jump = {}
     if _eci_fr:
         _from_name, _from = _PC_ECI_JUMP_FROM
         _top = _eci_fr[-1]
-        _eci_jump = (
-            " {t:g} is two more jumps the size of {a} \u2192 {b} "
-            "({lo:g} \u2192 {hi:.1f}), i.e. +{j:.1f} apiece.".format(
-                t=_PC_ECI_TARGETS[0], a=_from_name,
-                b=str(_top.get('display_name', '')).split(' (')[0],
-                lo=_from, hi=_top['eci_score'],
-                j=(_PC_ECI_TARGETS[0] - _top['eci_score']) / 2))
-    _cap += [(f"eci_{t:g}".replace(".", "_"), f"US ECI reaches {t:g}",
+        _jump = _top['eci_score'] - _from
+        for _t in _PC_ECI_TARGETS:
+            _n = max(round((_t - _top['eci_score']) / _jump), 1) \
+                if _jump > 0 else 1
+            _eci_jump[_t] = (
+                " {t:g} is {n} more jumps the size of {a} \u2192 {b} "
+                "({lo:g} \u2192 {hi:.1f}), i.e. +{j:.1f} apiece.".format(
+                    t=_t, n=_n, a=_from_name,
+                    b=str(_top.get('display_name', '')).split(' (')[0],
+                    lo=_from, hi=_top['eci_score'],
+                    j=(_t - _top['eci_score']) / _n))
+    _cap += [(f"eci_{t:g}".replace(".", "_"), f"ECI reaches {t:g}",
               _pc_eci_eta(_eci_fr, t, samples=True), True,
               "Epoch ECI tab at its defaults: single OLS on the US-best "
               "frontier, points/yr over [PPY/2, PPY\u00d72], position "
-              f"\u00b1{_PC_ECI_POS_CI:g}." + _eci_jump)
+              f"\u00b1{_PC_ECI_POS_CI:g}." + _eci_jump.get(t, ""))
              for t in _PC_ECI_TARGETS]
     _cap.append((f"rli_{_PC_RLI_TARGET_PCT:.0f}",
                  f"RLI reaches {_PC_RLI_TARGET_PCT:.0f}%",
@@ -12456,7 +12464,8 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                                                 ramp_days=ramp_days)
     if _cap:
         st.subheader("Capabilities Milestones")
-        # Two rows: seven cards on one line squeeze every label to two words.
+        # Two rows: all the cards on one line squeeze every label to two
+        # words.
         _per_row = -(-len(_cap) // 2)
         for _start in range(0, len(_cap), _per_row):
             _chunk = _cap[_start:_start + _per_row]
@@ -12554,19 +12563,20 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
     return _pc_eta_out(cur['date'], days_to, samples)
 
 
-# The ECI companion, on the US-best frontier the ECI tab defaults to. 187.5 is
-# today's frontier plus **two more jumps the size of GPT-5 -> the current
-# frontier** — well above anything the ECI tab draws (its own milestone table
-# tops out at 170) and a pure extrapolation of the same fit, a long way
-# outside the frontier's observed range. 170 was a card once, but it sits
-# close enough to today's frontier that it dated near-term model releases,
-# not an RSI-scale capability — its weight moved here.
+# The ECI companions, on the US-best frontier the ECI tab defaults to. Both
+# bars are today's frontier plus **whole jumps the size of GPT-5 -> the
+# current frontier** — two of them for 187.5, three for 200 — well above
+# anything the ECI tab draws (its own milestone table tops out at 170) and a
+# pure extrapolation of the same fit, a long way outside the frontier's
+# observed range. 170 was a card once, but it sits close enough to today's
+# frontier that it dated near-term model releases, not an RSI-scale
+# capability — its weight moved here.
 #
 # `_PC_ECI_JUMP_FROM` is the near end of that jump, quoted in the card
 # footnote. Epoch recomputes scores live, so the arithmetic is pinned by
 # `test_eci_target_is_two_more_frontier_jumps` against the live CSV rather
-# than left to rot in prose; retarget both constants if a refresh breaks it.
-_PC_ECI_TARGETS = (187.5,)
+# than left to rot in prose; retarget the constants if a refresh breaks it.
+_PC_ECI_TARGETS = (187.5, 200.0)
 _PC_ECI_JUMP_FROM = ("GPT-5", 150.0)
 _PC_ECI_POS_CI = 2.0     # the ECI tab's default position CI, fitted score +/- 2
 
