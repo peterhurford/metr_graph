@@ -953,14 +953,19 @@ class TestRsiTab:
 
     def test_milestone_card_matches_the_cobench_panel(self):
         """The CoBench milestone card is this tab's own fit, so the card and
-        the panel below cannot date it differently. Compared with a tolerance,
-        not by string: both are Monte Carlo medians off an unseeded RNG, and
-        the card also carries the report-lag shift."""
+        the panel below cannot date it differently. Conditioning is switched
+        off first — the card conditions on "not crossed yet", the panel does
+        not, and that is a real difference, not drift. Compared with a
+        tolerance, not by string: both are Monte Carlo medians off an
+        unseeded RNG."""
         at = self._rsi_app()
+        at.checkbox(key="rsi_notyet").set_value(False).run()
         labels = {str(m.label): m.value for m in at.metric}
         here = datetime.strptime(labels["Median"], "%b %Y")
         there = datetime.strptime(labels["CoBench reaches 85%"], "%b %Y")
-        assert abs((here - there).days) <= 62
+        # The t-widened rate CI makes the shared distribution wide, so two
+        # 400-sample medians carry real MC scatter; 150d is ~3 sd of it.
+        assert abs((here - there).days) <= 150
 
     def test_blend_renders(self):
         at = self._rsi_app()
@@ -974,13 +979,13 @@ class TestRsiTab:
         at = self._rsi_app()
         assert at.checkbox(key="rsi_notyet").value is True
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
-        assert "P(ruled out)" in t.columns
+        assert all("→" in w for w in t["Weight"])
         at.number_input(key="rsi_notyet_ramp").set_value(0.0).run()
         _assert_no_error(at, "RSI / ramp off")
         at.checkbox(key="rsi_notyet").set_value(False).run()
         _assert_no_error(at, "RSI / conditioning off")
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
-        assert "P(ruled out)" not in t.columns
+        assert not any("→" in w for w in t["Weight"])
 
     def test_horizon_selector(self):
         at = self._rsi_app()

@@ -3157,6 +3157,45 @@ class TestRsi:
                 vp._logit(b['cobench'] / 100) - vp._logit(a['cobench'] / 100))
             assert lo <= round(seg) <= hi
 
+    def test_dt_t_interval_reflects_sample_size(self):
+        """A perfect line collapses to the fit, under 3 points there is no
+        interval, and one residual dof with a flat segment reaches the cap."""
+        days = np.arange(0, 500, 50, dtype=float)
+        lo, hi = vp._dt_t_interval(days, 0.01 * days, 0.0, 0.01)
+        assert abs(lo - np.log(2) / 0.01) < 1 and abs(hi - np.log(2) / 0.01) < 1
+        assert vp._dt_t_interval([0.0, 50.0], [0.0, 0.5], 0.0, 0.01) is None
+        days3 = np.array([0.0, 73.0, 134.0])
+        ys3 = np.log(np.array([2.0, 2.0, 4.0]))
+        icpt, slope = vp.fit_line(days3, ys3)
+        lo3, hi3 = vp._dt_t_interval(days3, ys3, icpt, slope)
+        assert hi3 == vp._DT_CAP_DAYS
+        assert lo3 < np.log(2) / slope
+
+    def test_small_sample_ci_widens_both_rsi_fits(self):
+        """Live data: three usable points on each series leave one residual
+        dof, so both default rate CIs run to the flat-slope cap — "not
+        crossing until 2028" sits inside the interval, not outside it. If a
+        new round tightens the t-interval below the cap, update this."""
+        fr = [m for m in vp.load_rsi_data() if m['is_frontier']]
+        _, _, slope = vp._rsi_fit(fr)
+        assert vp._rsi_dt_ci(fr, np.log(2) / slope)[1] == vp._DT_CAP_DAYS
+        rows = [r for r in vp.load_rsi_survey() if not r.get('estimated')]
+        days = np.array([(r['date'] - rows[0]['date']).days for r in rows],
+                        dtype=float)
+        _, sslope = vp.fit_line(days, np.log([r['uplift'] for r in rows]))
+        slo, shi = vp._rsi_survey_dt_ci(rows, np.log(2) / sslope)
+        assert shi == vp._DT_CAP_DAYS
+        assert slo <= round(np.log(2) / sslope / 2)
+
+    def test_survey_eta_excludes_the_estimated_round(self):
+        """The card fits the surveyed rounds only, like the tab's fan — the
+        carried-over Model 2 point must not set the slope or the anchor."""
+        rows = vp.load_rsi_survey()
+        anchor, _days = vp._pc_rsi_survey_eta(rows, samples=True)
+        surveyed = [r for r in rows if not r.get('estimated')]
+        assert rows[-1].get('estimated')
+        assert anchor == surveyed[-1]['date']
+
 
 class TestUkCyberTlo:
     """Cyber range "The Last Ones" -- AISI's long-horizon cyber measure.
@@ -4420,6 +4459,23 @@ class TestPacing:
         free = vp._pc_rsi_dist_fig(*args)
         assert max(free.data[0].x) > horizon
         assert free.layout.annotations
+
+    def test_dist_fig_ghost_shows_the_removed_mass(self):
+        """With `raw_days` the unconditioned blend draws as a ghost trace
+        behind the main curve, nonzero where the reality check cut mass."""
+        origin = datetime(2026, 8, 24)
+        cond = np.linspace(1, 400, 2000)
+        raw = np.concatenate([np.full(500, -50.0), np.linspace(1, 400, 1500)])
+        fig = vp._pc_rsi_dist_fig(cond, origin, origin + timedelta(days=40),
+                                  origin + timedelta(days=200),
+                                  origin + timedelta(days=360), raw_days=raw)
+        assert len(fig.data) == 2
+        assert fig.data[0].y[0] > 10          # ghost carries the past mass
+        assert fig.data[1].y[0] < fig.data[0].y[0]
+        solo = vp._pc_rsi_dist_fig(cond, origin, origin + timedelta(days=40),
+                                   origin + timedelta(days=200),
+                                   origin + timedelta(days=360))
+        assert len(solo.data) == 1
 
     def test_condition_flag_is_tracked_and_defaults_on(self):
         assert vp._RSI_DEFAULTS["rsi_notyet"] is True

@@ -287,8 +287,16 @@ research staff — not a benchmark ceiling). Four things are load-bearing:
 3. **The default rate CI is widened, not the convention.** The two segments disagree
    by ~8x (Opus 4.6 → Mythos Preview is ~22d odds-doubling, Mythos Preview → Model 2 (internal)
    ~189d), so `_rsi_dt_ci()` takes the usual fit/2..fit×2 interval and widens it to
-   span both segment rates. It can only widen — `test_dt_ci_default_spans_both_segment_rates`
-   holds that.
+   span both segment rates **and** the slope's 80% t-interval (`_dt_t_interval`,
+   `_DT_T80` multipliers by residual dof — 3.08 at the current one dof, decaying to
+   the 1.282 normal limit as points accumulate). A t-interval that cannot exclude a
+   flat slope — true today for both this fit and the staff survey's, which gets the
+   same treatment via `_rsi_survey_dt_ci()` — caps the slow edge at `_DT_CAP_DAYS`
+   (~4-year doubling, flat at every horizon the app offers), which is what puts
+   "no crossing before 2028" inside the default fan rather than outside it. It can
+   only widen — `test_dt_ci_default_spans_both_segment_rates` and
+   `test_small_sample_ci_widens_both_rsi_fits` hold that (the latter pins the
+   live caps; retarget it when a new round tightens the interval).
 4. **`date_known` drives the "~" prefix** via `_rsi_date_label()`. Mythos Preview has
    no published release record (its date is carried over from AISI's narrow cyber
    figure, as in `aisi_cyber_tlo.csv`) and Model 2 (internal) is unreleased with its name
@@ -606,7 +614,9 @@ ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2; RLI: single OLS in
 logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
 ± 1 point; RSI CoBench: single OLS in logit space, odds-doubling time over
 `_rsi_dt_ci()`'s widened interval, position ± `_PC_RSI_POS_CI` (10) points; RSI
-survey: OLS on log(multiple), doubling time over [DT/2, DT*2], position over the
+survey: OLS on log(multiple) over the surveyed rounds (the `estimated` point is
+excluded from the fit and the anchor, as on the tab), doubling time over
+`_rsi_survey_dt_ci()`'s t-widened interval, position over the
 fitted multiple ÷ and × `_RSI_SURVEY_POS_FACTOR` — rather than
 fitting its own, so the tabs can't quote different dates for the same
 milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
@@ -631,9 +641,13 @@ at or before today — moving the samplers' own `days_to ≥ 0` truncation from 
 (stale) anchor date to the present, by rejection rather than clamping — and the
 blend mixes with each weight × survival, which together are exactly the mixture
 conditioned on the observation, so a definition that put mass in the ruled-out
-region loses credence in proportion (the table's *P(ruled out)* column shows how
-much; a fully-crossed component drops out, generalizing the by-hand removal METR
-p50 once got at the 40h bar). A companion number input (`rsi_notyet_ramp`,
+region loses credence in proportion. The adjustment is shown, not tabulated as a
+probability: the Weight column reads prior → effective share, and the CDF
+carries a dotted ghost of the unconditioned blend (`raw_days` through
+`_pc_rsi_dist_fig`; its height at today is the mass the update removed — the
+grid start widens to the ghost's 0.5th percentile so that stays visible). A
+fully-crossed component drops out, generalizing the by-hand removal METR
+p50 once got at the 40h bar. A companion number input (`rsi_notyet_ramp`,
 default 30d, 0 = off) extends the update into the near future as a soft
 likelihood, not a wider hard cut: a sample t days out is kept w.p. t/N inside
 the window — the closer a crossing, the more visible its run-up would already

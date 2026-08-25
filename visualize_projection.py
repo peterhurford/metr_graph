@@ -4888,13 +4888,49 @@ def _rsi_fit(frontier):
     return base, params[0], params[1]
 
 
+# 80% two-sided Student-t multipliers by residual dof, for rate CIs fitted on
+# very few points; 1.282 is the normal limit the table decays to.
+_DT_T80 = {1: 3.078, 2: 1.886, 3: 1.638, 4: 1.533, 5: 1.476}
+# Slow edge when a tiny-sample t-interval cannot exclude a flat slope:
+# ~4-year doubling, effectively flat at every horizon the app offers.
+_DT_CAP_DAYS = 1461.0
+
+
+def _dt_t_interval(days, ys, intercept, slope):
+    """80% t-interval on an OLS doubling time (days), or None under 3 points.
+
+    With n points the slope has n-2 residual dof; at n=3 the multiplier is
+    3.08, so the interval says what a three-point fit honestly can: not much.
+    It tightens automatically as points accumulate. A slow bound past
+    `_DT_CAP_DAYS` — including a slope CI reaching zero — returns the cap.
+    """
+    days = np.asarray(days, dtype=float)
+    ys = np.asarray(ys, dtype=float)
+    dof = len(days) - 2
+    if dof < 1 or slope <= 0:
+        return None
+    resid = ys - intercept - slope * days
+    sxx = float(((days - days.mean()) ** 2).sum())
+    if sxx <= 0:
+        return None
+    se = np.sqrt(float(resid @ resid) / dof / sxx)
+    t = _DT_T80.get(dof, 1.282)
+    lo = np.log(2) / (slope + t * se)
+    s_lo = slope - t * se
+    hi = (_DT_CAP_DAYS if s_lo <= np.log(2) / _DT_CAP_DAYS
+          else np.log(2) / s_lo)
+    return float(lo), float(hi)
+
+
 def _rsi_dt_ci(frontier, fit_dt):
     """Default 80% CI on the odds-doubling time, in days.
 
     Every other tab defaults to the fitted rate halved and doubled, which
     assumes enough points for the fit to mean something. Three frontier points
     whose two segments disagree by ~8x do not, so the consecutive-segment rates
-    widen that interval wherever they fall outside it — never narrow it.
+    widen that interval wherever they fall outside it, and the slope's own 80%
+    t-interval (`_dt_t_interval` — one residual dof today, so it reaches the
+    flat-slope cap) widens it further — never narrow it.
     """
     lo, hi = max(5.0, fit_dt / 2), fit_dt * 2
     for a, b in zip(frontier, frontier[1:]):
@@ -4904,6 +4940,32 @@ def _rsi_dt_ci(frontier, fit_dt):
             continue
         seg_dt = np.log(2) * d / gain
         lo, hi = min(lo, seg_dt), max(hi, seg_dt)
+    base, icpt, slope = _rsi_fit(frontier)
+    tband = _dt_t_interval(
+        [(m['date'] - base).days for m in frontier],
+        _logit(np.array([m['cobench'] / 100 for m in frontier])), icpt, slope)
+    if tband:
+        lo, hi = min(lo, tband[0]), max(hi, tband[1])
+    return float(round(max(5.0, lo))), float(round(hi))
+
+
+def _rsi_survey_dt_ci(rows, fit_dt):
+    """Default 80% CI on the survey's doubling time, in days.
+
+    The [DT/2, DT*2] convention widened — never narrowed — to the slope's 80%
+    t-interval: three usable rounds leave one residual dof, and two of them
+    report the same multiple, so the slow side runs to the flat-slope cap.
+    Tightens automatically as rounds accumulate.
+    """
+    pts = [r for r in rows if not r.get('estimated')]
+    days = np.array([(r['date'] - pts[0]['date']).days for r in pts],
+                    dtype=float)
+    logs = np.log(np.array([r['uplift'] for r in pts]))
+    icpt, slope = fit_line(days, logs)
+    lo, hi = max(5.0, round(fit_dt / 2)), round(fit_dt * 2)
+    tband = _dt_t_interval(days, logs, icpt, slope)
+    if tband:
+        lo, hi = min(lo, tband[0]), max(hi, tband[1])
     return float(round(max(5.0, lo))), float(round(hi))
 
 
@@ -5126,7 +5188,7 @@ def _render_rsi_survey():
         dt = np.log(2) / slope
         n = N_SAMPLES
         proj_slope = np.log(2) / np.maximum(
-            _lognormal_from_ci(max(5.0, round(dt / 2)), round(dt * 2), n), 1.0)
+            _lognormal_from_ci(*_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
         fitted = intercept + slope * (cur['date'] - base).days
         sigma = np.log(_RSI_SURVEY_POS_FACTOR) / 1.282
         start_log = np.random.normal(fitted, sigma, n)
@@ -11838,17 +11900,20 @@ def _pc_projection(rows, dcs, today, since=None, ref_steps=None,
     return grid, out
 
 
-def _pc_render_rsi_blend(components, origin, survival=None, horizon=None):
+def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
+                         raw_components=None):
     """The weighted blend of the milestone ETAs, plus its own weights editor.
 
     `survival` (from `_pc_condition_on_today`) multiplies each entered weight
     for the mix only — with the components already truncated, that pair is
-    the mixture conditioned on "nothing has crossed yet". The editor and the
-    table's Weight column keep showing the entered priors. `horizon` (the
-    tab's *Project through* year end) caps the CDF's axis. The conditioning
-    controls render in the weights expander but are consumed a rerun earlier
-    (in `_pc_render_milestones`, via session state), like the weights
-    themselves.
+    the mixture conditioned on "nothing has crossed yet". The adjustment is
+    shown two ways: the Weight column reads prior → effective share, and
+    `raw_components` (the pre-conditioning draws) supply a dotted
+    before-the-reality-check curve on the CDF, whose value at today is the
+    mass the update removed. `horizon` (the tab's *Project through* year end)
+    caps the CDF's axis. The conditioning controls render in the weights
+    expander but are consumed a rerun earlier (in `_pc_render_milestones`,
+    via session state), like the weights themselves.
     """
     # Read before the editor renders: Streamlit has already applied any change
     # to session state by the time this run reaches the widgets below.
@@ -11859,6 +11924,8 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None):
            {s: w * survival.get(s, 1.0) for s, w in weights.items()})
     # One draw feeds the cards and the plot, so they cannot disagree.
     blend_days = _pc_rsi_blend_samples(components, mix, origin)
+    raw_days = (None if survival is None or raw_components is None else
+                _pc_rsi_blend_samples(raw_components, weights, origin))
     if blend_days is None:
         return
     early, med, late = (origin + timedelta(days=float(d))
@@ -11872,26 +11939,28 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None):
         st.metric("80% CI", f"{early:%b %Y} \u2013 {late:%b %Y}")
 
     _dist = _pc_rsi_dist_fig(blend_days, origin, early, med, late,
-                             horizon=horizon)
+                             horizon=horizon, raw_days=raw_days)
     if _dist is not None:
         st.plotly_chart(_dist, width="stretch")
 
     _total = sum(weights.values()) or 1.0
+    _mix_total = sum(mix.values()) or 1.0
     st.table([{
         "Milestone": lab,
-        "Weight": f"{weights[slug] / _total * 100:.0f}%",
-        **({} if survival is None else
-           {"P(ruled out)":
-            f"{(1 - survival.get(slug, 1.0)) * 100:.0f}%"}),
+        "Weight": (f"{weights[slug] / _total * 100:.0f}%" if survival is None
+                   else f"{weights[slug] / _total * 100:.0f}% \u2192 "
+                        f"{mix[slug] / _mix_total * 100:.0f}%"),
         "Median": _pc_eta_dates(a, d)[1].strftime('%b %Y'),
         "80% CI": "{:%b %Y} \u2013 {:%b %Y}".format(*_pc_eta_dates(a, d)[::2]),
     } for slug, lab, a, d in components])
     if survival is not None:
-        st.caption("Conditioned on \u201cnot crossed yet\u201d: P(ruled out) is the "
-                   "mass dated at or before today plus the discounted share "
-                   "of the near-term window, and the blend multiplies each "
-                   "weight by 1 \u2212 P(ruled out), so a milestone claiming RSI "
-                   "should already be here loses credence in proportion.")
+        st.caption("Conditioned on \u201cnot crossed yet\u201d: each weight is "
+                   "multiplied by the share of its milestone's dates still "
+                   "possible, so Weight reads prior \u2192 effective credence \u2014 a "
+                   "milestone claiming RSI should already be here loses "
+                   "weight in proportion. The dotted curve above is the "
+                   "blend before this adjustment; its height at today is the "
+                   "mass the update removed.")
 
     with st.expander("Set your own weights"):
         # Assign the defaults rather than popping the keys: a popped key is
@@ -11956,8 +12025,9 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                  _pc_rsi_survey_eta(load_rsi_survey(), samples=True), False))
     _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label))
             for slug, lab, r, rel in _cap if r is not None]
-    survival = None
+    survival, _cap_raw = None, None
     if condition:
+        _cap_raw = _cap
         _cap, survival = _pc_condition_on_today(_cap, today,
                                                 ramp_days=ramp_days)
     if _cap:
@@ -11991,7 +12061,8 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
 
         _pc_render_rsi_blend(_cap, today, survival,
                              horizon=(datetime(end_year, 12, 31)
-                                      if end_year else None))
+                                      if end_year else None),
+                             raw_components=_cap_raw)
 
 
 def _pc_when(rec, horizon=None):
@@ -12172,12 +12243,15 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
                        samples=False):
     """(early, median, late) dates for self-reported speedup to reach `target_x`.
 
-    The RSI tab's survey fan at its defaults — OLS on log(multiple), doubling
-    time lognormal over [DT/2, DT*2], position lognormal over the fitted
-    multiple divided and multiplied by `_RSI_SURVEY_POS_FACTOR`. Returns None
-    if the fitted slope is flat or negative.
+    The RSI tab's survey fan at its defaults — OLS on log(multiple) over the
+    surveyed rounds (the `estimated` point is excluded from the fit there, so
+    it is here too), doubling time lognormal over `_rsi_survey_dt_ci()`'s
+    t-widened interval, position lognormal over the fitted multiple divided
+    and multiplied by `_RSI_SURVEY_POS_FACTOR`. Returns None if the fitted
+    slope is flat or negative.
     """
     n = n or N_SAMPLES
+    rows = [r for r in rows if not r.get('estimated')]
     base = rows[0]['date']
     days = np.array([(r['date'] - base).days for r in rows], dtype=float)
     logs = np.log(np.array([r['uplift'] for r in rows]))
@@ -12186,7 +12260,7 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
         return None
     dt = np.log(2) / slope
     proj_slope = np.log(2) / np.maximum(
-        _lognormal_from_ci(max(5.0, round(dt / 2)), round(dt * 2), n), 1.0)
+        _lognormal_from_ci(*_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
     fitted = intercept + slope * (rows[-1]['date'] - base).days
     start = np.random.normal(fitted, np.log(_RSI_SURVEY_POS_FACTOR) / 1.282, n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
@@ -12267,7 +12341,8 @@ def _pc_rsi_blend(components, weights, origin, n=None):
                  for d in np.percentile(out, [10, 50, 90]))
 
 
-def _pc_rsi_dist_fig(days, origin, early, med, late, horizon=None):
+def _pc_rsi_dist_fig(days, origin, early, med, late, horizon=None,
+                     raw_days=None):
     """Cumulative probability that the blend has landed by each date.
 
     A CDF rather than a histogram: the blend is a mixture of milestones,
@@ -12278,12 +12353,18 @@ def _pc_rsi_dist_fig(days, origin, early, med, late, horizon=None):
     year end) sets where the axis stops; without one it falls back to the
     98th percentile, past which the curve is a flat tail that only costs
     width. A median past the horizon simply isn't annotated — the curve
-    ending below 50% already says so.
+    ending below 50% already says so. `raw_days` (the unconditioned blend)
+    draws as a dotted ghost behind the main curve; the grid starts at the
+    earlier of the two 0.5th percentiles so the ghost's nonzero value at
+    today — the mass the reality check removed — is visible.
     """
     srt = np.sort(days)
     d0 = float(np.percentile(srt, 0.5))
     d1 = (float((horizon - origin).days) if horizon is not None
           else float(np.percentile(srt, 98)))
+    raw_srt = np.sort(raw_days) if raw_days is not None else None
+    if raw_srt is not None:
+        d0 = min(d0, float(np.percentile(raw_srt, 0.5)))
     if d1 - d0 < 2:
         return None
     grid = np.arange(np.floor(d0), np.ceil(d1) + 1, 1.0)
@@ -12291,6 +12372,15 @@ def _pc_rsi_dist_fig(days, origin, early, med, late, horizon=None):
     dates = [origin + timedelta(days=float(g)) for g in grid]
 
     fig = go.Figure()
+    if raw_srt is not None:
+        raw_cdf = np.searchsorted(raw_srt, grid, side='right') \
+            / len(raw_srt) * 100
+        fig.add_trace(go.Scatter(
+            x=dates, y=raw_cdf.tolist(), mode='lines',
+            line=dict(color='#9aa5b1', width=1.5, dash='dot'),
+            hovertext=[f"By {d:%b %d, %Y}<br>{v:.0f}% before reality check"
+                       for d, v in zip(dates, raw_cdf)],
+            hoverinfo='text', showlegend=False))
     fig.add_trace(go.Scatter(
         x=dates, y=cdf.tolist(), mode='lines',
         line=dict(color='#4F8DFD', width=2.5),
