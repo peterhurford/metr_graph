@@ -4301,7 +4301,7 @@ class TestPacing:
             prev = med
 
     def test_eci_target_sits_above_the_eci_tabs_top_milestone(self):
-        """195 is a deliberate extrapolation past anything the ECI tab draws
+        """190 is a deliberate extrapolation past anything the ECI tab draws
         — a bar near today's frontier dates model releases, not RSI."""
         top = max(s for s, _l, _c in vp._ECI_US_MILESTONES)
         assert min(vp._PC_ECI_TARGETS) > top

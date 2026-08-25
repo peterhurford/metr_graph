@@ -944,7 +944,7 @@ class TestRsiTab:
         assert "METR p50 horizon reaches 174h" in labels
         assert "METR p80 horizon reaches 174h" in labels
         assert not any("40h" in l for l in labels)
-        assert "US ECI reaches 195" in labels
+        assert "US ECI reaches 190" in labels
         assert "US ECI reaches 170" not in labels
         assert "RLI reaches 90%" in labels
         caps = " ".join(str(c.value) for c in at.caption)

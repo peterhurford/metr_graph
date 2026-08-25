@@ -11619,7 +11619,7 @@ def _pc_report_lag(days_to, release_dated, timing_label, n=None):
 _PC_RSI_WEIGHTS = {
     "metr_p50": 5.0,
     "metr_p80": 20.0,
-    "eci_195": 20.0,
+    "eci_190": 20.0,
     "rli_90": 20.0,
     "cobench_85": 15.0,
     "staff_10x": 20.0,
@@ -12065,13 +12065,13 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
     return _pc_eta_out(cur['date'], days_to, samples)
 
 
-# The ECI companion, on the US-best frontier the ECI tab defaults to. 195 is
+# The ECI companion, on the US-best frontier the ECI tab defaults to. 190 is
 # above anything the ECI tab draws (its own milestone table tops out at 170)
 # and is a pure extrapolation of the same fit, a long way outside the
 # frontier's observed range. 170 was a card once, but it sits close enough to
 # today's frontier that it dated near-term model releases, not an RSI-scale
-# capability — its weight moved to 195.
-_PC_ECI_TARGETS = (195.0,)
+# capability — its weight moved here.
+_PC_ECI_TARGETS = (190.0,)
 _PC_ECI_POS_CI = 2.0     # the ECI tab's default position CI, fitted score +/- 2
 
 
