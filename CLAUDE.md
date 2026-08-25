@@ -320,9 +320,11 @@ a percentage. Three things are load-bearing. Opus 4's round is not carried at
 all: it reported no number, only that the result fell under the pre-set 3x median
 rule-out threshold, and a bound is not a point on a trend. Model 2 (internal)
 has an `estimated` point at Mythos Preview's ~4x — no round was run for it —
-which draws hollow and is **excluded from the fit**: an assumed value must not
-set the slope, and this one would flatten it, so the chart shows it sitting
-below the fan rather than bending the fan down to meet it. The rounds do not
+which draws hollow as an assumed value but is **included in the fit and the
+anchor**: with only three surveyed rounds, ignoring the one flat reading
+available overstates the slope, so the flattening is the point, not a bug (it
+was excluded once, on the opposite reasoning; the flag now governs styling
+only). The rounds do not
 report the same statistic on the same sample (medians on superusers, then on a
 broader sample, then a geometric mean on an opt-in poll), so each point carries
 its `note` on hover and the caption says the rounds differ — and the survey is
@@ -614,8 +616,8 @@ ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2; RLI: single OLS in
 logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
 ± 1 point; RSI CoBench: single OLS in logit space, odds-doubling time over
 `_rsi_dt_ci()`'s widened interval, position ± `_PC_RSI_POS_CI` (10) points; RSI
-survey: OLS on log(multiple) over the surveyed rounds (the `estimated` point is
-excluded from the fit and the anchor, as on the tab), doubling time over
+survey: OLS on log(multiple) over every round the tab fits (the carried-over
+`estimated` point included, as on the tab), doubling time over
 `_rsi_survey_dt_ci()`'s t-widened interval, position over the
 fitted multiple ÷ and × `_RSI_SURVEY_POS_FACTOR` — rather than
 fitting its own, so the tabs can't quote different dates for the same

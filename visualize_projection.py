@@ -601,12 +601,12 @@ _RSI_SURVEY = [
      "note": "n=130, opt-in Slack poll · geometric mean, past week's work output"
              "<br>1 of 18 in a separate poll said a drop-in L4 already exists"},
     # No round was run for Model 2 (internal); ~4x is carried over from Mythos
-    # Preview as the best available read. `estimated` keeps it out of the fit —
-    # an assumed value must not set the slope, and this one would flatten it.
+    # Preview as the best available read. `estimated` draws it hollow as an
+    # assumed value, but it is *in* the fit: with only three surveyed rounds,
+    # ignoring the one flat reading available overstates the slope.
     {"name": "Model 2 (internal)", "date": "2026-07-06", "uplift": 4.0,
      "estimated": True,
-     "note": "no survey run · ~4x carried over from Mythos Preview"
-             "<br>excluded from the fit; if it holds, the last four months are flat"},
+     "note": "no survey run · ~4x carried over from Mythos Preview"},
 ]
 
 # The survey fan's position CI: the fitted multiple divided and multiplied by
@@ -4953,14 +4953,13 @@ def _rsi_survey_dt_ci(rows, fit_dt):
     """Default 80% CI on the survey's doubling time, in days.
 
     The [DT/2, DT*2] convention widened — never narrowed — to the slope's 80%
-    t-interval: three usable rounds leave one residual dof, and two of them
-    report the same multiple, so the slow side runs to the flat-slope cap.
-    Tightens automatically as rounds accumulate.
+    t-interval over every point the fit uses (the carried-over `estimated`
+    round included, like the fit itself). Tightens automatically as rounds
+    accumulate.
     """
-    pts = [r for r in rows if not r.get('estimated')]
-    days = np.array([(r['date'] - pts[0]['date']).days for r in pts],
+    days = np.array([(r['date'] - rows[0]['date']).days for r in rows],
                     dtype=float)
-    logs = np.log(np.array([r['uplift'] for r in pts]))
+    logs = np.log(np.array([r['uplift'] for r in rows]))
     icpt, slope = fit_line(days, logs)
     lo, hi = max(5.0, round(fit_dt / 2)), round(fit_dt * 2)
     tband = _dt_t_interval(days, logs, icpt, slope)
@@ -5176,12 +5175,11 @@ def _render_rsi_survey():
     st.subheader("Anthropic internal staff survey on speedup")
 
     rows = load_rsi_survey()
-    surveyed = [r for r in rows if not r.get('estimated')]
-    base = surveyed[0]['date']
-    days = np.array([(r['date'] - base).days for r in surveyed], dtype=float)
-    logs = np.log(np.array([r['uplift'] for r in surveyed]))
+    base = rows[0]['date']
+    days = np.array([(r['date'] - base).days for r in rows], dtype=float)
+    logs = np.log(np.array([r['uplift'] for r in rows]))
     intercept, slope = fit_line(days, logs)
-    cur = surveyed[-1]
+    cur = rows[-1]
 
     fig = go.Figure()
 
@@ -5277,10 +5275,10 @@ def _render_rsi_survey():
     st.caption(
         "Anthropic surveys its own technical staff on productivity uplift per frontier "
         "model; the rounds differ in who was sampled and which statistic was reported "
-        "(hover a point), and Mythos Preview is the most recent — no new survey was run "
-        "for Mythos 5 or for Model 2 (internal), which is shown hollow at the ~4x "
-        "Mythos Preview reported and is not part of the fit. The trend is three "
-        "self-reported points fitted on the log of the "
+        "(hover a point), and Mythos Preview is the most recent surveyed round — no new "
+        "survey was run for Mythos 5 or for Model 2 (internal), which is shown hollow "
+        "at the ~4x Mythos Preview reported: an assumed value, included in the fit, "
+        "which it flattens. The trend is those four points fitted on the log of the "
         "multiple and projected the same way the CoBench fan above is, but only a year "
         "out — compounded further it leaves the chart, which is a fact about the fit "
         "rather than about the future. Source: "
@@ -11968,7 +11966,7 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
         "80% CI": "{:%b %Y} \u2013 {:%b %Y}".format(*_pc_eta_dates(a, d)[::2]),
     } for slug, lab, a, d in components])
     if survival is not None:
-        st.caption("Conditioned on \u201cnot crossed yet\u201d: each weight is "
+        st.caption("Bayesian update on not seeing RSI by today: each weight is "
                    "multiplied by the share of its milestone's dates still "
                    "possible, so Weight reads prior \u2192 effective credence \u2014 a "
                    "milestone claiming RSI should already be here loses "
@@ -12260,15 +12258,14 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
                        samples=False):
     """(early, median, late) dates for self-reported speedup to reach `target_x`.
 
-    The RSI tab's survey fan at its defaults — OLS on log(multiple) over the
-    surveyed rounds (the `estimated` point is excluded from the fit there, so
-    it is here too), doubling time lognormal over `_rsi_survey_dt_ci()`'s
-    t-widened interval, position lognormal over the fitted multiple divided
-    and multiplied by `_RSI_SURVEY_POS_FACTOR`. Returns None if the fitted
-    slope is flat or negative.
+    The RSI tab's survey fan at its defaults — OLS on log(multiple) over
+    every round the tab fits (the carried-over `estimated` point included),
+    doubling time lognormal over `_rsi_survey_dt_ci()`'s t-widened interval,
+    position lognormal over the fitted multiple divided and multiplied by
+    `_RSI_SURVEY_POS_FACTOR`. Returns None if the fitted slope is flat or
+    negative.
     """
     n = n or N_SAMPLES
-    rows = [r for r in rows if not r.get('estimated')]
     base = rows[0]['date']
     days = np.array([(r['date'] - base).days for r in rows], dtype=float)
     logs = np.log(np.array([r['uplift'] for r in rows]))

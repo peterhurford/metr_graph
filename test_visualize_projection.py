@@ -3172,29 +3172,31 @@ class TestRsi:
         assert lo3 < np.log(2) / slope
 
     def test_small_sample_ci_widens_both_rsi_fits(self):
-        """Live data: three usable points on each series leave one residual
-        dof, so both default rate CIs run to the flat-slope cap — "not
-        crossing until 2028" sits inside the interval, not outside it. If a
-        new round tightens the t-interval below the cap, update this."""
+        """Live data: CoBench's three points leave one residual dof, so its
+        rate CI runs to the flat-slope cap; the survey's four (the estimated
+        round included) leave two, so its slow edge widens well past the
+        convention but stays under the cap. "Not crossing until 2028" sits
+        inside both intervals. If a new round moves either, update this."""
         fr = [m for m in vp.load_rsi_data() if m['is_frontier']]
         _, _, slope = vp._rsi_fit(fr)
         assert vp._rsi_dt_ci(fr, np.log(2) / slope)[1] == vp._DT_CAP_DAYS
-        rows = [r for r in vp.load_rsi_survey() if not r.get('estimated')]
+        rows = vp.load_rsi_survey()
         days = np.array([(r['date'] - rows[0]['date']).days for r in rows],
                         dtype=float)
         _, sslope = vp.fit_line(days, np.log([r['uplift'] for r in rows]))
-        slo, shi = vp._rsi_survey_dt_ci(rows, np.log(2) / sslope)
-        assert shi == vp._DT_CAP_DAYS
-        assert slo <= round(np.log(2) / sslope / 2)
+        sdt = np.log(2) / sslope
+        slo, shi = vp._rsi_survey_dt_ci(rows, sdt)
+        assert round(sdt * 2) < shi < vp._DT_CAP_DAYS
+        assert slo <= round(sdt / 2)
 
-    def test_survey_eta_excludes_the_estimated_round(self):
-        """The card fits the surveyed rounds only, like the tab's fan — the
-        carried-over Model 2 point must not set the slope or the anchor."""
+    def test_survey_eta_includes_the_estimated_round(self):
+        """The card fits and anchors on every round the tab fits — the
+        carried-over Model 2 point included, whose flat reading is the
+        reason the slope runs shallower than the surveyed points alone."""
         rows = vp.load_rsi_survey()
         anchor, _days = vp._pc_rsi_survey_eta(rows, samples=True)
-        surveyed = [r for r in rows if not r.get('estimated')]
         assert rows[-1].get('estimated')
-        assert anchor == surveyed[-1]['date']
+        assert anchor == rows[-1]['date']
 
 
 class TestUkCyberTlo:
