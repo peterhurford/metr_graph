@@ -889,8 +889,10 @@ class TestComputeVsCapabilities:
         _assert_no_error(at, "Compute vs Capabilities / 6-month run")
         caps = " ".join(str(c.value) for c in at.caption)
         assert "6-month run" in caps
-        warns = " ".join(str(w.value) for w in at.warning)
-        assert "6mo-capacity" in warns
+        # The ceiling caveat is a hover on the caveats line (markdown), not
+        # a warning box — st.warning takes no HTML.
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert "6mo-capacity" in md
 
     def test_project_through_horizon(self):
         """The Projection range expander's 'Project through' year moves the
@@ -1255,8 +1257,11 @@ class TestPacingTab:
         assert "Time for China to surpass after US pause" in labels
         caps = " ".join(str(c.value) for c in at.caption)
         assert "indigenous" in caps
+        # The assumptions are hovers on the *Assumes* line now, so match
+        # their bodies rather than the old run-on sentence.
         md = " ".join(str(m.value) for m in at.markdown)
-        assert "weights stay secure" in md
+        assert "**Assumes** secure weights" in md
+        assert "never steal them" in md
         # The clock line follows the sidebar default (run finished).
         assert "Dates = training runs finish" in caps
 
@@ -1277,25 +1282,27 @@ class TestPacingTab:
         base = _surpass_mo(at)
         # Serving the paused frontier publicly restores the full teacher:
         # China can only cross sooner (or the same, within MC jitter).
+        # Each channel's setting is the body of its hover on the *Assumes*
+        # line; the markers capitalise it, so match case-insensitively.
+        def _md(at):
+            return " ".join(str(m.value) for m in at.markdown).lower()
+
         at.checkbox(key="pc_withhold").uncheck().run()
         _assert_no_error(at, "Pacing / paused models served")
         assert _surpass_mo(at) <= base + 1
-        md = " ".join(str(m.value) for m in at.markdown)
-        assert "stays queryable" in md
+        assert "stays queryable" in _md(at)
         at.checkbox(key="pc_withhold").check().run()
-        md = " ".join(str(m.value) for m in at.markdown)
-        assert "release freeze" in md
+        assert "release freeze" in _md(at)
         at.checkbox(key="pc_stop_dist").check().run()
         _assert_no_error(at, "Pacing / distillation stopped")
         dist_off = _surpass_mo(at)
         assert dist_off > base
-        md = " ".join(str(m.value) for m in at.markdown)
-        assert "cut today" in md
+        assert "cut today" in _md(at)
         at.checkbox(key="pc_stop_remote").check().run()
         _assert_no_error(at, "Pacing / remote compute cut")
         assert _surpass_mo(at) >= dist_off - 1  # MC jitter guard
-        md = " ".join(str(m.value) for m in at.markdown)
-        assert "largest domestic cluster" in md or "domestic pace only" in md
+        assert ("largest domestic cluster" in _md(at)
+                or "domestic pace only" in _md(at))
 
     def test_advanced_cutoff_dates_delay_the_controls(self):
         """The advanced sliders date each control. Default is 'Now' (= the
@@ -1320,8 +1327,8 @@ class TestPacingTab:
         at.select_slider(key="pc_dist_when").set_value(late).run()
         _assert_no_error(at, "Pacing / distillation cut late")
         assert base - 1 <= _surpass_mo(at) <= now_d + 1
-        md = " ".join(str(m.value) for m in at.markdown)
-        assert f"cut {late}" in md
+        md = " ".join(str(m.value) for m in at.markdown).lower()
+        assert f"cut {late}".lower() in md
         at.checkbox(key="pc_stop_dist").uncheck().run()
 
         at.checkbox(key="pc_stop_remote").check().run()

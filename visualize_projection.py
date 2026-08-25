@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import yaml
 import csv
 import re
+import html
 import os
 from datetime import datetime, timedelta
 import warnings
@@ -27,13 +28,87 @@ PROJ_DISCLAIMER = " These are projections assuming current progress continues, t
 # visibly ragged well before 5000.
 N_SAMPLES = int(os.environ.get("_VP_SAMPLES", "5000"))
 
-# Tighten default Streamlit padding
+# Tighten default Streamlit padding, and style the inline hover footnotes
+# `_fn()` emits (see "Caveats belong on the thing they qualify" in CLAUDE.md).
+# The bubble is dark in both themes on purpose: it floats above the page, so
+# one colour reads correctly against either background and there is no
+# Streamlit variable that tracks the user's theme reliably.
 st.markdown("""<style>
     .block-container { padding-top: 2rem !important; }
     [data-testid="stTable"] table { margin-top: 0 !important; margin-bottom: 0.5rem !important; }
+    .vp-fn {
+        position: relative; display: inline-block; cursor: help;
+        font-size: 0.85em; font-weight: 600; line-height: 1;
+        padding: 0 0.28em; margin: 0 0.1em; border-radius: 0.65em;
+        border: 1px solid currentColor; opacity: 0.75; vertical-align: baseline;
+    }
+    .vp-fn:hover { opacity: 1; }
+    .vp-fn > .vp-fn-body {
+        visibility: hidden; opacity: 0; transition: opacity 0.12s ease;
+        position: absolute; bottom: 1.6em; left: 0; z-index: 1000;
+        width: max-content; max-width: min(30rem, 70vw);
+        padding: 0.55rem 0.7rem; border-radius: 0.45rem;
+        background: rgba(28, 29, 36, 0.97); color: #F4F4F6;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        box-shadow: 0 3px 14px rgba(0, 0, 0, 0.32);
+        font-size: 0.82rem; font-weight: 400; line-height: 1.42;
+        white-space: normal; text-align: left; opacity: 0;
+    }
+    .vp-fn:hover > .vp-fn-body { visibility: visible; opacity: 1; }
+    /* Near the right edge the bubble would overflow the column. */
+    .vp-fn.vp-fn-r > .vp-fn-body { left: auto; right: 0; }
 </style>""", unsafe_allow_html=True)
 
 # ── Helpers ──────────────────────────────────────────────────────────────
+
+def _fn(note, marker="?", right=False):
+    """An inline hover footnote: the caveat lives in the tooltip, not the line.
+
+    Returns HTML, so the caller must render it with `unsafe_allow_html=True`
+    (`_fn_caption()` does). Use it for prose that qualifies a chart, where
+    there is no widget to hang Streamlit's own `help=` on; where there *is*
+    one — a metric, a control — prefer that, since it renders the native
+    tooltip and needs no raw HTML.
+
+    `right` anchors the bubble to its right edge, for markers near the end of
+    a line where a left-anchored one would overflow the column.
+    """
+    body = html.escape(str(note).strip()).replace("\n", " ")
+    cls = "vp-fn vp-fn-r" if right else "vp-fn"
+    return (f'<span class="{cls}">{html.escape(marker)}'
+            f'<span class="vp-fn-body">{body}</span></span>')
+
+
+def _fn_markers(notes, right=None):
+    """`notes` (each a string or a (marker, note) pair) as hover markers.
+
+    The last marker on a line anchors its bubble right by default, since a
+    trailing marker sits near the column edge.
+    """
+    def _r(i):
+        return (len(notes) - 1 == i) if right is None else right
+    return "".join(
+        _fn(n[1], n[0], right=_r(i)) if isinstance(n, (tuple, list))
+        else _fn(n, right=_r(i))
+        for i, n in enumerate(notes))
+
+
+def _fn_caption(text, *notes, right=None):
+    """A caption with hover footnotes appended.
+
+    Stays an `st.caption` rather than an `st.markdown` — the element type is
+    what tells fine print from body text, both to the reader and to the
+    tests that address one and not the other.
+    """
+    st.caption(text + _fn_markers(notes, right), unsafe_allow_html=True)
+
+
+def _fn_line(text, *notes, right=None, parent=None):
+    """Body-prominent prose with hover footnotes, for a line that must not
+    read as fine print (the pause panel's *Assumes*)."""
+    (parent or st).markdown(text + _fn_markers(notes, right),
+                            unsafe_allow_html=True)
+
 
 def _fmt_jobs(m):
     """Format a jobs number (in millions) readably: <1M shows as K, ≥1M shows as M."""
@@ -9404,15 +9479,15 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     st.plotly_chart(fig, use_container_width=True)
     phys_end = float(phys_contrib[-1])
     algo_end = float(pct[50][-1] - eci_now - phys_end)
-    st.caption(
-        "The median rise is split into its two engines: the **blue band** is the "
-        f"algorithmic-efficiency contribution (~{algo_end:.0f} ECI by "
-        f"end-{horizon.year}, a "
-        "straight climb at a constant per-year rate) and the **red band** on top is "
-        f"the physical-compute contribution (~{phys_end:.0f} ECI), which curves as "
-        "it rides the projected compute frontier and flattens as the buildout "
-        "matures. Compute is the thinner, decelerating slice; algorithms do most of "
-        "the lifting at these horizons.")
+    _fn_caption(
+        f"The median rise splits into <b>algorithms</b> (~{algo_end:.0f} ECI by "
+        f"end-{horizon.year}) and <b>physical compute</b> (~{phys_end:.0f}). "
+        "Compute is the thinner, decelerating slice.",
+        ("blue band", "The algorithmic-efficiency contribution: a straight "
+                      "climb at a constant per-year rate."),
+        ("red band", "The physical-compute contribution, which curves as it "
+                     "rides the projected compute frontier and flattens as the "
+                     "buildout matures."))
 
     # Year-end milestone cards, each with its estimated METR p50 horizon.
     _ms_years = list(range(today.year, horizon.year + 1))
@@ -9458,17 +9533,21 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
         st.markdown("\n".join(tmd))
         st.caption("Each cell shows the median with its 80% band in parentheses.")
 
-    st.caption(
-        "Method: frontier ECI = today's anchor + physical-compute growth (its "
-        f"share of ~{obs_slope:.0f} ECI/yr, scaled to the projected compute path "
-        "so it decelerates with the buildout) + a constant algorithmic term. "
-        f"Bands sample the physical/algo mix ({s_lo*100:.0f}–{s_hi*100:.0f}%), "
-        "compute delivery (×0.5–1.15 of plan) and pace (±12%). METR horizons use "
-        "the org-neutral fits `p50_min = 2^(0.24·ECI − 28.68)` and `p80_min = "
-        "2^(0.23·ECI − 29.95)`; their ranges track the ECI 80% band, not the "
-        "fits' own. Extrapolates the historical linear ECI trend, assuming no "
-        "paradigm shift, no compute wall, and that ECI still means something at "
-        "these levels — order-of-magnitude, not a promise.")
+    _fn_caption(
+        "Order-of-magnitude, not a promise.",
+        ("method", "Frontier ECI = today's anchor + physical-compute growth "
+                   f"(its share of ~{obs_slope:.0f} ECI/yr, scaled to the "
+                   "projected compute path so it decelerates with the buildout) "
+                   "+ a constant algorithmic term."),
+        ("bands", f"Sample the physical/algo mix ({s_lo*100:.0f}\u2013"
+                  f"{s_hi*100:.0f}%), compute delivery (\u00d70.5\u20131.15 of "
+                  "plan) and pace (\u00b112%)."),
+        ("METR", "Org-neutral fits p50_min = 2^(0.24\u00b7ECI \u2212 28.68) and "
+                 "p80_min = 2^(0.23\u00b7ECI \u2212 29.95); their ranges track "
+                 "the ECI 80% band, not the fits' own."),
+        ("assumes", "Extrapolates the historical linear ECI trend: no paradigm "
+                    "shift, no compute wall, and ECI still meaning something at "
+                    "these levels."))
 
 
 def _cc_country_frontier(models, country):
@@ -9815,23 +9894,26 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         yaxis=dict(gridcolor='rgba(0,0,0,0.12)'))
     _cc_logop_yaxis(figc, "Training compute (log₁₀ OP)")
     st.plotly_chart(figc, use_container_width=True)
-    st.caption(
-        f"**Solid = grounded**: largest *actual* runs Epoch estimates — "
+    _fn_caption(
+        f"<b>Solid</b> = largest actual runs Epoch estimates: "
         f"~{_logop_lbl(us_run_lf)} (US) vs ~{_logop_num(cn_run_lf)} (China), a "
-        f"**~{10 ** run_gap_oom:.0f}× ({run_gap_oom:.1f} OOM)** gap; recent US "
-        f"frontier models use *less* (GPT-5 ~25.8) — efficiency, not bigger runs. "
-        f"**Dashed/shaded = capacity**, the largest single cluster's "
-        f"{run_days // 30}-month run: "
-        f"US ~{_logop_lbl(us_cap_lf)} today, riding announced megaclusters "
-        f"(Stargate, Hyperion…) to ~{_logop_num(us_cap_end_lf)} by "
-        f"{horizon.year}; China "
-        f"~{_logop_num(cn_cap_lo_lf)}–{_logop_num(cn_cap_hi_lf)} (estimated) — "
-        "plenty of chips (smuggled NVIDIA + domestic Ascend), but too dispersed "
-        "and its networking too export-controlled to fuse into one run. Capacity "
-        f"grows {10 ** g_us_lo:.1f}–{10 ** g_us_hi:.1f}×/yr (US, measured) vs "
-        f"~{10 ** g_cn_lo:.1f}–{10 ** g_cn_hi:.1f}×/yr (China), so the gap widens "
-        "only slowly. *Run points are dated at est. training completion "
-        f"(release − ~1mo) to align with the +{run_days // 30}mo capacity line.*")
+        f"<b>~{10 ** run_gap_oom:.0f}\u00d7 ({run_gap_oom:.1f} OOM)</b> gap. "
+        f"<b>Dashed/shaded</b> = capacity, the largest single cluster's "
+        f"{run_days // 30}-month run.",
+        ("US", f"~{_logop_lbl(us_cap_lf)} today, riding announced megaclusters "
+               f"(Stargate, Hyperion\u2026) to ~{_logop_num(us_cap_end_lf)} by "
+               f"{horizon.year}. Recent US frontier models use *less* than the "
+               "record run (GPT-5 ~25.8) \u2014 efficiency, not bigger runs."),
+        ("China", f"~{_logop_num(cn_cap_lo_lf)}\u2013{_logop_num(cn_cap_hi_lf)} "
+                  "(estimated): plenty of chips (smuggled NVIDIA + domestic "
+                  "Ascend), but too dispersed and its networking too "
+                  "export-controlled to fuse into one run."),
+        ("pace", f"Capacity grows {10 ** g_us_lo:.1f}\u2013"
+                 f"{10 ** g_us_hi:.1f}\u00d7/yr (US, measured) vs "
+                 f"~{10 ** g_cn_lo:.1f}\u2013{10 ** g_cn_hi:.1f}\u00d7/yr "
+                 "(China), so the gap widens only slowly. Run points are dated "
+                 "at estimated training completion (release \u2212 ~1mo) to "
+                 f"align with the +{run_days // 30}mo capacity line."))
 
     # Cross-check the growth assumptions against the Data Centers tab's
     # by-country engine, so the two tabs' China stories stay reconciled.
@@ -9847,12 +9929,14 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         if chk_ca:
             bits.append(f"China-accessible ×{10 ** chk_ca['g']:.1f}/yr "
                         "(a from-zero ramp, runs hot)")
-        st.caption(
-            "**Cross-check vs the [Data Centers tab](?tab=datacenters):** its "
-            f"by-country engine fits the catalogued *buildings* at {'; '.join(bits)}. "
-            "The China band above is a hand-set claim about the largest *coherent* "
-            "run — fusing dispersed chips is the export-controlled step — kept at "
-            "or below those paces; a refresh that undercuts it forces a retarget.")
+        _fn_caption(
+            "Cross-checked against the [Data Centers "
+            "tab](?tab=datacenters)'s by-country engine.",
+            ("check", f"That engine fits the catalogued *buildings* at "
+                      f"{'; '.join(bits)}. The China band above is a hand-set claim "
+                      "about the largest *coherent* run \u2014 fusing dispersed "
+                      "chips is the export-controlled step \u2014 kept at or below "
+                      "those paces; a refresh that undercuts it forces a retarget."))
 
     # ── Chart B: ECI derived from compute (Chart A) + shared algorithmic
     # progress — ECI(t) = ECI_now + (a_partial·g_compute + b_algo)·t. The band is
@@ -9910,21 +9994,23 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     st.plotly_chart(figf, use_container_width=True)
-    st.caption(
-        f"ECI = **~{a_partial:.0f} pts per ×10 compute** (pooled) on each "
-        f"country's Chart-A compute growth, **plus a shared ~{b_algo:.0f} pts/yr "
-        "algorithmic term** (methods diffuse). Bands = compute-growth ranges, so "
-        f"the divergence is purely the compute gap — ~{gap_end:.0f} pts "
-        f"(~{mo_end:.0f} mo) by end-{horizon.year}. **Dotted** = "
-        "algorithmic-only; the "
-        "**shaded gap** to the dashed line is compute's contribution, wider for "
-        "the US.")
+    _fn_caption(
+        f"ECI = <b>~{a_partial:.0f} pts per \u00d710 compute</b> on each "
+        f"country's Chart-A compute growth, plus a shared "
+        f"<b>~{b_algo:.0f} pts/yr</b> algorithmic term \u2014 so the divergence "
+        f"is purely the compute gap, ~{gap_end:.0f} pts (~{mo_end:.0f} mo) by "
+        f"end-{horizon.year}.",
+        ("lines", "Bands are compute-growth ranges. **Dotted** = "
+                  "algorithmic-only; the **shaded gap** to the dashed line is "
+                  "compute's contribution, wider for the US."),
+        ("algo term", "Shared because methods diffuse."))
 
-    st.caption(
-        "Caveats: the pooled OLS splits collinear compute and time only "
-        "approximately; US labs under-disclose training compute (understating "
-        "the gap if anything); US/China are Epoch's tags, multi-country and "
-        "untagged models excluded. Order-of-magnitude, not forecasts.")
+    _fn_caption(
+        "Order-of-magnitude, not forecasts.",
+        ("caveats", "The pooled OLS splits collinear compute and time only "
+                    "approximately; US labs under-disclose training compute "
+                    "(understating the gap if anything); US/China are Epoch's "
+                    "tags, and multi-country and untagged models are excluded."))
 
     # ── Where frontier growth comes from: three algorithmic channels ──────────
     # Each channel is measured (or bounded) independently; innovation is the
@@ -9990,17 +10076,19 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         st.plotly_chart(figw, use_container_width=True)
         _in_band = (pure_band[0] - 0.5 <= inno_us_r <= pure_band[1] + 0.5
                     and pure_band[0] - 0.5 <= inno_cn_r <= pure_band[1] + 0.5)
-        st.caption(
-            "Each bar sums to the country's observed frontier slope since "
-            "2024. Compute = the exchange rate × each side's capacity "
-            "growth; **distillation applies only to the follower** (the "
-            "frontier has no stronger teacher); **diffusion flows to both** "
-            "(methods travel both ways — MLA/GRPO went east-to-west); "
-            "**innovation is the residual** — and it lands "
-            + ("**inside**" if _in_band else "**outside**")
-            + f" the independently derived {pure_band[0]:.1f}–"
-            f"{pure_band[1]:.1f} band for both countries, the "
-            "decomposition's main consistency check.")
+        _fn_caption(
+            "Each bar sums to the country's observed frontier slope since 2024, and "
+            "innovation \u2014 the residual \u2014 lands "
+            + ("<b>inside</b>" if _in_band else "<b>outside</b>")
+            + f" the independently derived {pure_band[0]:.1f}\u2013"
+            f"{pure_band[1]:.1f} band for both countries.",
+            ("channels", "Compute = the exchange rate \u00d7 each side's capacity "
+                         "growth. **Distillation applies only to the follower** "
+                         "(the frontier has no stronger teacher); **diffusion flows "
+                         "to both** (methods travel both ways \u2014 MLA/GRPO went "
+                         "east-to-west); **innovation is the residual**."),
+            ("why it matters", "That the residual lands in an independently derived "
+                               "band is the decomposition's main consistency check."))
 
     # ── China's algorithmic edge: the distillation scenario ────────────────────
     # Chart B assumes a *shared* algorithmic term — methods diffuse, so both
@@ -10161,31 +10249,34 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                        tickfont=dict(color='#222'), title_font=dict(color='#222')))
         st.plotly_chart(figd, use_container_width=True)
-        st.caption(
-            (f"From today's frontiers (US {us_anchor:.0f}, China "
-             f"{cn_anchor:.0f}; actual points are history). "
+        _fn_caption(
+            (f"From today's frontiers (US {us_anchor:.0f}, China {cn_anchor:.0f}; "
+             "actual points are history)."
              if bd_label == "Today" else
-             f"Backdated to **Jan 2025** (China ≈{cn_anchor:.0f} then) so "
-             "the edge accumulates over its full period and the own-rate "
-             "line can be read against China's actual points. ")
-            + "Both China lines share the "
-            f"compute term (~{compute_term_cn:.1f} ECI/yr) and differ only "
-            "algorithmically: the **solid line** uses China's own measured rate "
-            f"({cn_algo:.1f} vs {us_algo:.1f} ECI/yr, ~+{premium_pct:.0f}%), its "
-            "distillation term **decaying as the gap closes** — you can't "
-            "overtake your teacher — so it approaches the US line, never past "
-            "it; the dashed line rides the US-*measured* rate (mid-compute US "
-            "models, themselves teacher-fed — a follower rate, not the US "
-            "frontier engine)"
-            + (f"; the grey dash-dot line cuts model access but keeps "
-               f"method diffusion (~{inno_mid:.0f} ECI/yr)"
-               if cn_traj_inno is not None else "")
-            + (f"; the dotted grey line strips diffusion too — innovation "
-               f"alone (~{pure_mid:.0f})" if cn_traj_pure is not None else "")
-            + ". The edge buys "
-            f"earlier *parity*, not a lead. Fits: n={n_us_iso} US / n={n_cn_iso} "
-            "China within ±0.4 dex of median compute — so few same-budget US "
-            "models that the edge is suggestive only.")
+             f"Backdated to <b>Jan 2025</b> (China \u2248{cn_anchor:.0f} then) so "
+             "the edge accumulates over its full period and the own-rate line can "
+             "be read against China's actual points.")
+            + " The edge buys earlier <i>parity</i>, not a lead.",
+            ("solid line", "China's own measured algorithmic rate "
+                           f"({cn_algo:.1f} vs {us_algo:.1f} ECI/yr, "
+                           f"~+{premium_pct:.0f}%), its distillation term decaying "
+                           "as the gap closes \u2014 you can't overtake your "
+                           "teacher \u2014 so it approaches the US line, never "
+                           "past it."),
+            ("dashed line", "Rides the US-*measured* rate: mid-compute US models, "
+                            "themselves teacher-fed \u2014 a follower rate, not "
+                            "the US frontier engine. Both China lines share the "
+                            f"compute term (~{compute_term_cn:.1f} ECI/yr) and "
+                            "differ only algorithmically."),
+            *([("grey dash-dot", "Cuts model access but keeps method diffusion "
+                                 f"(~{inno_mid:.0f} ECI/yr).")]
+              if cn_traj_inno is not None else []),
+            *([("dotted grey", "Strips diffusion too \u2014 innovation alone "
+                               f"(~{pure_mid:.0f} ECI/yr).")]
+              if cn_traj_pure is not None else []),
+            ("fits", f"n={n_us_iso} US / n={n_cn_iso} China within \u00b10.4 dex of "
+                     "median compute \u2014 so few same-budget US models that the "
+                     "edge is indicative, not measured."))
 
     # ── When does China cross the target ECI? ─────────────────────────────────
     _render_cc_china_target(
@@ -10629,31 +10720,40 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
         pmd.append(f"| End {qd.year} Q{(qd.month - 1) // 3 + 1} | **{p:.0f}%** |")
     st.markdown("\n".join(pmd))
 
-    st.caption(
-        f"China's frontier sits at **ECI {anchor_eci:.0f}** ({pretty(anchor_name)}, "
-        f"{anchor_d:%b %Y}), **{target - anchor_eci:.1f} points** short, closing at "
-        f"a median **~{rate_med:.0f} ECI/yr**: {algo_note}, plus "
-        f"~{a_partial * 0.5 * (g_lo + g_hi):.1f} ECI/yr from compute "
-        f"({a_partial:.0f} pts per ×10 × China's {10 ** g_lo:.1f}–"
-        f"{10 ** g_hi:.1f}×/yr capacity growth), {obs_note}. Compute is the "
-        f"*small* term — even doubling China's compute growth (+{g_hi:.2f} OOM/yr) "
-        f"adds ~{a_partial * g_hi:.1f} ECI/yr against ~{a_mid:.0f} algorithmic, "
-        "moving the date by weeks. "
-        + (f"And a crossing waits for a release (one every ~{gap_d:.0f} days "
-           "lately, an exponential wait) — hence the diamond sits right of where "
-           "the fan meets the bar. " if gap_d else " ")
-        + f"Distillation decays as the gap closes: the algorithmic term falls "
-          f"toward an indigenous **{inno_lo:.0f}–{inno_hi:.0f} ECI/yr** as China "
-          f"nears the moving US frontier "
-          f"({(y50 - float(np.nanmedian(years_const))) * 52.18:+.0f} weeks vs "
-          "constant-rate).")
-    st.caption(
-        f"Caveats: ECI {target:.0f} is a *fixed* bar — the US frontier as of "
-        f"{us_hit_txt} — so crossing it means matching where the US is **now**, "
-        "not parity. Trajectories climb at a constant rate; only the release wait "
-        "models the frontier's steps, and nothing here captures a paradigm shift, "
-        "a chip shock, or a lab not shipping. Epoch recomputes ECI live — a "
-        "target this close to the frontier can move under a rescore.")
+    _fn_caption(
+        f"China's frontier sits at <b>ECI {anchor_eci:.0f}</b> "
+        f"({pretty(anchor_name)}, {anchor_d:%b %Y}), "
+        f"<b>{target - anchor_eci:.1f} points</b> short, closing at a median "
+        f"<b>~{rate_med:.0f} ECI/yr</b>.",
+        ("rate", f"{algo_note}, plus ~{a_partial * 0.5 * (g_lo + g_hi):.1f} "
+                 f"ECI/yr from compute ({a_partial:.0f} pts per \u00d710 "
+                 f"\u00d7 China's {10 ** g_lo:.1f}\u2013{10 ** g_hi:.1f}"
+                 f"\u00d7/yr capacity growth), {obs_note}."),
+        ("compute is small", "Even doubling China's compute growth "
+                             f"(+{g_hi:.2f} OOM/yr) adds only "
+                             f"~{a_partial * g_hi:.1f} ECI/yr against "
+                             f"~{a_mid:.0f} algorithmic \u2014 moving the date "
+                             "by weeks."),
+        *([("release wait", f"A crossing waits for a release (one every "
+                            f"~{gap_d:.0f} days lately, an exponential wait), "
+                            "which is why the diamond sits right of where the "
+                            "fan meets the bar.")] if gap_d else []),
+        ("distillation", "Decays as the gap closes: the algorithmic term falls "
+                         f"toward an indigenous {inno_lo:.0f}\u2013"
+                         f"{inno_hi:.0f} ECI/yr as China nears the moving US "
+                         f"frontier "
+                         f"({(y50 - float(np.nanmedian(years_const))) * 52.18:+.0f}"
+                         " weeks vs constant-rate)."))
+    _fn_caption(
+        f"ECI {target:.0f} is a <i>fixed</i> bar \u2014 the US frontier as of "
+        f"{us_hit_txt} \u2014 so crossing it means matching where the US is "
+        "<b>now</b>, not parity.",
+        ("caveats", "Trajectories climb at a constant rate; only the release "
+                    "wait models the frontier's steps, and nothing here "
+                    "captures a paradigm shift, a chip shock, or a lab not "
+                    "shipping."),
+        ("live rescoring", "Epoch recomputes ECI continuously, so a target this "
+                           "close to the frontier can move under a rescore."))
 
 
 # ── Per-company buildout-vs-release timing ────────────────────────────────
@@ -10923,15 +11023,18 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
     formats) each "largest DC" capacity step.
     """
     st.subheader("Per-company: does the buildout predict release timing?")
-    st.caption(
-        "A pure timing test — capability is ignored. Each capacity step of the lab's "
-        f"single largest data center is shifted forward {_CC_RELEASE_LAG_DAYS} days "
-        f"({_DAYS_2MO}d training + {_CC_RUN_COMPLETION_LAG.days}d release lag) to the "
-        "release date it implies, then lined up against when the lab's frontier "
-        "models actually shipped. The only thing compared is *when* — not how good "
-        "the model is. A cluster whose window holds no record-setting release "
-        "falls back to the lab's next release of any kind (marked †) rather than "
-        "showing nothing. 2024 onward.")
+    _fn_caption(
+        "A pure timing test: each capacity step of a lab's single largest data "
+        f"center, shifted forward {_CC_RELEASE_LAG_DAYS} days to the release "
+        "date it implies, against when that lab's models actually shipped. "
+        "2024 onward.",
+        ("the shift", f"{_DAYS_2MO}d training + "
+                      f"{_CC_RUN_COMPLETION_LAG.days}d release lag."),
+        ("capability is ignored", "The only thing compared is *when*, never how "
+                                  "good the model is."),
+        ("\u2020", "A cluster whose window holds no record-setting release "
+                    "falls back to the lab's next release of any kind, rather "
+                    "than showing nothing."))
 
     lab = st.selectbox("Company", _CC_PANEL_LABS, key="cc_company")
     attribution = _cc_lab_attribution(_mtime=_dc_meta_mtime())
@@ -11120,12 +11223,14 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
             "flagship off the running max); shown hollow, excluded from the "
             "median.")
 
-    st.caption(
-        f"Diamonds = capacity steps + {_CC_RELEASE_LAG_DAYS}d (hollow = planned); "
-        "circles = releases. A release matches only a cluster online ≥ one "
-        f"training run ({_CC_TRAIN_FLOOR_DAYS}d) before it; forward matches allow "
-        f"{_CC_EARLY_GRACE_DAYS}d early. Connector color = days off the implied "
-        "date (green ≤45, orange ≤120, red >120). Dates only, never capability.")
+    _fn_caption(
+        f"Diamonds = capacity steps + {_CC_RELEASE_LAG_DAYS}d (hollow = "
+        "planned) \u00b7 circles = releases \u00b7 connector colour = days off "
+        "the implied date (green \u226445, orange \u2264120, red >120).",
+        ("matching", "A release matches only a cluster online \u2265 one "
+                     f"training run ({_CC_TRAIN_FLOOR_DAYS}d) before it; "
+                     f"forward matches allow {_CC_EARLY_GRACE_DAYS}d early. "
+                     "Dates only, never capability."))
 
 
 def render_compute_capabilities():
@@ -11196,10 +11301,11 @@ def render_compute_capabilities():
         "| at a fixed moment in time |\n"
         f"| Capability gets cheaper | **−{eff['g_central']:.1f} OOM/yr** "
         f"(÷{eff['algo_mult']:.1f}/yr) | hold ECI fixed → less compute needed |")
-    st.caption(
-        f"Based on {dec['n']} models reporting training compute. Row 2 is "
-        "algorithmic efficiency (better architectures, data, RL, post-training, "
-        "scaffolding) — i.e. “effective compute per real operation” going up.")
+    _fn_caption(
+        f"Based on {dec['n']} models reporting training compute.",
+        ("row 2", "Algorithmic efficiency \u2014 better architectures, data, "
+                  "RL, post-training, scaffolding \u2014 i.e. \u201ceffective "
+                  "compute per real operation\u201d going up."))
 
     # Iso-ECI scatter: compute vs date. Continuous ECI-by-color reads poorly, so
     # we use discrete capability bands — each band's dots and its downward fit
@@ -11245,11 +11351,12 @@ def render_compute_capabilities():
         yaxis=dict(gridcolor='rgba(0,0,0,0.12)'))
     _cc_logop_yaxis(figx, "Training compute (log₁₀ OP)")
     st.plotly_chart(figx, use_container_width=True)
-    st.caption(
-        "Each colored set is a fixed-capability band (ECI ± "
-        f"{_CC_BAND_HALFWIDTH:.0f}); its matching dotted line is the within-band "
-        "fit. The compute needed to stay in a band slopes *down* over time — that "
-        "downward slope is the efficiency rate. Grey dots sit outside these bands.")
+    _fn_caption(
+        "The compute needed to stay in a band slopes <i>down</i> over time "
+        "\u2014 that downward slope is the efficiency rate.",
+        ("bands", "Each colored set is a fixed-capability band (ECI \u00b1 "
+                  f"{_CC_BAND_HALFWIDTH:.0f}); its matching dotted line is the "
+                  "within-band fit. Grey dots sit outside these bands."))
 
     # Time-to-cheaper table.
     st.markdown("**Time to reach the same ECI at less compute** "
@@ -11262,21 +11369,25 @@ def render_compute_capabilities():
         tmd.append(f"| **{f}× less** | ~{tm['central']:.0f} months | "
                    f"{tm['lo']:.0f}–{tm['hi']:.0f} mo |")
     st.markdown("\n".join(tmd))
-    st.caption(
-        "Inverse regression `log10(OP) = α·ECI + βₜ·t + c` gives "
-        f"−βₜ = {eff['g_inv']:.2f} OOM/yr (R² {eff['r2']:.2f}); the iso-ECI bands "
-        f"give a median {eff['band_median']:.2f} OOM/yr. NB: ECI rewards "
-        "reasoning/RL/post-training, so this is *total* capability efficiency, "
-        "faster than pure-pretraining algorithmic efficiency.")
+    _fn_caption(
+        f"Inverse regression gives \u2212\u03b2\u209c = {eff['g_inv']:.2f} "
+        f"OOM/yr (R\u00b2 {eff['r2']:.2f}); the iso-ECI bands give a median "
+        f"{eff['band_median']:.2f} OOM/yr.",
+        ("model", "log10(OP) = \u03b1\u00b7ECI + \u03b2\u209c\u00b7t + c."),
+        ("what it measures", "ECI rewards reasoning/RL/post-training, so this "
+                             "is *total* capability efficiency \u2014 faster "
+                             "than pure-pretraining algorithmic efficiency."))
 
     # Mirror image: hold compute fixed, watch ECI climb.
     isoc = _cc_iso_compute(cc_rows)
     if isoc is not None:
-        st.markdown(
-            "**The mirror image — same compute, rising capability.** Flip the axes: "
-            "hold the *compute budget* fixed and watch ECI climb. A model trained on "
-            f"the same compute a year later scores about **+{isoc['eci_per_yr']:.0f} ECI "
-            f"points** higher (range {isoc['lo']:.0f}–{isoc['hi']:.0f} across budgets).")
+        _fn_line(
+            "**The mirror image — same compute, rising capability.** A model "
+            f"trained on the same compute a year later scores about "
+            f"**+{isoc['eci_per_yr']:.0f} ECI points** higher.",
+            ("range", f"{isoc['lo']:.0f}\u2013{isoc['hi']:.0f} across budgets. "
+                      "Same engine as the chart above, axes flipped: hold the "
+                      "*compute budget* fixed and watch ECI climb."))
         _CBAND_COLORS = {23.5: '#8C6BB1', 24.5: '#3690C0', 25.5: '#02818A'}
 
         def _in_cband(m, c):
@@ -11318,11 +11429,12 @@ def render_compute_capabilities():
             yaxis=dict(title_text="ECI score", gridcolor='rgba(0,0,0,0.12)',
                        tickfont=dict(color='#222'), title_font=dict(color='#222')))
         st.plotly_chart(figc, use_container_width=True)
-        st.caption(
-            "Each colored set is a fixed *compute* band (log₁₀ OP ± "
-            f"{_CC_CBAND_HALFWIDTH:.1f} dex); its dotted line slopes *up* — that's "
-            "ECI gained per year at a constant compute budget. Same engine as the "
-            "chart above, axes flipped.")
+        _fn_caption(
+            "Each dotted line slopes <i>up</i> \u2014 that's ECI gained per year at "
+            "a constant compute budget.",
+            ("bands", "Each colored set is a fixed *compute* band (log\u2081\u2080 "
+                      f"OP \u00b1 {_CC_CBAND_HALFWIDTH:.1f} dex). Same engine as "
+                      "the chart above, axes flipped."))
 
         # Mirror of the time-to-cheaper table: hold the compute budget fixed and
         # read off the ECI gained over time. The last column converts that gain to
@@ -11342,12 +11454,14 @@ def render_compute_capabilities():
                        f"+{c:.0f} ECI | +{lo:.0f} to +{hi:.0f} | "
                        f"{10 ** oom:.0f}× more compute |")
         st.markdown("\n".join(imd))
-        st.caption(
-            f"At a constant budget, a year's algorithmic progress adds ~"
-            f"{isoc['eci_per_yr']:.0f} ECI — the same capability you'd otherwise "
-            f"have to buy with ~{10 ** (isoc['eci_per_yr'] / epo):.0f}× more compute "
-            f"(at {epo:.0f} ECI per ×10 compute). The mirror image of the table above: "
-            "there, capability gets cheaper; here, the same spend buys more.")
+        _fn_caption(
+            f"At a constant budget, a year's algorithmic progress adds "
+            f"~{isoc['eci_per_yr']:.0f} ECI \u2014 the same capability you'd "
+            f"otherwise have to buy with "
+            f"~{10 ** (isoc['eci_per_yr'] / epo):.0f}\u00d7 more compute.",
+            ("exchange rate", f"{epo:.0f} ECI per \u00d710 compute. This is the "
+                              "mirror image of the table above: there capability "
+                              "gets cheaper, here the same spend buys more."))
 
     # Two engines — what a compute slowdown really costs. Flows on from the
     # exchange-rate section above (no separate header).
@@ -11391,12 +11505,14 @@ def render_compute_capabilities():
               "iso-ECI ↔ iso-compute")
     e3.metric("Share of growth of compute", f"{share_lo*100:.0f}–{share_hi*100:.0f}%",
               "≈ ⅓ to ½")
-    st.caption(
-        f"The ×{10**g_recent:.1f}/yr capacity pace is the “{fits[-2]['label'] if len(fits) >= 2 else ''}” "
-        "fit of the largest-lab-site train-FLOP series from the [Data Centers "
-        "tab](?tab=datacenters), restricted to sites attributable to a "
-        "model-shipping lab (neutral hosts excluded — deliberately stricter "
-        "than that tab's own record line).")
+    _fn_caption(
+        f"The \u00d7{10**g_recent:.1f}/yr capacity pace comes from the [Data "
+        "Centers tab](?tab=datacenters).",
+        ("which fit", f"The \u201c{fits[-2]['label'] if len(fits) >= 2 else ''}"
+                      "\u201d fit of the largest-lab-site train-FLOP series, "
+                      "restricted to sites attributable to a model-shipping lab "
+                      "\u2014 neutral hosts excluded, deliberately stricter "
+                      "than that tab's own record line."))
     st.markdown(
         f"So **physical compute drives roughly a third to a half** of the "
         f"~{obs_slope:.0f} ECI-points/yr.")
@@ -11410,17 +11526,17 @@ def render_compute_capabilities():
                  if fg['a_partial'] > 0 else xr_neutral)
         if xr_fg > 0:
             share_fg = _phys_share(fg['b_time'] / xr_fg)
-            st.caption(
-                f"**Distillation control:** refitting on near-frontier models "
-                f"only (within 5 ECI of the running frontier at release, "
-                f"n={fg['n']}) moves *both* coefficients — "
-                f"+{fg['b_time']:.1f} ECI/yr at fixed compute (vs "
-                f"+{dec['b_time']:.1f} all-model) and "
-                f"+{fg['a_partial']:.1f} ECI per ×10 compute (vs "
-                f"+{dec['a_partial']:.1f}) — distillation shifts credit from "
-                "compute to time among followers. At the frontier the algo "
-                "engine is smaller and compute's share nearer "
-                f"~{share_fg * 100:.0f}% even on the algo-favorable estimator.")
+            _fn_caption(
+                f"<b>Distillation control:</b> refitting on near-frontier models only "
+                f"moves <i>both</i> coefficients, so at the frontier the algo engine is "
+                f"smaller and compute's share is nearer ~{share_fg * 100:.0f}% even on "
+                "the algo-favorable estimator.",
+                ("the refit", f"Models within 5 ECI of the running frontier at release, "
+                              f"n={fg['n']}: +{fg['b_time']:.1f} ECI/yr at fixed compute "
+                              f"(vs +{dec['b_time']:.1f} all-model) and "
+                              f"+{fg['a_partial']:.1f} ECI per \u00d710 compute (vs "
+                              f"+{dec['a_partial']:.1f}) \u2014 distillation shifts "
+                              "credit from compute to time among followers."))
 
     # One 100%-of-growth split bar. The boundary between the two engines isn't
     # pinned down, so the contested middle (iso-compute share → iso-ECI share) is
@@ -11465,36 +11581,48 @@ def render_compute_capabilities():
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
         yaxis=dict(showticklabels=False))
     st.plotly_chart(figs, use_container_width=True)
-    st.caption(
-        f"**Hatched band** = physical compute's contested share, "
-        f"**{share_lo*100:.0f}–{share_hi*100:.0f}%** (low = iso-compute fit, high = "
-        f"iso-ECI fit); **solid line** = central view (~{share_mid*100:.0f}%). "
-        f"Algorithms are the rest. Frontier-model compute growth "
-        f"(×{10**g_frontier:.1f}/yr) argues for the high end.")
+    _fn_caption(
+        f"<b>Hatched band</b> = physical compute's contested share, "
+        f"<b>{share_lo*100:.0f}\u2013{share_hi*100:.0f}%</b>; <b>solid "
+        f"line</b> = central view (~{share_mid*100:.0f}%). Algorithms are the "
+        "rest.",
+        ("the band's ends", "Low = iso-compute fit, high = iso-ECI fit. "
+                            "Frontier-model compute growth "
+                            f"(\u00d7{10**g_frontier:.1f}/yr) argues for the "
+                            "high end."))
 
     _top_band = (max(isoc['bands'], key=lambda b: b['center'])
                  if isoc and isoc.get('bands') else None)
-    st.warning(
-        "**Caveats.** (1) The two engines aren't independent — algorithmic "
-        "progress is *compute-fed*, so a physical slowdown drags the algorithmic "
-        "rate too, making a stall *worse* than the ⅓–½ shown. (2) ECI bundles "
-        "post-training/RL, so this is total-capability efficiency, not "
-        "pretraining. (3) Cheap-model data is sparse — labs rarely retrain small "
-        "models to re-hit old levels (Qwen, Kimi, distilled MoEs). (4) The "
-        f"{run_mo}mo-capacity series is a *ceiling*, not per-model training "
-        "compute. "
-        + (f"(5) The iso-compute rates include *distillation*, which the "
-           f"frontier itself cannot use — the top compute band runs "
-           f"+{_top_band['slope']:.0f} vs +{isoc['eci_per_yr']:.0f} ECI/yr "
-           "central; the frontier-grade refit above is the control. "
-           if _top_band else "")
-        + "Order-of-magnitude, not forecasts.")
-    st.caption(
-        "Data: Epoch AI Capabilities Index + Frontier Data Centers. The "
-        "efficiency band spans two OLS directions — iso-ECI (compute on ECI+time) "
-        "and iso-compute (ECI on compute+time) — which bracket the true rate "
-        "(errors-in-variables dilution). Frontier rates use the running-max-ECI "
-        "subset.")
+    # st.warning takes no HTML, so the caveats render as a flagged markdown
+    # line rather than a yellow box — the hovers are worth more than the box.
+    _fn_line(
+        "\u26a0\ufe0f **Caveats.** Order-of-magnitude, not forecasts. The two "
+        "engines aren't independent, and there are four more reasons to read "
+        "this loosely:",
+        ("not independent", "Algorithmic progress is *compute-fed*, so a "
+                            "physical slowdown drags the algorithmic rate too, "
+                            "making a stall *worse* than the \u2153\u2013\u00bd "
+                            "shown."),
+        ("what ECI measures", "It bundles post-training/RL, so this is "
+                              "total-capability efficiency, not pretraining."),
+        ("sparse data", "Cheap-model data is thin \u2014 labs rarely retrain "
+                        "small models to re-hit old levels (Qwen, Kimi, "
+                        "distilled MoEs)."),
+        ("a ceiling", f"The {run_mo}mo-capacity series is a *ceiling*, not "
+                      "per-model training compute."),
+        *([("distillation", "The iso-compute rates include distillation, which "
+                            "the frontier itself cannot use \u2014 the top "
+                            f"compute band runs +{_top_band['slope']:.0f} vs "
+                            f"+{isoc['eci_per_yr']:.0f} ECI/yr central. The "
+                            "frontier-grade refit above is the control.")]
+          if _top_band else []))
+    _fn_caption(
+        "Data: Epoch AI Capabilities Index + Frontier Data Centers.",
+        ("efficiency band", "Spans two OLS directions \u2014 iso-ECI (compute "
+                            "on ECI+time) and iso-compute (ECI on compute+time) "
+                            "\u2014 which bracket the true rate "
+                            "(errors-in-variables dilution). Frontier rates use "
+                            "the running-max-ECI subset."))
 
     # ══════════════════════════════════════════════════════════════════════
     # Section 2: ECI Forecasts — quarterly frontier projection to end of 2029
@@ -12702,20 +12830,22 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                  "Share": "100%", "Without it": "—"})
     st.markdown("##### Why that long?")
     st.table(rows)
-    st.caption(
-        f"The {total_mo:.1f} months run from China's last frontier model; "
-        "the card above counts from the *US pause* instead, which falls "
-        "later. Same samples as the chart, so this is a decomposition "
-        "rather than a "
-        "second model. **ECI closed** is each term's cumulative contribution "
-        "at its own sample's crossing; the terms sum to the gap by "
-        "construction, which is why the shares are exact. **Without it** "
-        "re-crosses the same paths with that term removed — the number a "
-        "policy question asks — and does *not* add up: kill compute and the "
-        "gap stays wider, so distillation keeps running at full strength "
-        "longer, and the shortfalls partly cover for each other. Median over "
-        "samples, so a row's two columns need not agree in rank."
-        + ("  " + "  ".join(notes) if notes else ""))
+    _fn_caption(
+        f"The {total_mo:.1f} months run from China's last frontier model, "
+        "not from the pause the card above counts from.",
+        ("ECI closed", "Each term's cumulative contribution at its own "
+                       "sample's crossing. The terms sum to the gap by "
+                       "construction, which is why the shares are exact. "
+                       "Same samples as the chart, so this is a "
+                       "decomposition rather than a second model."),
+        ("Without it", "Re-crosses the same paths with that term removed "
+                       "\u2014 the number a policy question asks. It does "
+                       "*not* add up: kill compute and the gap stays wider, "
+                       "so distillation keeps running at full strength "
+                       "longer and the shortfalls partly cover for each "
+                       "other. Median over samples, so a row's two columns "
+                       "need not agree in rank."),
+        *[("note", n) for n in notes])
 
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
@@ -13127,10 +13257,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         "Model release":
             f"**Dates = model releases** ({_mo}-mo run + ~1 mo prep).",
     }[timing_label]
-    st.caption(_clock + " Pick the milestone with the sidebar's *Date "
-               "points at* — both countries move together, so the gap "
-               "between them never changes (and no release-queue wait is "
-               "added: a queue delays both sides alike).")
+    _fn_caption(
+        _clock,
+        ("milestone", "Pick it with the sidebar's *Date points at*. Both "
+                      "countries move together, so the gap between them "
+                      "never changes \u2014 and no release-queue wait is "
+                      "added anywhere, since a queue delays both sides "
+                      "alike."))
     if cn_run_mo != us_run_mo:
         _both = np.isfinite(years) & np.isfinite(years_base)
         _net = float(np.median((years - years_base)[_both])) * 12 \
@@ -13174,12 +13307,22 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     else:
         _asm_dist = ("distillation — the paused frontier itself stays "
                      "queryable, fading only as China closes the gap")
-    st.markdown(
-        "**Assumes** · weights stay secure: China can query the paused US "
-        "models but never steal them (theft = instant catch-up) · the pause "
-        "stops new US models *and* methods: published know-how fully "
-        f"absorbed ~{_CC_DIFF_ABSORB_YRS:.0f} yr after the pause · "
-        f"{_asm_dist} · {_asm_comp}.")
+    def _strip(txt):
+        """The channel strings lead with their own name; the marker is that
+        name, so drop the prefix rather than saying it twice."""
+        body = txt.split("\u2014", 1)[-1].strip().replace("**", "")
+        return body[0].upper() + body[1:] + "."
+
+    _fn_line(
+        "**Assumes** secure weights, a pause on methods as well as models, "
+        "and these settings for China's channels:",
+        ("weights", "China can query the paused US models but never steal "
+                    "them \u2014 theft would be instant catch-up."),
+        ("diffusion", "The pause stops new US models and methods alike: "
+                      "published know-how is fully absorbed ~"
+                      f"{_CC_DIFF_ABSORB_YRS:.0f} yr after the pause."),
+        ("distillation", _strip(_asm_dist)),
+        ("compute", _strip(_asm_comp)))
 
     # ── The race, in ECI: US climbs to the bar and freezes; China's fan
     # catches up and crosses. The whole chart rides the sidebar milestone:
@@ -13268,27 +13411,33 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                   f"{'sidebar-pooled' if pooled else 'largest-site'} US "
                   f"series' ×{10 ** us_fit['g']:.1f}/yr pace, σ-sampled)")
                  if us_fit else "(observed US frontier slope)")
-    st.caption(
-        f"Counterfactual: the US climbs at ~{us_rate:.0f} ECI/yr "
-        f"{_rate_src} until the date the slider names, freezing at **ECI "
-        f"~{lvl50:.0f}** (median) — the bar China must cross. Pausing later "
-        "freezes a better model, so the bar rises with the slider even "
-        "though China gets the same head start. Once distillation and "
-        "diffusion dry up, "
-        "China runs on indigenous innovation "
-        + (f"(**{pure[0]:.0f}–{pure[1]:.0f} ECI/yr**)" if pure else
-           f"(floor **{inno[0]:.0f}–{inno[1]:.0f} ECI/yr**)")
-        + " plus its compute term. Same sim and pace band as the "
-        "Compute/capabilities/diffusion crossing section — which lands *earlier*: its bar is "
-        f"lower ({_CC_CN_TARGET_ECI:.0f}), its clock starts at China's last "
-        "release rather than at the pause, distillation never dries up "
-        "there, and it adds a release-queue wait this panel omits."
-        + (f" Sensitivity: if Chinese labs sustained the catalogued "
-           f"China-accessible buildout pace (×{10 ** chk_ca['g']:.1f}/yr, "
-           "sites abroad included — a from-zero ramp) instead of the "
-           "export-control band, the crossing moves to "
-           f"~{d50_ca + off_cn:%b %Y}."
-           if d50_ca is not None else ""))
+    _cf_notes = [
+        ("rate", f"~{us_rate:.0f} ECI/yr {_rate_src}. Pausing later freezes "
+                 "a better model, so the bar rises with the slider even "
+                 "though China gets the same head start."),
+        ("China", "Once distillation and diffusion dry up China runs on "
+                  "indigenous innovation "
+                  + (f"({pure[0]:.0f}\u2013{pure[1]:.0f} ECI/yr)" if pure else
+                     f"(floor {inno[0]:.0f}\u2013{inno[1]:.0f} ECI/yr)")
+                  + " plus its compute term. Same sim and pace band as the "
+                  "Compute/capabilities/diffusion crossing section, which "
+                  f"lands earlier: its bar is lower ({_CC_CN_TARGET_ECI:.0f}), "
+                  "its clock starts at China's last release rather than at "
+                  "the pause, distillation never dries up there, and it adds "
+                  "a release-queue wait this panel omits."),
+    ]
+    if d50_ca is not None:
+        _cf_notes.append(
+            ("sensitivity",
+             "If Chinese labs sustained the catalogued China-accessible "
+             f"buildout pace (\u00d7{10 ** chk_ca['g']:.1f}/yr, sites abroad "
+             "included \u2014 a from-zero ramp) instead of the "
+             "export-control band, the crossing moves to "
+             f"~{d50_ca + off_cn:%b %Y}."))
+    _fn_caption(
+        "Counterfactual: the US climbs until the date the slider names, "
+        f"freezing at <b>ECI ~{lvl50:.0f}</b> (median) \u2014 the bar China "
+        "must cross.", *_cf_notes)
 
     # ── Why that long? The same samples, decomposed by rate term. ──
     _notes = []
@@ -13476,12 +13625,14 @@ def render_pacing():
 
     # ── Headline ──
     st.subheader("Compute Thresholds")
-    st.caption(
-        f"The actors behind the pause. The bar is the run the US is "
-        f"mounting when it pauses — **{threshold_label}**, the *Largest "
-        f"training run* in the table above — so it moves with the pause "
-        "date and the run length; the attribution picks whether the racers "
-        "are tenants, operators or countries.")
+    _fn_caption(
+        f"The actors behind the pause, racing to <b>{threshold_label}</b> "
+        "\u2014 the run the US is mounting when it pauses.",
+        ("bar", "The *Largest training run* cell of the state-of-play table "
+                "above, so the bar moves with the pause date and with the "
+                "run length."),
+        ("racers", "The sidebar's *Attribute each site to* picks whether "
+                   "they are tenants, operators or countries."))
     us = next((r for r in recs if r['label'] == _DC_CTY_US), None)
     cn = next((r for r in recs if r['label'] == _DC_CTY_CN_ACCESS), None)
     if us is not None and cn is not None:
@@ -13565,16 +13716,18 @@ def render_pacing():
                       title=dict(text=f"First ≥{threshold_label} run, by "
                                       "entity", font=dict(size=15)))
     st.plotly_chart(fig, use_container_width=True)
-    st.caption(
-        "Filled dot = already crossed; open dot = the plan's "
-        "crossing; diamond + band = projected median and 80% range (plan "
-        "slip + trend past ~18 months, the Data Centers tab's model — "
-        "non-US entities borrow the US pace, widened by any disagreement "
-        "with their own). "
-        + ("Each country is the largest group any one company there could "
-           "run, unfiltered by host; *China-accessible* adds Chinese labs' "
-           "sites abroad (DayOne Johor), *domestic only* is the mainland "
-           "alone." if party == 'country' else "† = no recorded tenant."))
+    _fn_caption(
+        "Filled dot = already crossed \u00b7 open dot = the plan's crossing "
+        "\u00b7 diamond + band = projected median and 80% range"
+        + ("" if party == 'country' else " \u00b7 \u2020 = no recorded tenant"),
+        ("band", "Plan slip plus a fitted trend past ~18 months \u2014 the "
+                 "Data Centers tab's model. Non-US entities borrow the US "
+                 "pace, widened by any disagreement with their own."),
+        *([("countries", "Each country is the largest group any one company "
+                         "there could run, unfiltered by host. "
+                         "*China-accessible* adds Chinese labs' sites abroad "
+                         "(DayOne Johor); *domestic only* is the mainland "
+                         "alone.")] if party == 'country' else []))
 
     # ── Table ──
     def _fmt(d, alt="—"):
@@ -13609,12 +13762,13 @@ def render_pacing():
     else:
         _when = (f"Dates include the {run_days // 30}-month run plus "
                  "30 days of release prep.")
-    st.caption(
-        "*Plan crosses* reads the catalogue at face value; the projection "
-        f"adds timing slip on plans and a fitted trend beyond them. {_when} "
-        "Source: "
-        "[Epoch AI, Frontier Data Centers](https://epoch.ai/data/data-centers) "
-        "(CC-BY).")
+    _fn_caption(
+        "Source: [Epoch AI, Frontier Data "
+        "Centers](https://epoch.ai/data/data-centers) (CC-BY).",
+        ("columns", "*Plan crosses* reads the catalogue at face value; the "
+                    "projection adds timing slip on plans and a fitted trend "
+                    "beyond them."),
+        ("dates", _when))
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
