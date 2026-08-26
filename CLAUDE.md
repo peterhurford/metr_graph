@@ -25,8 +25,8 @@ Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tes
 
 - **`visualize_projection.py`** — single-file Streamlit app containing all logic
 - **`test_visualize_projection.py`** / **`test_integration.py`** — unit tests (fake Streamlit) and integration tests (AppTest)
-- **`benchmark_results_1_1.yaml`** — METR-Horizon-v1.1 data (~23 models)
-- **`epoch_capabilities_index.csv`** — Epoch ECI data (~714 model-variants)
+- **`benchmark_results_1_1.yaml`** — METR-Horizon-v1.1 data
+- **`epoch_capabilities_index.csv`** — Epoch ECI data
 - **`data_centers.csv`** / **`data_center_timelines.csv`** — Epoch Frontier Data Centers: one metadata row per site, many dated capacity rows per site
 - **`aisi_cyber_narrow.csv`** / **`aisi_cyber_tlo.csv`** — AISI narrow cyber success rates (12 models); AISI/CAISI cyber-range "The Last Ones" avg steps of 32 (10 models). Both **chart-digitized, not published feeds** — see each file's `#` header
 
@@ -73,7 +73,7 @@ Before overwriting a CSV wholesale, diff by key column so no curated rows are lo
 
 #### The one curated deletion: `Fluidstack Lake Mariner`
 
-`data_center_timelines.csv` is **not** a byte-faithful mirror of Epoch's export: Epoch renamed the site to `Anthropic Lake Mariner` in the metadata and re-scoped it to buildings CB3–5, but the timelines export still emits 8 stale rows under the old name covering the whole site. `load_data_centers()` is **timelines-driven** (metadata only supplies the company label), so those rows materialize a phantom site that double-counts Lake Mariner — +4.7% of the 2027-03 total. They are deleted locally; **re-delete on every refresh until Epoch fixes the export**, checking `set(timelines['Data center']) - set(metadata['Name'])`. Two other timeline-only names, `EdgeCore Mesa PH03` and `DayOne Kempas`, are legitimate and must be kept.
+`data_center_timelines.csv` is **not** a byte-faithful mirror of Epoch's export: Epoch renamed the site to `Anthropic Lake Mariner` in the metadata and re-scoped it to buildings CB3–5, but the timelines export still emits stale rows under the old name covering the whole site. `load_data_centers()` is **timelines-driven** (metadata only supplies the company label), so those rows materialize a phantom site that double-counts Lake Mariner. They are deleted locally; **re-delete on every refresh until Epoch fixes the export**, checking `set(timelines['Data center']) - set(metadata['Name'])`. Two other timeline-only names, `EdgeCore Mesa PH03` and `DayOne Kempas`, are legitimate and must be kept.
 
 ### Key Sections of visualize_projection.py
 
@@ -100,7 +100,7 @@ Widget defaults live in per-tab `_RESET_DEFAULTS`; each tab's `_RESET_KEYS` list
 ### Internal Units
 
 - **METR**: log₂(minutes), displayed as hours. Work-time: 1d=8h, 1w=40h, 1mo=176h, 1y=2000h
-- **ECI**: linear score (~57-154). DPP = days per +1 ECI point
+- **ECI**: linear score. DPP = days per +1 ECI point
 - **RLI** / **UK Cyber**: 0-100, projected in logit space to respect the bounds
 - **Revenue**: ARR in billions USD
 - **Data Centers, "Capacity (time to GPT-5 / Mythos)"**: stored as *training runs per
@@ -135,8 +135,7 @@ Google is why it exists. Every Google site is `Owner="Google"`, but only some al
 nothing but whether Epoch filled an optional cell (Lancaster, `Users` blank, lists the same
 TPU v5e/v5p/v6e/v7 as the tagged sites). That split drew two Google lines with Google blue on
 the smaller one, left the pooled Columbus cluster dependent on both its Google sites
-happening to share a tag, and had the quarterly table reporting the minority series — 2.6x
-low by 2027Q4, contradicting the chart directly above it. The rest of the app already merged
+happening to share a tag, and had the quarterly table reporting the minority series, contradicting the chart directly above it. The rest of the app already merged
 them: `_cc_lab_for_site()` maps owner `Google*` to `Google`, and the ECI tabs substring-match
 `"Google"` for the same reason.
 
@@ -181,11 +180,11 @@ and that no label is a qualified form of another — the guard that would catch 
 `_DC_EXCLUDE_COMPANIES` lists companies that aren't AI labs — colocation and neutral-host
 operators whose recorded "company" is the landlord, not whoever trains on the hardware. The
 list is no longer an unconditional hide. `_dc_hidden_companies()` drops a listed company
-only while its largest single site stays under `_DC_EXCLUDE_MIN_H100` (100k H100-equiv)
-within `_DC_EXCLUDE_HORIZON_DAYS` (365d). Hiding them all was wrong once one got big: QTS
+only while its largest single site stays under `_DC_EXCLUDE_MIN_H100` within
+`_DC_EXCLUDE_HORIZON_DAYS`. Hiding them all was wrong once one got big: QTS
 Cedar Rapids is the largest single site in Epoch's data, so the tab's headline chart was
-naming a smaller site as the record holder. Today the rule adds QTS, DayOne and Microsoft
-and still hides Oracle, STACK, Stream, Vantage, EdgeCore and CoreWeave.
+naming a smaller site as the record holder. The roster the rule currently produces is
+pinned by `test_current_roster_is_what_the_tab_says_it_is`.
 
 Four things are load-bearing:
 
@@ -193,14 +192,12 @@ Four things are load-bearing:
    The same number in megawatts or dollars means something else, and two of the tab's
    metrics are inverted (bigger site = smaller value), so `>=` would read backwards.
 2. **A rolling horizon, not the uncapped peak, and not `dc_end_year`.** Uncapped, every
-   listed host eventually clears 100k on 2028+ buildout and the list stops meaning anything
+   listed host eventually clears the bar on 2028+ buildout and the list stops meaning anything
    (`test_uncapped_peaks_would_defeat_the_exclusion`). And the roster is a property of the
    company, not of a slider — keying it to the user's projection window would make sites
-   blink in and out as the window moves. The roster is stable well either side of a year:
-   nothing changes between a 6- and 12-month horizon, and the next company to qualify does
-   so only at ~18 months. Oracle is the nearest miss (~84k against the 100k bar); if an
-   Epoch refresh crosses it, retarget the constant deliberately rather than loosening
-   `test_current_roster_is_what_the_tab_says_it_is`.
+   blink in and out as the window moves. The roster is stable well either side of a year.
+   If an Epoch refresh moves a company across the bar, retarget the constant deliberately
+   rather than loosening `test_current_roster_is_what_the_tab_says_it_is`.
 3. **`†` marks capacity with no recorded tenant.** `load_data_centers()` sets `attributed`
    False when the company label came from the site-name fallback rather than Epoch's `Users`
    or `Owner`; `_dc_unattributed_companies()` marks a company only when *every* one of its
@@ -322,7 +319,7 @@ scan that counts it swallowed 5,500 lines once. Tokenize, or edit by hand.
 moved here from the Pacing tab). The CoBench section plots that eval — Anthropic's
 internal AI R&D benchmark — against release
 date, with a fitted trend, a projection fan and an ETA to `_RSI_SUBSTITUTION_BAR`
-(85%, Anthropic's own stated score for a model that could fully substitute for its
+(Anthropic's own stated score for a model that could fully substitute for its
 research staff — not a benchmark ceiling). Four things are load-bearing:
 
 1. **The fit is logit-space**, like RLI and UK Cyber: CoBench is a bounded success
@@ -331,14 +328,13 @@ research staff — not a benchmark ceiling). Four things are load-bearing:
    a line from a bend, so there is no piecewise or superexponential option and no
    backtest vantage-point selector. Don't add them by copying another tab.
 3. **The default rate CI is widened, not the convention.** The two segments disagree
-   by ~8x (Opus 4.6 → Mythos Preview is ~22d odds-doubling, Mythos Preview → Model 2 (internal)
-   ~189d), so `_rsi_dt_ci()` takes the usual fit/2..fit×2 interval and widens it to
+   by nearly an order of magnitude, so `_rsi_dt_ci()` takes the usual fit/2..fit×2 interval and widens it to
    span both segment rates **and** the slope's 80% t-interval (`_dt_t_interval`,
-   `_DT_T80` multipliers by residual dof — 3.08 at the current one dof, decaying to
-   the 1.282 normal limit as points accumulate). A t-interval that cannot exclude a
+   `_DT_T80` multipliers by residual dof, decaying to the normal limit as points
+   accumulate). A t-interval that cannot exclude a
    flat slope — true today for both this fit and the staff survey's, which gets the
    same treatment via `_rsi_survey_dt_ci()` — caps the slow edge at `_DT_CAP_DAYS`
-   (~4-year doubling, flat at every horizon the app offers), which is what puts
+   (flat at every horizon the app offers), which is what puts
    "no crossing before 2028" inside the default fan rather than outside it. It can
    only widen — `test_dt_ci_default_spans_both_segment_rates` and
    `test_small_sample_ci_widens_both_rsi_fits` hold that (the latter pins the
@@ -365,7 +361,7 @@ against, so it compounds the way METR's horizon does rather than saturating like
 a percentage. Three things are load-bearing. Opus 4's round is not carried at
 all: it reported no number, only that the result fell under the pre-set 3x median
 rule-out threshold, and a bound is not a point on a trend. Model 2 (internal)
-has an `estimated` point at Mythos Preview's ~4x — no round was run for it —
+has an `estimated` point carried over from Mythos Preview — no round was run for it —
 which draws hollow as an assumed value but is **included in the fit and the
 anchor**: with only three surveyed rounds, ignoring the one flat reading
 available overstates the slope, so the flattening is the point, not a bug (it
@@ -375,14 +371,14 @@ report the same statistic on the same sample (medians on superusers, then on a
 broader sample, then a geometric mean on an opt-in poll), so each point carries
 its `note` on hover and the caption says the rounds differ — and the survey is
 not discontinued, the report says only that no new round was run for Mythos 5.
-And the fan runs `_RSI_SURVEY_HORIZON_DAYS` (365) past the last round rather than
-to the tab's *Project through* year: at a 138-day doubling the median reaches
-~10^3x by end-2029, which on a log axis squashes the three actual points into the
-bottom decile. The projected-values row still quotes those far columns, via
-`_rsi_fmt_x()` so a seven-figure upper tail reads as `~2.0Mx`.
+And the fan runs `_RSI_SURVEY_HORIZON_DAYS` past the last round rather than to the
+tab's *Project through* year: at the fitted doubling time the median runs several
+orders of magnitude past the data by end-decade, which on a log axis squashes the
+three actual points into the bottom decile. The projected-values row still quotes
+those far columns, via `_rsi_fmt_x()` so a seven-figure upper tail reads compactly.
 
 The Pacing tab's
-*Capabilities Milestones* row dates the same 85% bar through `_pc_rsi_eta()`,
+*Capabilities Milestones* row dates the same bar through `_pc_rsi_eta()`,
 which reuses this tab's `_rsi_fit()` and `_rsi_dt_ci()` rather than fitting its
 own. Guarded by `TestRsi` and `TestRsiTab`.
 
@@ -391,14 +387,14 @@ own. Guarded by `TestRsi` and `TestRsiTab`.
 Five load-bearing constraints; don't "simplify" them away:
 
 1. **The frontier is closed-weight only** — open-weight models are the subject being measured against it, so `load_ukcyber()` excludes them from the running max.
-2. **Lag is interpolated between the bracketing frontier models and carries a bracket.** `_ukc_frontier_crossing()` interpolates between the last model below a score and the first above; `ukc_lag_rows()` returns `lag_months` plus `lag_lo`/`lag_hi` from those two. Snapping to the next model up (the earlier implementation) equates scores that can be far apart — across a 10-point frontier gap it understated one lag by ~2.4 months. Nothing shipped inside the gaps, so the bracket is real uncertainty, not noise. (Rejected: last-model-below, defensible but maximally pessimistic; OLS-curve dating, which imports global fit error into a local question.)
+2. **Lag is interpolated between the bracketing frontier models and carries a bracket.** `_ukc_frontier_crossing()` interpolates between the last model below a score and the first above; `ukc_lag_rows()` returns `lag_months` plus `lag_lo`/`lag_hi` from those two. Snapping to the next model up (the earlier implementation) equates scores that can be far apart, understating a lag across a wide frontier gap. Nothing shipped inside the gaps, so the bracket is real uncertainty, not noise. (Rejected: last-model-below, defensible but maximally pessimistic; OLS-curve dating, which imports global fit error into a local question.)
 3. **`lag_lo` is the AISI-compatible bound.** AISI's printed annotations use next-model-up, exactly `lag_lo`, so `test_optimistic_bracket_reproduces_aisi_published_lags` doubles as the calibration check on the digitization. Changing the lag method must not break it.
-4. **The TLO cross-check compares on `lag_lo`, not the point estimate.** `aisi_cyber_tlo.csv` reuses the same helpers by storing steps in `cyber_score`, but the two datasets' frontiers differ in density, so point estimates aren't comparable — a score inside a wide gap gets inflated, one below every frontier model gets no interpolation at all (`lag_hi` is `None`, a lower bound) — and the ordering inverts for sampling reasons rather than capability. On `lag_lo` the two reproduce AISI's headline exactly: narrow 4.3–5.1mo, cyber range 6.7–6.8mo, "4 to 7 months". `test_reproduces_both_figure_titles` guards this.
+4. **The TLO cross-check compares on `lag_lo`, not the point estimate.** `aisi_cyber_tlo.csv` reuses the same helpers by storing steps in `cyber_score`, but the two datasets' frontiers differ in density, so point estimates aren't comparable — a score inside a wide gap gets inflated, one below every frontier model gets no interpolation at all (`lag_hi` is `None`, a lower bound) — and the ordering inverts for sampling reasons rather than capability. On `lag_lo` the two reproduce AISI's published "4 to 7 months" headline exactly. `test_reproduces_both_figure_titles` guards this.
 5. **The suites don't cover the same models, and a callout says so.** Kimi K3 got a selective set (ExploitBench + TLO), not the 70-task narrow suite, so it's missing from the chart, projection and 90% ETA by data availability, not by a filter. `ukc_open_only_on_tlo()` finds the newest open-weight model in TLO but not narrow rows; `_render_ukcyber_newest_open()` shows it as a bordered callout with the `lag_lo`–`lag_hi` bracket (TLO's frontier is too sparse for a point estimate). It returns `None` once narrow catches up, and ignores a TLO-only model *older* than every open-weight point on the chart. Both it and `_render_ukcyber_tlo()` read `ukc_tlo_lag_rows()`, so they can't drift onto different frontiers. Guarded by `TestUkCyberOpenOnlyOnTlo`.
 
 Country and openness are perfectly confounded (no US open-weight, no Chinese closed-weight models). The tab says "China" because the two Chinese models are also the only open-weight ones; `_UKC_CONFOUND_PLAIN` is folded into the fine-print caption so that's stated wherever it does. If it ever needs banner prominence again, promote that same constant rather than writing a second wording to keep in sync.
 
-`ukc_target_eta()` ("when do open-weight models reach `_UKC_TARGET`, 90%") = the frontier's interpolated crossing plus the min/max measured lag. `ukc_target_eta_direct()` fits the open-weight points themselves as a cross-check only — two models 53 days apart make that slope very sensitive, so it is never the headline.
+`ukc_target_eta()` ("when do open-weight models reach `_UKC_TARGET`") = the frontier's interpolated crossing plus the min/max measured lag. `ukc_target_eta_direct()` fits the open-weight points themselves as a cross-check only — they sit close together in time, which makes that slope very sensitive, so it is never the headline.
 
 ### ECI tabs — organization matching
 
@@ -406,8 +402,8 @@ The Epoch ECI tab and the ECI Company Gap tab read the same CSV and **must resol
 organizations identically**, both by *substring* match on Epoch's `Organization` field: the
 ECI tab via `load_eci_frontier(orgs=…)` / `_ECI_ENTITY_SPECS`, the gap tab via
 `_ecg_org_display()` / `_ECG_ORG_MAP`. Don't turn either back into an exact-key lookup — the
-gap tab used to, and the tabs silently disagreed: Epoch spells Google four different ways,
-so a map keyed only on `Google DeepMind` dropped four models and drew a different 2025
+gap tab used to, and the tabs silently disagreed: Epoch spells Google several different
+ways, so a map keyed only on `Google DeepMind` dropped models and drew a different
 frontier point. Google's *current* gap was unaffected, which is why it went unnoticed.
 
 **Adding a company is one row in `_ECI_COMPANIES`**, the single source of truth for both
@@ -453,17 +449,17 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    recorded step.** `_dc_cty_fit()` samples the forward-filled step series monthly (not at
    event dates, which would weight dense periods), fits from the *Fit trend since* year,
    and reports the pace over every `_DC_CTY_FIT_WINDOWS` lookback. Pace uncertainty is
-   max(OLS se, window spread / 2.56, `_DC_CTY_SIGMA_G_FLOOR` = 0.10 OOM/yr) — the floor is
+   max(OLS se, window spread / 2.56, `_DC_CTY_SIGMA_G_FLOOR`) — the floor is
    what carries the cone for China, whose windows all coincide. `_dc_cty_trajectories()`
    adds the series' own residual scatter, ramped in over a year. Two biases to keep in the
    caption: a fit from a country's first go-live runs hot (China-accessible's own trend is
-   ×5/yr, a from-zero ramp), and one to the edge of the planned data runs cool (the far
-   future is under-catalogued — the US since-2026 window is ×2.3/yr vs ×3.2 since 2024).
+   a from-zero ramp), and one to the edge of the planned data runs cool (the far future is
+   under-catalogued, so a recent-window fit reads slower than a longer one).
 5. **Cones open at today and centre on the plan.** Sample *i* reads the step plan at
    `d − (d − today)·f_i` (clamped so a shifted plan never falls below what is built
-   today), `f_i` ~ Normal(0, `_dc_cty_slip_sigma(quality)`) — 15% of lead for fully
-   sourced plans, 35% for pure estimates — and scales it by a symmetric level draw
-   (`_DC_CTY_PLAN_LEVEL_SIGMA` = 0.06 OOM per year of lead) so a flat plan still carries
+   today), `f_i` ~ Normal(0, `_dc_cty_slip_sigma(quality)`) — a larger fraction of lead
+   for pure estimates than for fully sourced plans — and scales it by a symmetric level
+   draw (`_DC_CTY_PLAN_LEVEL_SIGMA`, per year of lead) so a flat plan still carries
    a small band. The timing noise is symmetric **on purpose**: Epoch dates conservatively
    (it pushes doubtful completions out itself), and the one-sided lognormal-lateness model
    tried first put every planned step at the top edge of its own interval — VNET Ulanqab
@@ -476,25 +472,25 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    itself. A *Show projection cones* checkbox (`dc_cty_cones`) hides the bands. Quality is `_dc_plan_quality()`: the share of a
    country's future rows whose `Construction status` cites a document
    (`_DC_PLAN_SOURCED_RE` — a markdown link, "schedule", "filing", "stated", "permit"…).
-   Epoch publishes no confidence column, so this is a prose heuristic; live it splits the
-   future rows ~45/55 and `test_live_catalogue_has_both_kinds_of_plan` fails if a refresh
-   makes it dead weight. The trend takes over at `_DC_CTY_PLAN_HORIZON_DAYS` (18 months)
+   Epoch publishes no confidence column, so this is a prose heuristic;
+   `test_live_catalogue_has_both_kinds_of_plan` fails if a refresh makes it dead weight.
+   The trend takes over at `_DC_CTY_PLAN_HORIZON_DAYS`
    rather than at the last catalogued step, **with the slipped plan as a floor carried past
    its last entry** — anchoring on the last entry held the US line flat through 2029 off one
    site dated 2030, and the fit window is clipped there too so the under-catalogued tail
-   doesn't drag the pace down (×2.4/yr vs ×3.2).
+   doesn't drag the pace down.
 6. **The default pace is the US trend borrowed** (`_DC_CTY_PACE_OPTIONS`, 'us'), with the
    cone widened to `|g_own − g_us| / 1.28` so a country's own fit sits at the 80% edge
-   rather than vanishing. Own-trend is one click away and has China overtaking the US by
-   2029 — that is the ramp bias above, not a finding. The US always uses its own fit.
+   rather than vanishing. Own-trend is one click away and has China overtaking the US
+   inside the window — that is the ramp bias above, not a finding. The US always uses its own fit.
 7. **Lag never drops the samples where China leads.** `_dc_cty_lag_months()` floors an
    unresolved sample (the US running max never reaches China's value inside the grid) at
    one month past the grid end and returns the mask; the table prints "ahead in N% of
-   samples" once most are floored. Dropping them as NaN biased the 2030 median to "5 months
-   behind" in a row whose ratio read 0.5×.
+   samples" once most are floored. Dropping them as NaN biased the median toward "behind"
+   in rows whose ratio said China was already ahead.
 
-Past the plan horizon the cone is a trend through the site list (for China the catalogue
-ends in 2027), not a forecast of export-control policy.
+Past the plan horizon the cone is a trend through the site list (China's catalogue ends
+earlier than the US's), not a forecast of export-control policy.
 The tab's *Project through* year caps the recorded data for every country alike; turning
 planned buildout off gives a trend-only projection from today. `TestDcByCountry` (unit)
 and `TestDataCentersByCountry` (integration).
@@ -517,7 +513,7 @@ removed as redundant) — so they must not contradict each other:
   `pred − _CC_EARLY_GRACE_DAYS` (7d) onward. (2) Else the earliest running-max release the
   *backward* match already gave this exact step — needed because the clocks differ: the 60d
   floor admits a release up to 30d early while the forward grace is 7d, so without this tier
-  a step whose model shipped ~24d early falls to tier 3 and cites a lesser model. (3) Else
+  a step whose model shipped a few weeks early falls to tier 3 and cites a lesser model. (3) Else
   the lab's next release of any kind from `_cc_company_all_releases()`, flagged `fallback`
   and marked † wherever it renders.
 
@@ -533,7 +529,7 @@ Load-bearing:
    compares dates only. Tier-3 matches draw hollow, are marked †, and are **excluded from
    the headline median**, which is a claim about record-setting releases.
 3. **`_cc_company_all_releases()` keys on `(Model name, Release date)`.** Model name alone
-   merges GPT-4o's May and August 2024 releases; Display name alone splits one model's ~10
+   merges GPT-4o's May and August 2024 releases; Display name alone splits one model's
    reasoning-effort rows, and which suffixed variant wins a dedup flips between Epoch pulls.
    Same-day releases sort by descending ECI so a step is offered the flagship.
 
@@ -585,7 +581,7 @@ on 2-month (paces identical).
 
 ### Compute/capabilities/diffusion — China's ETA to a target ECI
 
-`_render_cc_china_target()` answers "when does China cross `_CC_CN_TARGET_ECI`" (161) with a
+`_render_cc_china_target()` answers "when does China cross `_CC_CN_TARGET_ECI`" with a
 date distribution rather than the gap metrics above it. Three things are load-bearing:
 
 1. **The target tracks today's US frontier**, which is what makes the framing — "China
@@ -597,7 +593,7 @@ date distribution rather than the gap metrics above it. Three things are load-be
 2. **The rate is the same two-engine model as Chart B**, deliberately: algorithmic term
    (iso-compute rates, mode = China's own) + `a_partial` × China's compute growth. A direct
    fit of China's frontier would contradict the chart above. The bottom-up rate runs hot
-   (~14 ECI/yr) against a frontier that has managed 10–13, so `_cc_cn_target_years()` takes
+   against what the frontier has actually managed, so `_cc_cn_target_years()` takes
    a `pace_lo`/`pace_hi` band derived from China's observed slope over `_CC_GAP_WINDOWS`.
    That reality check is the main uncertainty — the two iso-compute fits sit within a point
    of each other and alone would give a spuriously tight band.
@@ -608,7 +604,7 @@ date distribution rather than the gap metrics above it. Three things are load-be
    the smooth capability path, the diamond and vertical band are release-inclusive. Not a
    plotting bug; don't "fix" it by aligning them. The *months-behind* card is ship-to-ship
    on both sides and must stay so: a "smooth" variant that interpolated the US released
-   steps was tried and read ~1.4 mo low — across a same-day release pair the interpolation
+   steps was tried and read low — across a same-day release pair the interpolation
    collapses to the ship date, silently carrying the US's real wait (GPT-5.5 Pro's run
    finished ~2 mo before it shipped, per the Mythos model card; the wait is paid in prep
    and overshoot, invisible in released steps) while charging China none.
@@ -617,21 +613,21 @@ date distribution rather than the gap metrics above it. Three things are load-be
    (nodist − pure, decays only after a pause, `_CC_DIFF_ABSORB_YRS` absorption ramp
    via `t_pause`) + distillation (algo − nodist, decays with gap/gap₀). With
    `pure_lo=None` or `t_pause=None` it reduces to the two-channel law, so the
-   moving-US 161 crossing is unchanged; the split bites in the Pacing pause panel
+   moving-US crossing is unchanged; the split bites in the Pacing pause panel
    and the scenario table's four rows.
    `_cc_cn_target_years` stays as the constant-rate comparison quoted in the caption.
    `TestCcCnCrossingSim` pins the limits (saturated = constant-rate; frozen US = slower;
-   pause-to-frozen-bar later than 161-with-US-moving). The pace band is shared via
+   pause-to-frozen-bar later than the crossing with the US still moving). The pace band is shared via
    `_cc_cn_pace_band` with the Pacing pause panel so the two crossings stay ordered.
    The engines section carries a measured distillation control: `_cc_frontier_grade_algo`
    refits on frontier-grade models — within 5 ECI of the running frontier **and** trained
-   within `_CC_FG_FLOP_MARGIN` (1 OOM) of the running-max training run, against the
+   within `_CC_FG_FLOP_MARGIN` of the running-max training run, against the
    **full-window** frontier (`load_eci_frontier(full_window=True)`). Both criteria are
    load-bearing: the ECI tab's Feb-2024 cutoff used to auto-admit every earlier model as
-   "near-frontier" (48 of the old n=85), and without the compute screen the subset admits
+   "near-frontier", and without the compute screen the subset admits
    the models nearest the frontier at the least compute — the heaviest distillers
    (DeepSeek/Qwen/Kimi). The surviving fingerprint is one-way: the refit's b_time runs
-   ~2–3 ECI/yr below pooled (followers ride a teacher); a_partial does **not** rise —
+   below pooled (followers ride a teacher); a_partial does **not** rise —
    reasoning-era models reach the frontier at sub-frontier compute — so the old two-way
    gradient claim is dead. The refit's pair still replaces the pooled one for every
    frontier-facing projection (US-vs-China slopes, the pause bar mapping and climb, the
@@ -639,7 +635,7 @@ date distribution rather than the gap metrics above it. Three things are load-be
    drop, the screen's bite and the coverage guard. Measured by country, distillation is
    a *level*, not a rate: `_cc_cn_level_offset` (the country dummy at matched compute
    and date, quoted live in the control caption and the Pacing distillation checkbox)
-   puts Chinese models ~+4 ECI above US peers while the two iso-compute rates are
+   puts Chinese models above their US compute-peers while the two iso-compute rates are
    indistinguishable; `TestCcCnLevelOffset` guards it.
 
 Fan traces set `mode='lines'` explicitly: the fan spans ~6 quarters, and plotly defaults a
@@ -664,34 +660,33 @@ read.
 *Capabilities Milestones* and the RSI blend live at the **bottom of the RSI
 tab** (`_pc_render_milestones()`), not here — they are still named `_pc_*` with
 the ETA helpers they call, and the machinery is unchanged. Eight cards, driven by
-the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_eta()` for the METR frontier reaching 174h — about one
-work-month — at each of `_PC_METR_LEVELS` (p50 at 5% blend weight, p80 at 20%;
-at the month-scale bar p50's earlier firing is its own card and weight rather
-than the exclusion it got at the old 40h bar), `_pc_eci_eta()` for the US-best ECI frontier reaching
-each of `_PC_ECI_TARGETS` (187.5 and 200 — today's frontier plus **two and three
-more jumps the size of GPT-5 → the current frontier**, `_PC_ECI_JUMP_FROM` being
-the near end; each card's footnote counts its own jumps off the live scores, and
+the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_eta()`
+for the METR frontier reaching `_PC_METR_TARGET_HRS` — about one work-month — at each
+of `_PC_METR_LEVELS` (at the month-scale bar p50's earlier firing is its own card and
+weight rather than the exclusion it got at the old 40h bar), `_pc_eci_eta()` for the
+US-best ECI frontier reaching each of `_PC_ECI_TARGETS` (today's frontier plus **two
+and three more jumps the size of GPT-5 → the current frontier**, `_PC_ECI_JUMP_FROM`
+being the near end; each card's footnote counts its own jumps off the live scores, and
 `test_eci_target_is_two_more_frontier_jumps` pins both against the live CSV since
-Epoch rescores live; well above anything that tab draws, and a 170 card sat close
+Epoch rescores live; well above anything that tab draws, and a lower card sat close
 enough to today's frontier that it dated model releases, not RSI, so its weight
 moved here). The cards are labelled *ECI reaches …*, not *US ECI* — the US-best
 frontier is stated in the hover. The 187.5 slug keeps the half-point
 (`eci_187_5`) — it keys the blend weight, and `{t:.0f}` would round it to a slug
-no weight matches, `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT` (90%, above
-that tab's own milestone table, which stops at 50%), `_pc_rsi_eta()` for
-the CoBench frontier reaching `_RSI_SUBSTITUTION_BAR` (85%, Anthropic's own
-full-substitution bar, which the RSI tab dates too), `_pc_rsi_survey_eta()`
-for self-reported staff speedup reaching `_PC_RSI_SURVEY_TARGET_X` (10x, about a
-doubling and a half past the most recent round's ~4x), and `_pc_revenue_eta()` for
-the **leading** company's ARR reaching `_PC_REV_TARGET_B` ($1T, the Revenue tab's
-own top milestone) — the one bar here that isn't a benchmark, but still dated off
+no weight matches, `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT`
+(above that tab's own milestone table), `_pc_rsi_eta()` for the CoBench frontier
+reaching `_RSI_SUBSTITUTION_BAR` (Anthropic's own full-substitution bar, which the
+RSI tab dates too), `_pc_rsi_survey_eta()` for self-reported staff speedup reaching
+`_PC_RSI_SURVEY_TARGET_X` (about a doubling and a half past the most recent round),
+and `_pc_revenue_eta()` for the **leading** company's ARR reaching `_PC_REV_TARGET_B`
+(the Revenue tab's own top milestone) — the one bar here that isn't a benchmark, but still dated off
 released models, since ARR is what shipped models earn. They render in **two rows** — on one line every label squeezes to two words. Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
 [DT/2, DT*2], position over the current model's CI, p50 slope fits the trend;
 ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2; RLI: single OLS in
 logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
 ± 1 point; RSI CoBench: single OLS in logit space, odds-doubling time over
-`_rsi_dt_ci()`'s widened interval, position ± `_PC_RSI_POS_CI` (10) points; RSI
+`_rsi_dt_ci()`'s widened interval, position ± `_PC_RSI_POS_CI`; RSI
 survey: OLS on log(multiple) over every round the tab fits (the carried-over
 `estimated` point included, as on the tab), doubling time over
 `_rsi_survey_dt_ci()`'s t-widened interval, position over the
@@ -713,8 +708,7 @@ Six of the eight are dated off *released* models (METR, ECI, RLI — publicly
 benchmarked — and revenue, since ARR is earned by shipped models); CoBench and the
 staff survey are internal evaluations Anthropic reports for models it has not
 shipped. So `_pc_report_lag()` pulls the five back
-by `_PC_REPORT_LAG_DAYS` (1–2 months, sampled over the range so the spread lands
-in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other two
+by `_PC_REPORT_LAG_DAYS` (sampled over the range so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other two
 are already on that clock and must not be shifted twice.
 
 A checkbox (`rsi_notyet`, default on, in the blend's *Set your own weights*
@@ -731,12 +725,12 @@ carries a dotted ghost of the unconditioned blend (`raw_days` through
 `_pc_rsi_dist_fig`; its height at today is the mass the update removed — the
 grid start widens to the ghost's 0.5th percentile so that stays visible). A
 fully-crossed component drops out, generalizing the by-hand removal METR
-p50 once got at the 40h bar. A companion number input (`rsi_notyet_ramp`,
+p50 once got at the old, lower bar. A companion number input (`rsi_notyet_ramp`,
 default 90d, 0 = off) extends the update into the near future as a soft
 likelihood, not a wider hard cut: a sample t days out is kept w.p. t/N inside
 the window — the closer a crossing, the more visible its run-up would already
 be. On the release clock an active window grows by `_PC_REPORT_LAG_DAYS[0]`
-(30d) via `_pc_ramp_for()` — a model shipping that soon finished training a
+via `_pc_ramp_for()` — a model shipping that soon finished training a
 report lag earlier — and the fine print quotes the window actually applied. Survival stays the expected likelihood, so the weight × survival mixing is
 unchanged. Assumes a crossing would be known by now — weaker for the internal
 evals, and the checkbox help says so.
@@ -791,7 +785,7 @@ attribution; the threshold reaches the display through the chart title.
    grid index reaching T with `len(grid)` as the never-crossed sentinel (NaN never
    hits); per sample it is non-decreasing in T, so every percentile is too —
    `test_crossing_idx_monotone_in_threshold`. `_pc_idx_date` maps a percentile back
-   to a grid date, `None` past the grid (rendered ">2033"). The grid runs monthly
+   to a grid date, `None` past the grid (rendered as past the horizon). The grid runs monthly
    from today to `_PC_HORIZON`. An entity whose catalogued steps cross before today
    is "already there" via `_pc_plan_crossing`, not the Monte Carlo. A *Date points
    at* selectbox (`pc_timing`, `_DC_TIMING_OPTIONS` verbatim) shifts the input
@@ -830,7 +824,7 @@ projection range too narrow for a catch-up still describes the pause. A caption 
 at the catalogued China-accessible pace (sites abroad) vs the export-control band.
 The bar is the best model the US has *trained* by the pause: the released-frontier
 climb (measured from us_best's release date, not the China-anchored grid) plus
-`_PC_SHIP_LAG_DAYS` (60d — the realized trained→shipped lag, GPT-5.5 Pro / Mythos card)
+`_PC_SHIP_LAG_DAYS` (the realized trained→shipped lag, GPT-5.5 Pro / Mythos card)
 of extra climb. Three scenario checkboxes plus a slowdown slider: `pc_withhold` (default **on**) — a US
 *release freeze from pause-run start*: nothing ships once the final run begins, so
 distillation's teacher is the released frontier as of run start (`dist_teacher`, ~one
@@ -865,8 +859,8 @@ paid for with L−L_us months of wall clock, so China's whole deliverable path l
 channels don't speed up because a run is longer); the lift is applied by re-reading
 the *same* sampled paths against a bar lowered by `cn_gain` via `_pc_cross_years`,
 which must reproduce the sim's own interpolated crossings exactly — that pairing is
-what makes the stated net free of MC noise. Live the answer is a U-curve (~5–6 months
-is the optimum; a year is worse than matching), which is the point of the control.
+what makes the stated net free of MC noise. Live the answer is a U-curve with an
+interior optimum — a year is worse than matching — which is the point of the control.
 A dated remote cut
 must not slow the years *before* it: the band stays on the export-control default
 until the cut and `comp_slow=(t_cut, a_partial·g_domestic)` takes over after, while
@@ -897,10 +891,9 @@ The two columns answer different questions and
 distillation runs at full strength longer; the caption says so. The total's months run
 from China's last model, not from the pause the cards count from — also captioned. A
 longer Chinese run appears as its own row (`years_base` is its counterfactual). Live at
-defaults: innovation 50% (without it, ~+38 mo), diffusion 29%, distillation 10% (worth
-~3 mo on its own — the frontier-grade fix shrank this channel and grew diffusion, since
-the no-teacher band's floor rose while the pure-innovation floor fell), compute abroad
-9%, compute domestic 2%. Note for tests: this table renders *after* the race table, so address
+defaults innovation dominates, then diffusion, then distillation, then the two compute
+rows; the frontier-grade fix shrank distillation and grew diffusion, since the
+no-teacher band's floor rose while the pure-innovation floor fell. Note for tests: this table renders *after* the race table, so address
 the race table by its columns (`TestPacingTab._entities`), never by position.
 China
 races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the
@@ -916,22 +909,21 @@ Guarded by `TestPacing` (unit) and `TestPacingTab` (integration).
 
 ### Why the test suite is fast (and how to not un-fast it)
 
-~8s, down from 3m20s that was essentially all in the 75 `AppTest` cases. Three things buy
+~8s, down from more than three minutes that was essentially all in the `AppTest` cases. Three things buy
 that back; the first two live in `conftest.py`.
 
 1. **One shared bytecode cache.** Streamlit builds a fresh `ScriptCache` on every
    `AppTest.run()` — once in `AppTest._run()`, again in `LocalScriptRunner.__init__` — so
-   the app was re-read, AST-rewritten by `magic.add_magic` and recompiled ~300 times per
-   suite. `conftest.py` patches **both** sites to one process-wide cache; patch only one and
+   the app was re-read, AST-rewritten by `magic.add_magic` and recompiled twice per case. `conftest.py` patches **both** sites to one process-wide cache; patch only one and
    the other keeps recompiling and the win disappears. Isolation is unaffected — the
    bytecode is still exec'd into a fresh module each run.
 2. **A smaller Monte Carlo.** `N_SAMPLES` reads `_VP_SAMPLES`; `conftest.py` sets it to 400.
    Nothing asserted depends on the count — the CI defaults the tests check come from the
    deterministic OLS fits, and the app never seeds its RNG. `_VP_SAMPLES=5000 pytest` runs
-   at production fidelity (~16s) as a check. Don't lower the *default*: the band edges are
+   at production fidelity as a check. Don't lower the *default*: the band edges are
    percentiles and go visibly ragged well before 5000.
 3. **Parallelism.** `pytest.ini` passes `-n auto`; the cases are independent, so a straight
-   ~3.5x. It costs the unit-test-only run ~1.5s of worker startup, hence `-n0`.
+   multiple. It costs the unit-test-only run a little worker startup, hence `-n0`.
 
 Adding an `AppTest` case is cheap (~0.1s per `.run()`), so prefer one to skipping coverage.
 What is *not* cheap is defeating the shared cache — a test that mutates
