@@ -624,11 +624,23 @@ date distribution rather than the gap metrics above it. Three things are load-be
    pause-to-frozen-bar later than 161-with-US-moving). The pace band is shared via
    `_cc_cn_pace_band` with the Pacing pause panel so the two crossings stay ordered.
    The engines section carries a measured distillation control: `_cc_frontier_grade_algo`
-   refits on models within 5 ECI of the running frontier — distillation biases *both*
-   coefficients (a_partial down, b_time up), so the refit's pair replaces the pooled one
-   for every frontier-facing projection (US-vs-China slopes, the pause bar mapping and
-   climb, the compute terms), with pooled as fallback; `TestCcFrontierGradeAlgo` pins
-   the two-way gradient.
+   refits on frontier-grade models — within 5 ECI of the running frontier **and** trained
+   within `_CC_FG_FLOP_MARGIN` (1 OOM) of the running-max training run, against the
+   **full-window** frontier (`load_eci_frontier(full_window=True)`). Both criteria are
+   load-bearing: the ECI tab's Feb-2024 cutoff used to auto-admit every earlier model as
+   "near-frontier" (48 of the old n=85), and without the compute screen the subset admits
+   the models nearest the frontier at the least compute — the heaviest distillers
+   (DeepSeek/Qwen/Kimi). The surviving fingerprint is one-way: the refit's b_time runs
+   ~2–3 ECI/yr below pooled (followers ride a teacher); a_partial does **not** rise —
+   reasoning-era models reach the frontier at sub-frontier compute — so the old two-way
+   gradient claim is dead. The refit's pair still replaces the pooled one for every
+   frontier-facing projection (US-vs-China slopes, the pause bar mapping and climb, the
+   compute terms), with pooled as fallback; `TestCcFrontierGradeAlgo` pins the b_time
+   drop, the screen's bite and the coverage guard. Measured by country, distillation is
+   a *level*, not a rate: `_cc_cn_level_offset` (the country dummy at matched compute
+   and date, quoted live in the control caption and the Pacing distillation checkbox)
+   puts Chinese models ~+4 ECI above US peers while the two iso-compute rates are
+   indistinguishable; `TestCcCnLevelOffset` guards it.
 
 Fan traces set `mode='lines'` explicitly: the fan spans ~6 quarters, and plotly defaults a
 Scatter under 20 points to `lines+markers`, studding the band outline with stray dots.
@@ -875,8 +887,10 @@ The two columns answer different questions and
 distillation runs at full strength longer; the caption says so. The total's months run
 from China's last model, not from the pause the cards count from — also captioned. A
 longer Chinese run appears as its own row (`years_base` is its counterfactual). Live at
-defaults: innovation 50% (no crossing by 2031 without it), diffusion 19%, distillation
-14%, compute abroad 10% (worth 4.3 months on its own), compute domestic 8%. Note for tests: this table renders *after* the race table, so address
+defaults: innovation 50% (without it, ~+38 mo), diffusion 29%, distillation 10% (worth
+~3 mo on its own — the frontier-grade fix shrank this channel and grew diffusion, since
+the no-teacher band's floor rose while the pure-innovation floor fell), compute abroad
+9%, compute domestic 2%. Note for tests: this table renders *after* the race table, so address
 the race table by its columns (`TestPacingTab._entities`), never by position.
 China
 races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the

@@ -598,6 +598,16 @@ class TestLoadEciFrontier:
         for m in data:
             assert m['date'] >= cutoff, f"{m['name']} date {m['date']} before cutoff"
 
+    def test_full_window_extends_before_the_cutoff(self):
+        """full_window=True skips the Feb-2024 cutoff and only that: the
+        cutoff view must be exactly the full view's post-cutoff tail."""
+        full = vp.load_eci_frontier(full_window=True)
+        cut = vp.load_eci_frontier()
+        cutoff = datetime(2024, 2, 29)
+        assert min(m['date'] for m in full) < cutoff
+        assert ({m['name'] for m in full if m['date'] >= cutoff}
+                == {m['name'] for m in cut})
+
 
 # ===========================================================================
 # Data loading: load_rli_data()
@@ -2643,28 +2653,83 @@ class TestCcInnovationAlgoBand:
         # And its low end is at least the pretraining-efficiency floor,
         # lifted to the tight frontier-grade time coefficient when that
         # refit is available.
-        fg3 = vp._cc_frontier_grade_algo(cc, vp.load_eci_frontier(), margin=3.0)
+        fg3 = vp._cc_frontier_grade_algo(cc, vp.load_eci_frontier(full_window=True),
+                                         margin=3.0)
         if fg3:
             assert lo >= min(fg3['b_time'], hi) - 1e-9
 
 
 class TestCcFrontierGradeAlgo:
-    def test_coefficients_shift_as_the_frontier_margin_tightens(self):
-        """The distillation fingerprint, in both directions: the nearer to
-        the frontier the subset, the slower its time coefficient and the
-        steeper its compute coefficient."""
+    def test_time_coefficient_slows_at_the_frontier(self):
+        """The surviving distillation fingerprint is one-way: frontier-grade
+        models (near-frontier ECI at frontier-scale compute) gain ECI at
+        fixed compute well below the pooled fit's rate — followers ride a
+        teacher, the frontier cannot. No assertion on a_partial rising: the
+        old two-way gradient was an artifact of the ECI tab's Feb-2024
+        cutoff auto-admitting every earlier model as near-frontier."""
         cc = vp.load_eci_compute()
-        eci = vp.load_eci_frontier()
-        fits = {}
-        for m in (3, 5, 8):
+        eci = vp.load_eci_frontier(full_window=True)
+        dec = vp._cc_decomp(cc)
+        for m in (3, 5):
             r = vp._cc_frontier_grade_algo(cc, eci, margin=m)
             assert r is not None and r['n'] >= 20, f"margin {m} too thin"
-            fits[m] = r
-        dec = vp._cc_decomp(cc)
-        assert fits[3]['b_time'] <= fits[5]['b_time'] <= fits[8]['b_time'] + 0.5
-        assert fits[5]['b_time'] <= dec['b_time'] + 0.5
-        assert fits[3]['a_partial'] >= fits[8]['a_partial'] - 0.5
-        assert fits[5]['a_partial'] >= dec['a_partial'] - 0.5
+            assert r['b_time'] <= dec['b_time'] - 1.0
+
+    def test_flop_screen_drops_the_low_compute_distillers(self):
+        """Without the compute screen the 'can't-distill' subset admits the
+        models nearest the frontier at the least compute — the heaviest
+        distillers — and its time coefficient drifts up toward the pooled
+        fit's. The screen must both admit extra rows and slow the fit."""
+        cc = vp.load_eci_compute()
+        eci = vp.load_eci_frontier(full_window=True)
+        tight = vp._cc_frontier_grade_algo(cc, eci, margin=3.0)
+        loose = vp._cc_frontier_grade_algo(cc, eci, margin=3.0, flop_margin=99.0)
+        assert tight is not None and loose is not None
+        assert loose['n'] > tight['n']
+        assert loose['b_time'] > tight['b_time']
+
+    def test_rows_before_the_frontier_series_are_dropped_not_admitted(self):
+        """A cc row predating eci_all's coverage has no frontier to compare
+        against; it must be excluded from the refit, never auto-admitted as
+        near-frontier (the old behavior, via the frontier-of-zero fallback)."""
+        base = datetime(2025, 1, 1)
+        eci = [{'date': base + timedelta(days=30 * i), 'eci_score': 100.0 + i}
+               for i in range(12)]
+        good = [{'date': base + timedelta(days=30 * i), 'eci': 100.0 + i,
+                 'log10_flop': 25.0 + 0.05 * i} for i in range(12)]
+        early = [{'date': base - timedelta(days=600 - 30 * i), 'eci': 50.0,
+                  'log10_flop': 24.0} for i in range(12)]
+        r = vp._cc_frontier_grade_algo(early + good, eci, margin=5.0)
+        assert r is not None and r['n'] == len(good)
+
+
+class TestCcCnLevelOffset:
+    def test_recovers_a_constructed_level_premium(self):
+        base = datetime(2024, 6, 1)
+        rows = []
+        for i in range(12):
+            d = base + timedelta(days=60 * i)
+            fl = 24.3 if i % 2 else 24.7
+            rows.append({'date': d, 'country': 'United States of America',
+                         'eci': 100.0 + 12.0 * (d - base).days / 365.25,
+                         'log10_flop': fl})
+            rows.append({'date': d, 'country': 'China',
+                         'eci': 106.0 + 12.0 * (d - base).days / 365.25,
+                         'log10_flop': fl})
+        off, n = vp._cc_cn_level_offset(rows)
+        assert n == 24
+        assert off == pytest.approx(6.0, abs=0.2)
+
+    def test_live_offset_is_a_positive_level_in_points(self):
+        """The measured distillation edge quoted in the CC control caption
+        and the Pacing distillation checkbox: China sits a few ECI above US
+        models at matched compute and date. If an Epoch refresh pushes it
+        out of this range, re-check the captions before loosening."""
+        lvl = vp._cc_cn_level_offset(vp.load_eci_compute())
+        assert lvl is not None
+        off, n = lvl
+        assert n >= 20
+        assert 0.0 < off < 12.0
 
 
 class TestCcCnPaceBand:
@@ -2683,9 +2748,8 @@ class TestCcCnPaceBand:
 class TestCcPureInnovationBand:
     def test_pure_band_sits_below_the_diffusion_intact_band(self):
         cc = vp.load_eci_compute()
-        eci = vp.load_eci_frontier()
-        nodist = vp._cc_innovation_algo_band(cc, eci)
-        pure = vp._cc_pure_innovation_band(cc, eci)
+        nodist = vp._cc_innovation_algo_band(cc)
+        pure = vp._cc_pure_innovation_band(cc)
         assert pure is not None and nodist is not None
         assert 0 < pure[0] <= pure[1]
         assert pure[1] <= nodist[0] + 1e-9
