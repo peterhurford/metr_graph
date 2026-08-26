@@ -1393,6 +1393,40 @@ class TestPacingTab:
         assert mid < base            # a moderate stretch pays
         assert long_run > mid        # a year of wall clock does not
 
+    def test_domestic_slowdown_lever_delays_the_crossing(self):
+        """The 0-90% domestic-growth lever comes off the domestic share of
+        the compute band, so it delays China's crossing on its own *and*
+        on top of the remote-access cut, where the whole band is domestic
+        and the setback also takes longer to regrow."""
+        at = self._app()
+
+        def _surpass_mo(at):
+            m = next(m for m in at.metric
+                     if "Time for China to surpass" in str(m.label))
+            return float(str(m.value).strip("~ mo"))
+
+        sl = at.slider(key="pc_dom_slow")
+        assert sl.value == 0 and sl.max == 90
+        base = _surpass_mo(at)
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert "slowed" not in md
+
+        at.slider(key="pc_dom_slow").set_value(90).run()
+        _assert_no_error(at, "Pacing / domestic growth slowed 90%")
+        slowed = _surpass_mo(at)
+        assert slowed > base
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert "domestic buildout slowed 90%" in md
+
+        # Stacks with the remote cut rather than being subsumed by it.
+        at.slider(key="pc_dom_slow").set_value(0).run()
+        at.checkbox(key="pc_stop_remote").check().run()
+        _assert_no_error(at, "Pacing / remote cut, domestic pace intact")
+        cut = _surpass_mo(at)
+        at.slider(key="pc_dom_slow").set_value(90).run()
+        _assert_no_error(at, "Pacing / remote cut + domestic growth slowed")
+        assert _surpass_mo(at) > cut
+
     def test_why_breakdown_tracks_the_sliders(self):
         """The bottom breakdown decomposes the same crossing: shares sum to
         the whole gap, and cutting a channel collapses its row — which is

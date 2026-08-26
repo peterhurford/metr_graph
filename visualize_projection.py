@@ -12095,11 +12095,12 @@ _PC_RSI_W_KEY = "pc_rsiw_"        # session-state prefix, one float per slug
 
 _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_pause_mo", "pc_stop_dist",
-                  "pc_stop_remote", "pc_withhold",
+                  "pc_stop_remote", "pc_withhold", "pc_dom_slow",
                   "pc_dist_when", "pc_remote_when", "pc_cn_run"] + \
                  [_PC_RSI_W_KEY + s for s in _PC_RSI_WEIGHTS]
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
 _PC_CN_RUN_MAX = 12           # months: longest Chinese catch-up training run
+_PC_DOM_SLOW_MAX = 90         # percent: hardest slowdown of China's own buildout
 # The pause is a date the user names, in months from today — an integer, so a
 # bookmarked URL can never carry a label that has gone stale (as the scenario
 # cut-off sliders can); the default is the offset to a fixed *date*, so a reset
@@ -12123,7 +12124,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_end_year": _PC_HORIZON.year,
                 "pc_pause_mo": _pc_pause_default_mo(),
                 "pc_stop_dist": False, "pc_stop_remote": False,
-                "pc_withhold": True,
+                "pc_withhold": True, "pc_dom_slow": 0,
                 "pc_dist_when": _PC_WHEN_NOW,
                 "pc_remote_when": _PC_WHEN_NOW,
                 "pc_cn_run": 2,
@@ -13221,6 +13222,17 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              "domestic cluster (a level setback the domestic buildout must "
              "first regrow), and grows at the domestic catalogued pace "
              "thereafter.")
+    dom_slow_pct = st.slider(
+        "Slow China's domestic compute growth by", 0, _PC_DOM_SLOW_MAX,
+        value=_PC_DEFAULTS["pc_dom_slow"], step=1, format="%d%%",
+        key="pc_dom_slow",
+        help="Equipment, HBM and fab controls that bite on the buildout "
+             "itself: China's own clusters grow this much slower than the "
+             "catalogued domestic pace. The cut comes off the domestic "
+             "share of the compute term, so it bites whether or not remote "
+             "access is cut \u2014 and a slower domestic pace also makes the "
+             "remote-access setback take longer to regrow. 0% = the "
+             "catalogued buildout.")
     with st.expander("Advanced"):
         st.markdown("**When the controls bite**")
         _opts = _pc_when_options(today)
@@ -13377,6 +13389,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # crossing, and a scenario toggle must not re-tune the reality-check
     # factor.
     g_lo_eff, g_hi_eff = _CC_CN_COMPUTE_LO, _CC_CN_COMPUTE_HI
+    dom_keep = 1.0 - dom_slow_pct / 100.0
     comp_dead, comp_slow, dlvl_oom = None, None, 0.0
     g_dom_lo = g_dom_hi = None       # domestic band, for the Assumes line
     comp_shadow = None               # domestic-only compute, for the breakdown
@@ -13402,6 +13415,21 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         g_dom = max(chk_dom['g'], 0.05)
         g_dom_hi = min(g_hi_eff, g_dom)
         g_dom_lo = min(g_lo_eff, g_dom_hi)
+        if dom_keep < 1.0:
+            # The domestic-growth lever. Compute growth is a rate in OOM/yr
+            # and the run's band is the domestic buildout plus whatever
+            # access abroad adds on top, so the cut comes off the *domestic
+            # component* of both bands: the export-control band keeps the
+            # abroad excess, while a run already confined to domestic
+            # clusters takes the cut in full. Scaling the whole band
+            # instead would charge the slowdown twice over for capacity
+            # the policy doesn't touch.
+            g_hi_eff = max(g_hi_eff - g_dom_hi * (1.0 - dom_keep), 0.0)
+            g_lo_eff = max(g_lo_eff - g_dom_lo * (1.0 - dom_keep), 0.0)
+            g_dom_hi *= dom_keep
+            g_dom_lo *= dom_keep
+            # Floored so the regrowth window below stays finite.
+            g_dom = max(g_dom * dom_keep, 0.01)
         dlvl_today = (max(float(np.log10(acc / dom)), 0.0)
                       if acc and dom and acc > dom else 0.0)
         comp_shadow = (a_partial * g_dom_hi,
@@ -13422,6 +13450,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                                * max(t_cut_r - t_today, 0.0), 0.0)
                 comp_dead = (max(t_cut_r, t_today),
                              max(t_cut_r, t_today) + dlvl_oom / g_dom)
+    elif dom_keep < 1.0:
+        # No catalogued domestic pace to decompose the band against, so the
+        # whole band takes the cut — the conservative reading of the lever.
+        g_lo_eff, g_hi_eff = g_lo_eff * dom_keep, g_hi_eff * dom_keep
     pure = _cc_pure_innovation_band(cc_rows)
     kw = dict(us_anchor=us_best[1], us_rate=us_rate_s, us_pause_level=level_s,
               a_partial=a_partial, g_lo=g_lo_eff,
@@ -13592,18 +13624,21 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _when_r = "today" if d_remote <= today else f"**{d_remote:%b %Y}**"
     _dom_hi = g_hi_eff if g_dom_hi is None else g_dom_hi
     _dom_lo = g_lo_eff if g_dom_hi is None else g_dom_lo
+    _slow = (f"; domestic buildout slowed {dom_slow_pct}%"
+             if dom_slow_pct else "")
     if comp_dead is not None:
         _asm_comp = (f"compute — from {_when_r}, falls back "
                      f"**{dlvl_oom:.1f} OOM** to the largest domestic "
                      f"cluster, ~{comp_dead[1] - comp_dead[0]:.1f} yr to "
-                     f"regrow at ×{10 ** _dom_hi:.1f}/yr (checkbox)")
+                     f"regrow at ×{10 ** _dom_hi:.1f}/yr "
+                     f"(checkbox{_slow})")
     elif stop_remote:
         _asm_comp = (f"compute — domestic pace only from {_when_r}, "
                      f"×{10 ** _dom_lo:.1f}–{10 ** _dom_hi:.1f}/yr "
-                     "(checkbox)")
+                     f"(checkbox{_slow})")
     else:
         _asm_comp = (f"compute — keeps growing ×{10 ** g_lo_eff:.1f}–"
-                     f"{10 ** g_hi_eff:.1f}/yr (export-control band)")
+                     f"{10 ** g_hi_eff:.1f}/yr (export-control band{_slow})")
     if stop_dist:
         _asm_dist = ("distillation — **cut today** (checkbox)"
                      if d_dist <= today else
@@ -13777,6 +13812,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             f"while the {dlvl_oom:.1f} OOM setback is regrown.")
     elif stop_remote:
         _notes.append("Compute runs at the domestic pace only.")
+    if dom_slow_pct:
+        _notes.append(
+            f"China's own clusters grow {dom_slow_pct}% slower than the "
+            "catalogued domestic pace, which lowers both compute rows.")
     _notes.append(f"Every row is scaled by the pace band "
                   f"(×{pace_lo:.2f}–{pace_hi:.2f}), the reality check "
                   "against China's own observed frontier slope.")

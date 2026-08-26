@@ -831,7 +831,7 @@ at the catalogued China-accessible pace (sites abroad) vs the export-control ban
 The bar is the best model the US has *trained* by the pause: the released-frontier
 climb (measured from us_best's release date, not the China-anchored grid) plus
 `_PC_SHIP_LAG_DAYS` (60d — the realized trained→shipped lag, GPT-5.5 Pro / Mythos card)
-of extra climb. Three scenario checkboxes: `pc_withhold` (default **on**) — a US
+of extra climb. Three scenario checkboxes plus a slowdown slider: `pc_withhold` (default **on**) — a US
 *release freeze from pause-run start*: nothing ships once the final run begins, so
 distillation's teacher is the released frontier as of run start (`dist_teacher`, ~one
 run's climb + ship lag below the bar); labs do ship during big runs, so this is a
@@ -843,6 +843,16 @@ biggest domestic cluster, the compute term is dead until the domestic buildout r
 the lost OOMs at its catalogued pace, domestic band thereafter (also suppresses the
 China-accessible sensitivity, whose premise it removes). The pace band deliberately
 stays on the default compute band — it is shared with the CC crossing.
+Alongside them, `pc_dom_slow` (0–90%, default 0) slows China's *own* buildout —
+equipment/fab controls rather than access controls. The cut comes off the **domestic
+component** of each band, not the band itself: `g_hi_eff -= g_dom_hi·p`, likewise for
+`lo`, so the export-control band keeps whatever access abroad adds on top while a run
+already confined to domestic clusters (remote cut on) takes the cut in full, and the
+two levers stack instead of one subsuming the other. `g_dom` is slowed too, so the
+remote cut's setback takes proportionally longer to regrow, and the breakdown's
+`comp_shadow` cap falls with it. Without a catalogued domestic pace to decompose
+against, the whole band scales by `1−p`. Guarded by
+`test_domestic_slowdown_lever_delays_the_crossing`.
 An *Advanced* expander dates the two cuts (`pc_dist_when` / `pc_remote_when`,
 `_pc_when_options` month labels — strings, so they round-trip through the URL and
 reset to a constant `Now` = the checkbox alone; a stale label is dropped like
