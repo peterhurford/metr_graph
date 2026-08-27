@@ -11,7 +11,9 @@ Run: pytest test_integration.py -v
 import numpy as np
 import pytest
 from datetime import datetime
-from visualize_projection import _pc_add_months, _pc_pause_default_mo
+import re
+from visualize_projection import (_pc_add_months, _pc_pause_default_mo,
+                                   _SLUG_FOR_TAB)
 from streamlit.testing.v1 import AppTest
 
 SCRIPT = "visualize_projection.py"
@@ -1772,3 +1774,57 @@ class TestPacingTab:
             "Nearby + announced fabric"
         assert at.selectbox(key="pc_timing").value == \
             "Training run finished"
+
+
+class TestSectionDeepLinks:
+    """`?to=<anchor>` is how a section link survives a fresh load — a bare
+    `#fragment` is dropped by the Community Cloud iframe and again by every
+    `st.query_params` write."""
+
+    _SLUGS = {"datacenters": "per-company-does-the-buildout-predict-release-timing",
+              "pacing": "if-the-us-paced-when-does-china-catch-up",
+              "rsi": "cobench"}
+
+    def _script(self, at):
+        [s] = [e.body for e in at.get("html") if e.body.lstrip().startswith("<script>")]
+        return s
+
+    def _app(self, **params):
+        at = _fresh_app()
+        for k, v in params.items():
+            at.query_params[k] = v
+        at.run()
+        return at
+
+    def test_the_script_rides_along_on_every_tab(self):
+        for tab, slug in _SLUG_FOR_TAB.items():
+            at = self._app(tab=slug)
+            _assert_no_error(at, f"anchor script / {tab}")
+            assert f'var TAB = "{slug}";' in self._script(at), tab
+
+    def test_to_scrolls_and_is_consumed(self):
+        for tab, slug in self._SLUGS.items():
+            at = self._app(tab=tab, to=slug)
+            _assert_no_error(at, f"?to= / {tab}")
+            assert f'var TO = "{slug}";' in self._script(at), tab
+            # Left in the URL it would re-jump the page on every later rerun.
+            assert "to" not in at.query_params, tab
+
+    def test_a_slug_that_is_not_one_never_reaches_the_script(self):
+        at = self._app(tab="revenue", to="</script><img src=x onerror=alert(1)>")
+        _assert_no_error(at, "?to= injection")
+        assert 'var TO = "";' in self._script(at)
+        assert "to" not in at.query_params
+
+    def test_every_section_heading_stays_inside_the_whitelist(self):
+        """A heading's own link icon offers `?to=<its id>`, so a heading the
+        whitelist would then refuse hands out a dead link. Streamlit slugifies
+        client-side; the two properties that survive it are checked here."""
+        for tab in _SLUG_FOR_TAB.values():
+            at = self._app(tab=tab)
+            _assert_no_error(at, f"headings / {tab}")
+            heads = list(at.get("header")) + list(at.get("subheader"))
+            assert heads, tab
+            for el in heads:
+                assert len(el.body) <= 120, (tab, el.body)
+                assert re.match(r"[A-Za-z0-9]", el.body), (tab, el.body)

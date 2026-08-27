@@ -2203,6 +2203,34 @@ if active_tab != "Epoch ECI":
             del st.query_params[_p]
 
 
+# ── Section deep links (?to=<anchor slug>) ───────────────────────────────
+#
+# Streamlit gives every heading an `id`, but a `#heading` link cannot reach it
+# on a fresh load: Community Cloud serves the app in an iframe whose src copies
+# the query string and drops the fragment, and every `st.query_params` write
+# rebuilds the URL from path + search alone, dropping it again. `?to=` rides
+# the query string instead. It is consumed on arrival so later reruns don't
+# jump the page back, and `_render_anchor_links()` rewrites each heading's own
+# link icon to emit this form.
+
+_ANCHOR_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,120}$")
+
+
+def _anchor_slug(raw):
+    """`raw` if it looks like a Streamlit heading anchor, else ''.
+
+    Whitelisting the shape is what lets the slug be inlined into the injected
+    script as a bare literal.
+    """
+    s = str(raw).strip().lstrip("#").lower()
+    return s if _ANCHOR_SLUG_RE.match(s) else ""
+
+
+_url_to = _anchor_slug(st.query_params.get("to", ""))
+if "to" in st.query_params:
+    del st.query_params["to"]
+
+
 
 # ── METR Horizon ─────────────────────────────────────────────────────────
 
@@ -14124,6 +14152,95 @@ def render_pacing():
                                   "fitted trend beyond them."))
 
 
+def _render_anchor_links(scroll_to, tab_slug):
+    """Make heading anchors shareable, and honour `?to=` on arrival.
+
+    Streamlit's own link icon offers a bare `#fragment`, which is dropped
+    before the heading exists (see the `?to=` note above), so each main-column
+    heading link is rewritten to an absolute `?tab=…&to=…` URL of the *outer*
+    page — the one a reader would share — while the click itself stays an
+    in-page scroll. Arriving with `?to=` polls for the heading, since Streamlit
+    streams the page in and Plotly resizes after insert; the re-settle stops on
+    the first sign of the reader scrolling for themselves.
+    """
+    st.html(
+        """
+        <script>
+        (function () {
+          var TAB = "%s";
+          var TO = "%s";
+
+          function root() {
+            return document.querySelector('[data-testid="stMain"]') || document.body;
+          }
+          function find(id) {
+            return root().querySelector('[id="' + CSS.escape(id) + '"]')
+                   || document.getElementById(id);
+          }
+          function shareUrl(id) {
+            var loc;
+            try { loc = window.parent.location; } catch (e) { loc = window.location; }
+            var u;
+            try { u = new URL(loc.href); } catch (e) { u = new URL(window.location.href); }
+            u.hash = "";
+            if (TAB) { u.searchParams.set("tab", TAB); }
+            u.searchParams.set("to", id);
+            return u.toString();
+          }
+          function relabel() {
+            var sel = "h1 a[href^='#'], h2 a[href^='#'], h3 a[href^='#'], " +
+                      "h4 a[href^='#'], h5 a[href^='#'], h6 a[href^='#']";
+            root().querySelectorAll(sel).forEach(function (a) {
+              var id = decodeURIComponent(a.getAttribute("href").slice(1));
+              if (!id) { return; }
+              a.href = shareUrl(id);
+              if (a.dataset.vpAnchor) { return; }
+              a.dataset.vpAnchor = "1";
+              a.addEventListener("click", function (ev) {
+                ev.preventDefault();
+                var el = find(id);
+                if (el) { el.scrollIntoView({block: "start"}); }
+              });
+            });
+          }
+          function watch() {
+            relabel();
+            new MutationObserver(relabel).observe(root(), {childList: true, subtree: true});
+          }
+          function jump(tries) {
+            var el = find(TO);
+            if (!el) {
+              if (tries < 150) { setTimeout(function () { jump(tries + 1); }, 100); }
+              return;
+            }
+            el.scrollIntoView({block: "start"});
+            var n = 0;
+            var timer = setInterval(function () {
+              var e = find(TO);
+              if (e) { e.scrollIntoView({block: "start"}); }
+              if (++n >= 12) { stop(); }
+            }, 250);
+            function stop() {
+              clearInterval(timer);
+              ["wheel", "touchstart", "keydown"].forEach(function (ev) {
+                window.removeEventListener(ev, stop, true);
+              });
+            }
+            ["wheel", "touchstart", "keydown"].forEach(function (ev) {
+              window.addEventListener(ev, stop, true);
+            });
+          }
+
+          if (!window.__vpAnchorWatch) { window.__vpAnchorWatch = true; watch(); }
+          else { relabel(); }
+          if (TO && !window.__vpAnchorJumped) { window.__vpAnchorJumped = true; jump(0); }
+        })();
+        </script>
+        """ % (tab_slug, scroll_to),
+        unsafe_allow_javascript=True,
+    )
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
 if not os.environ.get("_VP_TESTING"):
@@ -14153,6 +14270,9 @@ if not os.environ.get("_VP_TESTING"):
         render_pacing()
 
     _sync_session_to_url()
+
+    # ── Section deep links: honour ?to=, and make every heading emit one ──
+    _render_anchor_links(_url_to, _SLUG_FOR_TAB[active_tab])
 
     # ── Share view: copy the (now state-synced) URL to the clipboard ──────
     with st.sidebar:

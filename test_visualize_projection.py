@@ -5045,3 +5045,21 @@ class TestPacing:
                 idx = vp._pc_crossing_idx(traj[label], t)
                 assert (idx >= prev).all(), (label, t)
                 prev = idx
+
+
+class TestAnchorSlug:
+    """`?to=` is the app's section deep link; the slug is inlined into an
+    injected script, so its shape is whitelisted rather than escaped."""
+
+    def test_accepts_a_streamlit_heading_anchor(self):
+        assert (vp._anchor_slug("per-company-does-the-buildout-predict-release-timing")
+                == "per-company-does-the-buildout-predict-release-timing")
+
+    def test_normalizes_a_pasted_fragment(self):
+        assert vp._anchor_slug(" #Buildout-By-Country-US-vs-China ") == \
+            "buildout-by-country-us-vs-china"
+
+    def test_rejects_anything_that_could_close_the_script_tag(self):
+        for raw in ("</script><img src=x onerror=alert(1)>", 'a"b', "a b",
+                    "a<b", "a/b", "-lead", "", "x" * 200):
+            assert vp._anchor_slug(raw) == "", raw

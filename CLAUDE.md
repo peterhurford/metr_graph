@@ -34,7 +34,28 @@ No build system, no CI/CD, no package manager beyond requirements.txt (`streamli
 
 ## Architecture
 
-Eleven-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `rsi`, `ukcyber`, `employment`, `revenue`, `datacenters`, `computecap`, `pacing`.
+Eleven-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `rsi`, `ukcyber`, `employment`, `revenue`, `datacenters`, `computecap`, `pacing`.
+
+### Section deep links
+
+`?to=<heading anchor>` scrolls to a section; a bare `#fragment` cannot. Community Cloud
+serves the app in an iframe whose src copies the query string and drops the fragment, and
+every `st.query_params` write rebuilds the URL from path + search alone, dropping it again.
+Three things are load-bearing:
+
+1. **The slug is whitelisted, not escaped** (`_anchor_slug()`): it is inlined into the
+   injected script as a bare literal.
+2. **`to` is consumed on arrival.** Left in the URL, every later rerun would jump the page
+   back, and *Share view* would hand out the old section.
+3. **`_render_anchor_links()` rewrites each main-column heading's link icon** to an absolute
+   `?tab=…&to=…` URL of the outer page, and intercepts the click as an in-page scroll —
+   Streamlit's own icon offers the `#fragment` form. Sidebar headings are left alone. The
+   arrival scroll polls for the heading (the page streams in) and re-settles briefly (Plotly
+   resizes after insert), stopping on the reader's first scroll.
+
+`TestAnchorSlug` and `TestSectionDeepLinks` guard it; the latter also holds every heading
+inside the whitelist, since the icon hands out a link the app must then accept. The METR tab
+has no main-column headings, so it has no section to link to.
 
 ### Tabs and Render Functions
 
