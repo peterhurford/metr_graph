@@ -829,6 +829,87 @@ def load_rsi_direction():
     return rows
 
 
+# ── Code merged per person (Anthropic's own repositories) ────────────────
+# The fourth substitution series, and the only one that counts output rather
+# than scoring a benchmark: lines of code merged per active contributor each
+# quarter, as a multiple of the pre-2025 average. Per-PR line counts are
+# capped at the 99th percentile and an "active contributor" is a distinct
+# author in the trailing twelve months, both per the figure's own footnote.
+#
+# Digitized from the figure in *When AI builds itself*, which prints its own
+# bar labels from 2025Q1 on; the earlier bars carry no label and are read off
+# the axis. Those bars are the normalization's own baseline — they average to
+# 1 by construction — so they are charted but not fitted
+# (`_RSI_CODE_FIT_FROM`), and their mean is the calibration guard on the
+# digitization. The post states the 2026Q2 figure in prose, which pins the
+# other end.
+#
+# `partial` marks the figure's hatched final bar: it averages only the days
+# observed when the post went up. It is fitted, at its quarter's midpoint
+# like every other bar, which dates it later than the days it covers and so
+# reads the ramp slow rather than hot.
+
+_RSI_CODE_SOURCE_URL = _RSI_DIR_SOURCE_URL
+
+# The bar: one contributor merging what that many did before 2025.
+_RSI_CODE_TARGET = 30.0
+
+_RSI_CODE_FIT_FROM = datetime(2025, 1, 1)
+
+# Position CI: the fit's own residual scatter (80%), rather than the survey's
+# one-significant-figure allowance — this series is counted, not self-reported.
+_RSI_CODE_POS_FACTOR = 1.3
+
+# Where the x-axis opens. The bars before it are flat by construction and
+# only stretch the axis; they stay in the data, where their mean is the
+# calibration guard on the digitization.
+_RSI_CODE_CHART_FROM = datetime(2024, 1, 1)
+
+# Same reason the survey fan stops short of the tab's horizon: a multiple on a
+# ~160-day doubling time leaves the chart long before the projection year, and
+# squashes the measured bars into the bottom of a log axis.
+_RSI_CODE_HORIZON_DAYS = 365
+
+_RSI_CODE_RAW = [
+    ("2021Q2", 1.40), ("2021Q3", 1.15), ("2021Q4", 0.87),
+    ("2022Q1", 1.09), ("2022Q2", 1.17), ("2022Q3", 0.69), ("2022Q4", 0.70),
+    ("2023Q1", 1.04), ("2023Q2", 1.07), ("2023Q3", 0.98), ("2023Q4", 0.85),
+    ("2024Q1", 1.00), ("2024Q2", 0.85), ("2024Q3", 0.87), ("2024Q4", 0.89),
+    ("2025Q1", 1.20), ("2025Q2", 1.50), ("2025Q3", 1.90), ("2025Q4", 2.50),
+    ("2026Q1", 5.80), ("2026Q2", 8.00),
+]
+_RSI_CODE_PARTIAL = "2026Q2"      # the hatched bar: a quarter still running
+
+
+def _rsi_code_mid(q):
+    """Midpoint datetime of a '2026Q2' quarter label."""
+    y, k = int(q[:4]), int(q[-1])
+    start = datetime(y, 3 * k - 2, 1)
+    end = datetime(y + (k == 4), 3 * k % 12 + 1, 1)
+    return start + (end - start) / 2
+
+
+def _rsi_code_hover(r):
+    """One point's hover: the quarter, its multiple and why it draws as it does."""
+    if r['partial']:
+        tail = "<br>partial quarter — the days observed so far"
+    elif not r['fitted']:
+        tail = "<br>pre-2025 baseline — charted, not fitted"
+    else:
+        tail = ""
+    return f"{r['q'][:4]} {r['q'][4:]}<br>{r['mult']:g}x pre-2025 average" + tail
+
+
+@st.cache_data
+def load_rsi_code():
+    rows = [{'q': q, 'date': _rsi_code_mid(q), 'mult': v,
+             'partial': q == _RSI_CODE_PARTIAL,
+             'fitted': _rsi_code_mid(q) >= _RSI_CODE_FIT_FROM}
+            for q, v in _RSI_CODE_RAW]
+    rows.sort(key=lambda r: r['date'])
+    return rows
+
+
 @st.cache_data
 def load_rsi_data():
     models = [{
@@ -5226,6 +5307,31 @@ def _rsi_dir_dt_ci(frontier, fit_dt):
         _logit(np.array([r['better'] for r in frontier]) / 100), fit_dt)
 
 
+def _rsi_code_fit(rows):
+    """OLS on log(multiple) over the fitted bars. (base_date, icpt, slope).
+
+    An output multiple has no ceiling, so it compounds the way the staff
+    survey does rather than saturating like a percentage. Only the bars from
+    `_RSI_CODE_FIT_FROM` are fitted — the earlier ones are the baseline the
+    multiple is taken against.
+    """
+    fr = [r for r in rows if r['fitted']]
+    base = fr[0]['date']
+    days = np.array([(r['date'] - base).days for r in fr], dtype=float)
+    logs = np.log(np.array([r['mult'] for r in fr]))
+    if len(fr) < 2:
+        return base, float(logs[0]), 0.0
+    icpt, slope = fit_line(days, logs)
+    return base, icpt, slope
+
+
+def _rsi_code_dt_ci(rows, fit_dt):
+    """Default 80% CI on the doubling time, in days."""
+    fr = [r for r in rows if r['fitted']]
+    return _dt_ci_t_widened([(r['date'] - fr[0]['date']).days for r in fr],
+                            np.log([r['mult'] for r in fr]), fit_dt)
+
+
 def render_rsi():
     if st.session_state.pop("_reset_rsi", False):
         for k in _RSI_RESET_KEYS:
@@ -5415,6 +5521,7 @@ def render_rsi():
         "scores read off Figure 3.4.3.A.")
 
     _render_rsi_survey()
+    _render_rsi_code()
     _render_rsi_direction(rsi_end_year)
 
     st.markdown("---")
@@ -5485,10 +5592,11 @@ def _render_rsi_survey():
             hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: ~{y:.1f}x"
                        for d, y in zip(pdates, pct[50])],
             hoverinfo='text'))
-        x_end, y_top = pdates[-1], max(float(pct[95][-1]), 10.0)
+        x_end = pdates[-1]
+        y_top = max(float(pct[95][-1]), _PC_RSI_SURVEY_TARGET_X * 1.3)
         _samples_at = lambda e: np.exp(start_log + e * proj_slope)
     else:
-        x_end, y_top = cur['date'], 10.0
+        x_end, y_top = cur['date'], _PC_RSI_SURVEY_TARGET_X * 1.3
         _samples_at = None
 
     for r in rows:
@@ -5512,6 +5620,16 @@ def _render_rsi_survey():
                       f"~{r['uplift']:g}x output vs no AI<br>{r['note']}",
             hoverinfo='text', showlegend=False))
 
+    fig.add_hline(y=_PC_RSI_SURVEY_TARGET_X,
+                  line=dict(color='#e74c3c', width=1.5, dash='dash'))
+    # By hand, not `annotation_text`: on a log axis plotly reads an
+    # annotation's y as the exponent and parks the label off the chart.
+    fig.add_annotation(
+        xref='x domain', x=0.01, y=np.log10(_PC_RSI_SURVEY_TARGET_X),
+        yanchor='bottom', xanchor='left', showarrow=False,
+        text=f"{_PC_RSI_SURVEY_TARGET_X:.0f}x — the milestone bar, about a "
+             "doubling and a half past the last round",
+        font=dict(size=11, color='#e74c3c'))
     _add_today_vline(fig)
     fig.update_layout(
         height=480, margin=dict(l=50, r=60, t=40, b=40),
@@ -5522,7 +5640,10 @@ def _render_rsi_survey():
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         yaxis=dict(title="Self-reported output vs. no AI assistance",
-                   type='log', range=[0, np.log10(y_top * 1.3)], ticksuffix='x',
+                   type='log', range=[0, np.log10(y_top * 1.3)],
+                   # Decades only, as on the merged-code chart: the default
+                   # log axis labels every minor tick and buries them.
+                   dtick=1, ticksuffix='x',
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         hovermode='closest',
@@ -5555,6 +5676,178 @@ def _render_rsi_survey():
                                               "further it leaves the chart, which "
                                               "is a fact about the fit rather "
                                               "than about the future."))
+
+
+def _render_rsi_code():
+    """Anthropic's own merged-code volume per engineer.
+
+    The counted counterpart to the self-reported survey above, fitted the same
+    way — OLS on log(multiple) — over the quarters from 2025 on.
+    """
+    st.subheader("Code merged per Anthropic engineer")
+    _fn_line(
+        "The survey asks staff how much faster they are; this counts what "
+        "they merged. Lines of code per active contributor each quarter, "
+        "against the pre-2025 average.",
+        ("Lines of code per active contributor",
+         "Per-PR line counts capped at the 99th percentile; an active "
+         "contributor is a distinct author in the trailing twelve months. "
+         "The models driving the recent quarters include ones Anthropic had "
+         "internal access to before release, which the figure annotates."))
+
+    rows = load_rsi_code()
+    base, icpt, slope = _rsi_code_fit(rows)
+    cur = rows[-1]
+
+    fig = go.Figure()
+
+    if slope > 0:
+        dt = np.log(2) / slope
+        n = N_SAMPLES
+        proj_slope = np.log(2) / np.maximum(
+            _lognormal_from_ci(*_rsi_code_dt_ci(rows, dt), n=n), 1.0)
+        fitted = icpt + slope * (cur['date'] - base).days
+        start_log = np.random.normal(
+            fitted, np.log(_RSI_CODE_POS_FACTOR) / 1.282, n)
+
+        pdays = np.arange(0, _RSI_CODE_HORIZON_DAYS + 1, dtype=float)
+        pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
+        traj = np.exp(start_log[:, None] + pdays[None, :] * proj_slope[:, None])
+        pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
+
+        for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
+                                     (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
+                                     (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+            fig.add_trace(go.Scatter(
+                x=pdates + pdates[::-1],
+                y=list(pct[hi]) + list(pct[lo][::-1]),
+                fill='toself', fillcolor=color, line=dict(width=0),
+                name=label, hoverinfo='skip', showlegend=True))
+
+        hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
+        hdates = [base + timedelta(days=int(d)) for d in hdays]
+        hy = np.exp(icpt + slope * hdays)
+        fig.add_trace(go.Scatter(
+            x=hdates, y=hy.tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5),
+            name=f"Fitted trend (2x: {dt:.0f}d)",
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}x"
+                       for d, y in zip(hdates, hy)],
+            hoverinfo='text'))
+        fig.add_trace(go.Scatter(
+            x=pdates, y=pct[50].tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5, dash='dash'),
+            name='Median projection',
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}x"
+                       for d, y in zip(pdates, pct[50])],
+            hoverinfo='text'))
+        x_end = pdates[-1]
+        y_top = max(float(pct[95][-1]), _RSI_CODE_TARGET * 1.3)
+        _samples_at = lambda e: np.exp(start_log + e * proj_slope)
+    else:
+        x_end, y_top, _samples_at = cur['date'], _RSI_CODE_TARGET * 1.3, None
+
+    # The quarters themselves: a light connector so 21 points read as a
+    # series, then markers — hollow grey for the unfitted baseline bars,
+    # hollow blue for the partial quarter, as the survey draws its estimate.
+    fig.add_trace(go.Scatter(
+        x=[r['date'] for r in rows], y=[r['mult'] for r in rows],
+        mode='lines', line=dict(color='rgba(79,141,253,0.30)', width=1.5),
+        hoverinfo='skip', showlegend=False))
+    for grp, marker in [
+            ([r for r in rows if not r['fitted']],
+             dict(color='#aaaaaa', size=8, symbol='circle-open',
+                  line=dict(color='#777777', width=2))),
+            ([r for r in rows if r['fitted'] and not r['partial']],
+             dict(color='#4F8DFD', size=11,
+                  line=dict(color='white', width=2))),
+            ([r for r in rows if r['partial']],
+             dict(color='white', size=11,
+                  line=dict(color='#4F8DFD', width=2)))]:
+        if not grp:
+            continue
+        fig.add_trace(go.Scatter(
+            x=[r['date'] for r in grp], y=[r['mult'] for r in grp],
+            mode='markers', marker=marker,
+            hovertext=[_rsi_code_hover(r) for r in grp],
+            hoverinfo='text', showlegend=False))
+
+    fig.add_hline(y=_RSI_CODE_TARGET,
+                  line=dict(color='#e74c3c', width=1.5, dash='dash'))
+    # The label is added by hand rather than through `annotation_text`: on a
+    # log axis plotly reads an annotation's y as the exponent, which parks
+    # `annotation_text` at 10^20 and off the chart.
+    fig.add_annotation(
+        xref='x domain', x=0.01, y=np.log10(_RSI_CODE_TARGET),
+        yanchor='bottom', xanchor='left', showarrow=False,
+        text=f"{_RSI_CODE_TARGET:.0f}x — one engineer merging what "
+             f"{_RSI_CODE_TARGET:.0f} did before 2025",
+        font=dict(size=11, color='#e74c3c'))
+    _add_today_vline(fig)
+
+    fig.update_layout(
+        height=480, margin=dict(l=50, r=60, t=50, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(title="Quarter",
+                   range=[_RSI_CODE_CHART_FROM,
+                          max(x_end, cur['date']) + timedelta(days=30)],
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        yaxis=dict(title="Lines merged per active contributor "
+                         "(× pre-2025 average)",
+                   type='log', range=[np.log10(0.5), np.log10(y_top * 1.3)],
+                   # Decades only: the default log axis labels every minor
+                   # tick, and three decades of them bury the four that matter.
+                   dtick=1, ticksuffix='x',
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        hovermode='closest',
+        # Top left, above the target label: the series climbs left to right,
+        # so the fan owns the bottom right corner too by the end.
+        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
+                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+        plot_bgcolor='white', paper_bgcolor='white')
+    st.plotly_chart(fig, width="stretch")
+
+    if _samples_at is not None:
+        st.markdown(f"##### When does it reach {_RSI_CODE_TARGET:.0f}x?")
+        days_to = np.maximum(
+            (np.log(_RSI_CODE_TARGET) - start_log) / proj_slope, 0)
+        _p10, _p50, _p90 = np.percentile(days_to, [10, 50, 90])
+        _d = [cur['date'] + timedelta(days=float(min(x, 365 * 40)))
+              for x in (_p10, _p50, _p90)]
+        _e1, _e2 = st.columns(2)
+        with _e1:
+            st.metric(f"Median crossing ({_RSI_CODE_TARGET:.0f}x)",
+                      _d[1].strftime('%b %Y'))
+        with _e2:
+            st.metric("80% CI",
+                      f"{_d[0].strftime('%b %Y')} – {_d[2].strftime('%b %Y')}")
+
+        _rsi_proj_row(_rsi_eoy_targets(cur['q'], cur['date']),
+                      cur['date'], cur['mult'], _samples_at, _rsi_fmt_x)
+
+    _fn_caption(
+        "Output volume, not research progress; the last quarter is partial "
+        "and the fit uses the quarters from 2025 on. Source: "
+        f"[Anthropic, *When AI builds itself*]({_RSI_CODE_SOURCE_URL}); bar "
+        "values read off the figure.",
+        ("Output volume", "Lines merged per contributor. A coding model "
+                          "writes more lines for the same task, so some of "
+                          "the multiple is verbosity rather than work done "
+                          "— it measures how much code ships, not how "
+                          "much research it settles."),
+        ("the last quarter is partial", "The figure hatches it: it averages "
+                                        "only the days observed when the "
+                                        "post went up, and it is plotted at "
+                                        "its quarter's midpoint like every "
+                                        "other bar, which dates it later "
+                                        "than the days it covers."),
+        ("the quarters from 2025 on", "The earlier bars are the baseline the "
+                                      "multiple is taken against — they "
+                                      "average to 1 by construction, so there "
+                                      "is no trend in them to fit. They are "
+                                      "drawn hollow."))
 
 
 def _rsi_dir_label_positions(rows, gap_days=90, rise_pts=6.0):
@@ -12378,7 +12671,8 @@ _PC_RSI_WEIGHTS = {
     "eci_200": 10.0,
     "rli_90": 15.0,
     "cobench_85": 10.0,
-    "staff_10x": 15.0,
+    "staff_10x": 8.0,
+    "code_30x": 7.0,
     "nextstep_90": 10.0,
     "rev_1t": 10.0,
 }
@@ -12841,6 +13135,18 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                  f"same statistic on the same sample. "
                  f"{_PC_RSI_SURVEY_TARGET_X:.0f}x is about a doubling and a "
                  "half past the most recent round's ~4x."))
+    _cap.append((f"code_{_RSI_CODE_TARGET:.0f}x",
+                 f"Code per person reaches {_RSI_CODE_TARGET:.0f}x",
+                 _pc_rsi_code_eta(load_rsi_code(), samples=True), False,
+                 "The merged-code fan above, at its defaults: OLS on "
+                 "log(multiple) over the quarters from 2025 on, doubling "
+                 "time over that fit's t-widened rate CI, position over its "
+                 "own residual scatter. "
+                 f"{_RSI_CODE_TARGET:.0f}x is one contributor merging what "
+                 f"{_RSI_CODE_TARGET:.0f} did before 2025 \u2014 lines "
+                 "merged, which a coding "
+                 "model inflates directly, so it is output volume rather "
+                 "than research progress."))
     _cap.append((f"nextstep_{_RSI_DIR_TARGET:.0f}",
                  f"Next-step judgment reaches {_RSI_DIR_TARGET:.0f}%",
                  _pc_nextstep_eta(rsi_dir_frontier_all, samples=True), True,
@@ -13111,6 +13417,32 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
     start = np.random.normal(fitted, np.log(_RSI_SURVEY_POS_FACTOR) / 1.282, n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
     return _pc_eta_out(rows[-1]['date'], days_to, samples)
+
+
+# The merged-code companion: when does output per Anthropic engineer reach
+# `_RSI_CODE_TARGET`x the pre-2025 baseline. Reuses the section's own fit and
+# rate CI, so the card and the fan cannot date it differently.
+
+
+def _pc_rsi_code_eta(rows, target_x=_RSI_CODE_TARGET, n=None, samples=False):
+    """(early, median, late) dates for merged code per person to reach `target_x`.
+
+    The section's fan at its defaults — OLS on log(multiple) over the quarters
+    from 2025 on, doubling time lognormal over `_rsi_code_dt_ci()`, position
+    lognormal over the fitted multiple divided and multiplied by
+    `_RSI_CODE_POS_FACTOR`. Returns None if the fitted slope is flat.
+    """
+    n = n or N_SAMPLES
+    base, icpt, slope = _rsi_code_fit(rows)
+    if slope <= 0:
+        return None
+    proj_slope = np.log(2) / np.maximum(
+        _lognormal_from_ci(*_rsi_code_dt_ci(rows, np.log(2) / slope), n=n), 1.0)
+    cur = rows[-1]
+    fitted = icpt + slope * (cur['date'] - base).days
+    start = np.random.normal(fitted, np.log(_RSI_CODE_POS_FACTOR) / 1.282, n)
+    days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
+    return _pc_eta_out(cur['date'], days_to, samples)
 
 
 # The research-direction companion: when does the model's next step beat the

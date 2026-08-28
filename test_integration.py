@@ -989,7 +989,7 @@ class TestRsiTab:
         assert "When AI builds itself" in caps
 
     def test_every_chart_marks_today(self):
-        """All three RSI charts carry the dashed "Today" divider the other
+        """All four RSI charts carry the dashed "Today" divider the other
         tabs' projection charts have — without it the fan's start reads as
         the last data point."""
         import json
@@ -999,7 +999,7 @@ class TestRsiTab:
         charts = [json.loads(el.proto.spec)["layout"]
                   for el in at.get("plotly_chart")]
         series = [L for L in charts if (L.get("xaxis") or {}).get("title")]
-        assert len(series) == 3 and len(charts) == 4
+        assert len(series) == 4 and len(charts) == 5
         for L in series:
             notes = [a for a in L.get("annotations", [])
                      if a.get("text") == "Today"]
@@ -1035,7 +1035,40 @@ class TestRsiTab:
         assert len(row) == 1
         assert row.iloc[0]["Weight"].startswith("10%")
         # Every milestone gets a row, and the weights editor an input each.
-        assert len(t) == 9
+        assert len(t) == 10
+
+    def test_merged_code_section_renders(self):
+        """The merged-code series gets its own section, its own 30x ETA and
+        its own projected-values row, anchored on the last quarter."""
+        at = self._rsi_app()
+        heads = [str(h.value) for h in at.subheader]
+        assert "Code merged per Anthropic engineer" in heads
+        labels = [str(m.label) for m in at.metric]
+        assert labels.count("Median crossing (30x)") == 1
+        assert "2026Q2 (May 2026)" in labels
+        assert "Code per person reaches 30x" in labels
+
+    def test_merged_code_card_matches_its_own_panel(self):
+        """The card reuses the section's fit, so the two cannot date it
+        differently. Conditioning off first — the card conditions on "not
+        crossed yet" and the panel does not. Compared with a tolerance: both
+        are 400-sample medians of a rate CI spanning 4x."""
+        at = self._rsi_app()
+        at.checkbox(key="rsi_notyet").set_value(False).run()
+        labels = {str(m.label): m.value for m in at.metric}
+        here = datetime.strptime(labels["Median crossing (30x)"], "%b %Y")
+        there = datetime.strptime(labels["Code per person reaches 30x"],
+                                  "%b %Y")
+        assert abs((here - there).days) <= 120
+
+    def test_merged_code_row_in_the_blend(self):
+        at = self._rsi_app()
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns)
+        row = t[t["Milestone"] == "Code per person reaches 30x"]
+        assert len(row) == 1
+        assert row.iloc[0]["Weight"].startswith("7%")
+        staff = t[t["Milestone"].str.contains("acceleration")]
+        assert staff.iloc[0]["Weight"].startswith("8%")
 
     def test_every_milestone_card_carries_its_caveats_on_hover(self):
         """Caveats ride the card they belong to rather than piling into one
@@ -1047,7 +1080,7 @@ class TestRsiTab:
         helps = {str(m.label): (m.proto.help or "") for m in cards}
         milestones = {k: v for k, v in helps.items()
                       if "reaches" in k or "revenue" in k or "acceleration" in k}
-        assert len(milestones) == 9
+        assert len(milestones) == 10
         for lab, h in milestones.items():
             assert "defaults" in h, lab
             assert "clock" in h or "releases" in h, lab

@@ -3354,6 +3354,94 @@ class TestRsiDirection:
             vp._PC_RSI_WEIGHTS[slug]
 
 
+class TestRsiCode:
+    """Merged code per Anthropic contributor, the RSI tab's fourth series."""
+
+    def test_loader_dates_each_quarter_at_its_midpoint(self):
+        rows = vp.load_rsi_code()
+        assert len(rows) == len(vp._RSI_CODE_RAW)
+        assert [r['date'] for r in rows] == sorted(r['date'] for r in rows)
+        assert vp._rsi_code_mid("2026Q2") == datetime(2026, 5, 16, 12)
+        assert vp._rsi_code_mid("2025Q4") == datetime(2025, 11, 16)
+        assert [r['q'] for r in rows if r['partial']] == [vp._RSI_CODE_PARTIAL]
+        assert rows[-1]['partial'] and rows[-1]['mult'] == 8.0
+        for r in rows:
+            assert r['fitted'] == (r['date'] >= vp._RSI_CODE_FIT_FROM)
+
+    def test_pre_2025_bars_average_to_the_baseline_they_define(self):
+        """The calibration guard on the digitization: the unlabelled bars are
+        the average the whole series is a multiple of, so they must come back
+        out at ~1 — and they are charted, not fitted, for that reason."""
+        pre = [r['mult'] for r in vp.load_rsi_code() if not r['fitted']]
+        assert len(pre) == 15
+        assert abs(np.mean(pre) - 1.0) < 0.05
+        assert max(pre) < 1.5
+
+    def test_chart_opens_in_2024_without_dropping_the_baseline(self):
+        """The flat quarters before 2024 only stretch the axis, so the chart
+        opens there — but every bar stays in the data: their mean is the
+        calibration guard, and no fitted bar may fall off the left edge."""
+        rows = vp.load_rsi_code()
+        assert vp._RSI_CODE_CHART_FROM == datetime(2024, 1, 1)
+        assert any(r['date'] < vp._RSI_CODE_CHART_FROM for r in rows)
+        assert all(r['date'] >= vp._RSI_CODE_CHART_FROM
+                   for r in rows if r['fitted'])
+
+    def test_fit_runs_on_the_2025_bars_only(self):
+        """A flat baseline in the fit would halve the slope, and the baseline
+        carries no trend by construction."""
+        rows = vp.load_rsi_code()
+        fitted = [r for r in rows if r['fitted']]
+        base, icpt, slope = vp._rsi_code_fit(rows)
+        assert base == fitted[0]['date'] and slope > 0
+        days = np.array([(r['date'] - base).days for r in fitted], dtype=float)
+        want = vp.fit_line(days, np.log([r['mult'] for r in fitted]))
+        assert (icpt, slope) == pytest.approx(tuple(want))
+        all_days = np.array([(r['date'] - rows[0]['date']).days for r in rows],
+                            dtype=float)
+        pooled = vp.fit_line(all_days, np.log([r['mult'] for r in rows]))[1]
+        assert pooled < slope / 2
+
+    def test_rate_ci_only_widens_the_convention(self):
+        rows = vp.load_rsi_code()
+        dt = np.log(2) / vp._rsi_code_fit(rows)[2]
+        lo, hi = vp._rsi_code_dt_ci(rows, dt)
+        assert lo <= round(dt / 2) and hi >= round(dt * 2)
+        fitted = [r for r in rows if r['fitted']]
+        assert (lo, hi) == vp._dt_ci_t_widened(
+            [(r['date'] - fitted[0]['date']).days for r in fitted],
+            np.log([r['mult'] for r in fitted]), dt)
+
+    def test_eta_reproduces_the_section_defaults(self):
+        """The milestone card is the section's own fit: same anchor, and a
+        median around the deterministic crossing of the fitted line."""
+        rows = vp.load_rsi_code()
+        anchor, days = vp._pc_rsi_code_eta(rows, n=4000, samples=True)
+        assert anchor == rows[-1]['date']
+        base, icpt, slope = vp._rsi_code_fit(rows)
+        fitted = icpt + slope * (anchor - base).days
+        deterministic = (np.log(vp._RSI_CODE_TARGET) - fitted) / slope
+        assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
+
+    def test_milestone_card_is_weighted_in_the_blend(self):
+        """The user-set mix: staff acceleration 8%, merged code 7%."""
+        slug = f"code_{vp._RSI_CODE_TARGET:.0f}x"
+        assert slug == "code_30x"
+        assert vp._PC_RSI_WEIGHTS[slug] == 7.0
+        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 8.0
+        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
+        assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
+        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 7.0
+
+    def test_the_milestone_is_on_the_internal_clock(self):
+        """Driven by models Anthropic uses internally before release, like
+        CoBench and the staff survey — so it must not be pulled back a report
+        lag as the release-dated cards are."""
+        days = np.zeros(10)
+        for label in ("Training run finished", vp._PC_TIMING_RELEASE):
+            assert np.array_equal(vp._pc_report_lag(days, False, label), days)
+
+
 class TestUkCyberTlo:
     """Cyber range "The Last Ones" -- AISI's long-horizon cyber measure.
 

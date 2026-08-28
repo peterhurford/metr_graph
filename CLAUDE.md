@@ -64,7 +64,7 @@ has no main-column headings, so it has no section to link to.
 | METR Horizon | `render_metr()` | `benchmark_results_1_1.yaml` → `load_frontier()` | log₂(minutes) |
 | Epoch ECI | `render_eci()` | `epoch_capabilities_index.csv` → `load_eci_frontier()` | linear score |
 | Remote Labor Index | `render_rli()` | `_RLI_RAW` → `load_rli_data()` | logit-transformed score |
-| RSI | `render_rsi()` | `_RSI_RAW` → `load_rsi_data()`; `_RSI_SURVEY`; `_RSI_DIR_RAW` → `load_rsi_direction()` | CoBench score % (logit-projected), staff speedup ×, next-step win rate % |
+| RSI | `render_rsi()` | `_RSI_RAW` → `load_rsi_data()`; `_RSI_SURVEY`; `_RSI_CODE_RAW` → `load_rsi_code()`; `_RSI_DIR_RAW` → `load_rsi_direction()` | CoBench score % (logit-projected), staff speedup ×, merged code per contributor ×, next-step win rate % |
 | UK Cyber | `render_ukcyber()` | `aisi_cyber_narrow.csv` → `load_ukcyber()`; `aisi_cyber_tlo.csv` → `load_ukcyber_tlo()` | success rate % + open-weight lag in months; plus a TLO cyber-range cross-check in steps (`_render_ukcyber_tlo()`) and a callout for models only the range has measured (`_render_ukcyber_newest_open()`) |
 | Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` | ARR in billions |
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
@@ -87,6 +87,7 @@ recipe, including the AISI cyber data deliberately *not* ingested.
 | `_RLI_RAW` (hardcoded) | Scale Labs RLI leaderboard (`labs.scale.com/leaderboard/rli`) / `remotelabor.ai` | Hand-edit rows |
 | `_RSI_RAW` (hardcoded) | Anthropic, Redacted Risk Report (Aug 2026), §3.4.3 Fig 3.4.3.A (`_RSI_SOURCE_URL`) | **Not downloadable** — scores read off the figure, Anthropic prints no table. Hand-edit rows |
 | `_RSI_DIR_RAW` (hardcoded) | Anthropic, [*When AI builds itself*](https://www.anthropic.com/institute/recursive-self-improvement) (`_RSI_DIR_SOURCE_URL`) | **Not downloadable** — the figure prints its own bar values, so the rows are read off the labels, not pixel-digitized. Dates are the models' Epoch-catalogued release dates (`test_dates_are_the_published_release_dates`), not the figure's row order, which is not chronological. Hand-edit rows |
+| `_RSI_CODE_RAW` (hardcoded) | Same post's *Code contributed per person, by quarter* figure (`_RSI_CODE_SOURCE_URL`) | **Not downloadable** — the figure labels its bars only from 2025Q1 on; the earlier ones are read off the axis. Their mean must come back at ~1 (`test_pre_2025_bars_average_to_the_baseline_they_define`) and the post states the 2026Q2 figure in prose, which pins the other end. Hand-edit rows |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | Press reports | Hand-edit `(date, ARR_in_billions)` tuples |
 | `aisi_cyber_tlo.csv` | UK AISI Figure 2 + [Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) | **Not downloadable** — 9 rows digitized from `fig2-ranges.png`, one value quoted from prose. Calibration and validation checks are in the file's `#` header, guarded by `TestUkCyberTlo`. Dates are **published release dates**; the figure's x-axis is tokens |
 | `aisi_cyber_narrow.csv` | UK AISI [open-weight cyber gap post](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) | **Not downloadable** — AISI publishes no numbers; values digitized from `fig1-narrow.png` by pixel analysis. Refreshing is a *figure-unchanged check*: re-fetch the PNG, confirm gridline rows and marker colours still match, re-digitize only if the figure changed. `test_digitized_dates_match_known_releases` and `test_optimistic_bracket_reproduces_aisi_published_lags` are the calibration guards. Hand-editing a row is fine if AISI states a number in prose |
@@ -299,7 +300,7 @@ keys, not caveats.
 Three mechanisms, in order of preference:
 
 1. **`st.metric(..., help=…)`** where a metric exists. Native tooltip, no raw
-   HTML. The *Capabilities Milestones* row is the worked example: nine cards,
+   HTML. The *Capabilities Milestones* row is the worked example: ten cards,
    each with its own note (`_notes` by slug, plus `_pc_clock_note()` for the
    release-vs-internal split that used to be a sentence naming every milestone on
    both sides), and a two-line caption under them. Widget `help=` does the same
@@ -337,7 +338,7 @@ scan that counts it swallowed 5,500 lines once. Tokenize, or edit by hand.
 ### RSI tab
 
 `render_rsi()` is titled *RSI* and runs CoBench, then the staff survey, then
-research direction, then
+merged code per person, then research direction, then
 *Capabilities Milestones* + *RSI projection (tentative)* (`_pc_render_milestones()`,
 moved here from the Pacing tab). The CoBench section plots that eval — Anthropic's
 internal AI R&D benchmark — against release
@@ -399,8 +400,40 @@ tab's *Project through* year: at the fitted doubling time the median runs severa
 orders of magnitude past the data by end-decade, which on a log axis squashes the
 three actual points into the bottom decile. The projected-values row still quotes
 those far columns, via `_rsi_fmt_x()` so a seven-figure upper tail reads compactly.
+The chart draws `_PC_RSI_SURVEY_TARGET_X` as its bar — the same one the milestone
+card dates — but the section itself doesn't date it.
 
-The tab's third section (`_render_rsi_direction()`) charts Anthropic's Claude
+The tab's third section (`_render_rsi_code()`) is the counted counterpart to
+that survey: lines merged per active contributor per quarter, as a multiple of
+the pre-2025 average, from `_RSI_CODE_RAW` via `load_rsi_code()`, fitted on
+log(multiple) like the survey and dated against `_RSI_CODE_TARGET` = 30x. Four
+things are load-bearing.
+
+1. **Only the bars from `_RSI_CODE_FIT_FROM` are fitted.** The earlier ones are
+   the baseline the multiple is taken against — they average to 1 by
+   construction, so there is no trend in them to fit, and pooling them halves
+   the slope (`test_fit_runs_on_the_2025_bars_only`). The ones the chart shows
+   are drawn hollow; the x-axis opens at `_RSI_CODE_CHART_FROM` rather than at
+   the first bar, since flat quarters only stretch the axis. All of them stay
+   in the data either way — their mean is the calibration guard on the
+   digitization.
+2. **The hatched final bar is fitted, at its quarter's midpoint like the rest.**
+   It averages only the days observed when the post went up, so a midpoint date
+   is later than the days it covers — which reads the ramp slow, not hot.
+3. **The position CI is the fit's own residual scatter** (`_RSI_CODE_POS_FACTOR`),
+   not the survey's one-significant-figure allowance: this series is counted,
+   not self-reported. The rate CI is `_dt_ci_t_widened` like the other two.
+4. **The target label is added by hand**, here and on the survey chart's
+   `_PC_RSI_SURVEY_TARGET_X` bar. On a log axis plotly reads an annotation's y
+   as the exponent, so `add_hline(annotation_text=…)` parks the label at 10^30
+   and off the chart. This chart's axis is also `dtick=1`: three decades of
+   minor tick labels bury the four that matter.
+
+Lines merged is an output proxy a coding model inflates directly, so the caption
+and the milestone card's hover both have to keep saying it measures how much code
+ships, not how much research it settles. Guarded by `TestRsiCode`.
+
+The tab's fourth section (`_render_rsi_direction()`) charts Anthropic's Claude
 Code detour study from `_RSI_DIR_RAW` via `load_rsi_direction()`: `_RSI_DIR_N`
 turns where one of its own researchers went the wrong way, replayed to each
 model, with a judge that has seen the finished session picking the better next
@@ -712,7 +745,7 @@ read.
 
 *Capabilities Milestones* and the RSI blend live at the **bottom of the RSI
 tab** (`_pc_render_milestones()`), not here — they are still named `_pc_*` with
-the ETA helpers they call, and the machinery is unchanged. Nine cards, driven by
+the ETA helpers they call, and the machinery is unchanged. Ten cards, driven by
 the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_eta()`
 for the METR frontier reaching `_PC_METR_TARGET_HRS` — about one work-month — at each
 of `_PC_METR_LEVELS` (at the month-scale bar p50's earlier firing is its own card and
@@ -731,8 +764,9 @@ no weight matches, `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET
 reaching `_RSI_SUBSTITUTION_BAR` (Anthropic's own full-substitution bar, which the
 RSI tab dates too), `_pc_rsi_survey_eta()` for self-reported staff speedup reaching
 `_PC_RSI_SURVEY_TARGET_X` (about a doubling and a half past the most recent round),
-`_pc_nextstep_eta()` for the detour study's frontier reaching `_RSI_DIR_TARGET`
-(that study's own practical ceiling — see the RSI tab section),
+`_pc_rsi_code_eta()` for merged code per Anthropic contributor reaching
+`_RSI_CODE_TARGET`, `_pc_nextstep_eta()` for the detour study's frontier reaching
+`_RSI_DIR_TARGET` (that study's own practical ceiling — see the RSI tab section),
 and `_pc_revenue_eta()` for the **leading** company's ARR reaching `_PC_REV_TARGET_B`
 (the Revenue tab's own top milestone) — the one bar here that isn't a benchmark, but still dated off
 released models, since ARR is what shipped models earn. They render in **two rows** — on one line every label squeezes to two words. Each reproduces
@@ -745,7 +779,9 @@ logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
 survey: OLS on log(multiple) over every round the tab fits (the carried-over
 `estimated` point included, as on the tab), doubling time over
 `_rsi_survey_dt_ci()`'s t-widened interval, position over the
-fitted multiple ÷ and × `_RSI_SURVEY_POS_FACTOR`; next-step: single OLS in
+fitted multiple ÷ and × `_RSI_SURVEY_POS_FACTOR`; merged code: the same,
+over the quarters from 2025 on, with `_rsi_code_dt_ci()` and
+`_RSI_CODE_POS_FACTOR`; next-step: single OLS in
 logit space, odds-doubling over `_rsi_dir_dt_ci()`, position
 ± `_RSI_DIR_POS_CI` points (the study's own binomial SE at n=`_RSI_DIR_N`);
 revenue: OLS on
@@ -762,12 +798,12 @@ last dates, since they end on different days. `test_metr_eta_reproduces_the_metr
 `test_pacing_quotes_the_same_milestone` compares the two CoBench dates with a
 tolerance, since both are Monte Carlo medians off an unseeded RNG.
 
-Seven of the nine are dated off *released* models (METR, ECI, RLI and the detour
+Seven of the ten are dated off *released* models (METR, ECI, RLI and the detour
 study — publicly benchmarked or run on shipped models — and revenue, since ARR is
-earned by shipped models); CoBench and the
-staff survey are internal evaluations Anthropic reports for models it has not
-shipped. So `_pc_report_lag()` pulls the seven back
-by `_PC_REPORT_LAG_DAYS` (sampled over the range so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other two
+earned by shipped models); CoBench, the staff survey and merged code are internal
+measurements, the last two driven by models Anthropic has internal access to
+before release. So `_pc_report_lag()` pulls the seven back
+by `_PC_REPORT_LAG_DAYS` (sampled over the range so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other three
 are already on that clock and must not be shifted twice.
 
 A checkbox (`rsi_notyet`, default on, in the blend's *Set your own weights*
@@ -802,7 +838,7 @@ candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets. The result
 is `_pc_rsi_blend()`, the **mixture of their date distributions, not an average
 of their medians**, drawn as a CDF (`_pc_rsi_dist_fig()`) between the
 cards and the weights table — cumulative rather than a density because a mixture
-of nine components is lumpy where they sit and the bin width becomes a
+of ten components is lumpy where they sit and the bin width becomes a
 presentation choice, while "X% by date D" is the question the section answers.
 Sampled daily with an x-spike so the hover tracks continuously; the axis runs
 to the tab's *Project through* year end (`rsi_end_year`, threaded through as
