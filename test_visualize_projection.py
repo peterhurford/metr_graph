@@ -3263,6 +3263,97 @@ class TestRsi:
         assert anchor == rows[-1]['date']
 
 
+class TestRsiDirection:
+    """Anthropic's Claude Code detour study, the RSI tab's third series."""
+
+    def test_loader_sorts_and_flags_running_max(self):
+        rows = vp.load_rsi_direction()
+        assert [r['date'] for r in rows] == sorted(r['date'] for r in rows)
+        best = -float('inf')
+        for r in rows:
+            assert r['is_frontier'] == (r['better'] > best)
+            best = max(best, r['better'])
+        # The published figure is not date-ordered (it prints Sonnet 4.6 above
+        # Opus 4.6, which shipped twelve days earlier), so the dates decide the
+        # frontier: Opus 4.7 ships after Mythos Preview and scores under it.
+        assert [r['name'] for r in rows if r['is_frontier']] == [
+            "Claude Haiku 3", "Claude Sonnet 4", "Claude Sonnet 4.5",
+            "Claude Opus 4.5", "Claude Opus 4.6", "Claude Mythos Preview"]
+        assert not next(r for r in rows
+                        if r['name'] == "Claude Opus 4.7")['is_frontier']
+
+    def test_dates_are_the_published_release_dates(self):
+        """Every model the study scored is an Epoch-catalogued release, so the
+        dates are checkable — the calibration guard on the digitization. Only
+        Mythos Preview, which has no release record, is carried over."""
+        eci = {m['display_name'].split(' (')[0]: m['date']
+               for m in vp.load_eci_frontier(orgs=["Anthropic"],
+                                             full_window=True)}
+        checked = 0
+        for r in vp.load_rsi_direction():
+            if not r['date_known']:
+                assert r['name'] == "Claude Mythos Preview"
+                # Same unpublished date the CoBench series carries.
+                assert r['date'] == next(m['date'] for m in vp.load_rsi_data()
+                                         if m['name'] == r['name'])
+                continue
+            match = [d for name, d in eci.items() if name in r['name']
+                     or r['name'] in name]
+            if match:
+                assert r['date'] in match, r['name']
+                checked += 1
+        assert checked >= 4
+
+    def test_fit_is_logit_space_against_the_studys_own_ceiling(self):
+        """A bounded win rate, so the trend runs on the log-odds like CoBench's
+        — and the bar is the figure's own annotated practical ceiling, the only
+        threshold the source names."""
+        fr = vp.rsi_dir_frontier_all
+        base, icpt, slope = vp._rsi_dir_fit(fr)
+        assert slope > 0
+        assert vp._RSI_DIR_TARGET == 90.0
+        days = np.array([(r['date'] - base).days for r in fr], dtype=float)
+        want = vp.fit_line(days,
+                           vp._logit(np.array([r['better'] for r in fr]) / 100))
+        assert (icpt, slope) == pytest.approx(tuple(want))
+        # Every frontier point sits under the bar, so the crossing is ahead.
+        assert max(r['better'] for r in fr) < vp._RSI_DIR_TARGET
+
+    def test_rate_ci_only_widens_the_convention(self):
+        fr = vp.rsi_dir_frontier_all
+        _b, _i, slope = vp._rsi_dir_fit(fr)
+        dt = np.log(2) / slope
+        lo, hi = vp._rsi_dir_dt_ci(fr, round(dt))
+        assert lo <= round(dt / 2) and hi >= round(dt * 2)
+
+    def test_survey_ci_still_matches_the_shared_widener(self):
+        """`_rsi_survey_dt_ci` is a thin wrapper now; it must not have moved."""
+        rows = vp.load_rsi_survey()
+        days = [(r['date'] - rows[0]['date']).days for r in rows]
+        logs = np.log([r['uplift'] for r in rows])
+        dt = np.log(2) / vp.fit_line(np.array(days, dtype=float), logs)[1]
+        assert vp._rsi_survey_dt_ci(rows, dt) == vp._dt_ci_t_widened(days, logs, dt)
+
+    def test_eta_reproduces_the_section_defaults(self):
+        """The milestone card is the section's own fit, so the two cannot date
+        it differently: same anchor, and a median inside the section's fan."""
+        fr = vp.rsi_dir_frontier_all
+        anchor, days = vp._pc_nextstep_eta(fr, n=4000, samples=True)
+        assert anchor == fr[-1]['date']
+        base, icpt, slope = vp._rsi_dir_fit(fr)
+        fitted = icpt + slope * (anchor - base).days
+        deterministic = (vp._logit(vp._RSI_DIR_TARGET / 100) - fitted) / slope
+        assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
+
+    def test_milestone_card_is_weighted_in_the_blend(self):
+        slug = f"nextstep_{vp._RSI_DIR_TARGET:.0f}"
+        assert vp._PC_RSI_WEIGHTS[slug] > 0
+        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
+        assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
+        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == \
+            vp._PC_RSI_WEIGHTS[slug]
+
+
 class TestUkCyberTlo:
     """Cyber range "The Last Ones" -- AISI's long-horizon cyber measure.
 

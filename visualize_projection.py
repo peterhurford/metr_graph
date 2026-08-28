@@ -394,6 +394,17 @@ def _bt_color_for(r):
     return '#e74c3c'
 
 
+def _add_today_vline(fig):
+    """The dashed 'Today' divider every projection chart carries."""
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'),
+                  opacity=0.5)
+    fig.add_annotation(
+        x=today, y=1.0, yref='paper', text='Today', showarrow=False,
+        font=dict(size=10, color='gray'), yanchor='top')
+    return today
+
+
 def _add_backtest_traces(fig, backtest_results, proj_start_date, yconv=None):
     """Add cutoff line and actual trajectory line to a plotly figure."""
     _yc = yconv if yconv else (lambda x: x)
@@ -751,6 +762,70 @@ def load_rsi_survey():
     rows = [{**r, 'date': datetime.strptime(r['date'], '%Y-%m-%d')}
             for r in _RSI_SURVEY]
     rows.sort(key=lambda r: r['date'])
+    return rows
+
+
+# ── Research direction (Anthropic's Claude Code detour study) ────────────
+# The third substitution series: Anthropic took `_RSI_DIR_N` moments from real
+# January–March 2026 Claude Code research sessions where a researcher took a
+# detour that sent the session off-track, showed each model only the work
+# preceding the detour, and asked what it would do next. A separate Claude
+# with the whole session in view — including how it was eventually resolved —
+# judged whether the model's next step or the human's was better.
+#
+# Not apples-to-apples by construction: the turns were *selected* for having
+# room for improvement, so the rate is not "how often Claude out-researches a
+# human", it is how often it out-picks one at a turn already known to be a
+# wrong one.
+#
+# `tie` is the share the judge called neither better; it is carried for the
+# hover only. The series projected is `better`, the figure's own headline.
+
+_RSI_DIR_SOURCE_URL = "https://www.anthropic.com/institute/recursive-self-improvement"
+_RSI_DIR_N = 129                  # sampled detour turns
+
+# The bar, and the only one the source names: the figure's annotated
+# practical ceiling, which is what an *oracle* scores — a model shown the
+# complete session, resolution included, judged against the same researchers.
+# Reaching it means picking the better next step as often as something that
+# already knows how the session ended.
+_RSI_DIR_TARGET = 90.0
+
+# 80% CI on where the frontier stands today, in points. The study reports
+# whole percentages off n=129, whose binomial standard error at ~60% is ~4.3
+# points, so ±5 is the sampling noise on a single figure rather than a guess.
+_RSI_DIR_POS_CI = 5.0
+
+_RSI_DIR_RAW = [
+    {"name": "Claude Haiku 3",        "date": "2024-03-07", "better": 22.0, "tie": 10.0},
+    {"name": "Claude Sonnet 4",       "date": "2025-05-22", "better": 48.0, "tie": 11.0},
+    {"name": "Claude Sonnet 4.5",     "date": "2025-09-29", "better": 50.0, "tie": 11.0},
+    {"name": "Claude Haiku 4.5",      "date": "2025-10-15", "better": 45.0, "tie": 11.0},
+    {"name": "Claude Opus 4.5",       "date": "2025-11-24", "better": 51.0, "tie": 10.0},
+    {"name": "Claude Opus 4.6",       "date": "2026-02-05", "better": 55.0, "tie": 14.0},
+    {"name": "Claude Sonnet 4.6",     "date": "2026-02-17", "better": 45.0, "tie": 13.0},
+    # Same unpublished date the CoBench series carries for this model, hence
+    # `date_known` False. The figure prints Opus 4.7 above it, but that figure
+    # is not date-ordered either (it puts Sonnet 4.6 above Opus 4.6, which
+    # shipped twelve days earlier), so the dates stand and Opus 4.7 lands off
+    # the running max.
+    {"name": "Claude Mythos Preview", "date": "2026-04-07", "better": 64.0, "tie": 9.0,
+     "date_known": False},
+    {"name": "Claude Opus 4.7",       "date": "2026-04-16", "better": 59.0, "tie": 12.0},
+]
+
+
+@st.cache_data
+def load_rsi_direction():
+    rows = [{**r, 'date': datetime.strptime(r['date'], '%Y-%m-%d'),
+             'date_known': r.get('date_known', True)} for r in _RSI_DIR_RAW]
+    rows.sort(key=lambda r: r['date'])
+
+    max_score = -float('inf')
+    for r in rows:
+        r['is_frontier'] = r['better'] > max_score
+        if r['is_frontier']:
+            max_score = r['better']
     return rows
 
 
@@ -2166,6 +2241,8 @@ rli_frontier_names = [m['name'] for m in rli_frontier_all]
 
 rsi_all = load_rsi_data()
 rsi_frontier_all = [m for m in rsi_all if m['is_frontier']]
+rsi_dir_all = load_rsi_direction()
+rsi_dir_frontier_all = [r for r in rsi_dir_all if r['is_frontier']]
 
 dc_all = load_data_centers(_mtime=_dc_mtime())
 
@@ -2807,12 +2884,7 @@ def render_metr():
                 showarrow=False, xanchor='left', yanchor='middle',
                 font=dict(size=10, color=color))
 
-    # --- Today vline ---
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
-    fig.add_annotation(
-        x=today, y=1.0, yref='paper', text='Today', showarrow=False,
-        font=dict(size=10, color='gray'), yanchor='top')
+    today = _add_today_vline(fig)
 
     # --- Backtesting ---
     is_backtesting = proj_as_of_idx < len(frontier_all) - 1
@@ -3728,12 +3800,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             hoverinfo='skip',
         ))
 
-    # --- Today vline ---
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
-    fig.add_annotation(
-        x=today, y=1.0, yref='paper', text='Today', showarrow=False,
-        font=dict(size=10, color='gray'), yanchor='top')
+    today = _add_today_vline(fig)
 
     # --- Backtesting ---
     eci_is_backtesting = eci_proj_as_of_idx < len(tab_frontier_all) - 1
@@ -4730,12 +4797,7 @@ def render_rli():
                 font=dict(size=10, color=color))
 
 
-    # --- Today vline ---
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
-    fig.add_annotation(
-        x=today, y=1.0, yref='paper', text='Today', showarrow=False,
-        font=dict(size=10, color='gray'), yanchor='top')
+    today = _add_today_vline(fig)
 
     # --- Backtesting ---
     rli_is_backtesting = rli_proj_as_of_idx < len(rli_frontier_all) - 1
@@ -5114,23 +5176,54 @@ def _rsi_dt_ci(frontier, fit_dt):
     return float(round(max(5.0, lo))), float(round(hi))
 
 
-def _rsi_survey_dt_ci(rows, fit_dt):
-    """Default 80% CI on the survey's doubling time, in days.
+def _dt_ci_t_widened(days, ys, fit_dt):
+    """[DT/2, DT*2] widened — never narrowed — to the slope's 80% t-interval.
 
-    The [DT/2, DT*2] convention widened — never narrowed — to the slope's 80%
-    t-interval over every point the fit uses (the carried-over `estimated`
-    round included, like the fit itself). Tightens automatically as rounds
-    accumulate.
+    The convention every other tab uses, made honest about small samples: with
+    few points `_dt_t_interval` is wide and dominates, and it tightens back to
+    the convention as points accumulate.
     """
-    days = np.array([(r['date'] - rows[0]['date']).days for r in rows],
-                    dtype=float)
-    logs = np.log(np.array([r['uplift'] for r in rows]))
-    icpt, slope = fit_line(days, logs)
+    days = np.asarray(days, dtype=float)
+    ys = np.asarray(ys, dtype=float)
+    icpt, slope = fit_line(days, ys)
     lo, hi = max(5.0, round(fit_dt / 2)), round(fit_dt * 2)
-    tband = _dt_t_interval(days, logs, icpt, slope)
+    tband = _dt_t_interval(days, ys, icpt, slope)
     if tband:
         lo, hi = min(lo, tband[0]), max(hi, tband[1])
     return float(round(max(5.0, lo))), float(round(hi))
+
+
+def _rsi_survey_dt_ci(rows, fit_dt):
+    """Default 80% CI on the survey's doubling time, in days.
+
+    `_dt_ci_t_widened` over every point the fit uses (the carried-over
+    `estimated` round included, like the fit itself).
+    """
+    return _dt_ci_t_widened(
+        [(r['date'] - rows[0]['date']).days for r in rows],
+        np.log([r['uplift'] for r in rows]), fit_dt)
+
+
+def _rsi_dir_fit(frontier):
+    """OLS through the research-direction frontier, in logit space.
+
+    A win rate is bounded, so it is fitted on the log-odds the way CoBench and
+    RLI are. Returns (base_date, intercept, slope_per_day).
+    """
+    base = frontier[0]['date']
+    days = np.array([(r['date'] - base).days for r in frontier], dtype=float)
+    ys = _logit(np.array([r['better'] for r in frontier]) / 100)
+    if len(frontier) < 2:
+        return base, float(ys[0]), 0.0
+    icpt, slope = fit_line(days, ys)
+    return base, icpt, slope
+
+
+def _rsi_dir_dt_ci(frontier, fit_dt):
+    """Default 80% CI on the odds-doubling time, in days."""
+    return _dt_ci_t_widened(
+        [(r['date'] - frontier[0]['date']).days for r in frontier],
+        _logit(np.array([r['better'] for r in frontier]) / 100), fit_dt)
 
 
 def render_rsi():
@@ -5275,6 +5368,7 @@ def render_rsi():
                         "Anthropic research staff",
         annotation_position="top left",
         annotation_font=dict(size=11, color='#e74c3c'))
+    _add_today_vline(fig)
 
     fig.update_layout(
         height=600,
@@ -5321,6 +5415,7 @@ def render_rsi():
         "scores read off Figure 3.4.3.A.")
 
     _render_rsi_survey()
+    _render_rsi_direction(rsi_end_year)
 
     st.markdown("---")
     # The conditioning controls render inside the blend's weights expander,
@@ -5417,6 +5512,7 @@ def _render_rsi_survey():
                       f"~{r['uplift']:g}x output vs no AI<br>{r['note']}",
             hoverinfo='text', showlegend=False))
 
+    _add_today_vline(fig)
     fig.update_layout(
         height=480, margin=dict(l=50, r=60, t=40, b=40),
         font=dict(color='#1a1a2e'),
@@ -5459,6 +5555,186 @@ def _render_rsi_survey():
                                               "further it leaves the chart, which "
                                               "is a fact about the fit rather "
                                               "than about the future."))
+
+
+def _rsi_dir_label_positions(rows, gap_days=90, rise_pts=6.0):
+    """Where each point's name goes, or '' for no label.
+
+    Nine models inside twenty-five months collide at a fixed 'top center', so
+    only the frontier is labelled — the rest are hollow markers with the name
+    on hover, as on the UK Cyber tab — and a frontier point landing within
+    `gap_days` of the last labelled one drops below the line instead — or, if
+    it sits `rise_pts` above that one, stays up and moves right, since the two
+    already clear each other vertically.
+    """
+    pos, last_top = [], None
+    for r in rows:
+        if not r['is_frontier']:
+            pos.append('')
+        elif (last_top is not None
+              and (r['date'] - last_top[0]).days < gap_days):
+            if r['better'] - last_top[1] > rise_pts:
+                pos.append('top right')
+                last_top = (r['date'], r['better'])
+            else:
+                pos.append('bottom center')
+                last_top = None      # below the line; the next may go up again
+        else:
+            pos.append('top center')
+            last_top = (r['date'], r['better'])
+    return pos
+
+
+def _render_rsi_direction(end_year):
+    """Anthropic's detour study: can the model pick a better next step?
+
+    Fitted and projected exactly as the CoBench half is: a bounded win rate,
+    so the trend runs on the log-odds, dated against the study's own 90%
+    practical ceiling.
+    """
+    st.subheader("Research direction")
+    _fn_line(
+        "Automating research means choosing what to do next, not just doing "
+        "it. Anthropic replayed 129 turns where one of its own researchers "
+        "went the wrong way and asked each model for the next step instead.",
+        ("129 turns where one of its own researchers went the wrong way",
+         "Real Claude Code sessions from January–March 2026 on open-ended "
+         "problems — debugging a training crash, chasing a benchmark "
+         "regression. Anthropic found 129 moments where the researcher took a "
+         "detour that sent the session off-track, showed each model only the "
+         "work before the detour, and had a separate Claude that could see "
+         "the whole session, resolution included, judge whose next step was "
+         "better."))
+
+    rows = rsi_dir_all
+    frontier = rsi_dir_frontier_all
+    base, intercept, slope = _rsi_dir_fit(frontier)
+    fit_dt = np.log(2) / slope if slope > 0 else 0.0
+    cur = frontier[-1]
+
+    fig = go.Figure()
+
+    if slope > 0:
+        n = N_SAMPLES
+        proj_slope = np.log(2) / np.maximum(
+            _lognormal_from_ci(*_rsi_dir_dt_ci(frontier, round(fit_dt)), n=n), 1.0)
+        fitted = intercept + slope * (cur['date'] - base).days
+        sigma = (_logit((cur['better'] + _RSI_DIR_POS_CI) / 100)
+                 - _logit((cur['better'] - _RSI_DIR_POS_CI) / 100)) / (2 * 1.282)
+        start_logit = np.random.normal(fitted, max(float(sigma), 0), n)
+
+        end_date = datetime(end_year, 12, 31)
+        pdays = np.arange(0, max((end_date - cur['date']).days, 1) + 1, dtype=float)
+        pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
+        traj = _inv_logit(start_logit[:, None]
+                          + pdays[None, :] * proj_slope[:, None]) * 100
+        pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
+
+        for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
+                                     (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
+                                     (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+            fig.add_trace(go.Scatter(
+                x=pdates + pdates[::-1],
+                y=list(pct[hi]) + list(pct[lo][::-1]),
+                fill='toself', fillcolor=color, line=dict(width=0),
+                name=label, hoverinfo='skip', showlegend=True))
+
+        hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
+        hdates = [base + timedelta(days=int(d)) for d in hdays]
+        hy = _inv_logit(intercept + slope * hdays) * 100
+        fig.add_trace(go.Scatter(
+            x=hdates, y=hy.tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5),
+            name=f"Fitted trend (2x odds: {fit_dt:.0f}d)",
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
+                       for d, y in zip(hdates, hy)],
+            hoverinfo='text'))
+        fig.add_trace(go.Scatter(
+            x=pdates, y=pct[50].tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5, dash='dash'),
+            name='Median projection',
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}%"
+                       for d, y in zip(pdates, pct[50])],
+            hoverinfo='text'))
+        x_end = pdates[-1]
+        _samples_at = lambda e: _inv_logit(start_logit + e * proj_slope) * 100
+    else:
+        x_end, _samples_at = cur['date'], None
+
+    for r, _pos in zip(rows, _rsi_dir_label_positions(rows)):
+        _is_fr = r['is_frontier']
+        fig.add_trace(go.Scatter(
+            x=[r['date']], y=[r['better']],
+            mode='markers+text' if _pos else 'markers',
+            marker=dict(color='#4F8DFD' if _is_fr else '#aaaaaa', size=12,
+                        symbol='circle' if _is_fr else 'circle-open',
+                        line=dict(color='white' if _is_fr else '#777777', width=2)),
+            text=[r['name'].replace('Claude ', '')] if _pos else None,
+            textposition=_pos or 'top center',
+            textfont=dict(size=10, color='#1a1a2e'),
+            hovertext=f"{r['name']}<br>{_rsi_date_label(r)}<br>"
+                      f"Better: {r['better']:.0f}% · tie: {r['tie']:.0f}%",
+            hoverinfo='text', showlegend=False))
+
+    fig.add_hline(
+        y=_RSI_DIR_TARGET, line=dict(color='#e74c3c', width=1.5, dash='dash'),
+        annotation_text=f"{_RSI_DIR_TARGET:.0f}% — the study's practical "
+                        "ceiling: a judge shown the finished session",
+        annotation_position="top left",
+        annotation_font=dict(size=11, color='#e74c3c'))
+    _add_today_vline(fig)
+
+    fig.update_layout(
+        height=520, margin=dict(l=50, r=60, t=50, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(title="Release date",
+                   range=[rows[0]['date'] - timedelta(days=25),
+                          max(x_end, rows[-1]['date']) + timedelta(days=25)],
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        yaxis=dict(title="Sampled turns where the model's next step won (%)",
+                   range=[0, 100], ticksuffix='%',
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        hovermode='closest',
+        legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
+                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+        plot_bgcolor='white', paper_bgcolor='white')
+    st.plotly_chart(fig, width="stretch")
+
+    if _samples_at is not None:
+        st.markdown(f"##### When does it win {_RSI_DIR_TARGET:.0f}% of the turns?")
+        days_to = np.maximum(
+            (_logit(_RSI_DIR_TARGET / 100) - start_logit) / proj_slope, 0)
+        _p10, _p50, _p90 = np.percentile(days_to, [10, 50, 90])
+        _d = [cur['date'] + timedelta(days=float(min(x, 365 * 40)))
+              for x in (_p10, _p50, _p90)]
+        _e1, _e2 = st.columns(2)
+        with _e1:
+            st.metric("Median crossing", _d[1].strftime('%b %Y'))
+        with _e2:
+            st.metric("80% CI",
+                      f"{_d[0].strftime('%b %Y')} – {_d[2].strftime('%b %Y')}")
+
+        _rsi_proj_row(_rsi_eoy_targets(cur['name'], cur['date']),
+                      cur['date'], cur['better'], _samples_at,
+                      lambda v: f"{v:.1f}%")
+
+    _fn_caption(
+        "The turns were chosen for having room for improvement, and the bar "
+        "is the study's own ceiling. Source: "
+        f"[Anthropic, *When AI builds itself*]({_RSI_DIR_SOURCE_URL}).",
+        ("chosen for having room for improvement",
+         "So this is not “how often Claude out-researches a human”: "
+         "the sample is turns where the researcher's own next move was "
+         "already known to be a detour. It measures the trend in that "
+         "comparison, not its level."),
+        ("the study's own ceiling",
+         f"{_RSI_DIR_TARGET:.0f}% is what a model shown the complete session, "
+         "resolution included, scores against the same researchers — the only "
+         "bar the study names, and the one the fan is dated against. The fan "
+         "is a log-odds trend, so it carries on past that line; nothing in "
+         "the study says a model gets there."))
 
 
 # ── UK Cyber (AISI narrow cyber tasks) ───────────────────────────────────
@@ -5731,10 +6007,7 @@ def render_ukcyber():
         hoverinfo='text',
     ))
 
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
-    fig.add_annotation(x=today, y=1.0, yref='paper', text='Today', showarrow=False,
-                       font=dict(size=10, color='gray'), yanchor='top')
+    today = _add_today_vline(fig)
 
     # Target threshold the ETA below is measured against.
     fig.add_hline(y=_UKC_TARGET, line=dict(color='#e74c3c', width=1.5, dash='dot'),
@@ -6604,12 +6877,7 @@ def render_revenue():
                     hoverinfo='skip', showlegend=False,
                 ))
 
-    # --- Today vline ---
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
-    fig.add_annotation(
-        x=today, y=1.0, yref='paper', text='Today', showarrow=False,
-        font=dict(size=10, color='gray'), yanchor='top')
+    today = _add_today_vline(fig)
 
     # --- Layout ---
     yaxis_type = "log" if log_scale else "linear"
@@ -7332,12 +7600,7 @@ def render_employment():
                     showarrow=False, xanchor='left', yanchor='middle',
                     font=dict(size=10, color=color))
 
-    # Today vline
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    fig.add_vline(x=today, line=dict(color='gray', width=1, dash='dash'), opacity=0.5)
-    fig.add_annotation(
-        x=today, y=1.0, yref='paper', text='Today', showarrow=False,
-        font=dict(size=10, color='gray'), yanchor='top')
+    today = _add_today_vline(fig)
 
     if _is_jobs_mode:
         y_max = max(_chart_hi95[-1], 1) + 1
@@ -12113,9 +12376,10 @@ _PC_RSI_WEIGHTS = {
     "metr_p80": 15.0,
     "eci_187_5": 10.0,
     "eci_200": 10.0,
-    "rli_90": 20.0,
+    "rli_90": 15.0,
     "cobench_85": 10.0,
-    "staff_10x": 20.0,
+    "staff_10x": 15.0,
+    "nextstep_90": 10.0,
     "rev_1t": 10.0,
 }
 _PC_RSI_W_KEY = "pc_rsiw_"        # session-state prefix, one float per slug
@@ -12577,6 +12841,17 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                  f"same statistic on the same sample. "
                  f"{_PC_RSI_SURVEY_TARGET_X:.0f}x is about a doubling and a "
                  "half past the most recent round's ~4x."))
+    _cap.append((f"nextstep_{_RSI_DIR_TARGET:.0f}",
+                 f"Next-step judgment reaches {_RSI_DIR_TARGET:.0f}%",
+                 _pc_nextstep_eta(rsi_dir_frontier_all, samples=True), True,
+                 "The research-direction fan above, at its defaults: single "
+                 "OLS in logit space, odds-doubling over [DT/2, DT\u00d72] "
+                 "widened to the slope's 80% t-interval, position "
+                 f"\u00b1{_RSI_DIR_POS_CI:g} points (the study's own binomial "
+                 f"SE on n={_RSI_DIR_N}). {_RSI_DIR_TARGET:.0f}% is the "
+                 "study's own practical ceiling \u2014 what a judge shown the "
+                 "finished session scores \u2014 and the sampled turns were "
+                 "selected for having room for improvement."))
     _cap.append(("rev_1t", "Leading company revenue >$1T",
                  _pc_revenue_eta([_OPENAI_REVENUE, _ANTHROPIC_REVENUE],
                                  samples=True), True,
@@ -12836,6 +13111,35 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
     start = np.random.normal(fitted, np.log(_RSI_SURVEY_POS_FACTOR) / 1.282, n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
     return _pc_eta_out(rows[-1]['date'], days_to, samples)
+
+
+# The research-direction companion: when does the model's next step beat the
+# researcher's in four turns of five. Reuses the RSI tab's own fit and rate CI
+# rather than fitting its own, so the two cannot quote different dates.
+
+
+def _pc_nextstep_eta(frontier, target_pct=_RSI_DIR_TARGET, n=None,
+                     samples=False):
+    """(early, median, late) dates for the detour study to reach `target_pct`.
+
+    The section's fan at its defaults — single OLS in logit space,
+    odds-doubling time lognormal over `_rsi_dir_dt_ci()`, position normal over
+    the last frontier score +/- `_RSI_DIR_POS_CI` points. Returns None if the
+    fitted slope is flat or negative.
+    """
+    n = n or N_SAMPLES
+    base, intercept, slope = _rsi_dir_fit(frontier)
+    if slope <= 0:
+        return None
+    dt_lo, dt_hi = _rsi_dir_dt_ci(frontier, round(np.log(2) / slope))
+    proj_slope = np.log(2) / np.maximum(_lognormal_from_ci(dt_lo, dt_hi, n), 1.0)
+    cur = frontier[-1]
+    fitted = intercept + slope * (cur['date'] - base).days
+    sigma = (_logit((cur['better'] + _RSI_DIR_POS_CI) / 100)
+             - _logit((cur['better'] - _RSI_DIR_POS_CI) / 100)) / (2 * 1.282)
+    start = np.random.normal(fitted, max(float(sigma), 0), n)
+    days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
+    return _pc_eta_out(cur['date'], days_to, samples)
 
 
 # The revenue companion, and the only milestone here that isn't a benchmark:

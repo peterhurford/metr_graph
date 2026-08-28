@@ -974,6 +974,56 @@ class TestRsiTab:
         # 400-sample medians carry real MC scatter; 150d is ~3 sd of it.
         assert abs((here - there).days) <= 150
 
+    def test_research_direction_section_renders(self):
+        """The detour study gets its own section, its own ETA and its own
+        projected-values row — and its ETA card is labelled distinctly, since
+        the CoBench block above already owns "Median"."""
+        at = self._rsi_app()
+        heads = [str(h.value) for h in at.subheader]
+        assert "Research direction" in heads
+        labels = [str(m.label) for m in at.metric]
+        assert labels.count("Median crossing") == 1
+        assert labels.count("Median") == 1
+        assert "Claude Mythos Preview (Apr 2026)" in labels
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "When AI builds itself" in caps
+
+    def test_every_chart_marks_today(self):
+        """All three RSI charts carry the dashed "Today" divider the other
+        tabs' projection charts have — without it the fan's start reads as
+        the last data point."""
+        import json
+        at = self._rsi_app()
+        # The blend's CDF is excluded: it starts at today, so a divider there
+        # would sit on its own left edge. It is the one chart with no x title.
+        charts = [json.loads(el.proto.spec)["layout"]
+                  for el in at.get("plotly_chart")]
+        series = [L for L in charts if (L.get("xaxis") or {}).get("title")]
+        assert len(series) == 3 and len(charts) == 4
+        for L in series:
+            notes = [a for a in L.get("annotations", [])
+                     if a.get("text") == "Today"]
+            assert len(notes) == 1, L["yaxis"]["title"]
+            assert any(sh.get("line", {}).get("dash") == "dash"
+                       and sh.get("x0") == sh.get("x1")
+                       for sh in L.get("shapes", []))
+
+    def test_next_step_card_matches_the_direction_panel(self):
+        """The milestone card reuses the section's fit, so the two cannot
+        date it differently. Two settings first: conditioning off (the card
+        conditions on "not crossed yet", the panel does not) and the release
+        clock, so the card is not also pulled back a report lag. Compared with
+        a tolerance: the widened rate CI spans a 4x range, so two 400-sample
+        medians of it scatter by a couple of months each."""
+        at = self._rsi_app()
+        at.selectbox(key="rsi_timing").set_value("Model release").run()
+        at.checkbox(key="rsi_notyet").set_value(False).run()
+        labels = {str(m.label): m.value for m in at.metric}
+        here = datetime.strptime(labels["Median crossing"], "%b %Y")
+        there = datetime.strptime(labels["Next-step judgment reaches 90%"],
+                                  "%b %Y")
+        assert abs((here - there).days) <= 210
+
     def test_revenue_milestone_card_and_blend_row(self):
         """The $1T card renders alongside the benchmark milestones and gets
         its own weighted row in the blend."""
@@ -985,7 +1035,7 @@ class TestRsiTab:
         assert len(row) == 1
         assert row.iloc[0]["Weight"].startswith("10%")
         # Every milestone gets a row, and the weights editor an input each.
-        assert len(t) == 8
+        assert len(t) == 9
 
     def test_every_milestone_card_carries_its_caveats_on_hover(self):
         """Caveats ride the card they belong to rather than piling into one
@@ -997,7 +1047,7 @@ class TestRsiTab:
         helps = {str(m.label): (m.proto.help or "") for m in cards}
         milestones = {k: v for k, v in helps.items()
                       if "reaches" in k or "revenue" in k or "acceleration" in k}
-        assert len(milestones) == 8
+        assert len(milestones) == 9
         for lab, h in milestones.items():
             assert "defaults" in h, lab
             assert "clock" in h or "releases" in h, lab
