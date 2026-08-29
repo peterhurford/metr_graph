@@ -94,9 +94,17 @@ recipe, including the AISI cyber data deliberately *not* ingested.
 
 Before overwriting a CSV wholesale, diff by key column so no curated rows are lost (ECI = `Model version`; DC metadata = `Name`; timelines = `Data center` + `Date`). After any data change, sanity-check the relevant loader via `_VP_TESTING=1 python3 -c "import visualize_projection as v; ..."`, then run the tests.
 
-#### The one curated deletion: `Fluidstack Lake Mariner`
+#### Timeline rows with no metadata row
 
-`data_center_timelines.csv` is **not** a byte-faithful mirror of Epoch's export: Epoch renamed the site to `Anthropic Lake Mariner` in the metadata and re-scoped it to buildings CB3–5, but the timelines export still emits stale rows under the old name covering the whole site. `load_data_centers()` is **timelines-driven** (metadata only supplies the company label), so those rows materialize a phantom site that double-counts Lake Mariner. They are deleted locally; **re-delete on every refresh until Epoch fixes the export**, checking `set(timelines['Data center']) - set(metadata['Name'])`. Two other timeline-only names, `EdgeCore Mesa PH03` and `DayOne Kempas`, are legitimate and must be kept.
+`load_data_centers()` is **timelines-driven** (metadata only supplies the company label), so a
+timeline name Epoch never catalogues materializes a site with no owner and no country — and if it
+duplicates a catalogued one, it double-counts it. Check
+`set(timelines['Data center']) - set(metadata['Name'])` on every refresh.
+
+Empty as of the 2026-08-29 pull. It previously held `Fluidstack Lake Mariner`, stale rows covering
+the whole site after Epoch re-scoped it to `Anthropic Lake Mariner` (CB3–5); those were deleted
+locally until Epoch fixed the export by splitting out `Core42 Lake Mariner` (CB1–2). The same pull
+dropped `EdgeCore Mesa PH03` and `DayOne Kempas`, which had been legitimate timeline-only names.
 
 ### Key Sections of visualize_projection.py
 
@@ -512,8 +520,8 @@ run over time, extrapolated past the end of its recorded data under a 50%/80% co
 year-end table of US, China, their ratio and China's lag in months. Load-bearing:
 
 1. **Country is a property of the building.** `load_data_centers()` carries Epoch's
-   `Country`; `_dc_site_country()` adds `_DC_COUNTRY_FALLBACK` for the two timeline-only
-   names with no metadata row (Kempas, Mesa). The panel is built from the **unfiltered**
+   `Country`; `_dc_site_country()` adds `_DC_COUNTRY_FALLBACK` for any timeline-only
+   name with no metadata row (empty today). The panel is built from the **unfiltered**
    site list — `_dc_hidden_companies()` is not applied, because a landlord's hall in a
    country is capacity in that country whoever trains in it. `test_country_fallback_only_
    names_sites_epoch_left_blank` retires a fallback the moment Epoch fills the cell.

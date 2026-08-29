@@ -3959,11 +3959,11 @@ class TestDcNetworkClusters:
         assert vp._dc_network_site_clusters() == fab, "default is 'fabric'"
         assert "Microsoft Fairwater Wisconsin" in fab
         assert "Microsoft Fairwater Wisconsin" not in prox
-        # Proximity clusters survive as themselves until a wider basis absorbs
-        # them: Memphis becomes part of the Mid-South region, Johor never does.
+        # A proximity cluster keeps its own label until a wider basis absorbs
+        # it whole. Every metro cluster is absorbed today (Memphis into the
+        # Mid-South region); a cluster no region names would keep its label.
         assert prox["Colossus 2"] == fab["Colossus 2"] == "Memphis, TN"
         assert plaus["Colossus 2"] == "Mid-South"
-        assert plaus["DayOne Kempas"] == "Johor, Malaysia"
 
     def test_every_plausible_region_pools_something(self):
         """A region where every site belongs to a different company pools

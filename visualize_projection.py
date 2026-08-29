@@ -631,6 +631,11 @@ _RLI_RAW = [
     {"name": "GPT-5.5",        "date": "2026-04-23", "rli_score": 6.25},
     {"name": "Opus 4.8",       "date": "2026-05-28", "rli_score": 8.33},
     {"name": "Fable 5",        "date": "2026-06-09", "rli_score": 15.83},
+    # Added 2026-08-29: Scale added Gemini 3.7 Flash on 2026-08-24 (the only row
+    # on the board flagged new since our last check). Score 5.00 from the
+    # leaderboard's embedded JSON payload; date is Google's announced release.
+    # Well below Fable 5, so it is not a frontier point.
+    {"name": "Gemini 3.7 Flash", "date": "2026-08-13", "rli_score": 5.00},
     # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
     # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
@@ -1558,7 +1563,6 @@ _DC_NETWORK_CLUSTERS = (
                                       "Vantage TX1")),
     ("Eagle Mountain, UT", 'proximity', ("Meta Eagle Mountain",
                                          "QTS Eagle Mountain")),
-    ("Johor, Malaysia", 'proximity', ("DayOne Nusajaya", "DayOne Kempas")),
     ("Fairwater AI WAN", 'fabric', ("Microsoft Fairwater Wisconsin",
                                     "Microsoft Fairwater Atlanta")),
     # Regional groups: no link announced, but every pair inside a group sits
@@ -1626,12 +1630,11 @@ _DC_NETWORK_LEVELS = ('proximity', 'fabric', 'plausible')
 
 # ── Buildout by country ──────────────────────────────────────────────────
 # Country is a property of the building, read off Epoch's `Country` column.
-# Two timeline-only names have no metadata row at all (see CLAUDE.md on the
-# timelines export), so they'd vanish from a by-country view without this.
-_DC_COUNTRY_FALLBACK = {
-    "DayOne Kempas": "Malaysia",          # Johor, 20 km from DayOne Nusajaya
-    "EdgeCore Mesa PH03": "United States",  # Mesa, AZ
-}
+# A timeline-only name with no metadata row would vanish from a by-country
+# view, so it gets a country here. Empty today — every timeline name resolves;
+# test_country_fallback_only_names_sites_epoch_left_blank retires an entry as
+# soon as Epoch catalogues the site.
+_DC_COUNTRY_FALLBACK = {}
 _DC_CTY_US = "United States"
 _DC_CTY_CN = "China"
 # Sites outside China that Chinese labs train on. Epoch's own source notes on
@@ -1639,7 +1642,7 @@ _DC_CTY_CN = "China"
 # in Southeast Asia, and DayOne is the GDS Holdings spin-off. Counting the
 # whole campus as Chinese-accessible is an upper-bound reading — DayOne has
 # other tenants — so it is a selector, and its label says what it assumes.
-_DC_CN_ACCESS_ABROAD = ("DayOne Nusajaya", "DayOne Kempas")
+_DC_CN_ACCESS_ABROAD = ("DayOne Nusajaya",)
 _DC_CTY_CN_ACCESS = "China-accessible"
 # Extrapolation: log-linear OLS on monthly samples of a country's step series
 # since this year (the tab's earliest chart start), pace uncertainty as the
@@ -6627,6 +6630,11 @@ _OPENAI_REVENUE = [
     # post: Codex $8.83B tracked ARR (week ending 08-10) is product-level, not a company
     # total. CFO Sarah Friar's 2026-08-14 closed-door investor meeting (CNBC) cited only
     # Bloomberg's older, lower $40B; its news was the enterprise/consumer mix crossover.
+    # Rechecked 2026-08-29: TickerTrends has published no company-wide OpenAI total
+    # since the 2026-08-14 post behind the 44.3 above; its three posts since (08-21
+    # enterprise adoption, 08-26 Codex/Claude Code adoption, 08-26 GitHub commit
+    # mentions) carry adoption counts and no dollar figures. Epoch's
+    # ai_companies_revenue_reports.csv still tops out at Bloomberg's $40B / 2026-08-13.
     # Excluded: OpenAI CFO Sarah Friar told employees on 2026-07-29 that July ARR
     # "surpassed the company's entire second quarter" (CNBC). No dollar figure was
     # given, and it mixes ARR against a quarterly total -- not a datapoint.
@@ -6678,6 +6686,11 @@ _ANTHROPIC_REVENUE = [
     # TickerTrends line now reads $69.6B (June) / $74.1B (July), i.e. ~14% above the
     # investor-reported 65.0, which is the same tracker-vs-disclosure gap seen in April
     # and the reason that series is still excluded.
+    # Rechecked 2026-08-29: still nothing newer. EDGAR full-text search returns no
+    # Anthropic S-1 and no operating-company registrant (the 35 "anthropic" names are
+    # investor SPVs and feeder funds; the 2026-06-01 S-1 is still confidential), so the
+    # anticipated late-August public filing has not happened. anthropic.com/news has no
+    # revenue post, and Epoch's newest Anthropic row is the same 65.0 / 2026-07-31.
     # Also excluded, and prominent in mid-August press: Q2-2026 revenue "over $11.5B"
     # (Bloomberg 2026-08-14, CNBC/Fortune 2026-08-15). Quarterly revenue, not run rate,
     # and sourced to people familiar rather than disclosed. Naively annualizing lands
