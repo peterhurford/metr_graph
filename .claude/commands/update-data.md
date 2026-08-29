@@ -89,6 +89,8 @@ The NIST mirror serves figures at full resolution if you strip the `styles/<pres
 
 7. **Report.** Give a per-source table: Updated / Already current / Skipped (with reason). For updates, list the specific new entries (name, value, date). For "already current," state you verified against the canonical source. Surface any judgment calls and anything you deliberately left out.
 
+8. **Analyze implications.** Based on the report, see if any key assumptions in e.g. RSI timelines or the pacing plan change.
+
 ## Guardrails
 
 - Never invent data values. If research can't confirm a newer figure, report the source as current and move on.
