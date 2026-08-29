@@ -5142,44 +5142,6 @@ _RSI_DEFAULTS = {
 }
 
 
-def _rsi_fmt_x(v):
-    """Multiples, compact — the fan's upper tail runs to seven figures."""
-    if v >= 1e6:
-        return f"~{v / 1e6:.1f}Mx"
-    if v >= 1e3:
-        return f"~{v / 1e3:.1f}kx"
-    if v >= 100:
-        return f"~{v:.0f}x"
-    return f"~{v:.1f}x"
-
-
-def _rsi_eoy_targets(anchor_label, anchor_date):
-    """The ECI tab's projection columns, anchored on the last measured point."""
-    return [(f"{anchor_label} ({anchor_date:%b %Y})", anchor_date),
-            ("Projected today",
-             datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
-            ("2026EOY", datetime(2026, 12, 31)),
-            ("2027 Jun EOM", datetime(2027, 6, 30)),
-            ("2027EOY", datetime(2027, 12, 31)),
-            ("2028EOY", datetime(2028, 12, 31)),
-            ("2029EOY", datetime(2029, 12, 31))]
-
-
-def _rsi_proj_row(targets, anchor_date, anchor_value, samples_at, fmt):
-    """One ECI-style row of projected values with 80% CIs.
-
-    `samples_at(elapsed_days)` returns the trajectory samples; the anchor
-    column shows the measured value rather than the fit's own start.
-    """
-    cols = st.columns([1.2] + [1] * (len(targets) - 1))
-    for col, (label, d) in zip(cols, targets):
-        elapsed = (d - anchor_date).days
-        p10, p50, p90 = np.percentile(samples_at(float(elapsed)), [10, 50, 90])
-        with col:
-            st.metric(label, fmt(anchor_value if elapsed == 0 else p50))
-            st.caption(f"80% CI: {fmt(p10)} \u2013 {fmt(p90)}")
-
-
 def _rsi_fit(frontier):
     """OLS through the frontier in logit space.
 
@@ -5495,26 +5457,6 @@ def render_rsi():
         plot_bgcolor='white', paper_bgcolor='white')
     st.plotly_chart(fig, width="stretch")
 
-    # ── When does the trend reach the substitution bar? ───────────────────
-    st.markdown(f"##### When does CoBench reach {_RSI_SUBSTITUTION_BAR:.0f}%?")
-    _needed = _logit(_RSI_SUBSTITUTION_BAR / 100) - proj_start_logit
-    _days_to = np.maximum(_needed / proj_slope, 0)
-    _p10, _p50, _p90 = np.percentile(_days_to, [10, 50, 90])
-    _dates = [current['date'] + timedelta(days=float(min(d, 365 * 40)))
-              for d in (_p10, _p50, _p90)]
-    _e1, _e2 = st.columns(2)
-    with _e1:
-        st.metric("Median", _dates[1].strftime('%b %Y'))
-    with _e2:
-        st.metric("80% CI",
-                  f"{_dates[0].strftime('%b %Y')} – {_dates[2].strftime('%b %Y')}")
-
-    _rsi_proj_row(
-        _rsi_eoy_targets(current['name'], current['date']),
-        current['date'], current['cobench'],
-        lambda e: _inv_logit(proj_start_logit + e * proj_slope) * 100,
-        lambda v: f"{v:.1f}%")
-
     st.caption(
         "Source: "
         f"[Anthropic, Redacted Risk Report, August 2026, §3.4.3]({_RSI_SOURCE_URL}); "
@@ -5594,10 +5536,8 @@ def _render_rsi_survey():
             hoverinfo='text'))
         x_end = pdates[-1]
         y_top = max(float(pct[95][-1]), _PC_RSI_SURVEY_TARGET_X * 1.3)
-        _samples_at = lambda e: np.exp(start_log + e * proj_slope)
     else:
         x_end, y_top = cur['date'], _PC_RSI_SURVEY_TARGET_X * 1.3
-        _samples_at = None
 
     for r in rows:
         if 'lo' in r:
@@ -5651,11 +5591,6 @@ def _render_rsi_survey():
                     bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
         plot_bgcolor='white', paper_bgcolor='white')
     st.plotly_chart(fig, width="stretch")
-
-    if _samples_at is not None:
-        _rsi_proj_row(
-            _rsi_eoy_targets(cur['name'], cur['date']),
-            cur['date'], cur['uplift'], _samples_at, _rsi_fmt_x)
 
     _fn_caption(
         "Anthropic surveys its own technical staff on productivity uplift per "
@@ -5743,9 +5678,8 @@ def _render_rsi_code():
             hoverinfo='text'))
         x_end = pdates[-1]
         y_top = max(float(pct[95][-1]), _RSI_CODE_TARGET * 1.3)
-        _samples_at = lambda e: np.exp(start_log + e * proj_slope)
     else:
-        x_end, y_top, _samples_at = cur['date'], _RSI_CODE_TARGET * 1.3, None
+        x_end, y_top = cur['date'], _RSI_CODE_TARGET * 1.3
 
     # The quarters themselves: a light connector so 21 points read as a
     # series, then markers — hollow grey for the unfitted baseline bars,
@@ -5808,24 +5742,6 @@ def _render_rsi_code():
                     bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
         plot_bgcolor='white', paper_bgcolor='white')
     st.plotly_chart(fig, width="stretch")
-
-    if _samples_at is not None:
-        st.markdown(f"##### When does it reach {_RSI_CODE_TARGET:.0f}x?")
-        days_to = np.maximum(
-            (np.log(_RSI_CODE_TARGET) - start_log) / proj_slope, 0)
-        _p10, _p50, _p90 = np.percentile(days_to, [10, 50, 90])
-        _d = [cur['date'] + timedelta(days=float(min(x, 365 * 40)))
-              for x in (_p10, _p50, _p90)]
-        _e1, _e2 = st.columns(2)
-        with _e1:
-            st.metric(f"Median crossing ({_RSI_CODE_TARGET:.0f}x)",
-                      _d[1].strftime('%b %Y'))
-        with _e2:
-            st.metric("80% CI",
-                      f"{_d[0].strftime('%b %Y')} – {_d[2].strftime('%b %Y')}")
-
-        _rsi_proj_row(_rsi_eoy_targets(cur['q'], cur['date']),
-                      cur['date'], cur['mult'], _samples_at, _rsi_fmt_x)
 
     _fn_caption(
         "Output volume, not research progress; the last quarter is partial "
@@ -5950,9 +5866,8 @@ def _render_rsi_direction(end_year):
                        for d, y in zip(pdates, pct[50])],
             hoverinfo='text'))
         x_end = pdates[-1]
-        _samples_at = lambda e: _inv_logit(start_logit + e * proj_slope) * 100
     else:
-        x_end, _samples_at = cur['date'], None
+        x_end = cur['date']
 
     for r, _pos in zip(rows, _rsi_dir_label_positions(rows)):
         _is_fr = r['is_frontier']
@@ -5994,24 +5909,6 @@ def _render_rsi_direction(end_year):
                     bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
         plot_bgcolor='white', paper_bgcolor='white')
     st.plotly_chart(fig, width="stretch")
-
-    if _samples_at is not None:
-        st.markdown(f"##### When does it win {_RSI_DIR_TARGET:.0f}% of the turns?")
-        days_to = np.maximum(
-            (_logit(_RSI_DIR_TARGET / 100) - start_logit) / proj_slope, 0)
-        _p10, _p50, _p90 = np.percentile(days_to, [10, 50, 90])
-        _d = [cur['date'] + timedelta(days=float(min(x, 365 * 40)))
-              for x in (_p10, _p50, _p90)]
-        _e1, _e2 = st.columns(2)
-        with _e1:
-            st.metric("Median crossing", _d[1].strftime('%b %Y'))
-        with _e2:
-            st.metric("80% CI",
-                      f"{_d[0].strftime('%b %Y')} – {_d[2].strftime('%b %Y')}")
-
-        _rsi_proj_row(_rsi_eoy_targets(cur['name'], cur['date']),
-                      cur['date'], cur['better'], _samples_at,
-                      lambda v: f"{v:.1f}%")
 
     _fn_caption(
         "The turns were chosen for having room for improvement, and the bar "

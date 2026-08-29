@@ -958,35 +958,23 @@ class TestRsiTab:
         assert caps.count("80% CI:") >= 4
 
 
-    def test_milestone_card_matches_the_cobench_panel(self):
-        """The CoBench milestone card is this tab's own fit, so the card and
-        the panel below cannot date it differently. Conditioning is switched
-        off first — the card conditions on "not crossed yet", the panel does
-        not, and that is a real difference, not drift. Compared with a
-        tolerance, not by string: both are Monte Carlo medians off an
-        unseeded RNG."""
-        at = self._rsi_app()
-        at.checkbox(key="rsi_notyet").set_value(False).run()
-        labels = {str(m.label): m.value for m in at.metric}
-        here = datetime.strptime(labels["Median"], "%b %Y")
-        there = datetime.strptime(labels["CoBench reaches 85%"], "%b %Y")
-        # The t-widened rate CI makes the shared distribution wide, so two
-        # 400-sample medians carry real MC scatter; 150d is ~3 sd of it.
-        assert abs((here - there).days) <= 150
-
     def test_research_direction_section_renders(self):
-        """The detour study gets its own section, its own ETA and its own
-        projected-values row — and its ETA card is labelled distinctly, since
-        the CoBench block above already owns "Median"."""
         at = self._rsi_app()
-        heads = [str(h.value) for h in at.subheader]
-        assert "Research direction" in heads
-        labels = [str(m.label) for m in at.metric]
-        assert labels.count("Median crossing") == 1
-        assert labels.count("Median") == 1
-        assert "Claude Mythos Preview (Apr 2026)" in labels
+        assert "Research direction" in [str(h.value) for h in at.subheader]
         caps = " ".join(str(c.value) for c in at.caption)
         assert "When AI builds itself" in caps
+
+    def test_the_sections_chart_and_the_cards_date(self):
+        """Every bar is dated once, on its milestone card. The per-section
+        ETA pairs and projected-value rows those cards duplicated are gone;
+        that each card still reproduces its own section's fit is pinned
+        unit-side, by each section's test_eta_reproduces_the_section_defaults."""
+        at = self._rsi_app()
+        labels = [str(m.label) for m in at.metric]
+        assert [l for l in labels
+                if "median" in l.lower()] == ["Blended median"]
+        assert not [l for l in labels if "EOY" in l or "Projected" in l]
+        assert not [m for m in at.markdown if "When does" in str(m.value)]
 
     def test_every_chart_marks_today(self):
         """All four RSI charts carry the dashed "Today" divider the other
@@ -1008,22 +996,6 @@ class TestRsiTab:
                        and sh.get("x0") == sh.get("x1")
                        for sh in L.get("shapes", []))
 
-    def test_next_step_card_matches_the_direction_panel(self):
-        """The milestone card reuses the section's fit, so the two cannot
-        date it differently. Two settings first: conditioning off (the card
-        conditions on "not crossed yet", the panel does not) and the release
-        clock, so the card is not also pulled back a report lag. Compared with
-        a tolerance: the widened rate CI spans a 4x range, so two 400-sample
-        medians of it scatter by a couple of months each."""
-        at = self._rsi_app()
-        at.selectbox(key="rsi_timing").set_value("Model release").run()
-        at.checkbox(key="rsi_notyet").set_value(False).run()
-        labels = {str(m.label): m.value for m in at.metric}
-        here = datetime.strptime(labels["Median crossing"], "%b %Y")
-        there = datetime.strptime(labels["Next-step judgment reaches 90%"],
-                                  "%b %Y")
-        assert abs((here - there).days) <= 210
-
     def test_revenue_milestone_card_and_blend_row(self):
         """The $1T card renders alongside the benchmark milestones and gets
         its own weighted row in the blend."""
@@ -1038,28 +1010,10 @@ class TestRsiTab:
         assert len(t) == 10
 
     def test_merged_code_section_renders(self):
-        """The merged-code series gets its own section, its own 30x ETA and
-        its own projected-values row, anchored on the last quarter."""
         at = self._rsi_app()
-        heads = [str(h.value) for h in at.subheader]
-        assert "Code merged per Anthropic engineer" in heads
-        labels = [str(m.label) for m in at.metric]
-        assert labels.count("Median crossing (30x)") == 1
-        assert "2026Q2 (May 2026)" in labels
-        assert "Code per person reaches 30x" in labels
-
-    def test_merged_code_card_matches_its_own_panel(self):
-        """The card reuses the section's fit, so the two cannot date it
-        differently. Conditioning off first — the card conditions on "not
-        crossed yet" and the panel does not. Compared with a tolerance: both
-        are 400-sample medians of a rate CI spanning 4x."""
-        at = self._rsi_app()
-        at.checkbox(key="rsi_notyet").set_value(False).run()
-        labels = {str(m.label): m.value for m in at.metric}
-        here = datetime.strptime(labels["Median crossing (30x)"], "%b %Y")
-        there = datetime.strptime(labels["Code per person reaches 30x"],
-                                  "%b %Y")
-        assert abs((here - there).days) <= 120
+        assert "Code merged per Anthropic engineer" in [str(h.value)
+                                                        for h in at.subheader]
+        assert "Code per person reaches 30x" in [str(m.label) for m in at.metric]
 
     def test_merged_code_row_in_the_blend(self):
         at = self._rsi_app()

@@ -342,9 +342,9 @@ merged code per person, then research direction, then
 *Capabilities Milestones* + *RSI projection (tentative)* (`_pc_render_milestones()`,
 moved here from the Pacing tab). The CoBench section plots that eval — Anthropic's
 internal AI R&D benchmark — against release
-date, with a fitted trend, a projection fan and an ETA to `_RSI_SUBSTITUTION_BAR`
-(Anthropic's own stated score for a model that could fully substitute for its
-research staff — not a benchmark ceiling). Four things are load-bearing:
+date, with a fitted trend, a projection fan and `_RSI_SUBSTITUTION_BAR` drawn as
+its bar (Anthropic's own stated score for a model that could fully substitute for
+its research staff — not a benchmark ceiling). Four things are load-bearing:
 
 1. **The fit is logit-space**, like RLI and UK Cyber: CoBench is a bounded success
    rate and a score-space line runs through 100%.
@@ -373,9 +373,13 @@ CoBench is filtered for difficulty (mostly problems Mythos Preview failed at lea
 once in three tries) and run at a 300k-token budget, so scores don't compare to
 public AI R&D suites — the fine print has to keep saying so.
 
-Each section ends with an ECI-style row of projected values (`_rsi_proj_row()` over
-`_rsi_eoy_targets()`), anchored on the last measured point rather than on the
-fit's own start.
+**The sections chart; the cards date.** Each of the four draws its bar and stops
+there — the per-section "when does it reach X" ETA pair and the ECI-style row of
+projected values both used to sit under every fan, restating what the milestone
+card below already says. Every bar is now dated once, on its card
+(`test_the_sections_chart_and_the_cards_date`); that each card still reproduces
+its own section's fit is pinned unit-side, per section, by
+`test_eta_reproduces_the_section_defaults`. Don't re-add an in-section ETA.
 
 The tab's second half (`_render_rsi_survey()`) charts the report's other
 substitution series, the internal staff survey (§3.4.2): self-reported output
@@ -398,10 +402,8 @@ not discontinued, the report says only that no new round was run for Mythos 5.
 And the fan runs `_RSI_SURVEY_HORIZON_DAYS` past the last round rather than to the
 tab's *Project through* year: at the fitted doubling time the median runs several
 orders of magnitude past the data by end-decade, which on a log axis squashes the
-three actual points into the bottom decile. The projected-values row still quotes
-those far columns, via `_rsi_fmt_x()` so a seven-figure upper tail reads compactly.
-The chart draws `_PC_RSI_SURVEY_TARGET_X` as its bar — the same one the milestone
-card dates — but the section itself doesn't date it.
+three actual points into the bottom decile. The chart draws
+`_PC_RSI_SURVEY_TARGET_X` as its bar, the same one the milestone card dates.
 
 The tab's third section (`_render_rsi_code()`) is the counted counterpart to
 that survey: lines merged per active contributor per quarter, as a multiple of
@@ -444,7 +446,7 @@ step. Three things are load-bearing.
    the same researchers, and the only threshold the source names. The fit is
    plain logit space like CoBench's, so the bar is reachable; scaling the odds
    by the ceiling instead was tried and makes it asymptotic, which is a
-   different claim than the one the section dates.
+   different claim than the one the card dates.
    `test_fit_is_logit_space_against_the_studys_own_ceiling` pins both.
 2. **The dates decide the frontier, not the figure's row order.** That figure is
    not chronological (it prints Sonnet 4.6 above Opus 4.6, which shipped twelve
