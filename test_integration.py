@@ -769,6 +769,12 @@ class TestDataCenters:
 # Revenue tab
 # ===========================================================================
 
+def _rev_trace_names(at):
+    import json
+    spec = json.loads(at.get("plotly_chart")[0].proto.spec)
+    return {t.get("name") or "" for t in spec["data"]}
+
+
 class TestRevenueDefaults:
     """Revenue "Fit to last N points" sliders default to the maximum."""
 
@@ -798,6 +804,24 @@ class TestRevenueDefaults:
         at.slider(key="oai_n_recent").set_value(3).run()
         _assert_no_error(at, "Revenue / reduced fit-N")
         assert at.slider(key="oai_n_recent").value == 3
+
+    def test_combined_line_is_off_until_toggled(self):
+        """Off by default; on, it adds a fitted sum series with its own
+        controls and leaves the two company series in place."""
+        import visualize_projection as vp
+        at = self._rev_app()
+        assert at.toggle(key="rev_combined").value is False
+        names = _rev_trace_names(at)
+        assert not any(vp._REV_COMBINED_NAME in n for n in names)
+
+        at.toggle(key="rev_combined").set_value(True).run()
+        _assert_no_error(at, "Revenue / combined line")
+        names = _rev_trace_names(at)
+        assert any((n or "").startswith(vp._REV_COMBINED_NAME + " trend") for n in names)
+        assert "OpenAI" in names and "Anthropic" in names
+        _, cv = vp._rev_combined_series(*vp._parse_revenue(vp._OPENAI_REVENUE),
+                                        *vp._parse_revenue(vp._ANTHROPIC_REVENUE))
+        assert at.slider(key="comb_n_recent").value == len(cv)
 
 
 # ===========================================================================

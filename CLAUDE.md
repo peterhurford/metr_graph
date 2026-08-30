@@ -66,7 +66,7 @@ has no main-column headings, so it has no section to link to.
 | Remote Labor Index | `render_rli()` | `_RLI_RAW` → `load_rli_data()` | logit-transformed score |
 | RSI | `render_rsi()` | `_RSI_RAW` → `load_rsi_data()`; `_RSI_SURVEY`; `_RSI_CODE_RAW` → `load_rsi_code()`; `_RSI_DIR_RAW` → `load_rsi_direction()` | CoBench score % (logit-projected), staff speedup ×, merged code per contributor ×, next-step win rate % |
 | UK Cyber | `render_ukcyber()` | `aisi_cyber_narrow.csv` → `load_ukcyber()`; `aisi_cyber_tlo.csv` → `load_ukcyber_tlo()` | success rate % + open-weight lag in months; plus a TLO cyber-range cross-check in steps (`_render_ukcyber_tlo()`) and a callout for models only the range has measured (`_render_ukcyber_newest_open()`) |
-| Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` | ARR in billions |
+| Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` | ARR in billions; optional summed line (`rev_combined`, off by default) via `_rev_combined_series()` |
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; ends with a US-vs-China by-country projection (`_dc_render_country_panel()`) |

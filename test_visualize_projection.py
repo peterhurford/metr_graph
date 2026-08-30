@@ -5242,3 +5242,49 @@ class TestAnchorSlug:
         for raw in ("</script><img src=x onerror=alert(1)>", 'a"b', "a b",
                     "a<b", "a/b", "-lead", "", "x" * 200):
             assert vp._anchor_slug(raw) == "", raw
+
+
+class TestRevenueCombined:
+    """The optional OpenAI + Anthropic sum line."""
+
+    def _series(self):
+        od, ov = vp._parse_revenue(vp._OPENAI_REVENUE)
+        ad, av = vp._parse_revenue(vp._ANTHROPIC_REVENUE)
+        return od, ov, ad, av
+
+    def test_shared_dates_are_the_plain_sum(self):
+        od, ov, ad, av = self._series()
+        cd, cv = vp._rev_combined_series(od, ov, ad, av)
+        shared = set(od) & set(ad)
+        assert shared
+        for d, v in zip(cd, cv):
+            if d in shared:
+                assert v == pytest.approx(ov[od.index(d)] + av[ad.index(d)])
+
+    def test_dates_are_the_union_from_the_later_start(self):
+        od, ov, ad, av = self._series()
+        cd, _ = vp._rev_combined_series(od, ov, ad, av)
+        assert cd == sorted(d for d in set(od) | set(ad) if d >= max(od[0], ad[0]))
+
+    def test_a_one_sided_date_still_carries_the_other_side(self):
+        od, ov, ad, av = self._series()
+        cd, cv = vp._rev_combined_series(od, ov, ad, av)
+        for d, v in zip(cd, cv):
+            assert v >= max(vp._rev_value_at(od, ov, d), vp._rev_value_at(ad, av, d))
+
+    def test_past_a_series_last_report_it_is_held_flat(self):
+        """Never extrapolated: past one side's last report the sum moves only
+        with the side still reporting."""
+        a_d = [datetime(2025, 1, 1), datetime(2025, 2, 1)]
+        b_d = [datetime(2025, 1, 1), datetime(2025, 3, 1)]
+        cd, cv = vp._rev_combined_series(a_d, [1.0, 2.0], b_d, [1.0, 4.0])
+        assert cd == [datetime(2025, 1, 1), datetime(2025, 2, 1), datetime(2025, 3, 1)]
+        assert cv[-1] == pytest.approx(2.0 + 4.0)
+
+    def test_interpolation_is_log_linear(self):
+        dates = [datetime(2025, 1, 1), datetime(2025, 1, 3)]
+        assert vp._rev_value_at(dates, [1.0, 4.0], datetime(2025, 1, 2)) == \
+            pytest.approx(2.0)
+
+    def test_the_toggle_is_off_by_default(self):
+        assert vp._REV_DEFAULTS["rev_combined"] is False

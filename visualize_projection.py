@@ -6716,6 +6716,35 @@ def _parse_revenue(data):
     return dates, values
 
 
+def _rev_value_at(dates, vals, d):
+    """A revenue series' value on date `d`: log-linear between the bracketing
+    reports, held flat past the last one (never extrapolated), None before the
+    first."""
+    if d < dates[0]:
+        return None
+    if d >= dates[-1]:
+        return vals[-1]
+    i = next(i for i in range(1, len(dates)) if d <= dates[i])
+    if d == dates[i - 1]:
+        return vals[i - 1]
+    f = (d - dates[i - 1]).days / (dates[i] - dates[i - 1]).days
+    return float(2.0 ** (np.log2(vals[i - 1]) * (1 - f) + np.log2(vals[i]) * f))
+
+
+def _rev_combined_series(a_dates, a_vals, b_dates, b_vals):
+    """Sum two ARR series onto the union of their report dates.
+
+    The two companies are reported on different days, so each side is
+    interpolated to the other's dates by `_rev_value_at`. Starts where both
+    have data, so the sum never steps up merely because a series began.
+    """
+    start = max(a_dates[0], b_dates[0])
+    out_dates = [d for d in sorted(set(a_dates) | set(b_dates)) if d >= start]
+    out_vals = [_rev_value_at(a_dates, a_vals, d) + _rev_value_at(b_dates, b_vals, d)
+                for d in out_dates]
+    return out_dates, out_vals
+
+
 def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=None,
                           dt_lo_override=None, dt_hi_override=None):
     """Fit exponential (OLS in log-space) to last n_recent points,
@@ -6775,6 +6804,9 @@ def _fmt_revenue(val):
     return f"${val*1000:.0f}M"
 
 
+_REV_COMBINED_NAME = "OpenAI + Anthropic"
+_REV_COMBINED_COLOR = '#5b6ab0'
+
 _REV_MILESTONES = [
     (50, "$50B"),
     (100, "$100B"),
@@ -6817,15 +6849,22 @@ def render_revenue():
     oai_vals_fit = [v for d, v in zip(openai_dates, openai_vals) if d <= _rev_as_of_date]
     ant_dates_fit = [d for d in anthropic_dates if d <= _rev_as_of_date]
     ant_vals_fit = [v for d, v in zip(anthropic_dates, anthropic_vals) if d <= _rev_as_of_date]
+    comb_dates, comb_vals = _rev_combined_series(
+        openai_dates, openai_vals, anthropic_dates, anthropic_vals)
+    comb_dates_fit = [d for d in comb_dates if d <= _rev_as_of_date]
+    comb_vals_fit = [v for d, v in zip(comb_dates, comb_vals) if d <= _rev_as_of_date]
     _rev_backtesting = _rev_as_of_idx < len(_all_rev_dates) - 1
     oai_can_project = len(oai_vals_fit) >= 3
     ant_can_project = len(ant_vals_fit) >= 3
+    comb_can_project = len(comb_vals_fit) >= 3
 
     # Clamp slider session state values if they exceed filtered data length
     if st.session_state.get('oai_n_recent', 0) > len(oai_vals_fit):
         st.session_state.pop('oai_n_recent', None)
     if st.session_state.get('ant_n_recent', 0) > len(ant_vals_fit):
         st.session_state.pop('ant_n_recent', None)
+    if st.session_state.get('comb_n_recent', 0) > len(comb_vals_fit):
+        st.session_state.pop('comb_n_recent', None)
 
     with st.sidebar:
         st.header("Revenue Projection")
@@ -6836,6 +6875,12 @@ def render_revenue():
         rev_2025_only = st.checkbox("2025+ only", value=False, key="rev_2025_only")
         show_milestones = st.toggle("Milestones", value=True, key="rev_milestones")
         show_labels = st.toggle("Labels", value=True, key="rev_labels")
+        show_combined = st.toggle(
+            "Combined line", value=False, key="rev_combined",
+            help="Add OpenAI + Anthropic as one series, fitted and projected "
+                 "like the other two. The two companies report on different "
+                 "days, so each is interpolated to the other's dates (held "
+                 "flat past its own last report) before summing.")
 
         with st.expander("Projection range"):
             st.selectbox(
@@ -6883,6 +6928,27 @@ def render_revenue():
             else:
                 st.caption("Need ≥3 data points to project")
 
+        comb_n_recent = len(comb_vals_fit)
+        comb_dt_lo = comb_dt_hi = None
+        if show_combined:
+            with st.expander("Combined projection"):
+                if comb_can_project:
+                    comb_n_recent = st.slider("Fit to last N points", 3, len(comb_vals_fit),
+                                              value=len(comb_vals_fit), key="comb_n_recent")
+                    _comb_log = np.log2(np.array(comb_vals_fit))
+                    _comb_days = np.array([(d - comb_dates_fit[0]).days for d in comb_dates_fit],
+                                          dtype=float)
+                    _comb_p = fit_line(_comb_days[-comb_n_recent:], _comb_log[-comb_n_recent:])
+                    _comb_ols_dt = 1.0 / _comb_p[1] if _comb_p[1] > 0 else 200
+                    comb_dt_lo = _ss_number_input(st, "DT CI low (days)", "comb_dt_lo",
+                                                  float(round(max(10, _comb_ols_dt * 0.65))),
+                                                  min_value=5.0, step=5.0)
+                    comb_dt_hi = _ss_number_input(st, "DT CI high (days)", "comb_dt_hi",
+                                                  float(round(_comb_ols_dt * 1.5)),
+                                                  min_value=10.0, step=5.0)
+                else:
+                    st.caption("Need ≥3 data points to project")
+
     proj_end = datetime(rev_end_year, 12, 31)
 
     # Filter display data for 2025+ if toggled (projections still use all data for fitting)
@@ -6893,10 +6959,14 @@ def render_revenue():
     oai_display_vals = [v for _, v in _oai_display]
     ant_display_dates = [d for d, _ in _ant_display]
     ant_display_vals = [v for _, v in _ant_display]
+    _comb_display = [(d, v) for d, v in zip(comb_dates, comb_vals) if d >= _rev_cutoff]
+    comb_display_dates = [d for d, _ in _comb_display]
+    comb_display_vals = [v for _, v in _comb_display]
     x_start = min(oai_display_dates[0], ant_display_dates[0]) - timedelta(days=30)
 
     oai_proj_dates = oai_pcts = oai_dt = oai_ols_dates = oai_ols_vals = oai_traj = None
     ant_proj_dates = ant_pcts = ant_dt = ant_ols_dates = ant_ols_vals = ant_traj = None
+    comb_proj_dates = comb_pcts = comb_dt = comb_ols_dates = comb_ols_vals = comb_traj = None
 
     if oai_can_project:
         oai_proj_dates, oai_pcts, oai_dt, oai_dt_lo_eff, oai_dt_hi_eff, oai_ols_dates, oai_ols_vals, oai_traj = \
@@ -6908,9 +6978,16 @@ def render_revenue():
             _rev_fit_and_project(ant_dates_fit, ant_vals_fit, ant_n_recent, proj_end,
                                   dt_lo_override=ant_dt_lo, dt_hi_override=ant_dt_hi)
 
+    if show_combined and comb_can_project:
+        comb_proj_dates, comb_pcts, comb_dt, comb_dt_lo_eff, comb_dt_hi_eff, \
+            comb_ols_dates, comb_ols_vals, comb_traj = \
+            _rev_fit_and_project(comb_dates_fit, comb_vals_fit, comb_n_recent, proj_end,
+                                  dt_lo_override=comb_dt_lo, dt_hi_override=comb_dt_hi)
+
     # Backtest stats
     oai_bt_results = []
     ant_bt_results = []
+    comb_bt_results = []
     if _rev_backtesting:
         if oai_can_project:
             oai_future = [{'date': d, 'value': v}
@@ -6926,21 +7003,36 @@ def render_revenue():
                 ant_future, ant_traj, ant_dates_fit[-1], proj_end,
                 lambda m: m['value'], lambda m: f"Ant {m['date'].strftime('%b %Y')}",
             )
+        if show_combined and comb_traj is not None:
+            comb_future = [{'date': d, 'value': v}
+                           for d, v in zip(comb_dates, comb_vals) if d > _rev_as_of_date]
+            comb_bt_results = _backtest_stats(
+                comb_future, comb_traj, comb_dates_fit[-1], proj_end,
+                lambda m: m['value'], lambda m: f"Sum {m['date'].strftime('%b %Y')}",
+            )
 
     fig = go.Figure()
 
     # --- Fan bands ---
-    _bt_results_map = {"OpenAI": oai_bt_results, "Anthropic": ant_bt_results}
-    _can_project_map = {"OpenAI": oai_can_project, "Anthropic": ant_can_project}
+    _bt_results_map = {"OpenAI": oai_bt_results, "Anthropic": ant_bt_results,
+                       _REV_COMBINED_NAME: comb_bt_results}
+    _can_project_map = {"OpenAI": oai_can_project, "Anthropic": ant_can_project,
+                        _REV_COMBINED_NAME: comb_can_project}
 
-    _rev_companies = []
-    for _name, _proj_dates, _pcts, _color, _disp_dates, _disp_vals, \
-            _ols_dates_raw, _ols_vals_raw, _dt in [
+    _rev_series = [
         ("OpenAI", oai_proj_dates, oai_pcts, '#10a37f', oai_display_dates, oai_display_vals,
          oai_ols_dates, oai_ols_vals, oai_dt),
         ("Anthropic", ant_proj_dates, ant_pcts, '#d4a574', ant_display_dates, ant_display_vals,
          ant_ols_dates, ant_ols_vals, ant_dt),
-    ]:
+    ]
+    if show_combined:
+        _rev_series.append(
+            (_REV_COMBINED_NAME, comb_proj_dates, comb_pcts, _REV_COMBINED_COLOR,
+             comb_display_dates, comb_display_vals, comb_ols_dates, comb_ols_vals, comb_dt))
+
+    _rev_companies = []
+    for _name, _proj_dates, _pcts, _color, _disp_dates, _disp_vals, \
+            _ols_dates_raw, _ols_vals_raw, _dt in _rev_series:
         if not _can_project_map[_name]:
             # No projection — just show data points
             _rev_companies.append((_name, None, None, _color, _disp_dates, _disp_vals,
@@ -7070,7 +7162,8 @@ def render_revenue():
             text='  Projection start', showarrow=False, textangle=-90,
             font=dict(size=10, color='#e67e22'), xanchor='right', yanchor='top',
         )
-        for bt_results, bt_color in [(oai_bt_results, '#10a37f'), (ant_bt_results, '#d4a574')]:
+        for bt_results, bt_color in [(oai_bt_results, '#10a37f'), (ant_bt_results, '#d4a574'),
+                                     (comb_bt_results, _REV_COMBINED_COLOR)]:
             if len(bt_results) >= 2:
                 fig.add_trace(go.Scatter(
                     x=[r['date'] for r in bt_results],
@@ -7085,6 +7178,8 @@ def render_revenue():
     # --- Layout ---
     yaxis_type = "log" if log_scale else "linear"
     all_display_vals = oai_display_vals + ant_display_vals
+    if show_combined:
+        all_display_vals = all_display_vals + comb_display_vals
     y_min_data = min(all_display_vals)
     # Use 90th pctile (not 95th) to set range — 95th can be absurdly large
     _y_max_parts = []
@@ -7092,6 +7187,8 @@ def render_revenue():
         _y_max_parts.append(oai_pcts[90][-1])
     if ant_pcts is not None:
         _y_max_parts.append(ant_pcts[90][-1])
+    if comb_pcts is not None:
+        _y_max_parts.append(comb_pcts[90][-1])
     y_max_proj = max(_y_max_parts) if _y_max_parts else max(all_display_vals)
     y_max = max(max(all_display_vals), y_max_proj) * 1.5
 
@@ -7125,15 +7222,22 @@ def render_revenue():
             _backtest_summary(all_bt)
 
     # --- Milestone arrival estimates ---
+    # A milestone already reached is dropped. The floor is per series, so
+    # switching the combined line on never hides a company's own rows.
+    _rev_reached = max(oai_display_vals + ant_display_vals)
     if show_milestones:
         with st.expander("Milestone details"):
-            for name, p_dates, traj in [("OpenAI", oai_proj_dates, oai_traj),
-                                          ("Anthropic", ant_proj_dates, ant_traj)]:
+            _ms_rows = [("OpenAI", oai_proj_dates, oai_traj, _rev_reached),
+                        ("Anthropic", ant_proj_dates, ant_traj, _rev_reached)]
+            if show_combined:
+                _ms_rows.append((_REV_COMBINED_NAME, comb_proj_dates, comb_traj,
+                                 max(comb_display_vals)))
+            for name, p_dates, traj, reached in _ms_rows:
                 if p_dates is None or traj is None:
                     continue
                 arrival_rows = []
                 for val, label in _REV_MILESTONES:
-                    if val <= max(all_display_vals):
+                    if val <= reached:
                         continue
                     # For each trajectory, find first day it crosses val
                     crossed = np.argmax(traj >= val, axis=1)
@@ -12400,10 +12504,12 @@ _REV_DEFAULTS = {
     "rev_2025_only": False,
     "rev_milestones": True,
     "rev_labels": True,
+    "rev_combined": False,
 }
 _REV_TRACKED_KEYS = list(_REV_DEFAULTS.keys()) + [
-    "rev_proj_as_of", "oai_n_recent", "ant_n_recent",
+    "rev_proj_as_of", "oai_n_recent", "ant_n_recent", "comb_n_recent",
     "oai_dt_lo", "oai_dt_hi", "ant_dt_lo", "ant_dt_hi",
+    "comb_dt_lo", "comb_dt_hi",
 ]
 
 _ECG_DEFAULTS = {"ecg_highlight": "None"}
