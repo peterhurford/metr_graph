@@ -1688,6 +1688,39 @@ _DC_CTY_COLORS = {_DC_CTY_US: "#1F77B4", _DC_CTY_CN: "#D62728",
 _DC_CTY_OTHER_COLORS = ("#2CA02C", "#9467BD", "#8C564B", "#7F7F7F", "#17BECF",
                         "#BCBD22", "#E377C2", "#4B6B3A")
 
+# ── Share of catalogued capacity by region ───────────────────────────────
+# Buckets for the share chart at the bottom of the tab, in stack order, keyed
+# on Epoch's `Country` column. Geography only: a site counts where it stands,
+# whoever trains in it — so DayOne Johor sits in SEA here while the country
+# panel above also reads it as China-accessible. Anything unmatched, and any
+# site Epoch leaves without a country, falls to the residual bucket.
+_DC_REGION_OTHER = "Other"
+_DC_REGION_SEA = "SEA"
+_DC_REGION_EU = "EU+UK"
+_DC_REGIONS = (
+    ("US domestic", frozenset({_DC_CTY_US})),
+    ("China domestic", frozenset({_DC_CTY_CN})),
+    (_DC_REGION_SEA, frozenset({
+        "Malaysia", "Indonesia", "Singapore", "Thailand", "Vietnam",
+        "Philippines", "Brunei", "Cambodia", "Laos", "Myanmar"})),
+    # Europe's non-EU hosts (Norway today) are grouped here rather than left in
+    # the residual bucket: the bucket is meant to read as Europe, and a caption
+    # footnote says so.
+    (_DC_REGION_EU, frozenset({
+        "Austria", "Belgium", "Bulgaria", "Croatia", "Cyprus", "Czechia",
+        "Czech Republic", "Denmark", "Estonia", "Finland", "France", "Germany",
+        "Greece", "Hungary", "Ireland", "Italy", "Latvia", "Lithuania",
+        "Luxembourg", "Malta", "Netherlands", "Poland", "Portugal", "Romania",
+        "Slovakia", "Slovenia", "Spain", "Sweden", "United Kingdom",
+        "Iceland", "Liechtenstein", "Norway", "Switzerland"})),
+    ("UAE", frozenset({"United Arab Emirates"})),
+)
+_DC_REGION_COLORS = {
+    "US domestic": "#1F77B4", "China domestic": "#D62728",
+    _DC_REGION_SEA: "#2CA02C", _DC_REGION_EU: "#9467BD", "UAE": "#16A085",
+    _DC_REGION_OTHER: "#999999",
+}
+
 _DC_EXCLUDE_COMPANIES = {
     "QTS", "DayOne", "CoreWeave", "STACK", "Stream", "Vantage", "EdgeCore",
     "Oracle", "Microsoft",
@@ -2069,6 +2102,65 @@ def _dc_country_groups(series, country_of, cn_scope='abroad'):
             continue
         groups.setdefault(c, []).append(name)
     return groups
+
+
+def _dc_region_of(country):
+    """Which _DC_REGIONS bucket a country falls in; the residual otherwise."""
+    for label, members in _DC_REGIONS:
+        if country in members:
+            return label
+    return _DC_REGION_OTHER
+
+
+def _dc_region_totals(series, country_of, grid):
+    """Region label → the metric summed over its sites at each grid date.
+
+    Every site's forward-filled value, added into the bucket its country falls
+    in; a region with nothing anywhere on the grid is dropped. Values stay in
+    the metric's own units, so the caller normalises. Only additive metrics
+    mean anything here — every _DC_METRICS key is one, the two "time to
+    train" ones because they store runs per window (see _dc_share_label).
+    """
+    out = {}
+    for name, v in series.items():
+        vals = out.setdefault(_dc_region_of(country_of.get(name, '')),
+                              [0.0] * len(grid))
+        for i, d in enumerate(grid):
+            x = _dc_val_at(v['pts'], d)
+            if x:
+                vals[i] += x
+    order = [lab for lab, _ in _DC_REGIONS] + [_DC_REGION_OTHER]
+    return {lab: out[lab] for lab in order
+            if lab in out and any(x > 0 for x in out[lab])}
+
+
+def _dc_region_shares(totals, grid):
+    """(grid, {region: [percent]}, {region: [level]}), all trimmed to the
+    dates where something is built — a share of nothing is not 0%, it is
+    undefined. Levels come back trimmed alongside so a caller can hover the
+    raw value against the share without re-indexing.
+    """
+    keep = [i for i in range(len(grid))
+            if sum(v[i] for v in totals.values()) > 0]
+    if not keep:
+        return [], {}, {}
+    g = [grid[i] for i in keep]
+    shares, levels = {}, {}
+    for lab, vals in totals.items():
+        levels[lab] = [vals[i] for i in keep]
+        shares[lab] = [100.0 * vals[i] / sum(v[i] for v in totals.values())
+                       for i in keep]
+    return g, shares, levels
+
+
+def _dc_share_label(metric_label, kind):
+    """What a share of this metric is a share of. The two "time to train"
+    metrics store runs per 2-month window — additive, and what a compute
+    share means — so they are named that way rather than by their inverted
+    label, which no share can be taken of."""
+    if kind == 'traintime':
+        return "training runs per 2-month window"
+    return metric_label
 
 
 def _dc_country_steps(series, names, mode, cluster_of):
@@ -9152,6 +9244,85 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
             "China's value; negative = China ahead.")
 
 
+def _dc_render_region_share(series, country_of, *, today, cap_date, x_start,
+                            metric_label, kind, include_future):
+    """Share of all catalogued capacity by where the building stands.
+
+    `series` is the tab's metric series with **no** host hidden and no tenant
+    attribution, like the country panel above it: this is a question about
+    buildings. Shares are of the total Epoch lists, which is far denser for
+    the US than anywhere else — the caption has to keep saying so.
+    """
+    st.subheader("Share of catalogued capacity by region")
+
+    grid = _dc_cty_month_grid(x_start, cap_date)
+    totals = _dc_region_totals(series, country_of, grid)
+    grid, shares, levels = _dc_region_shares(totals, grid)
+    if not shares:
+        st.warning("No capacity in range for this metric.")
+        return
+
+    counts = {}
+    for name in series:
+        lab = _dc_region_of(country_of.get(name, ''))
+        counts[lab] = counts.get(lab, 0) + 1
+    us_n = counts.get(_DC_REGIONS[0][0], 0)
+    rest = sum(counts.values()) - us_n
+    # Coverage bias is what the whole chart hinges on, so it goes above it as
+    # body text rather than into the caption. st.warning takes no HTML and the
+    # hovers are worth more than the yellow box.
+    _fn_line(
+        f"\u26a0\ufe0f **Tracked data centers only** \u2014 {us_n} of "
+        f"{us_n + rest} catalogued sites are American, and coverage elsewhere "
+        "is thinner than the buildout. Non-US shares are floors.",
+        ("coverage elsewhere is thinner than the buildout",
+         "Sites outside the US are less often announced, permitted in public "
+         "or sized in the press. A region that looks small here may just be "
+         "one Epoch has not catalogued \u2014 missing coverage, not missing "
+         "concrete."),
+        ("Non-US shares are floors",
+         "So the US share is a ceiling. Read a non-US line's movement over "
+         "time rather than its level."))
+
+    fig = go.Figure()
+    if include_future and cap_date > today:
+        # The shading sits under the filled areas; the divider and its labels
+        # are what read on this chart.
+        _dc_add_projection_band(fig, today, grid[-1])
+    for lab, pct in shares.items():
+        color = _DC_REGION_COLORS.get(lab, "#999999")
+        fig.add_trace(go.Scatter(
+            x=grid, y=pct, name=lab, mode='lines', stackgroup='one',
+            line=dict(width=0.5, color=color),
+            fillcolor=f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},"
+                      f"{int(color[5:7], 16)},0.75)",
+            customdata=[_dc_fmt_value(v, kind) for v in levels[lab]],
+            hovertemplate="%{y:.1f}% — %{customdata}<extra>" + lab + "</extra>"))
+    # The axis ends on the last sampled month, not on cap_date: a strip of
+    # empty axis past the last stacked point reads as capacity dropping out.
+    fig.update_layout(**_dc_layout(False, "Share of catalogued capacity",
+                                   grid[0], grid[-1], y_range=[0, 100],
+                                   show_legend=True))
+    fig.update_layout(hovermode='x unified')
+    fig.update_yaxes(ticksuffix='%')
+    st.plotly_chart(fig, use_container_width=True)
+
+    _fn_caption(
+        f"Share of every site's {_dc_share_label(metric_label, kind)}, "
+        "summed by where the building stands. SEA, EU+UK and Other are "
+        "geographic buckets"
+        + (", and past today it is planned buildout." if include_future
+           and cap_date > today else "."),
+        ("where the building stands",
+         "Geography only \u2014 no host filter, no tenant attribution. DayOne "
+         "Johor counts under SEA here, though the panel above also reads it "
+         "as China-accessible."),
+        ("SEA, EU+UK and Other",
+         "SEA is Malaysia, Indonesia, Singapore, Thailand, Vietnam and the "
+         "Philippines; EU+UK also holds Europe's non-EU hosts (Norway "
+         "today); everything left over is Other."))
+
+
 def render_data_centers():
     _today = datetime.now()
 
@@ -9633,6 +9804,13 @@ def render_data_centers():
 
     # Per-company: does the buildout predict releases?
     _cc_company_buildout(_today, cfg["key"], kind)
+
+    # Where the capacity is: share of the catalogued total by region. Same
+    # unfiltered, geography-only series the country panel reads.
+    _dc_render_region_share(
+        _cty_series, {dc['name']: _dc_site_country(dc) for dc in dc_view},
+        today=_today, cap_date=cap_date, x_start=x_start,
+        metric_label=metric_label, kind=kind, include_future=include_future)
 
 
 # ══════════════════════════════════════════════════════════════════════════

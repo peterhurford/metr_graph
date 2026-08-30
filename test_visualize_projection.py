@@ -4404,6 +4404,97 @@ class TestDcByCountry:
         assert vp._DC_CTY_PACE_OPTIONS[vp._DC_DEFAULTS["dc_cty_pace"]] == 'us'
 
 
+class TestDcRegionShare:
+    """Share of catalogued capacity by region, at the bottom of the tab."""
+
+    def _series(self, key='h100', cap=datetime(2028, 12, 31)):
+        return vp._dc_series_for_metric(vp.dc_all, key, cap_date=cap)
+
+    def _country_of(self):
+        return {dc['name']: vp._dc_site_country(dc) for dc in vp.dc_all}
+
+    def _grid(self):
+        return vp._dc_cty_month_grid(datetime(2022, 1, 1), datetime(2028, 12, 31))
+
+    def test_regions_match_the_labels_the_chart_promises(self):
+        assert [lab for lab, _ in vp._DC_REGIONS] == \
+            ["US domestic", "China domestic", "SEA", "EU+UK", "UAE"]
+        for country, region in (("United States", "US domestic"),
+                                ("China", "China domestic"),
+                                ("Malaysia", "SEA"), ("Indonesia", "SEA"),
+                                ("United Kingdom", "EU+UK"),
+                                ("Portugal", "EU+UK"),
+                                # Europe's non-EU hosts are grouped as Europe.
+                                ("Norway", "EU+UK"),
+                                ("United Arab Emirates", "UAE"),
+                                ("Australia", "Other"), ("", "Other")):
+            assert vp._dc_region_of(country) == region, country
+
+    def test_every_catalogued_country_is_placed_deliberately(self):
+        """A share chart drops nothing, so an unnamed country lands in Other.
+        A refresh that adds one worth naming should show up here."""
+        live = {vp._dc_site_country(dc) for dc in vp.dc_all}
+        assert live, "no countries in the catalogue"
+        residual = {c for c in live if vp._dc_region_of(c) == vp._DC_REGION_OTHER}
+        assert residual == {"Australia"}, residual
+
+    def test_no_country_falls_in_two_regions(self):
+        seen = set()
+        for _, members in vp._DC_REGIONS:
+            assert not (members & seen)
+            seen |= members
+
+    def test_regions_partition_the_catalogue(self):
+        """Every site's capacity is counted exactly once, so the region totals
+        add up to the catalogue's own total at every date."""
+        series, grid = self._series(), self._grid()
+        totals = vp._dc_region_totals(series, self._country_of(), grid)
+        for i, d in enumerate(grid):
+            whole = sum(x for x in (vp._dc_val_at(v['pts'], d)
+                                    for v in series.values()) if x)
+            assert abs(sum(v[i] for v in totals.values()) - whole) < 1e-6, d
+
+    def test_shares_sum_to_100_and_stay_aligned_with_their_levels(self):
+        grid = self._grid()
+        totals = vp._dc_region_totals(self._series(), self._country_of(), grid)
+        g, shares, levels = vp._dc_region_shares(totals, grid)
+        assert g and set(shares) == set(levels) == set(totals)
+        for i in range(len(g)):
+            assert abs(sum(v[i] for v in shares.values()) - 100.0) < 1e-6
+        for lab in shares:
+            assert len(shares[lab]) == len(levels[lab]) == len(g)
+
+    def test_months_with_nothing_built_are_dropped(self):
+        """A share of nothing is undefined, not 0% — the grid starts where the
+        first site does."""
+        grid = self._grid()
+        totals = vp._dc_region_totals(self._series(), self._country_of(), grid)
+        g, _, _ = vp._dc_region_shares(totals, grid)
+        first = min(i for i in range(len(grid))
+                    if sum(v[i] for v in totals.values()) > 0)
+        assert g[0] == grid[first] and g[-1] == grid[-1]
+        assert vp._dc_region_shares({}, grid) == ([], {}, {})
+
+    def test_an_empty_region_is_left_off_the_chart(self):
+        grid = self._grid()
+        cty = dict(self._country_of())
+        totals = vp._dc_region_totals(self._series(), cty, grid)
+        assert "UAE" in totals
+        stripped = {n: ('' if c == "United Arab Emirates" else c)
+                    for n, c in cty.items()}
+        assert "UAE" not in vp._dc_region_totals(self._series(), stripped, grid)
+
+    def test_share_label_names_an_additive_unit(self):
+        """The two 'time to train' metrics store runs per window; a share of
+        the inverted label they carry would read backwards."""
+        for label, cfg in vp._DC_METRICS.items():
+            out = vp._dc_share_label(label, cfg["kind"])
+            if cfg["kind"] == 'traintime':
+                assert out == "training runs per 2-month window"
+            else:
+                assert out == label
+
+
 class TestDcMilestoneDates:
     """Hover milestones name a training run only for the train-OP metrics,
     and then the run length that metric assumes."""

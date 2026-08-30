@@ -1281,6 +1281,43 @@ class TestDataCentersByCountry:
 # Data Centers: tenant vs operator attribution
 # ===========================================================================
 
+class TestDataCentersRegionShare:
+    """The region-share chart at the bottom of the Data Centers tab."""
+
+    def _app(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Data Centers")
+        return at
+
+    _HEAD = "Share of catalogued capacity by region"
+
+    def test_renders_last_on_the_tab(self):
+        at = self._app()
+        _assert_no_error(at, "Data Centers / region share")
+        heads = [str(h.value) for h in at.subheader]
+        assert heads[-1] == self._HEAD
+        # The coverage caveat is body text above the chart, not fine print.
+        warn = [str(m.value) for m in at.markdown
+                if "Tracked data centers only" in str(m.value)]
+        assert len(warn) == 1 and "Non-US shares are floors" in warn[0]
+        assert "Tracked data centers only" not in \
+            " ".join(str(c.value) for c in at.caption)
+
+    def test_renders_under_every_metric(self):
+        at = self._app()
+        for label in at.selectbox(key="dc_metric").options:
+            at.selectbox(key="dc_metric").set_value(label).run()
+            _assert_no_error(at, f"region share / {label}")
+            assert self._HEAD in [str(h.value) for h in at.subheader], label
+
+    def test_renders_with_planned_buildout_off(self):
+        at = self._app()
+        at.checkbox(key="dc_future").set_value(False).run()
+        _assert_no_error(at, "region share / no future")
+        assert self._HEAD in [str(h.value) for h in at.subheader]
+
+
 class TestDataCentersParty:
     """The DC tab's attribution radio: defaults to tenant (shared sites count
     under every listed user), flips to operator, and resets."""

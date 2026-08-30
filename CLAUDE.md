@@ -69,7 +69,7 @@ has no main-column headings, so it has no section to link to.
 | Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` | ARR in billions; optional summed line (`rev_combined`, off by default) via `_rev_combined_series()` |
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
-| Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; ends with a US-vs-China by-country projection (`_dc_render_country_panel()`) |
+| Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`) and ends with the region-share stack (`_dc_render_region_share()`) |
 | Compute/capabilities/diffusion (slug `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; ends with China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
 
@@ -512,6 +512,39 @@ Keep each company's `orgs` list minimal — substring matching makes longer vari
 ("Google" already catches "Google DeepMind,Google"). Matching is unambiguous only while no
 `Organization` string names two companies; `TestEcgOrgMatching` asserts that against the live
 CSV, plus tab-to-tab set equality, the Google spellings, and slug round-tripping.
+
+### Share of catalogued capacity by region (last chart on the tab)
+
+`_dc_render_region_share()` stacks each region's share of the selected metric,
+summed over every site, on a monthly grid. It reads the **unfiltered,
+geography-only** series the country panel does — capacity in a country is
+capacity whoever trains in it — so DayOne Johor sits in *SEA* here while the
+panel above also reads it as China-accessible. Four things are load-bearing:
+
+1. **The buckets partition the catalogue.** `_DC_REGIONS` names US, China, SEA,
+   EU+UK and UAE; everything else — including a site Epoch leaves without a
+   country — falls to *Other*, so the region totals add to the catalogue's own
+   total at every date (`test_regions_partition_the_catalogue`). Europe's
+   non-EU hosts (Norway today) are grouped under EU+UK, which a caption
+   footnote says; `test_every_catalogued_country_is_placed_deliberately` names
+   what the residual bucket currently holds, so a refresh that adds a country
+   worth naming surfaces there.
+2. **The coverage caveat is body text above the chart, not caption fine
+   print** — an `_fn_line` with a warning glyph, since `st.warning` takes no
+   HTML and the hovers are worth more than the yellow box. Nearly every
+   catalogued site is American, so the line says non-US shares are floors and
+   puts the why in hovers. Its count comes from the plotted sites, not written
+   down.
+3. **Shares are computed, not `groupnorm`.** The trace carries the percentage
+   and the raw level as `customdata`, so the hover can't disagree with the
+   axis. Months where nothing is built are dropped — a share of nothing is
+   undefined, not 0%.
+4. **Only additive metrics mean anything.** Every `_DC_METRICS` key is one; the
+   two "time to train" metrics because they store runs per window, which
+   `_dc_share_label()` names in place of their inverted label.
+
+Guarded by `TestDcRegionShare` (unit) and `TestDataCentersRegionShare`
+(integration).
 
 ### Buildout by country (bottom of the Data Centers tab)
 
