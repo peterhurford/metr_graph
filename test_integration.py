@@ -947,6 +947,40 @@ class TestComputeVsCapabilities:
 # UK Cyber (AISI narrow cyber tasks)
 # ===========================================================================
 
+class TestCcWorldSharesTab:
+    """The global compute distribution, last section of the CC tab."""
+
+    def _app(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Compute/capabilities/diffusion")
+        return at
+
+    _HEAD = "Global compute distribution"
+
+    def test_renders_last_with_both_charts(self):
+        at = self._app()
+        _assert_no_error(at, "CC / world shares")
+        assert [str(h.value) for h in at.subheader][-1] == self._HEAD
+        text = " ".join(str(m.value) for m in at.markdown)
+        assert "of the world's AI compute is in the US" in text
+        assert "Where it is heading" in text
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "epoch.ai/publications/chip-smuggling" in caps
+        assert "Rates:" in caps and "80% CI" in caps
+
+    def test_the_headline_states_both_readings(self):
+        """The point of the section is the gap between the published
+        estimates and what the tracked sites alone say."""
+        at = self._app()
+        [line] = [str(m.value) for m in at.markdown
+                  if "of the world's AI compute is in the US" in str(m.value)]
+        pct = [int(x) for x in re.findall(r"(\d+)%", line)]
+        assert len(pct) == 4
+        us_guess, cn_guess, us_tracked, cn_tracked = pct
+        assert us_tracked > us_guess + 15 and cn_guess > cn_tracked
+
+
 class TestRsiTab:
     """CoBench score vs release date, plus the fitted trend."""
 

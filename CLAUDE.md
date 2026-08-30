@@ -70,7 +70,7 @@ has no main-column headings, so it has no section to link to.
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`) and ends with the region-share stack (`_dc_render_region_share()`) |
-| Compute/capabilities/diffusion (slug `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; ends with China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) |
+| Compute/capabilities/diffusion (slug `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; carries China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) and ends with the global compute distribution, today and projected (`_render_cc_world_shares()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
 
 ### Data Sources and How to Update
@@ -522,11 +522,11 @@ capacity whoever trains in it — so DayOne Johor sits in *SEA* here while the
 panel above also reads it as China-accessible. Four things are load-bearing:
 
 1. **The buckets partition the catalogue.** `_DC_REGIONS` names US, China, SEA,
-   EU+UK and UAE; everything else — including a site Epoch leaves without a
+   Europe/UK and UAE; everything else — including a site Epoch leaves without a
    country — falls to *Other*, so the region totals add to the catalogue's own
-   total at every date (`test_regions_partition_the_catalogue`). Europe's
-   non-EU hosts (Norway today) are grouped under EU+UK, which a caption
-   footnote says; `test_every_catalogued_country_is_placed_deliberately` names
+   total at every date (`test_regions_partition_the_catalogue`). Europe/UK is
+   the EU, the UK and the rest of Europe (Norway today), which is why it isn't
+   called EU+UK; `test_every_catalogued_country_is_placed_deliberately` names
    what the residual bucket currently holds, so a refresh that adds a country
    worth naming surfaces there.
 2. **The coverage caveat is body text above the chart, not caption fine
@@ -707,6 +707,59 @@ China-ETA panel keeps its own adaptive horizon. *Run length* (`cc_run`,
 a constant scale-and-slide, same leaders (`test_run_window_scales_levels_only`);
 China's capacity band scales by the window ratio; `_cc_country_pace_check` stays
 on 2-month (paces identical).
+
+### Compute/capabilities/diffusion — global compute distribution (last section)
+
+`_render_cc_world_shares()` answers what every chart above it cannot: how the
+world's *installed* AI compute divides between the US, mainland China, SEA, the
+UAE and everywhere else — a bar chart for today, then a stacked area carrying
+it forward to the tab's horizon. The catalogue those other charts read covers a
+minority of the global stock and is far denser for the US (Epoch says so
+itself), so this section is a judgment layer over published country estimates,
+not a reading of the CSVs. Five things are load-bearing:
+
+1. **The centrals come from cited public estimates, and the band is their
+   disagreement.** `_WC_REGIONS` carries `(label, central, p10, p90)`; the
+   sources are in the block comment above it — Epoch's leading-cluster share by
+   country (US ~75% / China ~15%), Epoch's chip-smuggling report (660k H100e
+   ≈ ⅓ of China's compute and ≈3% of the global stock, i.e. China ≈9%), the
+   AI-2027 tracker (~12%) and RAND (~15%). China's 9–18% spans them; no single
+   source is that wide. Retarget the constants when the estimates move rather
+   than nudging them to taste. Every region's provenance is one line in
+   `_WC_NOTES`, shown on its bar's hover rather than written out as prose.
+2. **The projection draws the central-rate scenario, not a percentile.**
+   `_wc_central_shares()` grows each region at its `_WC_GROWTH` central rate
+   and normalizes — so it sums to 100 with no rescaling and is literally the
+   line the caption describes. `_wc_share_paths()` samples the rates for the
+   hover's 80% CI only. Medians were tried and don't sum to 100 (needing a
+   rescale that then disagrees with the hover); means sum correctly but a
+   lognormal rate's tail doubles the UAE. Growth rates are cross-checked
+   against the catalogue in the comment: the US aggregates to ~1.9×/yr and
+   China's domestic largest-site fit is ~1.8×/yr, against this tab's own
+   `_CC_CN_COMPUTE_LO/HI` cluster band.
+3. **It is by location, not owner.** Same convention as the Data Centers tab's
+   region chart, so Chinese labs' capacity abroad counts under SEA, and most of
+   Europe/UK is US firms building there. The area chart opens at `_CC_X_START`
+   (Jan 2025) like the rest of the tab, so the stretch left of the "Today"
+   divider is the same rates run *backwards* — there is no measured history of
+   these shares. It doubles as a check the caption quotes: back-cast to
+   mid-2025 China lands near Epoch's ~15% reading for May 2025. That half is
+   washed out by a white `vrect` at `layer='above'` (a shaded band would sit
+   *under* the filled areas and never show), and the divider is heavier than
+   the other tabs' dotted one on purpose: it is the only thing separating two
+   halves that otherwise look alike.
+4. **The buckets are the Data Centers tab's** (`_wc_region_of`), so the two
+   charts are comparable region by region. Europe/UK is carved out of the
+   residual rather than left in *Other*: it is the largest part of what the
+   anchors leave after the US and China, and most of it is US firms building
+   abroad.
+5. **The tracked-site comparison is in H100e, not the tab's train FLOP**
+   (`_wc_catalogued_shares`), because the published anchors are stated in
+   H100e. It reads the catalogue *as built today*, so a region whose first
+   campus is still future-dated (the UAE) shows near zero.
+
+No controls: an editable-centrals expander was tried and removed. Guarded by
+`TestCcWorldShares` (unit) and `TestCcWorldSharesTab` (integration).
 
 ### Compute/capabilities/diffusion — China's ETA to a target ECI
 

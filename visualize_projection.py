@@ -10,6 +10,7 @@ import yaml
 import csv
 import re
 import html
+import textwrap
 import os
 from datetime import datetime, timedelta
 import warnings
@@ -1696,16 +1697,15 @@ _DC_CTY_OTHER_COLORS = ("#2CA02C", "#9467BD", "#8C564B", "#7F7F7F", "#17BECF",
 # site Epoch leaves without a country, falls to the residual bucket.
 _DC_REGION_OTHER = "Other"
 _DC_REGION_SEA = "SEA"
-_DC_REGION_EU = "EU+UK"
+_DC_REGION_EU = "Europe/UK"
 _DC_REGIONS = (
     ("US domestic", frozenset({_DC_CTY_US})),
     ("China domestic", frozenset({_DC_CTY_CN})),
     (_DC_REGION_SEA, frozenset({
         "Malaysia", "Indonesia", "Singapore", "Thailand", "Vietnam",
         "Philippines", "Brunei", "Cambodia", "Laos", "Myanmar"})),
-    # Europe's non-EU hosts (Norway today) are grouped here rather than left in
-    # the residual bucket: the bucket is meant to read as Europe, and a caption
-    # footnote says so.
+    # The EU, the UK and the rest of Europe — the non-EU hosts (Norway today)
+    # belong with them, not in the residual bucket.
     (_DC_REGION_EU, frozenset({
         "Austria", "Belgium", "Bulgaria", "Croatia", "Cyprus", "Czechia",
         "Czech Republic", "Denmark", "Estonia", "Finland", "France", "Germany",
@@ -1717,7 +1717,7 @@ _DC_REGIONS = (
 )
 _DC_REGION_COLORS = {
     "US domestic": "#1F77B4", "China domestic": "#D62728",
-    _DC_REGION_SEA: "#2CA02C", _DC_REGION_EU: "#9467BD", "UAE": "#16A085",
+    _DC_REGION_SEA: "#F06BA8", _DC_REGION_EU: "#9467BD", "UAE": "#16A085",
     _DC_REGION_OTHER: "#999999",
 }
 
@@ -8648,12 +8648,103 @@ _DC_NETWORK_OPTIONS = {
     "Every site (implausible)": 'all',
 }
 
+# ── All things considered: where the world's compute is ──────────────────
+# The Data Centers tab charts shares of what Epoch *catalogues* — frontier
+# training sites, overwhelmingly American. Epoch says as much itself: the
+# data-center hub covers "a minority of the estimated global AI compute
+# stock" (epoch.ai/data/ai-chip-owners, updated May 2026). This section is
+# the judgment layer over that catalogue: published country-level estimates
+# of the whole installed stock, with their disagreement as the spread.
+#
+# Anchors, all public and all by *location*, not owner:
+#   • Epoch, "Trends in AI supercomputers" (May 2025): US ~75%, China ~15%
+#     of aggregate leading-cluster performance; ~74.5% / ~14.1% as re-quoted
+#     for 2026. US + China ≈ 90%, which is what pins Other.
+#   • Epoch, "Diversion and resale: estimating compute smuggling to China":
+#     660k H100e smuggled through 2025 (290k–1.6M) — about a third of
+#     China's total compute and about 3% of the global stockpile, i.e.
+#     China ≈ 2M H100e of a ≈22M global stock at end-2025, nearer 9%.
+#   • AI-2027 tracker: ~12% of AI-relevant compute in China, mid-2026.
+#     RAND, as re-quoted: ~15%.
+# China's 9–18% band is that disagreement, and it is wider than any single
+# source states. SEA and UAE are the weakest numbers here: both regions are
+# mostly *pipeline* (Johor ~3 GW approved, Stargate UAE's first 200 MW of a
+# planned 1 GW), so today's installed share is small and poorly measured.
+_WC_SOURCE_SUPERCOMPUTERS = "https://epoch.ai/data-insights/ai-supercomputers-performance-share-by-country"
+_WC_SOURCE_SMUGGLING = "https://epoch.ai/publications/chip-smuggling"
+_WC_SOURCE_COVERAGE = "https://epoch.ai/data/ai-chip-owners"
+# (label, central share %, 10th pct, 90th pct). Centrals sum to 100; each
+# sample is renormalized anyway, so an edited set need not.
+_WC_REGIONS = (
+    ("US domestic", 72.0, 63.0, 79.0),
+    ("China domestic", 13.0, 9.0, 18.0),
+    ("SEA", 3.0, 1.5, 6.0),
+    ("UAE", 2.0, 0.8, 4.0),
+    ("Europe/UK", 6.0, 3.5, 9.0),
+    ("Other", 4.0, 2.0, 7.0),
+)
+_WC_LABELS = tuple(lab for lab, *_ in _WC_REGIONS)
+_WC_NOTES = {
+    "US domestic":
+        "Epoch's leading-cluster share is about 75% (May 2025, ~74.5% "
+        "re-quoted for 2026). Set slightly below it, since that series "
+        "measures the biggest clusters, where US firms are most "
+        "over-represented.",
+    "China domestic":
+        "The widest band, because the sources disagree most here: Epoch's "
+        "cluster share says 14\u201315%, the AI-2027 tracker 12%, and "
+        "Epoch's own smuggling estimate implies about 9%. Domestic Ascend "
+        "and Cambricon output is the part nobody measures well.",
+    "SEA":
+        "Johor has roughly 3 GW approved or building, but most of that is "
+        "still pipeline, and its tenants are a mix of US hyperscalers and "
+        "Chinese labs.",
+    "UAE":
+        "Stargate UAE's first 200 MW (about 100k GB300s) lands in 2026, "
+        "against a planned 1 GW and an announced 5 GW campus.",
+    "Europe/UK":
+        "The largest piece of what is left after the US and China, and much "
+        "of it is US firms building abroad \u2014 Microsoft and Nscale in "
+        "Norway and Portugal, Google in the UK \u2014 since these shares go "
+        "by location, not owner.",
+    "Other":
+        "Japan, Korea and India, plus the Gulf outside the UAE \u2014 Saudi "
+        "Arabia's Humain brought twin 100 MW campuses online in 2026 and is "
+        "aiming at 1.9 GW by 2030. Sized as the remainder: Epoch puts the US "
+        "and China together at about 90%.",
+}
+# Growth of each region's installed compute, ×/yr as (central, p10, p90).
+# Only the ratios matter — shares are renormalized at every date.
+#   • US: Epoch has leading-cluster performance doubling every ~9 months
+#     (~2.5×/yr); the catalogue's US sites aggregate to ~1.9×/yr to end-2028.
+#   • China: the catalogue's domestic largest-site fit is ~1.8×/yr, and this
+#     tab's own export-control band (_CC_CN_COMPUTE_LO/HI) is 1.4–2.0×/yr for
+#     a single cluster.
+#   • SEA and the UAE are the fast ones, both from small bases and both mostly
+#     announced rather than built — hence the wide bands.
+#   • Europe keeps pace with the US because most of its buildout *is* US firms
+#     (Microsoft/Nscale, Google, CoreWeave); the catalogue's European sites
+#     grow ~1.8×/yr to end-2028.
+#   • Other is mature Japan/Korea/India plus a fast Gulf ramp outside the UAE
+#     (Saudi Arabia's Humain), hence a middling rate with a wide top.
+_WC_GROWTH = (
+    ("US domestic", 2.3, 1.8, 3.0),
+    ("China domestic", 1.9, 1.4, 2.6),
+    ("SEA", 2.6, 1.8, 4.0),
+    ("UAE", 3.5, 2.0, 6.0),
+    ("Europe/UK", 2.3, 1.7, 3.2),
+    ("Other", 2.2, 1.6, 3.2),
+)
+
 # Compute/capabilities/diffusion tab
 _CC_RESET_KEYS = ["cc_future", "cc_run", "cc_end_year", "cc_bd_anchor",
                   "cc_company"]
 _CC_DEFAULTS = {"cc_future": True, "cc_run": "2-month run",
                 "cc_end_year": 2029, "cc_bd_anchor": "Today",
                 "cc_company": "OpenAI"}
+
+# Where this tab's time charts open, matching the Data Centers tab's default.
+_CC_X_START = datetime(2025, 1, 1)
 _CC_BD_OPTIONS = ("Today", "Jan 2025 (backtest)")
 _CC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
@@ -9309,7 +9400,7 @@ def _dc_render_region_share(series, country_of, *, today, cap_date, x_start,
 
     _fn_caption(
         f"Share of every site's {_dc_share_label(metric_label, kind)}, "
-        "summed by where the building stands. SEA, EU+UK and Other are "
+        "summed by where the building stands. SEA, Europe/UK and Other are "
         "geographic buckets"
         + (", and past today it is planned buildout." if include_future
            and cap_date > today else "."),
@@ -9317,10 +9408,10 @@ def _dc_render_region_share(series, country_of, *, today, cap_date, x_start,
          "Geography only \u2014 no host filter, no tenant attribution. DayOne "
          "Johor counts under SEA here, though the panel above also reads it "
          "as China-accessible."),
-        ("SEA, EU+UK and Other",
+        ("SEA, Europe/UK and Other",
          "SEA is Malaysia, Indonesia, Singapore, Thailand, Vietnam and the "
-         "Philippines; EU+UK also holds Europe's non-EU hosts (Norway "
-         "today); everything left over is Other."))
+         "Philippines; Europe/UK is the EU, the UK and the rest of Europe; "
+         "everything left over is Other."))
 
 
 def render_data_centers():
@@ -11507,6 +11598,79 @@ def _cc_first_reached(fr, target):
     return next(((d, n) for d, s, n in fr if s >= target), None)
 
 
+def _wc_region_of(country):
+    """The world-share bucket a country falls in — the Data Centers tab's
+    regions, which this section shares."""
+    r = _dc_region_of(country)
+    return r if r in _WC_LABELS else _DC_REGION_OTHER
+
+
+def _wc_catalogued_shares(dcs, today):
+    """Share of *catalogued* H100-equivalents by region, today — the thing the
+    published estimates are being used to correct. H100e, not the tab's train
+    FLOP: the anchors are stated in H100e."""
+    series = _dc_series_for_metric(dcs, 'h100', cap_date=today)
+    country_of = {dc['name']: _dc_site_country(dc) for dc in dcs}
+    tot = {}
+    for name, v in series.items():
+        val = _dc_val_at(v['pts'], today)
+        if val:
+            lab = _wc_region_of(country_of.get(name, ''))
+            tot[lab] = tot.get(lab, 0.0) + val
+    whole = sum(tot.values())
+    if not whole:
+        return {}
+    return {lab: 100.0 * tot.get(lab, 0.0) / whole for lab in _WC_LABELS}
+
+
+def _wc_sample_shares(n):
+    """Today's world shares, sampled: {region: array of percent} summing to
+    100 per sample.
+
+    Each region is lognormal around its central estimate, with the log-spread
+    taken from its 80% CI. Samples are renormalized, which pulls the
+    medians slightly off the inputs.
+    """
+    draws = []
+    for lab, mid, lo, hi in _WC_REGIONS:
+        sigma = np.log(hi / lo) / (2 * 1.2816)
+        draws.append(mid * np.exp(np.random.normal(0.0, sigma, n)))
+    arr = np.array(draws)
+    arr = 100.0 * arr / arr.sum(axis=0)
+    return {lab: arr[i] for i, lab in enumerate(_WC_LABELS)}
+
+
+def _wc_central_shares(years):
+    """The plain scenario: {region: percent at each of `years`} with every
+    region growing at its central rate. Sums to 100 by construction, and it is
+    the line the caption describes, so it is the line drawn — the sampled
+    paths supply the range around it."""
+    lev = np.array([[mid] for _, mid, _, _ in _WC_REGIONS], dtype=float)
+    g = np.array([[mid] for _, mid, _, _ in _WC_GROWTH], dtype=float)
+    cur = lev * g ** np.array(years, dtype=float)
+    cur = 100.0 * cur / cur.sum(axis=0)
+    return {lab: cur[i] for i, lab in enumerate(_WC_LABELS)}
+
+
+def _wc_share_paths(years, n):
+    """Shares over time: {region: (len(years), n) percent}.
+
+    Every sample grows each region's compute at its own rate from _WC_GROWTH
+    and renormalizes, so only the ratios between the rates matter. Rates are
+    drawn once per sample and held — this is a trend, not a random walk.
+    """
+    base = _wc_sample_shares(n)
+    lev = np.array([base[lab] for lab in _WC_LABELS])
+    g = np.array([mid * np.exp(np.random.normal(
+        0.0, np.log(hi / lo) / (2 * 1.2816), n))
+        for _, mid, lo, hi in _WC_GROWTH])
+    out = np.empty((len(_WC_LABELS), len(years), n))
+    for i, t in enumerate(years):
+        cur = lev * g ** t
+        out[:, i, :] = 100.0 * cur / cur.sum(axis=0)
+    return {lab: out[i] for i, lab in enumerate(_WC_LABELS)}
+
+
 def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo,
                             g_lo, g_hi, us_eci_smid, today, inno_band=None,
                             target=_CC_CN_TARGET_ECI):
@@ -11701,7 +11865,7 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
                     bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
                     borderwidth=1),
         xaxis=dict(gridcolor='rgba(0,0,0,0.12)',
-                   range=[datetime(2025, 1, 1), horizon],
+                   range=[_CC_X_START, horizon],
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
@@ -12245,6 +12409,155 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
                                f"matches allow {_CC_EARLY_GRACE_DAYS}d early."))
 
 
+def _wc_band(arr):
+    """'13% (9–18)' — the median and 80% CI of one region's share."""
+    lo, med, hi = (float(np.percentile(arr, q)) for q in (10, 50, 90))
+    return f"{med:.0f}% ({lo:.0f}\u2013{hi:.0f})"
+
+
+def _render_cc_world_shares(today, horizon):
+    """Where the world's AI compute is, and where it is heading.
+
+    Every chart above reads Epoch's data-center catalogue, which covers a
+    minority of the world's compute and is far denser for the US. This
+    section is the outside view: published country estimates for today, then
+    each region carried forward at its own growth rate.
+    """
+    st.subheader("Global compute distribution")
+
+    shares = _wc_sample_shares(N_SAMPLES)
+    catalogued = _wc_catalogued_shares(dc_all, today)
+    med = {lab: float(np.percentile(a, 50)) for lab, a in shares.items()}
+    us, cn = _WC_LABELS[0], _WC_LABELS[1]
+
+    st.markdown(
+        f"About **{med[us]:.0f}% of the world's AI compute is in the US** "
+        f"today and **{med[cn]:.0f}% in mainland China**. The site catalogue "
+        f"the rest of this tab reads puts those at {catalogued.get(us, 0):.0f}% "
+        f"and {catalogued.get(cn, 0):.0f}%, but it only tracks large frontier "
+        "data centers, and mostly American ones.")
+
+    st.markdown("**Today**")
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=[med[l] for l in _WC_LABELS], y=list(_WC_LABELS), orientation='h',
+        marker=dict(color=[_DC_REGION_COLORS.get(l, "#999999")
+                           for l in _WC_LABELS], opacity=0.85),
+        error_x=dict(
+            type='data', symmetric=False,
+            array=[float(np.percentile(shares[l], 90)) - med[l]
+                   for l in _WC_LABELS],
+            arrayminus=[med[l] - float(np.percentile(shares[l], 10))
+                        for l in _WC_LABELS],
+            color='#444444', thickness=1.2, width=6),
+        name="Best guess", hoverinfo='text',
+        hovertext=[f"<b>{l}</b>: {_wc_band(shares[l])}<br>"
+                   + "<br>".join(textwrap.wrap(_WC_NOTES[l], 60))
+                   for l in _WC_LABELS]))
+    fig.add_trace(go.Scatter(
+        x=[catalogued.get(l, 0.0) for l in _WC_LABELS], y=list(_WC_LABELS),
+        mode='markers',
+        marker=dict(symbol='diamond', size=10, color='#FFFFFF',
+                    line=dict(color='#222222', width=1.5)),
+        name="Tracked data centers only", hoverinfo='text',
+        hovertext=[f"{l}: {catalogued.get(l, 0.0):.1f}% of tracked H100e"
+                   for l in _WC_LABELS]))
+    layout = _dc_layout(False, "", 0, 100, height=300, show_legend=True)
+    layout['xaxis'] = dict(layout['xaxis'], title_text="Share of world compute",
+                           ticksuffix='%')
+    # _dc_layout's y-axis is a value axis; here it holds region names, and a
+    # linear type would render the bars against an empty numeric scale.
+    layout['yaxis'] = dict(layout['yaxis'], type='category',
+                           autorange='reversed', showgrid=False)
+    layout['legend'] = dict(layout['legend'], orientation='h', y=-0.3)
+    fig.update_layout(**layout)
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        "Bars are the middle estimate, whiskers the 80% CI \u2014 "
+        "which is mostly how much the sources disagree. Diamonds are what the "
+        "tracked-site data alone would say. Hover a bar for where its number "
+        "comes from. Shares are by location, so Chinese firms' capacity abroad "
+        "counts under SEA or Other. Sources: Epoch AI "
+        f"([share by country]({_WC_SOURCE_SUPERCOMPUTERS}), "
+        f"[smuggling to China]({_WC_SOURCE_SMUGGLING}), "
+        f"[its own coverage]({_WC_SOURCE_COVERAGE})), the AI-2027 tracker and "
+        "RAND.")
+
+    # ── The same split, carried forward ──
+    st.markdown("**Where it is heading**")
+    # Opens at the tab's usual start. Before today the same rates simply run
+    # backwards — there is no measured history of these shares — and today is
+    # in the grid explicitly so the divider lands on a sampled point.
+    grid = _dc_cty_month_grid(_CC_X_START, horizon)
+    dates = sorted(set([d for d in grid if d < today] + [today]
+                       + [d for d in grid if d > today]))
+    years = [(d - today).days / 365.25 for d in dates]
+    paths = _wc_share_paths(years, N_SAMPLES)
+    central = _wc_central_shares(years)
+    fig2 = go.Figure()
+    for lab in _WC_LABELS:
+        color = _DC_REGION_COLORS.get(lab, "#999999")
+        band = [f"{np.percentile(paths[lab][i], 10):.0f}\u2013"
+                f"{np.percentile(paths[lab][i], 90):.0f}%"
+                for i in range(len(dates))]
+        fig2.add_trace(go.Scatter(
+            x=dates, y=central[lab], name=lab, mode='lines',
+            stackgroup='one', line=dict(width=0.5, color=color),
+            fillcolor=f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},"
+                      f"{int(color[5:7], 16)},0.75)",
+            customdata=band,
+            hovertemplate="%{y:.1f}% (80% CI %{customdata})"
+                          "<extra>" + lab + "</extra>"))
+    # Everything left of today is the rates run backwards, everything right is
+    # the projection, and neither is measured — so the past is washed out
+    # rather than shaded (a shaded band would sit *under* the filled areas and
+    # never show). The divider is heavier than the other tabs' on purpose: it
+    # is the only thing separating two halves that otherwise look alike.
+    fig2.add_vrect(x0=_CC_X_START, x1=today, fillcolor='#FFFFFF', opacity=0.55,
+                   line_width=0, layer='above')
+    fig2.add_vline(x=today, line=dict(color='#222222', width=2))
+    fig2.add_annotation(x=today, yref='paper', y=1.0, text='<b>Today</b>',
+                        showarrow=False, xanchor='right', yanchor='bottom',
+                        xshift=-4, font=dict(size=12, color='#222222'))
+    fig2.add_annotation(x=dates[-1], yref='paper', y=1.0, text='projected \u2192',
+                        showarrow=False, xanchor='right', yanchor='bottom',
+                        font=dict(size=10, color='#999999'))
+    # Print each end's split in the band itself, so the change is readable
+    # without hovering. Thin bands are skipped rather than overlapped.
+    for edge, x, anchor, shift in ((dates.index(today), today, 'left', 5),
+                                   (-1, dates[-1], 'right', -6)):
+        base = 0.0
+        for lab in _WC_LABELS:
+            v = float(central[lab][edge])
+            if v >= 4.0:
+                fig2.add_annotation(
+                    x=x, y=base + v / 2, text=f"{v:.0f}%", showarrow=False,
+                    xanchor=anchor, xshift=shift,
+                    font=dict(size=11, color=(
+                        '#FFFFFF' if lab in (_WC_LABELS[0], _WC_LABELS[1])
+                        else '#222222')))
+            base += v
+    layout2 = _dc_layout(False, "Share of world compute", _CC_X_START,
+                         dates[-1], y_range=[0, 100], show_legend=True,
+                         height=360)
+    fig2.update_layout(**layout2)
+    fig2.update_layout(hovermode='x unified')
+    fig2.update_yaxes(ticksuffix='%')
+    st.plotly_chart(fig2, use_container_width=True)
+    _back = _wc_central_shares([(datetime(2025, 5, 1) - today).days / 365.25])
+    st.caption(
+        "Anchored on today's split above. There is no measured history of "
+        "these shares, so the same rates run backwards before today too "
+        f"\u2014 which puts China at {_back[_WC_LABELS[1]][0]:.0f}% in mid-2025, "
+        "against Epoch's ~15% reading for May 2025. Bands show each region "
+        "growing at its central rate; hover for the 80% CI around that. "
+        "Rates: "
+        + ", ".join(f"{lab.replace(' domestic', '')} {mid:g}\u00d7/yr"
+                    for lab, mid, _, _ in _WC_GROWTH)
+        + ". The US and the Gulf are building faster than China is, so "
+        "China's share drifts down even as its compute grows.")
+
+
 def render_compute_capabilities():
     _today = datetime.now()
 
@@ -12672,6 +12985,11 @@ def render_compute_capabilities():
     # ══════════════════════════════════════════════════════════════════════
     _cc_us_vs_china(cc_rows, _today, horizon=horizon,
                     run_key=run_key, run_days=run_days)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 4: the world split the catalogue above cannot see
+    # ══════════════════════════════════════════════════════════════════════
+    _render_cc_world_shares(_today, horizon)
 
 
 # ── URL parameter persistence ────────────────────────────────────────────

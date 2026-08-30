@@ -4418,14 +4418,14 @@ class TestDcRegionShare:
 
     def test_regions_match_the_labels_the_chart_promises(self):
         assert [lab for lab, _ in vp._DC_REGIONS] == \
-            ["US domestic", "China domestic", "SEA", "EU+UK", "UAE"]
+            ["US domestic", "China domestic", "SEA", "Europe/UK", "UAE"]
         for country, region in (("United States", "US domestic"),
                                 ("China", "China domestic"),
                                 ("Malaysia", "SEA"), ("Indonesia", "SEA"),
-                                ("United Kingdom", "EU+UK"),
-                                ("Portugal", "EU+UK"),
-                                # Europe's non-EU hosts are grouped as Europe.
-                                ("Norway", "EU+UK"),
+                                ("United Kingdom", "Europe/UK"),
+                                ("Portugal", "Europe/UK"),
+                                # Europe's non-EU hosts belong with them.
+                                ("Norway", "Europe/UK"),
                                 ("United Arab Emirates", "UAE"),
                                 ("Australia", "Other"), ("", "Other")):
             assert vp._dc_region_of(country) == region, country
@@ -4493,6 +4493,109 @@ class TestDcRegionShare:
                 assert out == "training runs per 2-month window"
             else:
                 assert out == label
+
+
+class TestNoDuplicateDefinitions:
+    """One definition per name at module level.
+
+    A scripted edit that splices on a marker appearing more than once
+    duplicates a whole region of the file, and the later copy silently wins at
+    import — the app then runs stale code while the tests still pass, because
+    the stale copy is self-consistent. Cheap to check, and nothing else does.
+    """
+
+    def test_every_top_level_name_is_defined_once(self):
+        import ast as _ast
+        tree = _ast.parse(open(vp.__file__).read())
+        names = [n.name for n in tree.body
+                 if isinstance(n, (_ast.FunctionDef, _ast.ClassDef))]
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        assert not dupes, dupes
+
+
+class TestCcWorldShares:
+    """The global compute distribution at the bottom of the CC tab."""
+
+    def test_priors_are_a_coherent_set(self):
+        assert list(vp._WC_LABELS) == ["US domestic", "China domestic", "SEA",
+                                       "UAE", "Europe/UK", "Other"]
+        assert abs(sum(m for _, m, _, _ in vp._WC_REGIONS) - 100.0) < 1e-9
+        for lab, mid, lo, hi in vp._WC_REGIONS:
+            assert 0 < lo < mid < hi, lab
+            assert lab in vp._WC_NOTES and vp._WC_NOTES[lab], lab
+        # Every region is carried forward, and only the ratios matter.
+        assert [lab for lab, *_ in vp._WC_GROWTH] == list(vp._WC_LABELS)
+        for lab, mid, lo, hi in vp._WC_GROWTH:
+            assert 1.0 < lo < mid < hi, lab
+
+    def test_regions_are_the_data_centers_tab_s(self):
+        """Both sections bucket a country the same way, so a reader comparing
+        the two charts is comparing like with like."""
+        for country in ("United Kingdom", "Norway", "China", "Malaysia",
+                        "United Arab Emirates", "Australia", ""):
+            assert vp._wc_region_of(country) == vp._dc_region_of(country)
+        for country, region in (("United States", "US domestic"),
+                                ("United Kingdom", "Europe/UK"),
+                                ("China", "China domestic"),
+                                ("Malaysia", "SEA"),
+                                ("United Arab Emirates", "UAE"),
+                                ("Australia", "Other"), ("", "Other")):
+            assert vp._wc_region_of(country) == region, country
+
+    def test_samples_are_shares(self):
+        sh = vp._wc_sample_shares(4000)
+        assert set(sh) == set(vp._WC_LABELS)
+        assert np.allclose(sum(sh.values()), 100.0)
+        assert all((a > 0).all() for a in sh.values())
+
+    def test_samples_recover_their_centrals_and_spreads(self):
+        sh = vp._wc_sample_shares(20000)
+        for lab, mid, lo, hi in vp._WC_REGIONS:
+            med = float(np.percentile(sh[lab], 50))
+            # Renormalizing pulls the medians a little off the inputs.
+            assert abs(med - mid) < max(1.0, 0.1 * mid), (lab, med)
+            p10, p90 = (float(np.percentile(sh[lab], q)) for q in (10, 90))
+            assert p10 < med < p90 and p10 > lo * 0.7 and p90 < hi * 1.3, lab
+
+    def test_paths_start_at_todays_shares_and_stay_shares(self):
+        years = [0.0, 1.0, 2.5]
+        paths = vp._wc_share_paths(years, 4000)
+        assert set(paths) == set(vp._WC_LABELS)
+        for i in range(len(years)):
+            assert np.allclose(sum(p[i] for p in paths.values()), 100.0)
+        for lab, mid, _, _ in vp._WC_REGIONS:
+            assert abs(float(np.percentile(paths[lab][0], 50)) - mid) < \
+                max(1.0, 0.1 * mid), lab
+
+    def test_the_drawn_line_is_the_one_the_caption_describes(self):
+        """The chart draws the central-rate scenario, which sums to 100 with
+        no rescaling; the sampled paths only supply the range."""
+        c = vp._wc_central_shares([0.0, 3.0])
+        assert abs(sum(v[1] for v in c.values()) - 100.0) < 1e-6
+        for lab, mid, _, _ in vp._WC_REGIONS:
+            assert abs(c[lab][0] - mid) < 1e-6, lab
+        assert c["China domestic"][1] < c["China domestic"][0]
+        assert c["UAE"][1] > c["UAE"][0]
+
+    def test_faster_growth_wins_share(self):
+        """China grows slower than the US in _WC_GROWTH, so its share falls
+        while the UAE's — the fastest — rises."""
+        paths = vp._wc_share_paths([0.0, 4.0], 8000)
+        for lab, direction in (("China domestic", -1), ("UAE", 1)):
+            a, b = (float(np.percentile(paths[lab][i], 50)) for i in (0, 1))
+            assert direction * (b - a) > 0, lab
+
+    def test_the_correction_is_the_point_of_the_section(self):
+        """The tracked sites alone say the US holds nearly everything; the
+        published estimates say otherwise, and by a wide margin."""
+        cat = vp._wc_catalogued_shares(vp.dc_all, datetime.now())
+        assert abs(sum(cat.values()) - 100.0) < 1e-6
+        assert cat["US domestic"] > 80
+        assert cat["China domestic"] < 5
+        sh = vp._wc_sample_shares(4000)
+        assert float(np.percentile(sh["US domestic"], 50)) < cat["US domestic"] - 15
+        assert float(np.percentile(sh["China domestic"], 50)) > \
+            cat["China domestic"] * 3
 
 
 class TestDcMilestoneDates:
