@@ -4585,6 +4585,48 @@ class TestCcWorldShares:
             a, b = (float(np.percentile(paths[lab][i], 50)) for i in (0, 1))
             assert direction * (b - a) > 0, lab
 
+    def test_growth_shocks_are_shared_without_touching_the_marginals(self):
+        """A loading per region on one global shock. It must not change any
+        region's own rate spread — only the joint — so the central path and
+        every stated band stay as documented."""
+        assert set(vp._WC_COMMON_LOAD) == set(vp._WC_LABELS)
+        assert all(0.0 <= x <= 1.0 for x in vp._WC_COMMON_LOAD.values())
+        # China is the decoupled one: domestic silicon, controls already on.
+        assert vp._WC_COMMON_LOAD["China domestic"] < \
+            min(v for k, v in vp._WC_COMMON_LOAD.items() if k != "China domestic")
+        before = vp._wc_central_shares([0.0, 3.0])
+        after = vp._wc_share_paths([0.0], 200)
+        assert abs(before["US domestic"][0] - 72.0) < 1e-6 and after
+
+    def test_sharing_the_shock_damps_the_share_bands(self):
+        """The shared part cancels in the renormalization, so correlated
+        rates give tighter shares than independent ones."""
+        wide = vp._wc_share_paths([3.3], 20000, common=0.0)
+        tight = vp._wc_share_paths([3.3], 20000)
+        for lab in ("US domestic", "UAE"):
+            w = np.percentile(wide[lab][0], 90) - np.percentile(wide[lab][0], 10)
+            t = np.percentile(tight[lab][0], 90) - np.percentile(tight[lab][0], 10)
+            assert t < w, lab
+        # The UAE's band is the one that ran away: it grows fastest from the
+        # smallest base, so a lognormal rate compounds hardest there.
+        assert np.percentile(tight["UAE"][0], 90) < 30
+
+    def test_a_low_us_world_is_a_slow_world_not_a_handover(self):
+        """Most non-US capacity is US firms on US-supplied chips, so a US
+        slowdown drags them with it; China is the region that decouples. With
+        the rates independent the model says the opposite."""
+        def absorbed(paths):
+            us = paths["US domestic"][0]
+            m = us <= np.percentile(us, 10)
+            gain = {l: paths[l][0][m].mean() - paths[l][0].mean()
+                    for l in vp._WC_LABELS if l != "US domestic"}
+            tot = sum(gain.values())
+            return {l: g / tot for l, g in gain.items()}
+        indep = absorbed(vp._wc_share_paths([3.3], 40000, common=0.0))
+        shared = absorbed(vp._wc_share_paths([3.3], 40000))
+        assert shared["China domestic"] > indep["China domestic"] + 0.10
+        assert shared["Europe/UK"] < indep["Europe/UK"]
+
     def test_the_correction_is_the_point_of_the_section(self):
         """The tracked sites alone say the US holds nearly everything; the
         published estimates say otherwise, and by a wide margin."""

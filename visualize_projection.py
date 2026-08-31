@@ -8721,17 +8721,39 @@ _WC_NOTES = {
 #     tab's own export-control band (_CC_CN_COMPUTE_LO/HI) is 1.4–2.0×/yr for
 #     a single cluster.
 #   • SEA and the UAE are the fast ones, both from small bases and both mostly
-#     announced rather than built — hence the wide bands.
+#     announced rather than built — hence the wider bands. The UAE's top end is
+#     held at 5×/yr rather than the 6× a from-near-zero lognormal wants: at 6×
+#     it compounds to a quarter of world compute by 2029, which the announced
+#     5 GW campus does not support even if every phase lands early.
 #   • Europe keeps pace with the US because most of its buildout *is* US firms
 #     (Microsoft/Nscale, Google, CoreWeave); the catalogue's European sites
 #     grow ~1.8×/yr to end-2028.
 #   • Other is mature Japan/Korea/India plus a fast Gulf ramp outside the UAE
 #     (Saudi Arabia's Humain), hence a middling rate with a wide top.
+# How much of each region's growth rate rides on one global shock (chip
+# supply, a capex cycle) rather than its own circumstances — the loading on
+# that shock, so two regions' log-rates correlate at the product of theirs.
+# Drawn independently, the model says the plausible low-US worlds are ones
+# where somebody else ran away with the buildout, which has it backwards:
+# most non-US capacity is US firms building abroad on US-supplied chips, so
+# a US slowdown is a slowdown in SEA, Europe and the Gulf too. China, on
+# domestic silicon with export controls already binding, is the one region
+# that decouples — and so the one whose share actually rises when the US
+# stalls. Loadings leave every region's marginal rate spread exactly as
+# stated; only the joint moves.
+_WC_COMMON_LOAD = {
+    "US domestic": 0.90,
+    "Europe/UK": 0.85,
+    "SEA": 0.80,
+    "UAE": 0.80,
+    "Other": 0.70,
+    "China domestic": 0.25,
+}
 _WC_GROWTH = (
     ("US domestic", 2.3, 1.8, 3.0),
     ("China domestic", 1.9, 1.4, 2.6),
     ("SEA", 2.6, 1.8, 4.0),
-    ("UAE", 3.5, 2.0, 6.0),
+    ("UAE", 3.5, 2.4, 5.0),
     ("Europe/UK", 2.3, 1.7, 3.2),
     ("Other", 2.2, 1.6, 3.2),
 )
@@ -11652,18 +11674,29 @@ def _wc_central_shares(years):
     return {lab: cur[i] for i, lab in enumerate(_WC_LABELS)}
 
 
-def _wc_share_paths(years, n):
+def _wc_share_paths(years, n, common=None):
     """Shares over time: {region: (len(years), n) percent}.
 
     Every sample grows each region's compute at its own rate from _WC_GROWTH
     and renormalizes, so only the ratios between the rates matter. Rates are
     drawn once per sample and held — this is a trend, not a random walk.
+
+    `common` scales _WC_COMMON_LOAD, the regions' loadings on one global
+    shock; 0 makes the rates independent again. Each region's marginal rate
+    spread is unchanged either way — only the joint moves, which is what
+    decides where a low-US world's compute goes instead.
     """
+    w = 1.0 if common is None else common
     base = _wc_sample_shares(n)
     lev = np.array([base[lab] for lab in _WC_LABELS])
-    g = np.array([mid * np.exp(np.random.normal(
-        0.0, np.log(hi / lo) / (2 * 1.2816), n))
-        for _, mid, lo, hi in _WC_GROWTH])
+    z0 = np.random.normal(0.0, 1.0, n)
+    g = []
+    for lab, mid, lo, hi in _WC_GROWTH:
+        load = min(1.0, w * _WC_COMMON_LOAD[lab])
+        g.append(mid * np.exp((np.log(hi / lo) / (2 * 1.2816)) * (
+            load * z0
+            + np.sqrt(1.0 - load ** 2) * np.random.normal(0.0, 1.0, n))))
+    g = np.array(g)
     out = np.empty((len(_WC_LABELS), len(years), n))
     for i, t in enumerate(years):
         cur = lev * g ** t
@@ -12474,9 +12507,11 @@ def _render_cc_world_shares(today, horizon):
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
         "Bars are the middle estimate, whiskers the 80% CI \u2014 "
-        "which is mostly how much the sources disagree. Diamonds are what the "
-        "tracked-site data alone would say. Hover a bar for where its number "
-        "comes from. Shares are by location, so Chinese firms' capacity abroad "
+        "which is mostly how much the sources disagree. Each whisker is one "
+        "region's own range and they don't add to 100: a world where the US "
+        "is at its low end is one where the others are all higher. Diamonds "
+        "are what the tracked-site data alone would say. Hover a bar for "
+        "where its number comes from. Shares are by location, so Chinese firms' capacity abroad "
         "counts under SEA or Other. Sources: Epoch AI "
         f"([share by country]({_WC_SOURCE_SUPERCOMPUTERS}), "
         f"[smuggling to China]({_WC_SOURCE_SMUGGLING}), "
@@ -12550,8 +12585,8 @@ def _render_cc_world_shares(today, horizon):
         "these shares, so the same rates run backwards before today too "
         f"\u2014 which puts China at {_back[_WC_LABELS[1]][0]:.0f}% in mid-2025, "
         "against Epoch's ~15% reading for May 2025. Bands show each region "
-        "growing at its central rate; hover for the 80% CI around that. "
-        "Rates: "
+        "growing at its central rate; hover for the 80% CI around that \u2014 "
+        "one region at a time, not a joint scenario. Rates: "
         + ", ".join(f"{lab.replace(' domestic', '')} {mid:g}\u00d7/yr"
                     for lab, mid, _, _ in _WC_GROWTH)
         + ". The US and the Gulf are building faster than China is, so "

@@ -716,7 +716,7 @@ UAE and everywhere else — a bar chart for today, then a stacked area carrying
 it forward to the tab's horizon. The catalogue those other charts read covers a
 minority of the global stock and is far denser for the US (Epoch says so
 itself), so this section is a judgment layer over published country estimates,
-not a reading of the CSVs. Five things are load-bearing:
+not a reading of the CSVs. Six things are load-bearing:
 
 1. **The centrals come from cited public estimates, and the band is their
    disagreement.** `_WC_REGIONS` carries `(label, central, p10, p90)`; the
@@ -727,7 +727,26 @@ not a reading of the CSVs. Five things are load-bearing:
    source is that wide. Retarget the constants when the estimates move rather
    than nudging them to taste. Every region's provenance is one line in
    `_WC_NOTES`, shown on its bar's hover rather than written out as prose.
-2. **The projection draws the central-rate scenario, not a percentile.**
+2. **The regions' growth rates are correlated, and unequally.**
+   `_WC_COMMON_LOAD` is each region's loading on one global shock (chip
+   supply, a capex cycle), so two regions' log-rates correlate at the product
+   of their loadings; marginal rate spreads are untouched, only the joint
+   moves. Independent rates said the plausible low-US worlds were ones where
+   somebody else ran away with the buildout — backwards, since most non-US
+   capacity is US firms building abroad on US-supplied chips. China's loading
+   is the low one (domestic silicon, controls already binding), so it is the
+   region whose share rises when the US stalls: conditional on the US in its
+   bottom decile at the horizon, China absorbs 35% of the shortfall against
+   14% under independence. Guarded by
+   `test_a_low_us_world_is_a_slow_world_not_a_handover`. Note what the
+   published-estimate spread does *not* get: a common factor on the levels
+   would cancel exactly under renormalization, and the disagreement there is
+   genuinely per-region (the sources argue about China specifically).
+   **The per-region CIs are marginals of a composition** — every sample sums
+   to 100, but the p90s do not (150% at the horizon), so both captions say the
+   range is one region at a time.
+
+3. **The projection draws the central-rate scenario, not a percentile.**
    `_wc_central_shares()` grows each region at its `_WC_GROWTH` central rate
    and normalizes — so it sums to 100 with no rescaling and is literally the
    line the caption describes. `_wc_share_paths()` samples the rates for the
@@ -737,7 +756,7 @@ not a reading of the CSVs. Five things are load-bearing:
    against the catalogue in the comment: the US aggregates to ~1.9×/yr and
    China's domestic largest-site fit is ~1.8×/yr, against this tab's own
    `_CC_CN_COMPUTE_LO/HI` cluster band.
-3. **It is by location, not owner.** Same convention as the Data Centers tab's
+4. **It is by location, not owner.** Same convention as the Data Centers tab's
    region chart, so Chinese labs' capacity abroad counts under SEA, and most of
    Europe/UK is US firms building there. The area chart opens at `_CC_X_START`
    (Jan 2025) like the rest of the tab, so the stretch left of the "Today"
@@ -748,12 +767,12 @@ not a reading of the CSVs. Five things are load-bearing:
    *under* the filled areas and never show), and the divider is heavier than
    the other tabs' dotted one on purpose: it is the only thing separating two
    halves that otherwise look alike.
-4. **The buckets are the Data Centers tab's** (`_wc_region_of`), so the two
+5. **The buckets are the Data Centers tab's** (`_wc_region_of`), so the two
    charts are comparable region by region. Europe/UK is carved out of the
    residual rather than left in *Other*: it is the largest part of what the
    anchors leave after the US and China, and most of it is US firms building
    abroad.
-5. **The tracked-site comparison is in H100e, not the tab's train FLOP**
+6. **The tracked-site comparison is in H100e, not the tab's train FLOP**
    (`_wc_catalogued_shares`), because the published anchors are stated in
    H100e. It reads the catalogue *as built today*, so a region whose first
    campus is still future-dated (the UAE) shows near zero.
