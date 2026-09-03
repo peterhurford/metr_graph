@@ -25,7 +25,7 @@
 #   4. GLM-5.2 11.0 == Opus 4.5 11.0; [A] states GLM-5.2 "reaches as far as Opus 4.5".
 #   Derived lags also reproduce [A]'s prose: GLM-5.2 6.7mo ("less than 7 months"), DeepSeek-V4-Pro
 #   6.8mo ("7 months before it").
-# LAST VERIFIED 2026-08-29 (figure-unchanged check, not a re-digitization): re-fetched fig2-ranges.png
+# LAST VERIFIED 2026-09-03 (figure-unchanged check, not a re-digitization): re-fetched fig2-ranges.png
 #   from the post's current CDN URL (.../6a5a1245efc070dccfb1d56d_fig2-ranges.png). Webflow content-hashes
 #   the filename, so the unchanged URL is itself evidence the asset was not re-uploaded; CDN headers still
 #   report last-modified 2026-07-17 11:30:14 GMT, content-length 1047349, etag 62f53079...fb13.
@@ -41,7 +41,7 @@
 #   -- so no trace has been added. No AISI/CAISI post after [B] states a new TLO endpoint in prose either:
 #   the only ones since are the qualitative 2026-08-04 agent-incident report and the 2026-08-27 optstop
 #   tooling release, neither of which prints a benchmark score. The NIST
-#   mirror of [B] now carries "Updated August 12, 2026", but every figure it prints is identical to what
+#   mirror of [B] now carries "Updated August 28, 2026" (was August 12), but every figure it prints is identical to what
 #   is ingested here (Kimi K3 step 17 of 32; U.S. frontier 28.5 steps; GLM-5.2 step 11), so the update is
 #   editorial and changes no row below.
 # DATES: unlike aisi_cyber_narrow.csv, this figure's x-axis is cumulative tokens, so it carries NO date

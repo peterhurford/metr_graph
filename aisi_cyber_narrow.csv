@@ -7,7 +7,7 @@
 # VALIDATION: derived dates match known releases (GPT-5 2025-08-07 exact; Opus 3 off by 1d; o3 off by 1d).
 #   Derived lags reproduce AISI's printed annotations: GLM-5.2 vs Opus 4.6 = 4.30mo (chart "4.3 mo");
 #   DeepSeek-V4-Pro vs Opus 4.5 = 5.06mo (chart "5.0 mo").
-# LAST VERIFIED 2026-08-29 (figure-unchanged check, not a re-digitization): re-fetched fig1-narrow.png
+# LAST VERIFIED 2026-09-03 (figure-unchanged check, not a re-digitization): re-fetched fig1-narrow.png
 #   from the post's current CDN URL (.../6a5a119ab40ff07b1ffba031_fig1-narrow.png). Webflow content-hashes
 #   the filename, so an unchanged URL is itself evidence the asset was not re-uploaded; its CDN headers
 #   still report last-modified 2026-07-17 11:27:23 GMT, content-length 609388, etag 08de3a27...0632.
@@ -22,10 +22,12 @@
 #   Two AISI posts since 2026-07-23, neither carrying benchmark scores: the 2026-08-04 agent-incident
 #   report (qualitative, incident counts only) and 2026-08-27 "Optimal stopping" (the optstop tooling
 #   release, an evaluation-budget method). Kimi K3 still has NO narrow-task score -- the 2026-07-23 assessment ran
-#   only ExploitBench + the TLO range, and its prose still says AISI "intends to test Kimi K3 on this same
-#   basis, once its weights are publicly released". The NIST mirror of that post now carries "Updated
-#   August 12, 2026", but every printed number is unchanged, so this suite has gained no models since
-#   2026-07-17. See aisi_cyber_tlo.csv for Kimi K3's cyber-range score.
+#   only ExploitBench + the TLO range. The NIST mirror of that post now carries "Updated
+#   August 28, 2026" (was August 12), but every printed number is unchanged -- Kimi K3 step 17 of 32, US
+#   frontier 28.5 -- so this suite has gained no models since 2026-07-17. See aisi_cyber_tlo.csv for
+#   Kimi K3's cyber-range score. Note the AISI post body is client-rendered (a plain fetch returns a
+#   Webflow shell with only the title), so verify its prose against the NIST mirror, which is served
+#   server-side; a grep over the AISI HTML alone cannot show a sentence is absent.
 #   Not to be confused with "How fast is autonomous AI cyber capability advancing?" (2026-05-13), which
 #   predates this post and reports cyber *time horizons* -- a different metric, not success rates.
 # CAVEAT: date_source=chart means the date is inferred from marker x-position, NOT a published release date.

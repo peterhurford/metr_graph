@@ -658,6 +658,15 @@ _RLI_RAW = [
     #     paper). Its 2.08 is not contradicted, just no longer reproducible upstream.
     # Leaderboard rows below our floor and intentionally not carried: Manus 1.0 (2.50),
     # ChatGPT agent (1.25), gpt-5.2 (default) 2.08 -- we carry the (medium) variant.
+    # Rechecked 2026-09-03: no new model and no changed score on any of the four surfaces.
+    # Scale's embedded JSON still tops out at Gemini 3.7 Flash (createdAt 2026-08-24); every
+    # other row's createdAt is 2026-03-05 or earlier. safe.ai/blog's newest post is still
+    # 2026-07-01. Cheapest canonical check found: dashboard.safe.ai/api/rli returns the CAIS
+    # rows as plain JSON (what remotelabor.ai itself fetches) -- no bundle parsing needed.
+    # Two standing cross-surface asymmetries, both already reconciled above: Gemini 3.7 Flash
+    # is on Scale but still not in the CAIS API; Grok 4 is in CAIS but not on Scale. Scale
+    # stores 2.502/2.501 for gpt-5.2 (medium)/Manus 1.5 -- rank tie-break jitter behind the
+    # rendered 2.50, not a score change.
 ]
 
 
@@ -1769,10 +1778,16 @@ def _dc_hidden_companies(dcs, now=None):
     2. **A rolling `_DC_EXCLUDE_HORIZON_DAYS` horizon, not the uncapped peak.**
        Uncapped, every listed company eventually clears 100k on buildout
        announced for 2028 and later, and the exclusion stops meaning anything.
-       A year out is the span where the plans are firm enough to chart. The
-       roster is stable well either side of it: nothing changes between a
-       6-month and a 12-month horizon, and the next company to qualify does so
-       only at ~18 months.
+       A year out is the span where the plans are firm enough to chart.
+       The roster now moves as that horizon rolls, and the movement is the
+       catalogue densifying rather than a refresh: Vantage qualified on
+       2026-09-01 on data unchanged from the week before, when its planned
+       154k-H100e TX1 step (2027-08-31) came inside the year. STACK (250k)
+       is next, about six months out. So expect
+       `test_current_roster_is_what_the_tab_says_it_is` to fail roughly
+       whenever a new site's plan crosses the line, and retarget it
+       deliberately — the alternatives are a higher bar or a shorter horizon,
+       and both only postpone the same call.
     3. **Not the user's projection window.** dc_end_year caps the *charts*, but
        who appears on the tab is a property of the company, not of a slider —
        a roster that changed with the controls would read as sites blinking in
@@ -6730,6 +6745,15 @@ _OPENAI_REVENUE = [
     # Excluded: OpenAI CFO Sarah Friar told employees on 2026-07-29 that July ARR
     # "surpassed the company's entire second quarter" (CNBC). No dollar figure was
     # given, and it mixes ARR against a quarterly total -- not a datapoint.
+    # Rechecked 2026-09-03: still nothing company-wide since the 2026-08-14 post behind the
+    # 44.3 above -- TickerTrends' six posts since (08-21 enterprise adoption, 08-26 Codex/Claude
+    # Code adoption, 08-26 GitHub commit mentions, 08-31 GTA VI, 08-31 ChatGPT-ads ARR, ~09-02
+    # Fable 5.1 launch tracking) carry no company total. Epoch's ai_companies_revenue_reports.csv
+    # still tops out at Bloomberg's $40B / 2026-07-31 as-of.
+    # NOTE for the next run: TickerTrends began a *weekly* ChatGPT Ads ARR series on 2026-08-31
+    # ("$1 billion in latest reported ARR"). That is product-level, like Codex ARR, and must not
+    # be read as a company total -- it will generate frequent "OpenAI ARR" headlines that do not
+    # belong in this table.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -6799,6 +6823,15 @@ _ANTHROPIC_REVENUE = [
     # Bloomberg scoop, not independent reads. TickerTrends' 2026-08-18 post gives Claude Code
     # $15.12B tracked ARR and calls it "21.9% of Anthropic's total tracked ARR"; that implies
     # ~$69B but TickerTrends never states the total, and it would be tracker-class anyway.
+    # Rechecked 2026-09-03: still nothing newer. anthropic.com/news has nine posts since 08-04
+    # (through the 09-01 Fable 5.1 / Mythos 5.1 launch) and none states a run rate -- the launch
+    # post is product/pricing only, unlike the April Google/Broadcom post that carried the $30B.
+    # EDGAR still has no Anthropic registrant at all (a company search for S-1 returns no
+    # matching companies; the 137 "anthropic" hits since 08-01 are third-party NPORT-P fund
+    # holdings), so the 2026-06-01 S-1 remains a confidential draft and no public prospectus
+    # figure exists. Epoch's newest Anthropic row is unchanged at 65.0 / 2026-07-31, sourced to
+    # the same Bloomberg story. All later coverage (Fortune, CNBC, TechCrunch, Axios) is
+    # derivative of that one scoop, not an independent read.
 ]
 
 
@@ -11398,11 +11431,15 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
 
 
 # ── China's ETA to a target ECI ───────────────────────────────────────────
-# The level the section asks about. 161 is where the US frontier sits as of
-# mid-2026 (GPT-5.6 Sol, 161.7), so "when does China cross 161" is really "when
-# does China reach today's US frontier" — a fixed bar, not a moving one, which is
-# why it can be answered with a date instead of a gap.
-_CC_CN_TARGET_ECI = 161.0
+# The level the section asks about: today's US ECI frontier, rounded down to a
+# whole point. "When does China cross it" is then "when does China reach where
+# the US is now" — a fixed bar, not a moving one, which is why it can be
+# answered with a date instead of a gap. The anchor model is deliberately not
+# named here: Epoch recomputes scores live, so which model holds the record
+# moves between pulls. Retarget when
+# TestCcCnTargetIsTodaysUsFrontier fails, and re-read the captions that
+# compare this bar with the Pacing pause panel's.
+_CC_CN_TARGET_ECI = 169.0
 
 
 def _cc_cn_target_years(anchor_eci, target, algo_lo, algo_mid, algo_hi,
@@ -13214,8 +13251,8 @@ def _pc_ramp_for(timing_label, ramp_days):
 _PC_RSI_WEIGHTS = {
     "metr_p50": 5.0,
     "metr_p80": 15.0,
-    "eci_187_5": 10.0,
-    "eci_200": 10.0,
+    "eci_207_5": 10.0,
+    "eci_227": 10.0,
     "rli_90": 15.0,
     "cobench_85": 10.0,
     "staff_10x": 8.0,
@@ -13830,7 +13867,7 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
 
 # The ECI companions, on the US-best frontier the ECI tab defaults to. Both
 # bars are today's frontier plus **whole jumps the size of GPT-5 -> the
-# current frontier** — two of them for 187.5, three for 200 — well above
+# current frontier** — two of them for 207.5, three for 227 — well above
 # anything the ECI tab draws (its own milestone table tops out at 170) and a
 # pure extrapolation of the same fit, a long way outside the frontier's
 # observed range. 170 was a card once, but it sits close enough to today's
@@ -13841,7 +13878,7 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
 # footnote. Epoch recomputes scores live, so the arithmetic is pinned by
 # `test_eci_target_is_two_more_frontier_jumps` against the live CSV rather
 # than left to rot in prose; retarget the constants if a refresh breaks it.
-_PC_ECI_TARGETS = (187.5, 200.0)
+_PC_ECI_TARGETS = (207.5, 227.0)
 _PC_ECI_JUMP_FROM = ("GPT-5", 150.0)
 _PC_ECI_POS_CI = 2.0     # the ECI tab's default position CI, fitted score +/- 2
 

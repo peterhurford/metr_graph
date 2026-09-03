@@ -2217,13 +2217,13 @@ class TestCcCompanyAllReleases:
             for d, _e, _n in front:
                 assert d in dates, f"{lab}: frontier date {d} missing from pool"
 
-    def test_sol_is_the_live_fallback_for_wisconsin(self):
-        # End-to-end on the shipped data: Epoch's 2026-08-18 rescore put Sol
-        # (161.08) under GPT-5.5 Pro (161.73), so it is no longer a running-max
-        # release and tier 1 finds nothing for Fairwater Wisconsin. Tier 3 must
-        # still surface it — that blank row is what the fallback exists to fix.
-        # If a later OpenAI release re-takes the record this stops applying;
-        # relax the assert to "some release is matched" rather than deleting it.
+    def test_wisconsin_matches_some_release(self):
+        # End-to-end on the shipped data: whatever the tier, the step must not
+        # come back blank. This was the live tier-3 case until 2026-09-03, when
+        # GPT-6 Astra (169.23) re-took the record and tier 1 began matching it
+        # again — the retirement its own comment predicted, so the assert was
+        # relaxed to "some release is matched" rather than deleted. Tier 3
+        # itself stays guarded synthetically by TestCcForwardMatch.
         attr = vp._cc_lab_attribution()
         milestones = vp._cc_lab_dc_milestones("OpenAI", attr, key="perf")
         front = vp._cc_company_frontier_models()["OpenAI"]
@@ -2235,7 +2235,7 @@ class TestCcCompanyAllReleases:
         got, fb = vp._cc_forward_match(steps[0], front, allr, {},
                                        TestCcForwardMatch.TODAY)
         assert got is not None, "Wisconsin still matches nothing"
-        assert got[2] == "GPT-5.6 Sol" and fb is True
+        assert got[2], "Wisconsin matched an unnamed release"
 
 
 class TestCcDcDerivation:
@@ -3812,21 +3812,30 @@ class TestDcHiddenCompanies:
 
     def test_current_roster_is_what_the_tab_says_it_is(self):
         """The calibration guard. The tab's scope caption names who the rule
-        adds, so an Epoch refresh that moves the roster has to be looked at
-        rather than absorbed silently. Oracle is the nearest miss at ~84k
-        against a 100k bar, so it is the one to expect here first; if it
-        crosses, retarget _DC_EXCLUDE_MIN_H100 deliberately (or accept Oracle)
-        instead of loosening this test."""
+        adds, so a roster move has to be looked at rather than absorbed
+        silently. Vantage joined on 2026-09-01 with its rows unchanged — its
+        planned 154k-H100e TX1 step (2027-08-31) simply came inside the
+        rolling year. STACK (250k) is the next to qualify, ~6 months out;
+        Oracle is the nearest miss below at ~84k against a 100k bar. When
+        this fails, retarget deliberately (accept the joiner, or move
+        _DC_EXCLUDE_MIN_H100 / _DC_EXCLUDE_HORIZON_DAYS) rather than
+        loosening it."""
         charted = vp._DC_EXCLUDE_COMPANIES - vp._dc_hidden_companies(vp.dc_all)
-        assert charted == {'QTS', 'DayOne', 'Microsoft'}, charted
+        assert charted == {'QTS', 'DayOne', 'Microsoft', 'Vantage'}, charted
 
-    def test_roster_is_stable_across_the_horizon(self):
-        """Who appears must not hinge on the exact horizon. Nothing may change
-        between 6 and 12 months out — the docstring's claim, asserted."""
+    def test_roster_only_ever_grows_as_the_horizon_rolls(self):
+        """Who appears may move as planned buildout comes inside the horizon —
+        Vantage did — but a company already charted must never drop back out
+        as time passes, which would read as a site ceasing to exist."""
         now = datetime.now()
-        at_6mo = vp._dc_hidden_companies(
-            vp.dc_all, now=now - timedelta(days=183))
-        assert at_6mo == vp._dc_hidden_companies(vp.dc_all, now=now)
+        prev = None
+        for off in (-365, -183, 0, 183, 365):
+            charted = (vp._DC_EXCLUDE_COMPANIES
+                       - vp._dc_hidden_companies(
+                           vp.dc_all, now=now + timedelta(days=off)))
+            if prev is not None:
+                assert prev <= charted, (off, prev, charted)
+            prev = charted
 
     def test_roster_ignores_the_users_projection_window(self):
         """dc_end_year caps the charts, never the roster — otherwise sites blink
@@ -4878,7 +4887,7 @@ class TestPacing:
             prev = med
 
     def test_eci_target_sits_above_the_eci_tabs_top_milestone(self):
-        """187.5 is a deliberate extrapolation past anything the ECI tab
+        """207.5 is a deliberate extrapolation past anything the ECI tab
         draws — a bar near today's frontier dates model releases, not RSI."""
         top = max(s for s, _l, _c in vp._ECI_US_MILESTONES)
         assert min(vp._PC_ECI_TARGETS) > top
@@ -4899,9 +4908,9 @@ class TestPacing:
         for n, target in zip((2, 3), vp._PC_ECI_TARGETS):
             assert abs(target - (fr[-1]['eci_score'] + n * jump)) < 1.0
         # The slug carries the half-point rather than rounding it away —
-        # it keys the blend weight, so "eci_188" would silently unweight it.
+        # it keys the blend weight, so "eci_208" would silently unweight it.
         slugs = [f"eci_{t:g}".replace(".", "_") for t in vp._PC_ECI_TARGETS]
-        assert slugs == ["eci_187_5", "eci_200"]
+        assert slugs == ["eci_207_5", "eci_227"]
         assert [vp._PC_RSI_WEIGHTS[s] for s in slugs] == [10.0, 10.0]
 
     def test_rli_eta_reproduces_the_rli_tab_defaults(self):
