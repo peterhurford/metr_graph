@@ -13251,8 +13251,8 @@ def _pc_ramp_for(timing_label, ramp_days):
 _PC_RSI_WEIGHTS = {
     "metr_p50": 5.0,
     "metr_p80": 15.0,
-    "eci_207_5": 10.0,
-    "eci_227": 10.0,
+    "eci_187_5": 10.0,
+    "eci_200": 10.0,
     "rli_90": 15.0,
     "cobench_85": 10.0,
     "staff_10x": 8.0,
@@ -13670,24 +13670,24 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
              f"{_PC_METR_TARGET_HRS:.0f}h is about one work-month.")
             for lab, k in _PC_METR_LEVELS]
     _eci_fr = _eci_entity_data("US best")[1]
-    # One footnote per bar: each target is a whole number of GPT-5-sized
-    # jumps past today's frontier, and the count is read off the live scores
-    # rather than written into prose that Epoch's rescoring would stale.
+    # One footnote per bar, measured off the *pinned* jump ends — the same
+    # pair the targets were set from, so the count a card claims and the bar
+    # it dates can never disagree. Reading the far end off the live frontier
+    # would make the sentence re-describe a different jump on every rescore.
     _eci_jump = {}
-    if _eci_fr:
-        _from_name, _from = _PC_ECI_JUMP_FROM
-        _top = _eci_fr[-1]
-        _jump = _top['eci_score'] - _from
+    _from_name, _from = _PC_ECI_JUMP_FROM
+    _to_name, _to = _PC_ECI_JUMP_TO
+    _jump = _to - _from
+    if _jump > 0:
         for _t in _PC_ECI_TARGETS:
-            _n = max(round((_t - _top['eci_score']) / _jump), 1) \
-                if _jump > 0 else 1
+            _n = max(round((_t - _to) / _jump), 1)
             _eci_jump[_t] = (
                 " {t:g} is {n} more jumps the size of {a} \u2192 {b} "
-                "({lo:g} \u2192 {hi:.1f}), i.e. +{j:.1f} apiece.".format(
-                    t=_t, n=_n, a=_from_name,
-                    b=str(_top.get('display_name', '')).split(' (')[0],
-                    lo=_from, hi=_top['eci_score'],
-                    j=(_t - _top['eci_score']) / _n))
+                "({lo:g} \u2192 {hi:g}), i.e. +{j:.1f} apiece. The jump is "
+                "pinned to that pair, so a new record moves the frontier "
+                "toward this bar instead of pushing it away.".format(
+                    t=_t, n=_n, a=_from_name, b=_to_name,
+                    lo=_from, hi=_to, j=(_t - _to) / _n))
     _cap += [(f"eci_{t:g}".replace(".", "_"), f"ECI reaches {t:g}",
               _pc_eci_eta(_eci_fr, t, samples=True), True,
               "Epoch ECI tab at its defaults: single OLS on the US-best "
@@ -13867,19 +13867,25 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
 
 # The ECI companions, on the US-best frontier the ECI tab defaults to. Both
 # bars are today's frontier plus **whole jumps the size of GPT-5 -> the
-# current frontier** — two of them for 207.5, three for 227 — well above
+# current frontier** — two of them for 187.5, three for 200 — well above
 # anything the ECI tab draws (its own milestone table tops out at 170) and a
 # pure extrapolation of the same fit, a long way outside the frontier's
 # observed range. 170 was a card once, but it sits close enough to today's
 # frontier that it dated near-term model releases, not an RSI-scale
 # capability — its weight moved here.
 #
-# `_PC_ECI_JUMP_FROM` is the near end of that jump, quoted in the card
-# footnote. Epoch recomputes scores live, so the arithmetic is pinned by
-# `test_eci_target_is_two_more_frontier_jumps` against the live CSV rather
-# than left to rot in prose; retarget the constants if a refresh breaks it.
-_PC_ECI_TARGETS = (207.5, 227.0)
+# `_PC_ECI_JUMP_FROM` and `_PC_ECI_JUMP_TO` are the two ends of that jump.
+# **Both ends are pinned, not read off the live frontier.** The bar is
+# "two more jumps the size of the one we just watched", so re-floating the
+# far end onto each new record makes the bar recede as capability arrives:
+# a model that beats the frontier by X raises the anchor by X and the jump
+# by X, moving a two-jump bar by 3X. GPT-6 Astra did exactly that once, and
+# the ECI cards moved ~13 months *later* on a refresh that made every fixed
+# bar arrive earlier. Move these deliberately when the bar should mean
+# something new — not on every rescore.
+_PC_ECI_TARGETS = (187.5, 200.0)
 _PC_ECI_JUMP_FROM = ("GPT-5", 150.0)
+_PC_ECI_JUMP_TO = ("Claude Fable 5", 162.5)
 _PC_ECI_POS_CI = 2.0     # the ECI tab's default position CI, fitted score +/- 2
 
 

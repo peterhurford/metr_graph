@@ -4887,30 +4887,42 @@ class TestPacing:
             prev = med
 
     def test_eci_target_sits_above_the_eci_tabs_top_milestone(self):
-        """207.5 is a deliberate extrapolation past anything the ECI tab
+        """187.5 is a deliberate extrapolation past anything the ECI tab
         draws — a bar near today's frontier dates model releases, not RSI."""
         top = max(s for s, _l, _c in vp._ECI_US_MILESTONES)
         assert min(vp._PC_ECI_TARGETS) > top
 
-    def test_eci_target_is_two_more_frontier_jumps(self):
-        """The bars mean two and three more jumps the size of GPT-5 →
-        today's frontier, and the cards' footnotes say so. Epoch recomputes
-        scores live, so pin the arithmetic here: if a refresh moves either
-        end, retarget `_PC_ECI_TARGETS` / `_PC_ECI_JUMP_FROM` deliberately
-        rather than loosening this."""
-        fr = vp._eci_entity_data("US best")[1]
-        name, score = vp._PC_ECI_JUMP_FROM
-        anchor = next(m for m in fr
-                      if str(m.get('display_name', '')).startswith(name + " "))
-        assert abs(anchor['eci_score'] - score) < 1.0
-        jump = fr[-1]['eci_score'] - anchor['eci_score']
+    def test_eci_target_is_two_more_pinned_jumps(self):
+        """The bars are two and three jumps the size of GPT-5 → Fable 5, off
+        the *pinned* pair — not off the live frontier.
+
+        Floating the far end is self-defeating: a model that beats the
+        frontier by X raises both the anchor and the jump by X, so a two-jump
+        bar moves by 3X and the milestone recedes exactly when capability
+        arrives. GPT-6 Astra did that on 2026-09-03 and pushed these cards ~13
+        months later on a refresh that made every fixed bar earlier. So the
+        arithmetic is checked against the constants, and the frontier is only
+        required to still sit below the bars."""
+        name, lo = vp._PC_ECI_JUMP_FROM
+        to_name, hi = vp._PC_ECI_JUMP_TO
+        jump = hi - lo
         assert jump > 0
         for n, target in zip((2, 3), vp._PC_ECI_TARGETS):
-            assert abs(target - (fr[-1]['eci_score'] + n * jump)) < 1.0
+            assert abs(target - (hi + n * jump)) < 0.01, (n, target)
+        # Both ends must still name a real model on the live frontier, so a
+        # pinned number can't quietly stop referring to anything.
+        fr = vp._eci_entity_data("US best")[1]
+        for nm, val in ((name, lo), (to_name, hi)):
+            hit = [m for m in fr
+                   if str(m.get('display_name', '')).startswith(nm + " ")]
+            assert hit, f"{nm} is no longer on the US-best frontier"
+            assert abs(hit[0]['eci_score'] - val) < 1.5, (nm, hit[0])
+        # The bars are extrapolations: the frontier has not reached them.
+        assert fr[-1]['eci_score'] < min(vp._PC_ECI_TARGETS)
         # The slug carries the half-point rather than rounding it away —
-        # it keys the blend weight, so "eci_208" would silently unweight it.
+        # it keys the blend weight, so "eci_188" would silently unweight it.
         slugs = [f"eci_{t:g}".replace(".", "_") for t in vp._PC_ECI_TARGETS]
-        assert slugs == ["eci_207_5", "eci_227"]
+        assert slugs == ["eci_187_5", "eci_200"]
         assert [vp._PC_RSI_WEIGHTS[s] for s in slugs] == [10.0, 10.0]
 
     def test_rli_eta_reproduces_the_rli_tab_defaults(self):
