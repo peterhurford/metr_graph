@@ -2199,6 +2199,134 @@ class TestCcForwardMatch:
         assert got is None and fb is False
 
 
+class TestTodayForward:
+    """Today-forward mode: `_rel_date_label`, `_relativize_dates` and the
+    figure post-process `_today_forward`."""
+
+    T = datetime(2026, 9, 3)
+
+    def _d(self, days):
+        return self.T + timedelta(days=days)
+
+    def test_labels_count_days_to_thirty_then_calendar_units(self):
+        lab = lambda n: vp._rel_date_label(self._d(n), self.T)
+        assert lab(0) == "today"
+        assert lab(1) == "1 day from today"
+        assert lab(30) == "30 days from today"
+        assert lab(33) == "1mo 3d from today"
+        assert lab(-3) == "3 days ago"
+        assert lab(-45) == "1mo 14d ago"
+
+    def test_labels_keep_two_units_and_use_calendar_months(self):
+        # Sep 3 → Nov 11 two years on is 2y 2mo 8d; the days drop.
+        assert vp._rel_date_label(datetime(2028, 11, 11), self.T) == "2y 2mo from today"
+        # Calendar units: Oct 3 is 30 days (still counted in days), Nov 3 is
+        # two whole months, and the day before it is one month plus October's
+        # leftover.
+        assert vp._rel_date_label(datetime(2026, 10, 3), self.T) == "30 days from today"
+        assert vp._rel_date_label(datetime(2026, 11, 3), self.T) == "2mo from today"
+        assert vp._rel_date_label(datetime(2026, 11, 2), self.T) == "1mo 30d from today"
+        assert vp._rel_date_label(datetime(2027, 9, 3), self.T) == "1y from today"
+
+    def test_relativize_rewrites_every_date_form_and_nothing_else(self):
+        got = vp._relativize_dates(
+            "Sep 03, 2026 · 2026-10-06 · Mar 2028 · ECI 5.4 · 2027-13-40", self.T)
+        assert got == ("today · 1mo 3d from today · ~1y 6mo from today · ECI 5.4"
+                       " · 2027-13-40")
+
+    def _fig(self):
+        import plotly.graph_objects as go
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=[self._d(-30), self._d(60)], y=[1, 2],
+                                 hovertemplate='%{x|%b %Y}<br>v %{y}'))
+        fig.add_trace(go.Scatter(x=[self._d(10)], y=[1], mode='markers',
+                                 hovertext=[f"{self._d(10):%b %d, %Y}"]))
+        fig.add_trace(go.Scatter(x=[self._d(10)], y=[1], mode='markers',
+                                 hoverinfo='text', text=["Sep 13, 2026"]))
+        fig.add_trace(go.Scatter(x=[self._d(10)], y=[1], mode='markers+text',
+                                 hoverinfo='text', text=["Sep 13, 2026"]))
+        fig.update_layout(hovermode='x unified',
+                          xaxis=dict(range=[self._d(-400), self._d(500)]))
+        return fig
+
+    def test_figure_opens_at_today_and_keeps_its_end(self):
+        fig = vp._today_forward(self._fig(), self.T)
+        assert fig.layout.xaxis.range[0] == self.T
+        assert fig.layout.xaxis.range[1] == self._d(500)
+        # A unified hover would print the calendar date as its header.
+        assert fig.layout.hovermode == 'closest'
+
+    def test_figure_without_a_range_ends_at_its_data(self):
+        fig = self._fig()
+        fig.update_layout(xaxis=dict(range=None))
+        vp._today_forward(fig, self.T)
+        assert fig.layout.xaxis.range[0] == self.T
+        assert fig.layout.xaxis.range[1] == self._d(60)
+
+    def test_hovers_go_relative(self):
+        fig = vp._today_forward(self._fig(), self.T)
+        t0, t1, t2, t3 = fig.data
+        assert t0.hovertemplate == '%{customdata}<br>v %{y}'
+        assert list(t0.customdata) == ["30 days ago", "1mo 30d from today"]
+        assert list(t1.hovertext) == ["10 days from today"]
+        # `text` is rewritten only when it serves as hover text, never when it
+        # is drawn on the chart.
+        assert list(t2.text) == ["10 days from today"]
+        assert list(t3.text) == ["Sep 13, 2026"]
+
+    def test_existing_customdata_is_left_alone(self):
+        import plotly.graph_objects as go
+        fig = go.Figure(go.Scatter(x=[self._d(5)], y=[1], customdata=["k"],
+                                   hovertemplate='%{x|%b %Y} %{customdata}'))
+        vp._today_forward(fig, self.T)
+        assert list(fig.data[0].customdata) == ["k"]
+        assert fig.data[0].hovertemplate == '%{x|%b %Y} %{customdata}'
+
+    def _ramp(self, ys, **layout):
+        import plotly.graph_objects as go
+        xs = [self._d(d) for d in range(-300, 300, 10)]
+        fig = go.Figure(go.Scatter(x=xs, y=ys(len(xs))))
+        fig.add_trace(go.Scatter(x=[xs[0], xs[-1]], y=[50, 50], hoverinfo='skip'))
+        fig.update_layout(xaxis=dict(range=[xs[0], xs[-1]]), **layout)
+        return fig
+
+    def test_y_axis_refits_to_the_forward_data(self):
+        # History sized the axis; forward data sits in a sliver, so it refits —
+        # and the two-point reference level at 50 is not data.
+        fig = self._ramp(lambda n: [0.1 + 0.01 * i for i in range(n)],
+                         yaxis=dict(range=[-10, 60]))
+        vp._today_forward(fig, self.T)
+        lo, hi = fig.layout.yaxis.range
+        assert 0.35 < lo < 0.4 and 0.69 < hi < 0.75
+
+    def test_log_axis_refits_in_log10(self):
+        fig = self._ramp(lambda n: [10 ** (i / 20) for i in range(n)],
+                         yaxis=dict(type='log', range=[-1, 4]))
+        vp._today_forward(fig, self.T)
+        lo, hi = fig.layout.yaxis.range
+        assert 1.4 < lo < 1.5 and 3.0 < hi < 3.1
+
+    def test_a_categorical_y_axis_is_left_alone(self):
+        import plotly.graph_objects as go
+        fig = go.Figure(go.Scatter(x=[self._d(5), self._d(9)], y=["US", "China"],
+                                   mode='markers'))
+        vp._today_forward(fig, self.T)
+        assert fig.layout.yaxis.range is None
+
+    def test_a_range_the_data_mostly_spans_is_kept(self):
+        fig = self._ramp(lambda n: list(np.linspace(-70, 90, n)),
+                         yaxis=dict(range=[0, 100]))
+        vp._today_forward(fig, self.T)
+        assert tuple(fig.layout.yaxis.range) == (0, 100)
+
+    def test_toggle_is_url_tracked_and_reset_by_no_tab(self):
+        keys, defaults = vp._all_tracked()
+        assert vp._TODAY_FWD_KEY in keys and defaults[vp._TODAY_FWD_KEY] is False
+        for name in dir(vp):
+            if name.endswith("_RESET_KEYS"):
+                assert vp._TODAY_FWD_KEY not in getattr(vp, name), name
+
+
 class TestCcResponsibleCluster:
     """_cc_responsible_cluster: the release → cluster direction, with pins.
 

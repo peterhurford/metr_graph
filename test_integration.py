@@ -1913,6 +1913,112 @@ class TestPacingTab:
             "Training run finished"
 
 
+class TestTodayForwardMode:
+    """The *Today forward mode* toggle on the six projection tabs: the
+    projection charts open at today with relative hover dates, and the RSI
+    tab's diagnostic charts are left alone."""
+
+    TABS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "RSI",
+            "Revenue", "Pacing"]
+    _DATE = re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) "
+                       r"(\d{1,2}, )?\d{4}\b|\b\d{4}-\d{2}-\d{2}\b")
+
+    @staticmethod
+    def _specs(at):
+        import json
+        return [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+
+    @staticmethod
+    def _hover_strings(spec):
+        out = []
+        for tr in spec["data"]:
+            for k in ("hovertext", "hovertemplate"):
+                v = tr.get(k)
+                if isinstance(v, str):
+                    out.append(v)
+                elif isinstance(v, list):
+                    out.extend(x for x in v if isinstance(x, str))
+            if "text" in str(tr.get("hoverinfo", "")) and "text" not in str(tr.get("mode", "")):
+                v = tr.get("text")
+                out.extend(v if isinstance(v, list) else [v] if isinstance(v, str) else [])
+            # A template's dates land in the customdata column it now reads.
+            if "customdata" in str(tr.get("hovertemplate", "")):
+                out.extend(x for x in tr.get("customdata") or [] if isinstance(x, str))
+        return out
+
+    def _starts_today(self, spec):
+        rng = spec["layout"]["xaxis"].get("range")
+        return bool(rng) and str(rng[0])[:10] == datetime.now().strftime("%Y-%m-%d")
+
+    @pytest.mark.parametrize("tab", TABS)
+    def test_projection_charts_open_at_today_with_relative_hovers(self, tab):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, tab)
+        assert at.checkbox(key="today_fwd").value is False
+        before = [self._starts_today(sp) for sp in self._specs(at)]
+        assert not all(before)
+        at.checkbox(key="today_fwd").set_value(True).run()
+        _assert_no_error(at, f"today forward on {tab}")
+        specs = self._specs(at)
+        fwd = [sp for sp in specs if self._starts_today(sp)]
+        assert fwd, tab
+        for sp in fwd:
+            hovers = self._hover_strings(sp)
+            assert any("from today" in h or h == "today" for h in hovers), tab
+            assert not any(self._DATE.search(h) for h in hovers), tab
+            assert sp["layout"].get("hovermode") != "x unified"
+
+    def test_metr_y_axis_zooms_to_the_projection(self):
+        """The METR axis is sized to its history; from today the fan sits in
+        a sliver of it, so the mode refits the y-range."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "METR Horizon")
+        before = self._specs(at)[0]["layout"]["yaxis"]["range"]
+        at.checkbox(key="today_fwd").set_value(True).run()
+        after = self._specs(at)[0]["layout"]["yaxis"]["range"]
+        assert after[1] - after[0] < 0.5 * (before[1] - before[0])
+        assert after[0] > before[0]
+
+    def test_toggle_sits_at_the_foot_of_the_sidebar(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "METR Horizon")
+        sb = at.sidebar.checkbox
+        assert sb[-1].key == "today_fwd"
+        _switch_tab(at, "UK Cyber")
+        assert not [c for c in at.checkbox if c.key == "today_fwd"]
+
+    def test_rsi_tab_converts_only_the_projection_cdf(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "RSI")
+        at.checkbox(key="today_fwd").set_value(True).run()
+        specs = self._specs(at)
+        fwd = [sp for sp in specs if self._starts_today(sp)]
+        assert len(fwd) == 1
+        assert fwd[0]["layout"]["yaxis"]["title"]["text"] == "Chance crossed by then"
+        assert len(specs) > 1
+
+    def test_pacing_converts_both_charts(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        at.checkbox(key="today_fwd").set_value(True).run()
+        specs = self._specs(at)
+        assert len(specs) == 2 and all(self._starts_today(sp) for sp in specs)
+
+    def test_toggle_survives_a_tab_switch_and_its_reset(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "METR Horizon")
+        at.checkbox(key="today_fwd").set_value(True).run()
+        _switch_tab(at, "Revenue")
+        assert at.checkbox(key="today_fwd").value is True
+        assert all(self._starts_today(sp) for sp in self._specs(at))
+
+
 class TestSectionDeepLinks:
     """`?to=<anchor>` is how a section link survives a fresh load — a bare
     `#fragment` is dropped by the Community Cloud iframe and again by every

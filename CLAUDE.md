@@ -297,6 +297,38 @@ Don't widen a `'proximity'` or `'fabric'` cluster to "same company, same region"
 cross-site link has to carry the data-parallel gradient all-reduce, so metro fibre or a
 purpose-built fabric is the criterion for the levels that claim a link exists.
 
+### Today-forward mode
+
+A sidebar checkbox (`today_fwd`, URL-tracked, reset by no tab) at the foot of
+the sidebar on the six projection tabs (`_TODAY_FWD_TABS` — METR, Epoch ECI,
+RLI, RSI, Revenue, Pacing), rendered by the dispatch after the tab's own
+controls. On, a chart opens at today with no history and every hover date
+reads relative to today (`_rel_date_label`: days to 30, then the two largest
+of y/mo/d, calendar months). It is a post-process on the finished figure,
+`_today_forward()`, applied by wrapping the chart in `_tf()` at
+`st.plotly_chart`; nothing about the tab's hover builders changes. Four things
+are load-bearing:
+
+1. **Only the projection charts opt in** — the RSI tab's CoBench, survey, code
+   and detour charts are diagnostic and keep their history; the blend's CDF is
+   the one RSI chart wrapped. Tables, cards and annotations keep calendar
+   dates; the toggle's help says so.
+2. **A `hovertemplate`'s `%{x|…}` becomes a `customdata` column** of relative
+   labels, since Plotly can only format x as a calendar date; a trace that
+   already carries `customdata` is left alone. `text` is rewritten only when
+   it serves as hover text and is not drawn on the chart.
+3. **Unified hover falls back to per-point hover**, because the unified header
+   prints the x value as a calendar date and nothing can reformat it.
+4. **The y-axis refits to the forward data** (`_today_fwd_refit_y`) when that
+   data covers under `_TODAY_FWD_Y_COVER` of the recorded range — an axis sized
+   to its history leaves the fan in a sliver at the top — and is kept when the
+   curve mostly spans it (the blend's 0–100% CDF). Two-point hover-skipped
+   traces are reference levels, not data; a log axis refits in log10, a
+   categorical one (the Pacing race timeline) is left alone. The legend moves
+   above the plot, since the fan now starts under an inside top-left one.
+
+Guarded by `TestTodayForward` (unit) and `TestTodayForwardMode` (integration).
+
 ### Caveats belong on the thing they qualify
 
 Prefer a hover to a paragraph — applied across every tab. Keep in the visible

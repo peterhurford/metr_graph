@@ -395,6 +395,208 @@ def _bt_color_for(r):
     return '#e74c3c'
 
 
+# ── Today-forward mode ────────────────────────────────────────────────────
+# One sidebar toggle (`today_fwd`, URL-tracked, no tab's reset touches it) that
+# turns a projection chart into "from here on": the x-axis opens at today and
+# every date in a hover reads relative to it ("1mo 3d from today"). It is
+# applied as a post-process on the finished figure (`_today_forward`) rather
+# than threaded through each tab's hover builder, so a chart is opted in by one
+# call before `st.plotly_chart` and nothing else about it changes. Only the
+# projection charts carry it (METR, ECI, RLI, the RSI blend's CDF, revenue and
+# both Pacing charts) — a diagnostic chart of past data has no "forward".
+_TODAY_FWD_KEY = "today_fwd"
+_TODAY_FWD_DEFAULTS = {_TODAY_FWD_KEY: False}
+_TODAY_FWD_TABS = ("METR Horizon", "Epoch ECI", "Remote Labor Index", "RSI",
+                   "Revenue", "Pacing")
+# The visible data must cover at least this share of the recorded y-range,
+# else the axis is refit to it: a chart whose y-range was sized to its
+# history leaves the forward part in a sliver at the top, while a bounded
+# 0–100% axis that the curve mostly spans stays as it is.
+_TODAY_FWD_Y_COVER = 0.7
+
+
+def _today():
+    return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _today_fwd_on():
+    return bool(st.session_state.get(_TODAY_FWD_KEY, False))
+
+
+def _today_fwd_toggle():
+    """The sidebar checkbox; one per run, so render it once per tab."""
+    st.checkbox("Today forward mode", key=_TODAY_FWD_KEY,
+                help="Start the projection charts at today, with no history, "
+                     "and show hover dates as time from today rather than "
+                     "calendar dates. Tables and cards keep calendar dates.")
+
+
+def _rel_date_label(d, today=None):
+    """`d` as time from today: 'today', '12 days from today', '1mo 3d from
+    today', '2y 1mo ago'. Whole calendar months, then days; past 30 days the
+    two largest non-zero units are kept."""
+    today = today or _today()
+    d = datetime(d.year, d.month, d.day)
+    days = (d - today).days
+    if days == 0:
+        return "today"
+    ahead = days > 0
+    a, b = (today, d) if ahead else (d, today)
+    n = abs(days)
+    if n <= 30:
+        span = f"{n} day{'s' if n != 1 else ''}"
+    else:
+        months = (b.year - a.year) * 12 + (b.month - a.month)
+        if _pc_add_months(a, months) > b:
+            months -= 1
+        rem = (b - _pc_add_months(a, months)).days
+        parts = [(months // 12, 'y'), (months % 12, 'mo'), (rem, 'd')]
+        parts = [f"{v}{u}" for v, u in parts if v]
+        span = " ".join(parts[:2])
+    return f"{span} {'from today' if ahead else 'ago'}"
+
+
+_MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec"
+_DATE_RES = (
+    (re.compile(rf"\b({_MONTHS}) (\d{{1,2}}), (\d{{4}})\b"), '%b %d, %Y'),
+    (re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b"), '%Y-%m-%d'),
+    (re.compile(rf"\b({_MONTHS}) (\d{{4}})\b"), '%b %Y'),
+)
+
+
+def _relativize_dates(text, today):
+    """Every calendar date in a hover string → its `_rel_date_label`. A
+    month-only date is read at mid-month and marked '~'."""
+    for rx, fmt in _DATE_RES:
+        def _sub(m, fmt=fmt):
+            try:
+                d = datetime.strptime(m.group(0), fmt)
+            except ValueError:
+                return m.group(0)
+            if fmt == '%b %Y':
+                return "~" + _rel_date_label(d.replace(day=15), today)
+            return _rel_date_label(d, today)
+        text = rx.sub(_sub, text)
+    return text
+
+
+def _as_datetime(x):
+    if isinstance(x, datetime):
+        return x
+    if isinstance(x, np.datetime64):
+        return x.astype('datetime64[s]').astype(datetime)
+    if isinstance(x, str):
+        for fmt in ('%Y-%m-%d', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S'):
+            try:
+                return datetime.strptime(x[:19], fmt)
+            except ValueError:
+                continue
+    return None
+
+
+_HT_X_RE = re.compile(r"%\{x(\|[^}]*)?\}")
+
+
+def _today_forward(fig, today=None):
+    """Rewrite `fig` in place for today-forward mode; returns it.
+
+    The x-range opens at today (the recorded end is kept; without a recorded
+    range the latest x in the data ends it). Every hover string —
+    `hovertext`, a `text` used only for hover, and any `hovertemplate` — has
+    its dates made relative; a template's `%{x|…}` is replaced by a
+    `customdata` column of relative labels, since Plotly can only format x as
+    a calendar date. A unified hover would still print the calendar date as
+    its header, so those charts fall back to per-point hovers.
+    """
+    today = today or _today()
+    rng = fig.layout.xaxis.range
+    end = None
+    if rng and rng[1] is not None:
+        end = _as_datetime(rng[1]) or rng[1]
+    else:
+        xs = [_as_datetime(x) for tr in fig.data
+              for x in (tr.x if tr.x is not None else ())]
+        xs = [x for x in xs if x is not None]
+        end = max(xs) if xs else None
+    if end is not None and (not isinstance(end, datetime) or end > today):
+        fig.update_xaxes(range=[today, end])
+    if fig.layout.hovermode and 'unified' in str(fig.layout.hovermode):
+        fig.update_layout(hovermode='closest')
+    _today_fwd_refit_y(fig, today, end)
+    # With the history gone the fan starts at the left edge, under an inside
+    # top-left legend; put the legend above the plot instead.
+    fig.update_layout(legend=dict(orientation='h', x=0, xanchor='left',
+                                  y=1.02, yanchor='bottom'))
+
+    def _rel(v):
+        if isinstance(v, str):
+            return _relativize_dates(v, today)
+        if v is None:
+            return v
+        return [_relativize_dates(t, today) if isinstance(t, str) else t
+                for t in v]
+
+    for tr in fig.data:
+        hi = str(tr.hoverinfo or '')
+        if tr.hovertext is not None:
+            tr.hovertext = _rel(tr.hovertext)
+        if (tr.text is not None and 'text' in hi
+                and 'text' not in str(getattr(tr, 'mode', '') or '')):
+            tr.text = _rel(tr.text)
+        tmpl = tr.hovertemplate
+        if tmpl:
+            if isinstance(tmpl, str) and _HT_X_RE.search(tmpl) and tr.x is not None:
+                if tr.customdata is None:
+                    tr.customdata = [
+                        (_rel_date_label(dx, today) if (dx := _as_datetime(x))
+                         else str(x)) for x in tr.x]
+                    tmpl = _HT_X_RE.sub('%{customdata}', tmpl)
+            tr.hovertemplate = _rel(tmpl)
+    return fig
+
+
+def _today_fwd_refit_y(fig, today, end):
+    """Refit the y-range to the data from today on, when that data covers
+    under `_TODAY_FWD_Y_COVER` of the recorded range. Two-point traces with
+    hover skipped are reference levels, not data, and are left out. A log
+    axis is refit in log10, as Plotly stores its range."""
+    is_log = str(fig.layout.yaxis.type or '') == 'log'
+    ys = []
+    for tr in fig.data:
+        if tr.x is None or tr.y is None:
+            continue
+        if str(tr.hoverinfo or '') == 'skip' and len(tr.x) <= 2:
+            continue
+        for x, y in zip(tr.x, tr.y):
+            dx = _as_datetime(x)
+            if dx is None or dx < today or (isinstance(end, datetime) and dx > end):
+                continue
+            try:
+                y = float(y)
+            except (TypeError, ValueError):
+                return   # categorical y — nothing to refit
+            if not np.isfinite(y) or (is_log and y <= 0):
+                continue
+            ys.append(np.log10(y) if is_log else y)
+    if not ys:
+        return
+    lo, hi = min(ys), max(ys)
+    rng = fig.layout.yaxis.range
+    if rng and None not in rng:
+        cur_lo, cur_hi = float(rng[0]), float(rng[1])
+        span = cur_hi - cur_lo
+        if span > 0 and (hi - lo) / span >= _TODAY_FWD_Y_COVER:
+            return
+        lo, hi = max(lo, cur_lo), min(hi, cur_hi)
+    pad = 0.05 * (hi - lo) if hi > lo else (0.5 if not is_log else 0.1)
+    fig.update_yaxes(range=[lo - pad, hi + pad])
+
+
+def _tf(fig):
+    """`_today_forward` when the toggle is on; the chart's own figure otherwise."""
+    return _today_forward(fig, _today()) if _today_fwd_on() else fig
+
+
 def _add_today_vline(fig):
     """The dashed 'Today' divider every projection chart carries."""
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -3258,7 +3460,7 @@ def render_metr():
     )
 
     # ── Render chart + metrics ──────────────────────────────────────────────
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(_tf(fig), width="stretch")
     if is_backtesting and backtest_results:
         _backtest_summary(backtest_results)
 
@@ -4142,7 +4344,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     )
 
     # ── Render chart + metrics ──────────────────────────────────────────────
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(_tf(fig), width="stretch")
     if eci_is_backtesting and eci_backtest_results:
         _backtest_summary(eci_backtest_results)
 
@@ -5141,7 +5343,7 @@ def render_rli():
     )
 
     # ── Render chart + metrics ──────────────────────────────────────────────
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(_tf(fig), width="stretch")
     if rli_is_backtesting and rli_backtest_results:
         _backtest_summary(rli_backtest_results)
 
@@ -7360,7 +7562,7 @@ def render_revenue():
     else:
         fig.update_yaxes(range=[0, y_max])
 
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(_tf(fig), width="stretch")
 
     # --- Backtest summary ---
     if _rev_backtesting:
@@ -13160,6 +13362,7 @@ def _all_tracked():
         (_DC_RESET_KEYS, _DC_DEFAULTS),
         (_CC_RESET_KEYS, _CC_DEFAULTS),
         (_PC_RESET_KEYS, _PC_DEFAULTS),
+        ([_TODAY_FWD_KEY], _TODAY_FWD_DEFAULTS),
     ]:
         keys.extend(ks)
         defaults.update(ds)
@@ -13627,7 +13830,7 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
     _dist = _pc_rsi_dist_fig(blend_days, origin, early, med, late,
                              horizon=horizon, raw_days=raw_days)
     if _dist is not None:
-        st.plotly_chart(_dist, width="stretch")
+        st.plotly_chart(_tf(_dist), width="stretch")
 
     _total = sum(weights.values()) or 1.0
     _mix_total = sum(mix.values()) or 1.0
@@ -15063,7 +15266,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(_tf(fig), use_container_width=True)
 
     _rate_src = ((f"({b_algo:.0f} algo + {a_partial:.0f} pts/×10 × the "
                   f"{'sidebar-pooled' if pooled else 'largest-site'} US "
@@ -15379,7 +15582,7 @@ def render_pacing():
                       margin=dict(l=10, r=10, t=30, b=10),
                       title=dict(text=f"First ≥{threshold_label} run, by "
                                       "entity", font=dict(size=15)))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(_tf(fig), use_container_width=True)
     _fn_caption(
         "Filled dot = already crossed \u00b7 open dot = the plan's crossing "
         "\u00b7 diamond + band = projected median and 80% range"
@@ -15551,6 +15754,14 @@ if not os.environ.get("_VP_TESTING"):
         render_compute_capabilities()
     elif active_tab == "Pacing":
         render_pacing()
+
+    # Rendered after the tab's own controls, at the foot of the sidebar. The
+    # charts above read the key from session state, which a click updates
+    # before the rerun, so the late position costs nothing.
+    if active_tab in _TODAY_FWD_TABS:
+        with st.sidebar:
+            st.markdown("---")
+            _today_fwd_toggle()
 
     _sync_session_to_url()
 
