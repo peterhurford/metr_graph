@@ -666,12 +666,20 @@ Load-bearing:
    nothing. That's a fact about rescoring, not about when the lab shipped, and this panel
    compares dates only. Tier-3 matches draw hollow, are marked †, and are **excluded from
    the headline median**, which is a claim about record-setting releases.
-3. **`_cc_company_all_releases()` keys on `(Model name, Release date)`.** Model name alone
+3. **`_CC_TRAINED_ON` pins a release to its site.** The backward rule reads the
+   lab's *largest* record step, so a model trained on a smaller site lands on
+   whichever record happened last (GPT-6 Astra fell on Fairwater Atlanta though
+   Abilene's step already forward-matched it). A pin, keyed `(lab, Model name)`,
+   takes the named site's latest record step online a training run before the
+   release and falls back to the rule when it has none; the release hover says
+   the site was pinned. `TestCcResponsibleCluster` checks each pin binds against
+   the live CSVs.
+4. **`_cc_company_all_releases()` keys on `(Model name, Release date)`.** Model name alone
    merges GPT-4o's May and August 2024 releases; Display name alone splits one model's
    reasoning-effort rows, and which suffixed variant wins a dedup flips between Epoch pulls.
    Same-day releases sort by descending ECI so a step is offered the flagship.
 
-`TestCcForwardMatch` and `TestCcCompanyAllReleases` guard all of the above.
+`TestCcForwardMatch`, `TestCcResponsibleCluster` and `TestCcCompanyAllReleases` guard all of the above.
 
 ### Compute/capabilities/diffusion — how it derives from the Data Centers tab
 

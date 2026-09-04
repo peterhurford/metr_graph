@@ -2199,6 +2199,72 @@ class TestCcForwardMatch:
         assert got is None and fb is False
 
 
+class TestCcResponsibleCluster:
+    """_cc_responsible_cluster: the release → cluster direction, with pins.
+
+    The rule takes the latest record step online a training run before the
+    release; a `_CC_TRAINED_ON` pin restricts that to one site and falls back
+    to the rule when the site has no eligible step.
+    """
+
+    FLOOR = timedelta(days=vp._CC_TRAIN_FLOOR_DAYS)
+
+    def _steps(self):
+        return [(datetime(2026, 1, 1), 1.0, "Small"),
+                (datetime(2026, 3, 1), 2.0, "Big")]
+
+    def test_default_is_the_latest_eligible_step(self):
+        rel = datetime(2026, 3, 1) + self.FLOOR
+        got, pinned = vp._cc_responsible_cluster(rel, "Unpinned", "Lab",
+                                                 self._steps())
+        assert got[2] == "Big" and pinned is False
+
+    def test_nothing_predates_the_release(self):
+        got, pinned = vp._cc_responsible_cluster(datetime(2025, 1, 1), "X",
+                                                 "Lab", self._steps())
+        assert got is None and pinned is False
+
+    def test_pin_takes_the_named_site(self, monkeypatch):
+        monkeypatch.setattr(vp, "_CC_TRAINED_ON", {("Lab", "Model"): "Small"})
+        rel = datetime(2026, 3, 1) + self.FLOOR
+        got, pinned = vp._cc_responsible_cluster(rel, "Model (high)", "Lab",
+                                                 self._steps())
+        assert got[2] == "Small" and pinned is True
+
+    def test_pin_falls_back_when_the_site_has_no_eligible_step(self, monkeypatch):
+        # Pinned to a site whose only step came online after the release.
+        monkeypatch.setattr(vp, "_CC_TRAINED_ON", {("Lab", "Model"): "Big"})
+        rel = datetime(2026, 1, 1) + self.FLOOR
+        got, pinned = vp._cc_responsible_cluster(rel, "Model", "Lab",
+                                                 self._steps())
+        assert got[2] == "Small" and pinned is False
+
+    def test_pin_is_per_lab(self, monkeypatch):
+        monkeypatch.setattr(vp, "_CC_TRAINED_ON", {("Other", "Model"): "Small"})
+        rel = datetime(2026, 3, 1) + self.FLOOR
+        got, pinned = vp._cc_responsible_cluster(rel, "Model", "Lab",
+                                                 self._steps())
+        assert got[2] == "Big" and pinned is False
+
+    def test_every_pin_names_a_live_model_and_site(self):
+        # A pin naming a model Epoch no longer lists, or a site outside the
+        # lab's own milestone series, is dead weight — surface it on refresh.
+        attr = vp._cc_lab_attribution(_mtime=vp._dc_meta_mtime())
+        rel = vp._cc_company_all_releases(_mtime=vp._eci_mtime())
+        assert vp._CC_TRAINED_ON, "the pin table exists to hold pins"
+        for (lab, model), site in vp._CC_TRAINED_ON.items():
+            assert lab in vp._CC_PANEL_LABS
+            hits = [t for t in rel.get(lab, []) if t[2] == model]
+            assert hits, f"{model!r} is not an Epoch {lab} release"
+            ms = vp._cc_lab_dc_milestones(lab, attr, key='perf')
+            assert any(m[2] == site for m in ms), f"{site!r} sets no {lab} record"
+            got, pinned = vp._cc_responsible_cluster(hits[0][0], model, lab, ms)
+            assert pinned and got[2] == site, f"pin for {model!r} does not bind"
+
+    def test_astra_is_pinned_to_abilene(self):
+        assert vp._CC_TRAINED_ON[("OpenAI", "GPT-6 Astra")] == "OpenAI Stargate Abilene"
+
+
 class TestCcCompanyAllReleases:
     """_cc_company_all_releases: the tier-3 fallback pool."""
 

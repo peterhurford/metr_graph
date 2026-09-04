@@ -12042,6 +12042,40 @@ _CC_TRAIN_FLOOR_DAYS = _DAYS_2MO   # 60d
 # existing match (Google New Albany → Gemini 2.0 Flash, 6d early) and that one
 # moves *into* agreement with the backward match.
 _CC_EARLY_GRACE_DAYS = 7
+# Curated pins: {(lab, Epoch `Model name`): site} for a release whose training
+# site is known, overriding the backward rule's "latest record step online a
+# training run earlier". The rule reads the lab's *largest* site, so a model
+# trained on a smaller one lands on whatever record step happened last —
+# Astra fell on Fairwater Atlanta though Abilene's step already forward-matched
+# it. A pin takes the named site's latest record step online
+# `_CC_TRAIN_FLOOR_DAYS` before the release and falls back to the rule when it
+# has none. `TestCcResponsibleCluster` checks every pin against the live CSVs.
+_CC_TRAINED_ON = {
+    ("OpenAI", "GPT-6 Astra"): "OpenAI Stargate Abilene",
+}
+
+
+def _cc_model_key(name):
+    """Epoch `Model name` for a frontier label: 'GPT-6 Astra (high)' → 'GPT-6 Astra'."""
+    return re.sub(r'\s*\([^)]*\)$', '', name).strip()
+
+
+def _cc_responsible_cluster(release, name, lab, milestones):
+    """Backward match: the milestone step that could have trained `release`.
+
+    Default is the latest step online at least `_CC_TRAIN_FLOOR_DAYS` before
+    the release. A `_CC_TRAINED_ON` pin restricts that to one site; a pinned
+    site with no eligible step falls back to the default. Returns
+    `(step, pinned)`, `(None, False)` when nothing predates the release.
+    """
+    floor = timedelta(days=_CC_TRAIN_FLOOR_DAYS)
+    cand = [m for m in milestones if (m[0] + floor) <= release]
+    site = _CC_TRAINED_ON.get((lab, _cc_model_key(name)))
+    if site:
+        own = [m for m in cand if m[2] == site]
+        if own:
+            return own[-1], True   # milestones are date-sorted
+    return (cand[-1] if cand else None), False
 
 # Match a DC site to one of the 5 labs, owner-first for self-built clusters
 # (xAI/Meta/Google) then primary-user for labs that rent (OpenAI on
@@ -12327,18 +12361,16 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
     #                training run before the release still can't claim it.
     # Error = actual − expected (release − (step + 90d)), signed: positive = shipped
     # after the implied date; slightly negative = shipped faster than the pipeline.
-    train_floor = timedelta(days=_CC_TRAIN_FLOOR_DAYS)
     act_sorted = sorted(fmodels, key=lambda t: t[0])
     fm_keys = {(t[0], t[2]) for t in fmodels}
 
-    def _responsible_cluster(release):
-        cand = [m for m in milestones if (m[0] + train_floor) <= release]
-        return cand[-1] if cand else None   # milestones are date-sorted
+    def _responsible_cluster(release, name):
+        return _cc_responsible_cluster(release, name, lab, milestones)
 
     # Which cluster the backward match hands each frontier release to.
     # _cc_forward_match consults it so the two directions can't name different
     # releases for the same cluster.
-    fm_resp = {(d, n): _responsible_cluster(d) for d, _e, n in fm_vis}
+    fm_resp = {(d, n): _responsible_cluster(d, n)[0] for d, _e, n in fm_vis}
 
     expected = []
     for step in ms_vis:
@@ -12362,10 +12394,10 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
     # Per-release backward match (drives the connectors and the recall table).
     model_match = []
     for d, _e, n in shown:
-        resp = _responsible_cluster(d)
+        resp, pinned = _responsible_cluster(d, n)
         pred = (resp[0] + lag) if resp else None
         model_match.append({
-            'date': d, 'name': n, 'resp': resp, 'pred': pred,
+            'date': d, 'name': n, 'resp': resp, 'pred': pred, 'pinned': pinned,
             'frontier': (d, n) in fm_keys,
             'err': (d - pred).days if pred else None})
 
@@ -12422,7 +12454,10 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
                    "cluster had no record-setting release</i>")
                 + (f"<br>trained on {m['resp'][2]} "
                    f"({_dc_fmt_value(m['resp'][1], kind)}, online "
-                   f"{m['resp'][0]:%b %d, %Y})<br>{m['err']:+d}d after implied "
+                   f"{m['resp'][0]:%b %d, %Y})"
+                   + ("<br><i>site pinned by hand, not the largest cluster</i>"
+                      if m['pinned'] else "")
+                   + f"<br>{m['err']:+d}d after implied "
                    f"{m['pred']:%b %d, %Y}"
                    if m['resp'] else "<br>predates any tracked cluster"))
 
