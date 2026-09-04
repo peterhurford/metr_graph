@@ -598,6 +598,30 @@ class TestLoadEciFrontier:
         for m in data:
             assert m['date'] >= cutoff, f"{m['name']} date {m['date']} before cutoff"
 
+    def test_one_frontier_model_per_date(self):
+        """Same-day releases are one release: only that date's best can take
+        the frontier, so GPT-5.4 Pro is on it and GPT-5.4 is not."""
+        for kw in ({}, {'full_window': True}, {'country': 'United States of America'}):
+            data = vp.load_eci_frontier(**kw)
+            frontier = [m for m in data if m['is_frontier']]
+            dates = [m['date'] for m in frontier]
+            assert len(dates) == len(set(dates)), f"two frontier models share a date: {kw}"
+            for m in frontier:
+                same_day = [o for o in data if o['date'] == m['date']]
+                assert m['eci_score'] == max(o['eci_score'] for o in same_day), \
+                    f"{m['name']} is not the best model of its date"
+
+    def test_frontier_does_not_depend_on_row_order(self):
+        """The old rule admitted both members of a same-date pair, and which
+        one came first was CSV order."""
+        d0, d1 = datetime(2025, 1, 1), datetime(2025, 6, 1)
+        pair = [{'date': d1, 'eci_score': 150.0, 'name': 'lo'},
+                {'date': d1, 'eci_score': 155.0, 'name': 'hi'}]
+        for order in (pair, pair[::-1]):
+            rows = [{'date': d0, 'eci_score': 140.0, 'name': 'old'}] + [dict(m) for m in order]
+            flagged = vp._mark_eci_frontier(rows, 'eci_score')
+            assert [m['name'] for m in flagged if m['is_frontier']] == ['old', 'hi']
+
     def test_full_window_extends_before_the_cutoff(self):
         """full_window=True skips the Feb-2024 cutoff and only that: the
         cutoff view must be exactly the full view's post-cutoff tail."""

@@ -502,6 +502,37 @@ def _eci_mtime():
     return os.path.getmtime(csv_path)
 
 
+def _best_per_date(items, score, date=lambda m: m['date']):
+    """One entry per date — the best-scoring — from a date-sorted sequence.
+
+    Same-day releases are one release event for frontier purposes: GPT-5.4 and
+    GPT-5.4 Pro shipped together and both cleared the running max, which put a
+    vertical pair in the fit whose membership depended on CSV row order.
+    """
+    items = list(items)
+    out = []
+    i = 0
+    while i < len(items):
+        j = i
+        while j < len(items) and date(items[j]) == date(items[i]):
+            j += 1
+        out.append(max(items[i:j], key=score))
+        i = j
+    return out
+
+
+def _mark_eci_frontier(models, score_key, flag='is_frontier'):
+    """Flag the running max over date-sorted `models`, one release per date."""
+    for m in models:
+        m[flag] = False
+    max_score = -float('inf')
+    for m in _best_per_date(models, lambda m: m[score_key]):
+        if m[score_key] > max_score:
+            max_score = m[score_key]
+            m[flag] = True
+    return models
+
+
 @st.cache_data
 def load_eci_frontier(_mtime=None, country=None, orgs=None, full_window=False):
     csv_path = os.path.join(os.path.dirname(__file__), 'epoch_capabilities_index.csv')
@@ -558,14 +589,8 @@ def load_eci_frontier(_mtime=None, country=None, orgs=None, full_window=False):
         deduped = [m for m in deduped
                    if any(o in m.get('organization', '').lower() for o in _orgs_l)]
 
-    # Frontier detection: running max
-    max_score = -float('inf')
-    for m in deduped:
-        if m['eci_score'] > max_score:
-            max_score = m['eci_score']
-            m['is_frontier'] = True
-        else:
-            m['is_frontier'] = False
+    # Frontier detection: running max, one release per date
+    _mark_eci_frontier(deduped, 'eci_score')
 
     return deduped
 
@@ -577,7 +602,8 @@ def load_eci_compute(_mtime=None):
     Used by the Compute/capabilities/diffusion tab to regress ECI on log10(training
     FLOP) and time. Returns a list of dicts sorted by date:
     {date, eci, log10_flop, name, organization, country, is_eci_frontier}.
-    The frontier flag is the running-max ECI within this compute-having subset.
+    The frontier flag is the running-max ECI within this compute-having subset,
+    one release per date (`_mark_eci_frontier`).
     No date cutoff — we want every model with both fields for the fit.
     """
     csv_path = os.path.join(os.path.dirname(__file__), 'epoch_capabilities_index.csv')
@@ -608,11 +634,7 @@ def load_eci_compute(_mtime=None):
             'country': r.get('Country', ''),
         })
     out.sort(key=lambda m: m['date'])
-    max_score = -float('inf')
-    for m in out:
-        m['is_eci_frontier'] = m['eci'] > max_score
-        if m['eci'] > max_score:
-            max_score = m['eci']
+    _mark_eci_frontier(out, 'eci', flag='is_eci_frontier')
     return out
 
 
@@ -10689,7 +10711,7 @@ def _cc_country_frontier(models, country):
                  key=lambda m: m['date'])
     out = []
     best = -float('inf')
-    for m in grp:
+    for m in _best_per_date(grp, lambda m: m['eci_score']):
         if m['eci_score'] > best:
             best = m['eci_score']
             out.append((m['date'], m['eci_score'],
@@ -12140,7 +12162,7 @@ def _cc_company_frontier_models(_mtime=None):
         ms.sort(key=lambda t: t[0])
         fr = []
         best = -float('inf')
-        for d, sc, nm in ms:
+        for d, sc, nm in _best_per_date(ms, lambda t: t[1], date=lambda t: t[0]):
             if sc > best:
                 best = sc
                 fr.append((d, sc, nm))

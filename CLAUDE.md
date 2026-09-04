@@ -513,6 +513,15 @@ Keep each company's `orgs` list minimal — substring matching makes longer vari
 `Organization` string names two companies; `TestEcgOrgMatching` asserts that against the live
 CSV, plus tab-to-tab set equality, the Google spellings, and slug round-tripping.
 
+**One frontier point per release date.** `_best_per_date()` reduces a date's models to
+its best-scoring one *before* the running max, so a same-day pair puts only the flagship
+on the frontier (GPT-5.4 Pro, not GPT-5.4). Both used to clear the max, planting a
+vertical pair in the OLS whose membership fell out of CSV row order — reverse the two
+rows and the frontier changed. Every ECI frontier goes through it: `load_eci_frontier`,
+`load_eci_compute`, `_cc_country_frontier` and `_cc_company_frontier_models`.
+`test_one_frontier_model_per_date` and `test_frontier_does_not_depend_on_row_order`
+guard it.
+
 ### Share of catalogued capacity by region (last chart on the tab)
 
 `_dc_render_region_share()` stacks each region's share of the selected metric,
