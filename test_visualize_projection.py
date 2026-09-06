@@ -5258,6 +5258,33 @@ class TestPacing:
         assert max(free.data[0].x) > horizon
         assert free.layout.annotations
 
+    def test_rsi_subjective_penalty_calibration_and_ordering(self):
+        days = np.arange(1.0, 10001.0)
+        assert vp._pc_rsi_atc_samples(days, 0) is days
+        adjusted = vp._pc_rsi_atc_samples(days, 50)
+        stronger = vp._pc_rsi_atc_samples(days, 90)
+        assert np.mean(adjusted <= 1000) == pytest.approx(0.05, abs=0.0001)
+        assert np.mean(stronger <= 1000) == pytest.approx(0.01, abs=0.0001)
+        assert np.all(stronger >= adjusted)
+        assert np.all(adjusted >= days)
+        assert adjusted.max() <= days.max()
+        assert len(adjusted) == len(days)
+        tied = np.full(100, 42.0)
+        assert np.array_equal(vp._pc_rsi_atc_samples(tied, 50), tied)
+        assert vp._RSI_DEFAULTS["rsi_atc_penalty"] == 0
+        assert "rsi_atc_penalty" in vp._RSI_RESET_KEYS
+
+    def test_rsi_penalty_comparison_curve(self):
+        origin = datetime(2026, 9, 6)
+        days = np.arange(1.0, 1001.0)
+        adjusted = vp._pc_rsi_atc_samples(days, 50)
+        dates = [origin + timedelta(days=float(x))
+                 for x in np.percentile(adjusted, [10, 50, 90])]
+        fig = vp._pc_rsi_dist_fig(adjusted, origin, *dates, model_days=days)
+        assert len(fig.data) == 2
+        assert np.all(np.array(fig.data[0].y) >= np.array(fig.data[1].y))
+        assert "before subjective penalty" in fig.data[0].hovertext[0]
+
     def test_dist_fig_ghost_shows_the_removed_mass(self):
         """With `raw_days` the unconditioned blend draws as a ghost trace
         behind the main curve, nonzero where the reality check cut mass."""

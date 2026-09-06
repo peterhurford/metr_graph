@@ -1143,6 +1143,19 @@ class TestRsiTab:
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         assert not any("→" in w for w in t["Weight"])
 
+    def test_subjective_penalty_slider(self):
+        at = self._rsi_app()
+        assert at.slider(key="rsi_atc_penalty").value == 0
+        at.slider(key="rsi_atc_penalty").set_value(50).run()
+        _assert_no_error(at, "RSI / subjective penalty")
+        assert any("becomes 5%" in c.value for c in at.caption)
+        at.checkbox(key="rsi_notyet").set_value(False).run()
+        _assert_no_error(at, "RSI / penalty without conditioning")
+        assert at.slider(key="rsi_atc_penalty").value == 50
+        at.slider(key="rsi_atc_penalty").set_value(0).run()
+        _assert_no_error(at, "RSI / penalty off")
+        assert not any("becomes 5%" in c.value for c in at.caption)
+
     def test_horizon_selector(self):
         at = self._rsi_app()
         at.selectbox(key="rsi_end_year").set_value(2031).run()

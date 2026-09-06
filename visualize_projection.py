@@ -5463,6 +5463,7 @@ def render_rli():
 
 _RSI_RESET_KEYS = [
     "rsi_end_year", "rsi_timing", "rsi_notyet", "rsi_notyet_ramp",
+    "rsi_atc_penalty",
     "rsi_custom_dt_lo", "rsi_custom_dt_hi", "rsi_custom_dt_dist",
     "rsi_custom_pos_lo", "rsi_custom_pos_hi",
 ]
@@ -5472,6 +5473,7 @@ _RSI_DEFAULTS = {
     "rsi_timing": "Training run finished",
     "rsi_notyet": True,
     "rsi_notyet_ramp": 90.0,
+    "rsi_atc_penalty": 0,
     "rsi_custom_dt_dist": "Lognormal",
 }
 
@@ -13817,6 +13819,9 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
                 _pc_rsi_blend_samples(raw_components, weights, origin))
     if blend_days is None:
         return
+    penalty = st.session_state.get("rsi_atc_penalty", 0)
+    model_days = blend_days if penalty else None
+    blend_days = _pc_rsi_atc_samples(blend_days, penalty)
     early, med, late = (origin + timedelta(days=float(d))
                         for d in np.percentile(blend_days, [10, 50, 90]))
 
@@ -13828,9 +13833,16 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
         st.metric("80% CI", f"{early:%b %Y} \u2013 {late:%b %Y}")
 
     _dist = _pc_rsi_dist_fig(blend_days, origin, early, med, late,
-                             horizon=horizon, raw_days=raw_days)
+                             horizon=horizon, raw_days=raw_days,
+                             model_days=model_days)
     if _dist is not None:
         st.plotly_chart(_tf(_dist), width="stretch")
+    if penalty:
+        st.caption(
+            f"All-things-considered adjustment: a model probability of 10% "
+            f"becomes {10 * (1 - penalty / 100):g}%. The dashed curve is "
+            "the model before this adjustment; the cards above use the "
+            "adjusted blend. Individual milestone dates below are unchanged.")
 
     _total = sum(weights.values()) or 1.0
     _mix_total = sum(mix.values()) or 1.0
@@ -13886,6 +13898,17 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
                  "On the release clock the window extends by 30 days — a "
                  "model shipping that soon finished training ~a month "
                  "earlier. 0 keeps only the hard cut at today.")
+        st.slider(
+            "All-things-considered penalty (%)", 0, 90, step=5,
+            key="rsi_atc_penalty",
+            help="0 is off. 50 turns the model's 10% chance by a date into "
+                 "5% by that date. Larger values shift more probability "
+                 "toward later dates. This is a subjective adjustment to "
+                 "the blended forecast, applied after the reality check.")
+        st.caption(
+            "The penalty reduces early probabilities most in relative terms. "
+            "It preserves eventual arrival in the model; it does not add "
+            "a chance that RSI never happens.")
 
 
 def _pc_clock_note(release_dated, timing_label):
@@ -14443,6 +14466,23 @@ def _pc_rsi_blend_samples(components, weights, origin, n=None):
     return out
 
 
+def _pc_rsi_atc_samples(days, penalty):
+    """Delay a sampled CDF via F_adjusted(t) = F_model(t)**power.
+
+    Calibrate power so a 10% probability becomes 10% * (1-penalty/100).
+    Deterministic inverse empirical CDF sampling adds no Monte Carlo noise.
+    Preserves support and total mass; zero is an exact identity.
+    """
+    if not 0 <= penalty <= 90:
+        raise ValueError("RSI penalty must be between 0 and 90")
+    if not penalty or len(days) == 0:
+        return days
+    power = np.log(0.1 * (1 - penalty / 100)) / np.log(0.1)
+    ranks = ((np.arange(len(days)) + 0.5) / len(days)) ** (1 / power)
+    indices = np.minimum((ranks * len(days)).astype(int), len(days) - 1)
+    return np.sort(days)[indices]
+
+
 def _pc_rsi_blend(components, weights, origin, n=None):
     """(early, median, late) dates for the blend. See `_pc_rsi_blend_samples`."""
     out = _pc_rsi_blend_samples(components, weights, origin, n)
@@ -14453,7 +14493,7 @@ def _pc_rsi_blend(components, weights, origin, n=None):
 
 
 def _pc_rsi_dist_fig(days, origin, early, med, late, horizon=None,
-                     raw_days=None):
+                     raw_days=None, model_days=None):
     """Cumulative probability that the blend has landed by each date.
 
     A CDF rather than a histogram: the blend is a mixture of milestones,
@@ -14476,6 +14516,8 @@ def _pc_rsi_dist_fig(days, origin, early, med, late, horizon=None,
     raw_srt = np.sort(raw_days) if raw_days is not None else None
     if raw_srt is not None:
         d0 = min(d0, float(np.percentile(raw_srt, 0.5)))
+    if model_days is not None:
+        d0 = min(d0, float(np.percentile(model_days, 0.5)))
     if d1 - d0 < 2:
         return None
     grid = np.arange(np.floor(d0), np.ceil(d1) + 1, 1.0)
@@ -14491,6 +14533,15 @@ def _pc_rsi_dist_fig(days, origin, early, med, late, horizon=None,
             line=dict(color='#9aa5b1', width=1.5, dash='dot'),
             hovertext=[f"By {d:%b %d, %Y}<br>{v:.0f}% before reality check"
                        for d, v in zip(dates, raw_cdf)],
+            hoverinfo='text', showlegend=False))
+    if model_days is not None:
+        model_cdf = np.searchsorted(np.sort(model_days), grid, side='right') \
+            / len(model_days) * 100
+        fig.add_trace(go.Scatter(
+            x=dates, y=model_cdf.tolist(), mode='lines',
+            line=dict(color='#b77720', width=1.5, dash='dash'),
+            hovertext=[f"By {d:%b %d, %Y}<br>{v:.1f}% before subjective penalty"
+                       for d, v in zip(dates, model_cdf)],
             hoverinfo='text', showlegend=False))
     fig.add_trace(go.Scatter(
         x=dates, y=cdf.tolist(), mode='lines',
