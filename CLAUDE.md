@@ -34,7 +34,7 @@ No build system, no CI/CD, no package manager beyond requirements.txt (`streamli
 
 ## Architecture
 
-Eleven-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `rsi`, `ukcyber`, `employment`, `revenue`, `datacenters`, `computecap`, `pacing`.
+Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `rsi`, `ukcyber`, `thresholds`, `employment`, `revenue`, `datacenters`, `computecap`, `pacing`.
 
 ### Section deep links
 
@@ -1188,3 +1188,22 @@ Adding an `AppTest` case is cheap (~0.1s per `.run()`), so prefer one to skippin
 What is *not* cheap is defeating the shared cache — a test that mutates
 `visualize_projection.py` on disk, or builds its own runner from `streamlit.testing`
 internals.
+
+### Frontier Thresholds
+
+`?tab=thresholds` dispatches to `frontier_thresholds.render(st)`. The 55 events in
+`frontier_thresholds.json` transcribe the user-supplied September 6, 2026 timeline;
+they are not independently source-verified. Keep model/configuration, domains,
+framework version, assessment type, date qualifications, and safeguards together.
+Do not map the lab-specific labels onto a common severity axis. The default view selects one risk category (`ft_category`) and renders separate
+bordered lab panels. `CATEGORY_MILESTONES` supplies curated domain-specific labels
+and hover text; never reuse a mixed-domain threshold string in these panels.
+Charts explicitly disable rangesliders and legends. `CHART_LABEL_IDS` keeps labels
+sparse while additional milestones get smaller points. Each panel shows a compact
+table and a selectable, visible explanation. The full chronology is collapsed.
+
+
+The `ft_` defaults participate in URL hydration/sync. The timeline deliberately
+bypasses `_tf`: the shared Today forward projection control must not hide historical
+events. `test_frontier_thresholds.py` checks semantic distinctions, overlapping
+reassessments, CSV exports, URL filters, reset, empty states, and tab switching.
