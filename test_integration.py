@@ -1035,7 +1035,7 @@ class TestRsiTab:
         assert not [m for m in at.markdown if "When does" in str(m.value)]
 
     def test_every_chart_marks_today(self):
-        """All four RSI charts carry the dashed "Today" divider the other
+        """All five RSI charts carry the dashed "Today" divider the other
         tabs' projection charts have — without it the fan's start reads as
         the last data point."""
         import json
@@ -1045,7 +1045,7 @@ class TestRsiTab:
         charts = [json.loads(el.proto.spec)["layout"]
                   for el in at.get("plotly_chart")]
         series = [L for L in charts if (L.get("xaxis") or {}).get("title")]
-        assert len(series) == 4 and len(charts) == 5
+        assert len(series) == 5 and len(charts) == 6
         for L in series:
             notes = [a for a in L.get("annotations", [])
                      if a.get("text") == "Today"]
@@ -1065,7 +1065,7 @@ class TestRsiTab:
         assert len(row) == 1
         assert row.iloc[0]["Weight"].startswith("10%")
         # Every milestone gets a row, and the weights editor an input each.
-        assert len(t) == 10
+        assert len(t) == 11
 
     def test_merged_code_section_renders(self):
         at = self._rsi_app()
@@ -1073,14 +1073,31 @@ class TestRsiTab:
                                                         for h in at.subheader]
         assert "Code per person reaches 30x" in [str(m.label) for m in at.metric]
 
+    def test_experiment_velocity_chart_and_blend(self):
+        import json
+        at = self._rsi_app()
+        assert "Experiment velocity at OpenAI" in [str(h.value) for h in at.subheader]
+        label = "OpenAI experiment velocity reaches 10x"
+        assert label in [str(m.label) for m in at.metric]
+        table = next(x.value for x in at.table if "Milestone" in x.value.columns)
+        row = table[table["Milestone"] == label]
+        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("10%")
+        figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+        fig = next(f for f in figures if any(t.get('name') == 'OpenAI observations'
+                                             for t in f['data']))
+        observed = next(t for t in fig['data'] if t.get('name') == 'OpenAI observations')
+        assert len(observed['x']) == 32
+        assert observed['y'][0] == 0.72 and observed['y'][-1] == 1.60
+        assert any(s.get('y0') == s.get('y1') == 10 for s in fig['layout']['shapes'])
+
     def test_merged_code_row_in_the_blend(self):
         at = self._rsi_app()
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = t[t["Milestone"] == "Code per person reaches 30x"]
         assert len(row) == 1
-        assert row.iloc[0]["Weight"].startswith("7%")
+        assert row.iloc[0]["Weight"].startswith("10%")
         staff = t[t["Milestone"].str.contains("acceleration")]
-        assert staff.iloc[0]["Weight"].startswith("8%")
+        assert staff.iloc[0]["Weight"].startswith("10%")
 
     def test_every_milestone_card_carries_its_caveats_on_hover(self):
         """Caveats ride the card they belong to rather than piling into one
@@ -1092,7 +1109,7 @@ class TestRsiTab:
         helps = {str(m.label): (m.proto.help or "") for m in cards}
         milestones = {k: v for k, v in helps.items()
                       if "reaches" in k or "revenue" in k or "acceleration" in k}
-        assert len(milestones) == 10
+        assert len(milestones) == 11
         for lab, h in milestones.items():
             assert "defaults" in h, lab
             assert "clock" in h or "releases" in h, lab

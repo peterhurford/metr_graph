@@ -26,7 +26,7 @@ and the sidebar's *Share view* button copies a URL carrying your current control
 | Epoch ECI | `eci` | `epoch_capabilities_index.csv` | Epoch's Capabilities Index, a pooled benchmark score |
 | ECI Company Gap | `ecigap` | Same CSV, split by organization | How far each lab/country trails the frontier |
 | Remote Labor Index | `rli` | `_RLI_RAW` (hardcoded) | Share of real remote-work projects completed. Fitted in logit space |
-| RSI | `rsi` | `_RSI_RAW` / `_RSI_SURVEY` (hardcoded) | Anthropic's internal AI-R&D benchmark + staff-survey speedup; ends with the *Capabilities Milestones* cards and the blended RSI projection |
+| RSI | `rsi` | `_RSI_RAW` / `_RSI_SURVEY` (hardcoded) | Anthropic's internal AI-R&D benchmark, staff-survey speedup, merged code, and research direction; OpenAI experiment velocity; ends with the *Capabilities Milestones* cards and the blended RSI projection |
 | UK Cyber | `ukcyber` | `aisi_cyber_narrow.csv`, `aisi_cyber_tlo.csv` | AISI cyber success rates, and how many months open-weight models trail the closed frontier |
 | Employment | `employment` | RLI frontier + assumptions | Unemployment / jobs displaced under slider assumptions |
 | Revenue | `revenue` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | OpenAI and Anthropic ARR |
@@ -111,7 +111,7 @@ one, re-run it before chasing it.
 
 ## Data
 
-Six data files and three hardcoded tables; every other tab derives from them. `.claude/commands/update-data.md` has
+Local data files and hardcoded tables supply the indicators. `.claude/commands/update-data.md` has
 the full refresh recipe, including the AISI cyber data that is deliberately *not* ingested.
 
 | File / table | Source | Type |
@@ -121,6 +121,7 @@ the full refresh recipe, including the AISI cyber data that is deliberately *not
 | `data_centers.csv` / `data_center_timelines.csv` | Epoch AI Frontier Data Centers (85 sites) | download |
 | `_RLI_RAW` | Scale Labs Remote Labor Index | hand-edited |
 | `_RSI_RAW` / `_RSI_SURVEY` | Anthropic, Redacted Risk Report §3.4 | hand-edited, read off a figure |
+| `openai_experiment_velocity.csv` | OpenAI, *Research acceleration*, “Experiment velocity has increased” | 32 weekly browser-hover tooltip values; 2025 = 1× |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` | Press reports and company disclosures | hand-edited |
 | `aisi_cyber_narrow.csv` / `aisi_cyber_tlo.csv` | UK AISI cyber blog posts | **digitized from published PNGs** |
 
@@ -187,3 +188,14 @@ so please keep them in separate commits.
 
 None yet — the repo ships no license file, so default copyright applies. Ask before reusing
 or redistributing.
+
+OpenAI experiment velocity uses all displayed weeks (January 5–August 10, 2026),
+which are four-week trailing averages of experiments per active experimenter. Its
+RSI threshold is **10× the 2025 baseline**. The chart and milestone share a log-linear
+fit and illustrative uncertainty (80% doubling-time range DT/2–DT×2; position
+divided/multiplied by 1.3). Overlapping observations are correlated, and the source
+does not control for compute growth or changes in the active researcher population.
+Default weights before conditioning: METR p50 5%, METR p80 10%, ECI 187.5 5%,
+ECI 200 10%, RLI 15%, CoBench 5%, staff acceleration 10%, merged code 10%,
+experiment velocity 10%, next-step judgment 10%, and revenue 10%.
+Custom weights remain editable. Capability milestones occupy three rows.

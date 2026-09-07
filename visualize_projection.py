@@ -12,6 +12,7 @@ import re
 import html
 import textwrap
 import os
+from pathlib import Path
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
@@ -1147,6 +1148,20 @@ def load_rsi_code():
             for q, v in _RSI_CODE_RAW]
     rows.sort(key=lambda r: r['date'])
     return rows
+
+
+_RSI_EXPERIMENT_SOURCE_URL = (
+    "https://openai.com/index/research-acceleration-view-inside-openai/")
+_RSI_EXPERIMENT_TARGET = 10.0
+_RSI_EXPERIMENT_POS_FACTOR = 1.3  # illustrative 80% position interval
+
+
+def load_rsi_experiments():
+    """Source week labels and tooltip multiples; 2025 is the 1x baseline."""
+    with Path(__file__).with_name('openai_experiment_velocity.csv').open() as f:
+        return [{'date': datetime.strptime(r['date'], '%Y-%m-%d'),
+                 'mult': float(r['mult'])}
+                for r in csv.DictReader(line for line in f if not line.startswith('#'))]
 
 
 @st.cache_data
@@ -5800,6 +5815,7 @@ def render_rsi():
 
     _render_rsi_survey()
     _render_rsi_code()
+    _render_rsi_experiments(rsi_end_year)
     _render_rsi_direction(rsi_end_year)
 
     st.markdown("---")
@@ -6100,6 +6116,128 @@ def _render_rsi_code():
                                       "average to 1 by construction, so there "
                                       "is no trend in them to fit. They are "
                                       "drawn hollow."))
+
+
+def _rsi_experiment_fit(rows):
+    """OLS in log space over every displayed week, preserving source dates."""
+    base = rows[0]['date']
+    days = np.array([(r['date'] - base).days for r in rows], dtype=float)
+    logs = np.log([r['mult'] for r in rows])
+    if len(rows) < 2:
+        return base, float(logs[0]), 0.0
+    icpt, slope = fit_line(days, logs)
+    return base, icpt, slope
+
+
+def _rsi_experiment_draws(rows, n=None):
+    """Shared fan/card assumptions, not a confidence interval from OpenAI.
+
+    Overlapping four-week averages are serially dependent. Use the app's
+    broad DT/2–DT*2 convention, not an independent-week regression interval.
+    """
+    base, icpt, slope = _rsi_experiment_fit(rows)
+    if slope <= 0:
+        return None
+    n = n or N_SAMPLES
+    dt = np.log(2) / slope
+    slopes = np.log(2) / np.maximum(
+        _lognormal_from_ci(dt / 2, dt * 2, n=n), 1.0)
+    fitted = icpt + slope * (rows[-1]['date'] - base).days
+    starts = np.random.normal(fitted, np.log(_RSI_EXPERIMENT_POS_FACTOR) / 1.282, n)
+    return starts, slopes
+
+
+def _pc_rsi_experiment_eta(rows, target_x=_RSI_EXPERIMENT_TARGET,
+                           n=None, samples=False):
+    draws = _rsi_experiment_draws(rows, n=n)
+    if draws is None:
+        return None
+    starts, slopes = draws
+    days = np.maximum((np.log(target_x) - starts) / slopes, 0.0)
+    return _pc_eta_out(rows[-1]['date'], days, samples)
+
+
+def _render_rsi_experiments(end_year):
+    st.subheader("Experiment velocity at OpenAI")
+    _fn_line(
+        "Experiments per active experimenter, relative to 2025. "
+        "Four-week trailing average; threshold: 10x.",
+        ("Experiments per active experimenter",
+         "Neptune experiment counts exclude evaluations and automated runs. "
+         "Each owner namespace contributes at most 100 experiments per day. "
+         "The weekly count is divided by that week's active experimenters, "
+         "then averaged over four weeks."))
+    rows = load_rsi_experiments()
+    base, icpt, slope = _rsi_experiment_fit(rows)
+    cur = rows[-1]['date']
+    end = max(datetime(end_year, 12, 31), cur)
+    fig = go.Figure()
+    draws = _rsi_experiment_draws(rows)
+    y_top = _RSI_EXPERIMENT_TARGET * 1.3
+    if draws is not None:
+        starts, slopes = draws
+        days = np.arange(0, (end - cur).days + 1, 7, dtype=float)
+        days = np.unique(np.append(days, (end - cur).days))
+        dates = [cur + timedelta(days=float(d)) for d in days]
+        paths = np.exp(starts[:, None] + slopes[:, None] * days[None, :])
+        pct = {q: np.percentile(paths, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
+        for lo, hi, alpha in [(5, 95, 0.10), (10, 90, 0.18), (25, 75, 0.28)]:
+            fig.add_trace(go.Scatter(
+                x=dates + dates[::-1], y=list(pct[hi]) + list(pct[lo][::-1]),
+                fill='toself', fillcolor=f'rgba(52,152,219,{alpha})',
+                line=dict(width=0), name=f'{hi - lo}% CI', hoverinfo='skip'))
+        fig.add_trace(go.Scatter(
+            x=dates, y=pct[50], mode='lines', name='Median projection',
+            line=dict(color='#2c3e50', dash='dash'),
+            hovertemplate='%{x|%b %d, %Y}<br>Median: %{y:.2f}x<extra></extra>'))
+        fit_dates = [r['date'] for r in rows]
+        fig.add_trace(go.Scatter(
+            x=fit_dates,
+            y=np.exp(icpt + slope * np.array([(d - base).days for d in fit_dates])),
+            mode='lines', name=f'Fitted trend (2x: {np.log(2) / slope:.0f}d)',
+            line=dict(color='#2c3e50'), hoverinfo='skip'))
+        y_top = max(y_top, float(pct[95][-1]))
+    fig.add_trace(go.Scatter(
+        x=[r['date'] for r in rows], y=[r['mult'] for r in rows],
+        mode='lines+markers', name='OpenAI observations',
+        line=dict(color='#4F8DFD'),
+        hovertemplate='Week: %{x|%b %d, %Y}<br>Experiments / active experimenter: '
+                      '%{y:.2f}x (2025 = 1x)<extra></extra>'))
+    fig.add_hline(y=_RSI_EXPERIMENT_TARGET,
+                  line=dict(color='#e74c3c', dash='dash'))
+    fig.add_annotation(xref='x domain', x=0.01, y=np.log10(_RSI_EXPERIMENT_TARGET),
+                       text='10x the 2025 baseline', showarrow=False,
+                       xanchor='left', yanchor='bottom', font=dict(color='#e74c3c'))
+    _add_today_vline(fig)
+    fig.update_layout(
+        height=480, margin=dict(l=50, r=60, t=50, b=40),
+        xaxis=dict(title='Week', range=[base - timedelta(days=7), end],
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
+                   gridcolor='rgba(0,0,0,0.12)', zeroline=False),
+        yaxis=dict(title='Experiments per active experimenter (× 2025)',
+                   type='log', range=[np.log10(0.5), np.log10(y_top * 1.3)],
+                   dtick=1, ticksuffix='x',
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
+                   gridcolor='rgba(0,0,0,0.12)', zeroline=False),
+        hovermode='closest', plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(color='#1a1a2e'),
+        legend=dict(x=0.01, y=0.99, bgcolor='rgba(255,255,255,0.95)',
+                    font=dict(color='#1a1a2e')),
+        hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e',
+                        bordercolor='#5c6370'))
+    st.plotly_chart(fig, width='stretch', theme=None)
+    _fn_caption(
+        f"Source: [OpenAI, *Research acceleration*]({_RSI_EXPERIMENT_SOURCE_URL}), "
+        "‘Experiment velocity has increased’; values read from all 32 tooltips. "
+        "Experiment volume is a proxy for research progress. Projection bands are illustrative.",
+        ("Experiment volume is a proxy for research progress",
+         "The source does not control for compute growth or changes in who runs "
+         "experiments. More experiments do not necessarily imply more useful results."),
+        ("Projection bands are illustrative",
+         "OLS on log(multiple), January–August 2026. An 80% doubling-time range "
+         "of half to twice the fitted value and an 80% position range of fitted "
+         "value divided/multiplied by 1.3. These are modeling assumptions, not "
+         "source error bars; overlapping four-week averages are correlated."))
 
 
 def _rsi_dir_label_positions(rows, gap_days=90, rise_pts=6.0):
@@ -13512,13 +13650,14 @@ def _pc_ramp_for(timing_label, ramp_days):
 # Keyed by slug because the card labels are built from the target constants.
 _PC_RSI_WEIGHTS = {
     "metr_p50": 5.0,
-    "metr_p80": 15.0,
-    "eci_187_5": 10.0,
+    "metr_p80": 10.0,
+    "eci_187_5": 5.0,
     "eci_200": 10.0,
     "rli_90": 15.0,
-    "cobench_85": 10.0,
-    "staff_10x": 8.0,
-    "code_30x": 7.0,
+    "cobench_85": 5.0,
+    "staff_10x": 10.0,
+    "code_30x": 10.0,
+    "experiments_10x": 10.0,
     "nextstep_90": 10.0,
     "rev_1t": 10.0,
 }
@@ -13848,8 +13987,8 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
     _mix_total = sum(mix.values()) or 1.0
     st.table([{
         "Milestone": lab,
-        "Weight": (f"{weights[slug] / _total * 100:.0f}%" if survival is None
-                   else f"{weights[slug] / _total * 100:.0f}% \u2192 "
+        "Weight": (f"{weights[slug] / _total * 100:.3g}%" if survival is None
+                   else f"{weights[slug] / _total * 100:.3g}% \u2192 "
                         f"{mix[slug] / _mix_total * 100:.0f}%"),
         "Median": _pc_eta_dates(a, d)[1].strftime('%b %Y'),
         "80% CI": "{:%b %Y} \u2013 {:%b %Y}".format(*_pc_eta_dates(a, d)[::2]),
@@ -14014,6 +14153,15 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                  "merged, which a coding "
                  "model inflates directly, so it is output volume rather "
                  "than research progress."))
+    _cap.append((f"experiments_{_RSI_EXPERIMENT_TARGET:.0f}x",
+                 f"OpenAI experiment velocity reaches {_RSI_EXPERIMENT_TARGET:.0f}x",
+                 _pc_rsi_experiment_eta(load_rsi_experiments(), samples=True), False,
+                 "The experiment-velocity fan above, at its defaults: OLS on "
+                 "log(multiple) over all 32 displayed weeks; doubling time "
+                 "over [DT/2, DT*2], position divided/multiplied by 1.3. "
+                 "10x means experiments per active experimenter relative to 2025. "
+                 "Four-week trailing averages overlap; the bands are illustrative. "
+                 "Compute growth and changes in the active population are not controlled for."))
     _cap.append((f"nextstep_{_RSI_DIR_TARGET:.0f}",
                  f"Next-step judgment reaches {_RSI_DIR_TARGET:.0f}%",
                  _pc_nextstep_eta(rsi_dir_frontier_all, samples=True), True,
@@ -14049,9 +14197,8 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                                                 ramp_days=ramp_days)
     if _cap:
         st.subheader("Capabilities Milestones")
-        # Two rows: all the cards on one line squeeze every label to two
-        # words.
-        _per_row = -(-len(_cap) // 2)
+        # Three rows give the milestone labels room to remain legible.
+        _per_row = -(-len(_cap) // 3)
         for _start in range(0, len(_cap), _per_row):
             _chunk = _cap[_start:_start + _per_row]
             for col, (slug, lab, _anchor, _days) in zip(st.columns(_per_row),

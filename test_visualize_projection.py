@@ -3572,6 +3572,32 @@ class TestRsiDirection:
             vp._PC_RSI_WEIGHTS[slug]
 
 
+class TestRsiExperiments:
+    def test_source_weeks_and_baseline_are_preserved(self):
+        rows = vp.load_rsi_experiments()
+        assert len(rows) == 32
+        assert rows[0] == {'date': datetime(2026, 1, 5), 'mult': 0.72}
+        assert rows[-1] == {'date': datetime(2026, 8, 10), 'mult': 1.60}
+        assert all((b['date'] - a['date']).days == 7 for a, b in zip(rows, rows[1:]))
+        assert max(r['mult'] for r in rows) == 1.61
+        assert vp._RSI_EXPERIMENT_TARGET == 10.0
+
+    def test_threshold_dates_use_the_same_draws_as_the_fan(self, monkeypatch):
+        rows = vp.load_rsi_experiments()
+        # At a fixed 100-day doubling time, 1.25x reaches 10x in 300 days.
+        monkeypatch.setattr(vp, '_rsi_experiment_draws',
+                            lambda rows, n=None: (np.full(20, np.log(1.25)),
+                                                   np.full(20, np.log(2) / 100)))
+        anchor, days = vp._pc_rsi_experiment_eta(rows, samples=True)
+        assert anchor == rows[-1]['date']
+        assert days == pytest.approx(np.full(20, 300.0))
+
+    def test_declining_series_has_no_future_crossing(self):
+        rows = [{'date': datetime(2026, 1, 5), 'mult': 2.0},
+                {'date': datetime(2026, 1, 12), 'mult': 1.0}]
+        assert vp._pc_rsi_experiment_eta(rows) is None
+
+
 class TestRsiCode:
     """Merged code per Anthropic contributor, the RSI tab's fourth series."""
 
@@ -3642,14 +3668,14 @@ class TestRsiCode:
         assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
 
     def test_milestone_card_is_weighted_in_the_blend(self):
-        """The user-set mix: staff acceleration 8%, merged code 7%."""
+        """The user-set prior mix gives staff and both output proxies 10% each."""
         slug = f"code_{vp._RSI_CODE_TARGET:.0f}x"
         assert slug == "code_30x"
-        assert vp._PC_RSI_WEIGHTS[slug] == 7.0
-        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 8.0
+        assert vp._PC_RSI_WEIGHTS[slug] == 10.0
+        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 10.0
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
         assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
-        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 7.0
+        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 10.0
 
     def test_the_milestone_is_on_the_internal_clock(self):
         """Driven by models Anthropic uses internally before release, like
@@ -5141,7 +5167,7 @@ class TestPacing:
         # it keys the blend weight, so "eci_188" would silently unweight it.
         slugs = [f"eci_{t:g}".replace(".", "_") for t in vp._PC_ECI_TARGETS]
         assert slugs == ["eci_187_5", "eci_200"]
-        assert [vp._PC_RSI_WEIGHTS[s] for s in slugs] == [10.0, 10.0]
+        assert [vp._PC_RSI_WEIGHTS[s] for s in slugs] == [5.0, 10.0]
 
     def test_rli_eta_reproduces_the_rli_tab_defaults(self):
         """The RLI 90% card is the RLI tab at its defaults: single OLS in
