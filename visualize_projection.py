@@ -13,10 +13,19 @@ import html
 import textwrap
 import os
 import json
+import hashlib
+import importlib
+from pathlib import Path
 import takeoff_model as takeoff
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
+
+# Streamlit reruns this script but Python may retain an older imported model.
+# Refresh changed model code and include its fingerprint in the result cache.
+_TK_SOURCE_DIGEST = hashlib.sha256(Path(takeoff.__file__).read_bytes()).hexdigest()
+if getattr(takeoff, "SOURCE_DIGEST", None) != _TK_SOURCE_DIGEST:
+    importlib.reload(takeoff)
 
 st.set_page_config(page_title="AI Capability Projections", layout="wide")
 
@@ -1149,6 +1158,20 @@ def load_rsi_code():
             for q, v in _RSI_CODE_RAW]
     rows.sort(key=lambda r: r['date'])
     return rows
+
+
+_RSI_EXPERIMENT_SOURCE_URL = (
+    "https://openai.com/index/research-acceleration-view-inside-openai/")
+_RSI_EXPERIMENT_TARGET = 10.0
+_RSI_EXPERIMENT_POS_FACTOR = 1.3  # illustrative 80% position interval
+
+
+def load_rsi_experiments():
+    """Source week labels and tooltip multiples; 2025 is the 1x baseline."""
+    with Path(__file__).with_name('openai_experiment_velocity.csv').open() as f:
+        return [{'date': datetime.strptime(r['date'], '%Y-%m-%d'),
+                 'mult': float(r['mult'])}
+                for r in csv.DictReader(line for line in f if not line.startswith('#'))]
 
 
 @st.cache_data
@@ -5802,6 +5825,7 @@ def render_rsi():
 
     _render_rsi_survey()
     _render_rsi_code()
+    _render_rsi_experiments(rsi_end_year)
     _render_rsi_direction(rsi_end_year)
 
     st.markdown("---")
@@ -6102,6 +6126,131 @@ def _render_rsi_code():
                                       "average to 1 by construction, so there "
                                       "is no trend in them to fit. They are "
                                       "drawn hollow."))
+
+
+def _rsi_experiment_fit(rows):
+    """OLS in log space over every displayed week, preserving source dates."""
+    base = rows[0]['date']
+    days = np.array([(r['date'] - base).days for r in rows], dtype=float)
+    logs = np.log([r['mult'] for r in rows])
+    if len(rows) < 2:
+        return base, float(logs[0]), 0.0
+    icpt, slope = fit_line(days, logs)
+    return base, icpt, slope
+
+
+def _rsi_experiment_draws(rows, n=None):
+    """Shared fan/card assumptions, not a confidence interval from OpenAI.
+
+    Overlapping four-week averages are serially dependent. Use the app's
+    broad DT/2–DT*2 convention, not an independent-week regression interval.
+    """
+    base, icpt, slope = _rsi_experiment_fit(rows)
+    if slope <= 0:
+        return None
+    n = n or N_SAMPLES
+    dt = np.log(2) / slope
+    # Both tabs and the crossing card consume identical paths, independent
+    # of which other panels happened to consume the app's global RNG first.
+    rng = np.random.default_rng(20260907)
+    slopes = np.log(2) / np.maximum(
+        rng.lognormal(np.log(dt), np.log(2) / 1.282, n), 1.0)
+    fitted = icpt + slope * (rows[-1]['date'] - base).days
+    starts = rng.normal(fitted, np.log(_RSI_EXPERIMENT_POS_FACTOR) / 1.282, n)
+    return starts, slopes
+
+
+def _pc_rsi_experiment_eta(rows, target_x=_RSI_EXPERIMENT_TARGET,
+                           n=None, samples=False):
+    draws = _rsi_experiment_draws(rows, n=n)
+    if draws is None:
+        return None
+    starts, slopes = draws
+    days = np.maximum((np.log(target_x) - starts) / slopes, 0.0)
+    return _pc_eta_out(rows[-1]['date'], days, samples)
+
+
+def _render_rsi_experiments(end_year):
+    st.subheader("Experiment velocity at OpenAI")
+    _fn_line(
+        "Experiments per active experimenter, relative to 2025. "
+        "Four-week trailing average; threshold: 10x.",
+        ("Experiments per active experimenter",
+         "Neptune experiment counts exclude evaluations and automated runs. "
+         "Each owner namespace contributes at most 100 experiments per day. "
+         "The weekly count is divided by that week's active experimenters, "
+         "then averaged over four weeks."))
+    rows = load_rsi_experiments()
+    base, icpt, slope = _rsi_experiment_fit(rows)
+    cur = rows[-1]['date']
+    end = max(datetime(end_year, 12, 31), cur)
+    fig = go.Figure()
+    draws = _rsi_experiment_draws(rows)
+    y_top = _RSI_EXPERIMENT_TARGET * 1.3
+    if draws is not None:
+        starts, slopes = draws
+        days = np.arange(0, (end - cur).days + 1, 7, dtype=float)
+        days = np.unique(np.append(days, (end - cur).days))
+        dates = [cur + timedelta(days=float(d)) for d in days]
+        paths = np.exp(starts[:, None] + slopes[:, None] * days[None, :])
+        pct = {q: np.percentile(paths, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
+        for lo, hi, alpha in [(5, 95, 0.10), (10, 90, 0.18), (25, 75, 0.28)]:
+            fig.add_trace(go.Scatter(
+                x=dates + dates[::-1], y=list(pct[hi]) + list(pct[lo][::-1]),
+                fill='toself', fillcolor=f'rgba(52,152,219,{alpha})',
+                line=dict(width=0), name=f'{hi - lo}% CI', hoverinfo='skip'))
+        fig.add_trace(go.Scatter(
+            x=dates, y=pct[50], mode='lines', name='Median projection',
+            line=dict(color='#2c3e50', dash='dash'),
+            hovertemplate='%{x|%b %d, %Y}<br>Median: %{y:.2f}x<extra></extra>'))
+        fit_dates = [r['date'] for r in rows]
+        fig.add_trace(go.Scatter(
+            x=fit_dates,
+            y=np.exp(icpt + slope * np.array([(d - base).days for d in fit_dates])),
+            mode='lines', name=f'Fitted trend (2x: {np.log(2) / slope:.0f}d)',
+            line=dict(color='#2c3e50'), hoverinfo='skip'))
+        y_top = max(y_top, float(pct[95][-1]))
+    fig.add_trace(go.Scatter(
+        x=[r['date'] for r in rows], y=[r['mult'] for r in rows],
+        mode='lines+markers', name='OpenAI observations',
+        line=dict(color='#4F8DFD'),
+        hovertemplate='Week: %{x|%b %d, %Y}<br>Experiments / active experimenter: '
+                      '%{y:.2f}x (2025 = 1x)<extra></extra>'))
+    fig.add_hline(y=_RSI_EXPERIMENT_TARGET,
+                  line=dict(color='#e74c3c', dash='dash'))
+    fig.add_annotation(xref='x domain', x=0.01, y=np.log10(_RSI_EXPERIMENT_TARGET),
+                       text='10x the 2025 baseline', showarrow=False,
+                       xanchor='left', yanchor='bottom', font=dict(color='#e74c3c'))
+    _add_today_vline(fig)
+    fig.update_layout(
+        height=480, margin=dict(l=50, r=60, t=50, b=40),
+        xaxis=dict(title='Week', range=[base - timedelta(days=7), end],
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
+                   gridcolor='rgba(0,0,0,0.12)', zeroline=False),
+        yaxis=dict(title='Experiments per active experimenter (× 2025)',
+                   type='log', range=[np.log10(0.5), np.log10(y_top * 1.3)],
+                   dtick=1, ticksuffix='x',
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
+                   gridcolor='rgba(0,0,0,0.12)', zeroline=False),
+        hovermode='closest', plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(color='#1a1a2e'),
+        legend=dict(x=0.01, y=0.99, bgcolor='rgba(255,255,255,0.95)',
+                    font=dict(color='#1a1a2e')),
+        hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e',
+                        bordercolor='#5c6370'))
+    st.plotly_chart(fig, width='stretch', theme=None)
+    _fn_caption(
+        f"Source: [OpenAI, *Research acceleration*]({_RSI_EXPERIMENT_SOURCE_URL}), "
+        "‘Experiment velocity has increased’; values read from all 32 tooltips. "
+        "Experiment volume is a proxy for research progress. Projection bands are illustrative.",
+        ("Experiment volume is a proxy for research progress",
+         "The source does not control for compute growth or changes in who runs "
+         "experiments. More experiments do not necessarily imply more useful results."),
+        ("Projection bands are illustrative",
+         "OLS on log(multiple), January–August 2026. An 80% doubling-time range "
+         "of half to twice the fitted value and an 80% position range of fitted "
+         "value divided/multiplied by 1.3. These are modeling assumptions, not "
+         "source error bars; overlapping four-week averages are correlated."))
 
 
 def _rsi_dir_label_positions(rows, gap_days=90, rise_pts=6.0):
@@ -13515,13 +13664,14 @@ def _pc_ramp_for(timing_label, ramp_days):
 # Keyed by slug because the card labels are built from the target constants.
 _PC_RSI_WEIGHTS = {
     "metr_p50": 5.0,
-    "metr_p80": 15.0,
-    "eci_187_5": 10.0,
+    "metr_p80": 10.0,
+    "eci_187_5": 5.0,
     "eci_200": 10.0,
     "rli_90": 15.0,
-    "cobench_85": 10.0,
-    "staff_10x": 8.0,
-    "code_30x": 7.0,
+    "cobench_85": 5.0,
+    "staff_10x": 10.0,
+    "code_30x": 10.0,
+    "experiments_10x": 10.0,
     "nextstep_90": 10.0,
     "rev_1t": 10.0,
 }
@@ -13879,8 +14029,8 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
     _mix_total = sum(mix.values()) or 1.0
     st.table([{
         "Milestone": lab,
-        "Weight": (f"{weights[slug] / _total * 100:.0f}%" if survival is None
-                   else f"{weights[slug] / _total * 100:.0f}% \u2192 "
+        "Weight": (f"{weights[slug] / _total * 100:.3g}%" if survival is None
+                   else f"{weights[slug] / _total * 100:.3g}% \u2192 "
                         f"{mix[slug] / _mix_total * 100:.0f}%"),
         "Median": _pc_eta_dates(a, d)[1].strftime('%b %Y'),
         "80% CI": "{:%b %Y} \u2013 {:%b %Y}".format(*_pc_eta_dates(a, d)[::2]),
@@ -14042,6 +14192,15 @@ def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_
                  "merged, which a coding "
                  "model inflates directly, so it is output volume rather "
                  "than research progress."))
+    _cap.append((f"experiments_{_RSI_EXPERIMENT_TARGET:.0f}x",
+                 f"OpenAI experiment velocity reaches {_RSI_EXPERIMENT_TARGET:.0f}x",
+                 _pc_rsi_experiment_eta(load_rsi_experiments(), n=n, samples=True), False,
+                 "The experiment-velocity fan above, at its defaults: OLS on "
+                 "log(multiple) over all 32 displayed weeks; doubling time "
+                 "over [DT/2, DT*2], position divided/multiplied by 1.3. "
+                 "10x means experiments per active experimenter relative to 2025. "
+                 "Four-week trailing averages overlap; the bands are illustrative. "
+                 "Compute growth and changes in the active population are not controlled for."))
     _cap.append((f"nextstep_{_RSI_DIR_TARGET:.0f}",
                  f"Next-step judgment reaches {_RSI_DIR_TARGET:.0f}%",
                  _pc_nextstep_eta(rsi_dir_frontier_all, n=n, samples=True), True,
@@ -14081,7 +14240,7 @@ def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_
 def _pc_rsi_components(today, timing_label, condition, ramp_days):
     data_key = repr((frontier_all, _eci_entity_data("US best")[1],
                      rli_frontier_all, rsi_frontier_all, load_rsi_survey(),
-                     load_rsi_code(), rsi_dir_frontier_all,
+                     load_rsi_code(), load_rsi_experiments(), rsi_dir_frontier_all,
                      _OPENAI_REVENUE, _ANTHROPIC_REVENUE))
     return _pc_milestone_components(timing_label, today, condition, ramp_days,
                                     N_SAMPLES, data_key)
@@ -14102,9 +14261,8 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
         today, timing_label, condition, ramp_days)
     if _cap:
         st.subheader("Capabilities Milestones")
-        # Two rows: all the cards on one line squeeze every label to two
-        # words.
-        _per_row = -(-len(_cap) // 2)
+        # Three rows give the milestone labels room to remain legible.
+        _per_row = -(-len(_cap) // 3)
         for _start in range(0, len(_cap), _per_row):
             _chunk = _cap[_start:_start + _per_row]
             for col, (slug, lab, _anchor, _days) in zip(st.columns(_per_row),
@@ -15835,18 +15993,131 @@ def _render_anchor_links(scroll_to, tab_slug):
 
 _TK_DEFAULTS = {"tk_" + k: v for k, v in takeoff.DEFAULTS.items()
                 if k not in ("onset_low", "onset_high", "years")}
-_TK_DEFAULTS["tk_end_year"] = 2031
+_TK_DEFAULTS.update({
+    "tk_end_year": 2031, "tk_cal_weight": 50.0, "tk_cal_compute": 2.0,
+    "tk_cal_capability": 2.0, "tk_cal_yield": 1.0, "tk_cal_validated": 0.0,
+    "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
+})
 _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
 
 
 def _tk_apply_preset(name):
     st.session_state.update(_TK_DEFAULTS)
     st.session_state.update({"tk_" + k: v for k, v in takeoff.PRESETS[name].items()})
+    st.session_state.pop("_tk_fit_message", None)
+
+
+def _tk_fit_workflow(stage):
+    try:
+        rate = np.log(2) * 12 / st.session_state["tk_software_months"] \
+            + np.log(st.session_state["tk_compute_growth"])
+        fit = takeoff.calibrate_workflow(
+            st.session_state["tk_measure_baseline"], st.session_state["tk_measure_before"],
+            st.session_state["tk_measure_now"], st.session_state["tk_cal_capability"],
+            rate, st.session_state["tk_human_floor"])
+        if not 1 <= fit["half_months"] <= 60:
+            raise ValueError("The fitted halving time is outside the supported 1–60 month range.")
+        st.session_state["tk_human_" + stage] = fit["human_now"]
+        st.session_state["tk_half_" + stage] = fit["half_months"]
+        st.session_state["_tk_fit_message"] = (
+            f"Applied matched hours: {fit['human_now']:.1f}% human work today; "
+            f"{fit['half_months']:.1f} months per halving at today’s capability pace.")
+    except ValueError as exc:
+        st.session_state["_tk_fit_message"] = str(exc)
+
+
+def _tk_acceleration_fig(result):
+    from plotly.subplots import make_subplots
+
+    p = result["workflow_progress"]
+    fig = make_subplots(rows=2, cols=2, vertical_spacing=.22, subplot_titles=[
+        "Inherited RSI experiment activity", "New validated gains per month",
+        "Cumulative validated progress", "Advantage over the same-compute reference"])
+    for row, col, key, label, color, axis in (
+            (1, 1, "rsi_activity_quantiles", "RSI experiments / 2025", "#8e44ad", "Experiments (× 2025)"),
+            (1, 2, "rate_quantiles", "Delivered rate / today", "#2980b9", "Rate (× today's baseline)"),
+            (2, 1, "cumulative_quantiles", "Cumulative progress", "#d68910", "Months of today's progress"),
+            (2, 2, "matched_quantiles", "Progress / same compute", "#229954", "Rate (× same compute)")):
+        for qi in (0, 2, 1):
+            fig.add_trace(go.Scatter(
+                x=p["years"] * 12, y=p[key][:, qi],
+                name=label if qi == 1 else label + ": middle 80%",
+                mode="lines", line=dict(color=color, width=2.5 if qi == 1 else 0),
+                fill="tonexty" if qi == 2 else None,
+                fillcolor="rgba(100,140,160,0.15)", showlegend=False,
+                customdata=100 * p["matched_coverage"],
+                hovertemplate=("%{x:.1f} months<br>%{y:.2f}"
+                               + (" baseline months" if key == "cumulative_quantiles" else "×")
+                               + ("<br>Defined for %{customdata:.0f}% of scenarios" if key == "matched_quantiles" else "")
+                               + "<extra>%{fullData.name}</extra>")
+                if qi == 1 else None, hoverinfo=None if qi == 1 else "skip"), row=row, col=col)
+        if key != "cumulative_quantiles":
+            fig.add_hline(y=1, line_dash="dot", line_color="#777", row=row, col=col)
+        fig.update_yaxes(title_text=axis, type="log" if col == 1 and row == 1 else "linear",
+                         rangemode="tozero", row=row, col=col)
+    fig.update_xaxes(title_text="Months after today")
+    fig.update_layout(height=650, margin=dict(l=45, r=20, t=45, b=50))
+    return fig
+
+
+def _tk_rsi_activity(rows, today, n):
+    draws = _rsi_experiment_draws(rows, n=n)
+    if draws is None:
+        return None
+    starts, daily_slopes = draws
+    elapsed_days = (today - rows[-1]["date"]).total_seconds() / 86400
+    return starts + daily_slopes * elapsed_days, daily_slopes * 365.25
 
 
 @st.cache_data(show_spinner=False, max_entries=12)
-def _tk_simulate(params, onset_years):
-    return takeoff.simulate(params, n=len(onset_years), onset_years=onset_years)
+def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, experiment_slopes):
+    # The source digest invalidates results when the imported simulator changes.
+    result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
+                             experiment_slopes=experiment_slopes)
+    grid = result["workflow_progress"]["years"]
+    paths = np.exp(experiment_starts[:, None] + experiment_slopes[:, None] * grid)
+    result["workflow_progress"]["rsi_activity_quantiles"] = np.quantile(
+        paths, [.1, .5, .9], axis=0).T
+    return result
+
+
+def _tk_workflow_fig(result):
+    from plotly.subplots import make_subplots
+
+    progress = result["workflow_progress"]
+    fig = make_subplots(rows=2, cols=2, shared_xaxes=True,
+                        subplot_titles=list(takeoff.WORKFLOW_STAGES)
+                        + ["Useful research projects completed"],
+                        vertical_spacing=0.20, horizontal_spacing=0.12)
+    months = progress["years"] * 12
+    for i, name in enumerate((*takeoff.WORKFLOW_STAGES, "Useful projects")):
+        row, col = i // 2 + 1, i % 2 + 1
+        q = 100 * (progress["human_quantiles"][:, :, i] if i < 3
+                   else progress["success_quantiles"])
+        color = ["#2980b9", "#8e44ad", "#d68910", "#229954"][i]
+        rgb = tuple(int(color[j:j + 2], 16) for j in (1, 3, 5))
+        for values, upper in ((q[:, 0], False), (q[:, 2], True)):
+            fig.add_trace(go.Scatter(
+                x=months, y=values, name=f"{name}: middle 80%", mode="lines",
+                line=dict(width=0), fill="tonexty" if upper else None,
+                fillcolor=f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.15)",
+                showlegend=False, hoverinfo="skip"), row=row, col=col)
+        fig.add_trace(go.Scatter(
+            x=months, y=q[:, 1], name=name, mode="lines", showlegend=False,
+            line=dict(color=color, width=2.5),
+            hovertemplate="%{x:.1f} months<br>Median: %{y:.1f}%"
+                          "<extra>%{fullData.name}</extra>"), row=row, col=col)
+        threshold = result["params"]["full_human" if i < 3 else "full_success"]
+        fig.add_hline(y=threshold, line_dash="dash", line_color="#777777",
+                      annotation_text=f"Target: {'≤' if i < 3 else '≥'} {threshold:g}%",
+                      annotation_position="top right" if i < 3 else "bottom right",
+                      row=row, col=col)
+        fig.update_yaxes(range=[0, 100], ticksuffix="%",
+                         title_text="Baseline human hours" if i < 3 else "Useful projects",
+                         row=row, col=col)
+    fig.update_xaxes(title_text="Months after today", row=2)
+    fig.update_layout(height=620, margin=dict(l=50, r=20, t=45, b=45))
+    return fig
 
 
 def _tk_cdf_fig(result, today=None, horizon=None):
@@ -15860,7 +16131,7 @@ def _tk_cdf_fig(result, today=None, horizon=None):
         series = [("Full coding automation", result["onset"], "#7f8c8d")]
     else:
         series = []
-    series += [(name, samples + result["onset"] if today else samples, color)
+    series += [(name, samples if today else takeoff.after_coding(samples, result["onset"]), color)
                for (name, samples), color in zip(result["events"].items(), _TK_COLORS)
                if name != "Sustained research feedback"]
     for name, samples, color in series:
@@ -15883,8 +16154,31 @@ def _tk_date(value, today):
             if np.isfinite(value) else "Beyond horizon")
 
 
+def _tk_outcome_rows(result, horizon):
+    """Milestone measurements among arrivals inside the calendar horizon."""
+    rows = []
+    for name, measures in result["outcomes"].items():
+        dates = (np.zeros_like(result["onset"]) if name == "Today" else
+                 result["onset"] if name == "Full coding automation" else result["events"][name])
+        selected = (dates <= horizon) & np.isfinite(measures["human_mean"])
+        def fmt(key, scale, suffix):
+            values = measures[key][selected]
+            return (f"{np.median(values) * scale:.1f}{suffix}" if len(values) else
+                    "Not modeled" if np.any(dates < 0) else "Not reached")
+        rows.append({
+            "Outcome at": name,
+            "Scenarios by horizon": f"{100 * np.mean(selected):.1f}%",
+            "Human hours remaining": fmt("human_mean", 100, "%"),
+            "Most human-dependent stage": fmt("human_worst", 100, "%"),
+            "Useful projects completed": fmt("project_success", 100, "%"),
+            "Validated progress / today baseline": fmt("progress_multiple", 1, "×"),
+            "Advantage / same-compute baseline": fmt("compute_matched_advantage", 1, "×"),
+        })
+    return rows
+
+
 def render_takeoff():
-    for key in ("tk_onset_low", "tk_onset_high", "tk_years"):
+    for key in ("tk_onset_low", "tk_onset_high", "tk_years", "tk_taste_at_onset"):
         st.session_state.pop(key, None)
         if key in st.query_params:
             del st.query_params[key]
@@ -15915,16 +16209,94 @@ def render_takeoff():
         st.caption("Coding automation inherits the final RSI projection. "
                    "Adjust its weights and timing on the RSI tab.")
         number("Project through (year end)", "end_year", datetime.now().year, 2050, 1)
-        with st.expander("Research feedback", expanded=True):
-            number("Software doubling time at onset (months)", "software_months", 3.0, 60.0, 1.0,
-                   "Initial algorithmic progress at the reference 40/40/20 compute split. "
-                   "Includes assistance already present when coding automation arrives.")
-            number("Research judgment at onset / best human", "taste_at_onset", 0.1, 1.0, 0.1)
-            number("Judgment elasticity to capability", "taste_slope", 0.1, 2.0, 0.1,
-                   "Judgment scales as capability raised to this power.")
+        with st.expander("Feedback starting today", expanded=True):
+            number("Undeployed research today (months of baseline progress)",
+                   "pipeline_months", 0.0, 12.0, 0.5,
+                   "Assumed backlog of useful discoveries awaiting fast validation or "
+                   "successor incorporation. The same-compute reference starts with "
+                   "the identical backlog. Zero starts with an empty pipeline.")
+            number("Coding human hours already automated today (%)", "coding_today", 0.0, 94.0, 1.0,
+                   "Assumed share, not code authorship. The RSI date anchors 95% automation. "
+                   "Between today and that date, remaining coding hours decline smoothly. "
+                   "For past RSI dates the coding milestone is already satisfied.")
+            number("Improvements deployable through fast feedback (%)", "fast_share", 0.0, 100.0, 5.0,
+                   "Disjoint share of fixed-quality efficiency gains deployable through tooling, "
+                   "kernels and small updates. The remainder waits for successor training. "
+                   "The same improvement never counts in both channels.")
+            number("Fast validation cycle (months)", "fast_months", 0.25, 12.0, 0.25,
+                   "Each cycle validates discoveries available at its start. Like successor "
+                   "training, unfinished work cannot improve the available research system.")
+        with st.expander("Evidence calibration"):
+            number("Weight on inherited RSI activity trend (%)", "rsi_trend_weight", 0.0, 100.0, 5.0,
+                   "Blend the RSI experiment projection with modeled research effort. "
+                   "These are alternative estimates, not multiplicative gains. Zero keeps "
+                   "the mechanistic model alone. Zero AI transfer also disables this channel.")
+            number("RSI trend weight half-life (months)", "rsi_trend_months", 1.0, 60.0, 1.0,
+                   "The weight halves over this time as the takeoff model replaces the "
+                   "near-term extrapolation. The inherited activity chart itself is unchanged.")
+            number("Non-compute experiment growth translating to useful effort (%)",
+                   "rsi_useful_growth", 0.0, 100.0, 5.0,
+                   "Assumed share of compute-adjusted log activity growth that transfers "
+                   "to useful research. It does not turn experiment counts into measured "
+                   "validated discoveries. Existing activity is normalized at today.")
+            number("Weight on empirical feedback estimate (%)", "cal_weight", 0.0, 100.0, 5.0,
+                   "Blends the experiment-based estimate with the research-quality elasticity "
+                   "prior. Aggregate observations are confounded, not a causal estimate.")
+            number("Compute growth over evidence window (×)", "cal_compute", 1.0, 20.0, 0.1,
+                   "Assumption: OpenAI reports compute growth but does not quantify it here.")
+            number("Capability growth over evidence window (×)", "cal_capability", 1.01, 20.0, 0.1,
+                   "Assumed effective-capability multiple used to infer feedback elasticity.")
+            number("Useful yield per experiment: end / start (×)", "cal_yield", 0.1, 5.0, 0.1,
+                   "Unmeasured assumption; 1 means unchanged useful yield per experiment.")
+            number("Measured validated progress: end / start (×; 0 = unavailable)",
+                   "cal_validated", 0.0, 20.0, 0.1,
+                   "Supply a matched-period ratio of independently validated fixed-quality "
+                   "algorithmic gains per month. A positive value replaces the experiment proxy.")
+            st.caption("Matched-stage calibration: enter mean human hours, including "
+                       "interventions and rescue work, on comparable projects. Zeros mean "
+                       "no measurement supplied; no human-hours data are fabricated.")
+            number("Matched projects: baseline human hours", "measure_baseline", 0.0, 10000.0, 0.5)
+            number("Matched projects: earlier human hours", "measure_before", 0.0, 10000.0, 0.5)
+            number("Matched projects: human hours today", "measure_now", 0.0, 10000.0, 0.5)
+            for stage, key in zip(takeoff.WORKFLOW_STAGES, takeoff.WORKFLOW_KEYS):
+                st.button(f"Fit {stage.lower()} from these hours", key="tk_fit_" + key,
+                          on_click=_tk_fit_workflow, args=(key,))
+            if st.session_state.get("_tk_fit_message"):
+                st.caption(st.session_state["_tk_fit_message"])
+        with st.expander("Human work and useful projects", expanded=True):
+            number("Maximum human work for full automation (%)", "full_human", 0.0, 25.0, 1.0,
+                   "Every research stage must fall below this share of its baseline human "
+                   "hours, at comparable project scope. A strong average cannot hide a bottleneck.")
+            number("Required useful-project completion (%)", "full_success", 50.0, 100.0, 1.0)
+            for stage, key in zip(takeoff.WORKFLOW_STAGES, takeoff.WORKFLOW_KEYS):
+                number(f"{stage}: human work today (%)", "human_" + key, 0.0, 100.0, 5.0)
+                number(f"{stage}: human-work halving time (months)", "half_" + key, 1.0, 60.0, 1.0,
+                       "Months of capability progress at today’s pace needed to halve "
+                       "human work above the floor. Future acceleration shortens calendar time. "
+                       "These starting assumptions have not been fitted to observations.")
+            number("Persistent human-work floor (%)", "human_floor", 0.0, 25.0, 1.0)
+            number("Useful-project completion today (%)", "project_success", 5.0, 100.0, 5.0)
+            number("Failure-rate halving time (months)", "success_half", 1.0, 60.0, 1.0,
+                   "At today’s capability-progress pace; success rates approach 100%.")
+        with st.expander("Validated research progress"):
+            number("Baseline software doubling time (months)", "software_months", 3.0, 60.0, 1.0,
+                   "Validated algorithmic progress today, measured as training "
+                   "compute saved at fixed quality, at the reference 40/40/20 compute split. "
+                   "Includes AI assistance already present today; it is not multiplied in again.")
+            number("Required progress acceleration (× baseline)", "progress_target", 1.1, 120.0, 1.0,
+                   "12× means twelve months of baseline algorithmic progress delivered per "
+                   "calendar month. Only improvements in validated, available successors count.")
+            number("Required advantage over same-compute baseline (×)", "advantage_target", 1.1, 100.0, 0.5,
+                   "Comparison uses the same compute growth, allocation, and successor schedule, "
+                   "with AI research skills held at their today’s level.")
+            number("Consecutive qualifying successor cycles", "progress_cycles", 1, 5, 1)
+        with st.expander("Research feedback"):
+            number("Research-quality elasticity prior", "taste_slope", 0.0, 2.0, 0.1,
+                   "Research quality scales as capability raised to this power. "
+                   "This affects progress, but is no longer the R&D automation trigger.")
             number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1)
             number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
-                   "Discounts coding and judgment gains beyond onset. Zero removes "
+                   "Discounts coding and judgment gains beyond today. Zero removes "
                    "AI feedback; baseline research and compute can still improve models.")
             number("Increasing research difficulty", "difficulty", 0.0, 2.0, 0.1,
                    "A larger value means each further software improvement takes more work.")
@@ -15940,20 +16312,23 @@ def render_takeoff():
             agents = 100 - st.session_state["tk_training_share"] \
                 - st.session_state["tk_experiment_share"]
             st.caption(f"Remaining compute for agents: {agents}%.")
-        with st.expander("General intelligence and uncertainty"):
+        with st.expander("Speculative breadth and uncertainty"):
+            st.caption("The bridge from autonomous research acceleration to broad "
+                       "superintelligence still uses assumed capability gaps.")
             number("Capability doublings: AI research → broad expertise", "general_gap", 0.0, 10.0, 0.5)
             number("Further doublings to broad superintelligence", "superiority_gap", 0.5, 6.0, 0.5)
             number("Parameter uncertainty (%)", "uncertainty", 0, 100, 5,
                    "Independent bounded log-space variation around research rates, compute "
-                   "growth, cycle times, initial judgment, judgment slope, and generality gaps. "
+                   "growth, cycle times, workflow human hours, completion rates, "
+                   "workflow learning rates, research-quality slope, and generality gaps. "
                    "40 means factors between exp(−0.4) and exp(0.4), not a confidence level.")
             number("Simulation seed", "seed", 0, 4294967295, 1)
 
     st.header("Takeoff to superintelligence")
     st.caption("Coding-automation dates inherit the final RSI projection, including "
-               "its weights, conditioning, and all-things-considered penalty. "
-               "Treating that proxy blend as coding automation is an assumption; "
-               "the subsequent takeoff dynamics are illustrative scenarios.")
+               "its weights, conditioning, and all-things-considered penalty. Research "
+               "starts today with partial automation and existing AI assistance. Coding "
+               "automation is a milestone on that path, not the start of feedback.")
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     end_date = datetime(int(st.session_state["tk_end_year"]), 12, 31)
     horizon = (end_date - today).total_seconds() / (365.25 * 86400)
@@ -15964,16 +16339,36 @@ def render_takeoff():
     onset_years = onset_days / 365.25
     params = {k: st.session_state["tk_" + k] for k in takeoff.DEFAULTS
               if k not in ("onset_low", "onset_high", "years")}
-    # Follow-up must cover the calendar chart even for inherited past onsets,
-    # and at least two years for the conditional 24-month statistic.
-    params["years"] = max(2.0, horizon - min(0.0, float(np.min(onset_years))))
+    # Every path begins today and ends at the selected calendar horizon.
+    # Past coding dates stay intact; we do not invent pre-today research history.
+    params["years"] = horizon
     try:
         takeoff.validate(params)
     except ValueError as exc:
         st.error(str(exc))
         return
+    evidence = load_rsi_experiments()
+    observed_growth = evidence[-1]["mult"] / evidence[0]["mult"]
+    calibration = None
+    if params["transfer"] > 0:
+        calibration = takeoff.calibrate_feedback(
+            observed_growth, st.session_state["tk_cal_compute"],
+            st.session_state["tk_cal_capability"], st.session_state["tk_cal_yield"],
+            st.session_state["tk_cal_validated"] or None,
+            transfer=params["transfer"] / 100, coding_slope=params["coding_slope"],
+            parallel=params["parallelization"])
+        w = st.session_state["tk_cal_weight"] / 100
+        calibration["quality_prior"] = params["taste_slope"]
+        calibration["weight"] = w
+        params["taste_slope"] = (1 - w) * params["taste_slope"] + w * calibration["quality_slope"]
     n = len(onset_years)
-    result = _tk_simulate(params, onset_years)
+    activity = _tk_rsi_activity(evidence, today, n)
+    if activity is None:
+        st.info("The RSI experiment series has no positive growth projection to inherit.")
+        return
+    experiment_starts, experiment_slopes = activity
+    result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
+                          experiment_starts, experiment_slopes)
     if result["numerically_limited"].any():
         st.error("These assumptions exceed the simulation’s numerical range in "
                  f"{100 * np.mean(result['numerically_limited']):.1f}% of draws. "
@@ -15981,7 +16376,8 @@ def render_takeoff():
                  "the unresolved draws have not been counted as slow outcomes.")
         return
     asi = result["events"][takeoff.MILESTONES[-1]]
-    arrival = result["onset"] + asi
+    arrival = asi
+    durations = takeoff.after_coding(asi, result["onset"])
     median = takeoff.quantile(arrival, 0.5, horizon)
     lo = takeoff.quantile(arrival, 0.1, horizon)
     hi = takeoff.quantile(arrival, 0.9, horizon)
@@ -15998,7 +16394,7 @@ def render_takeoff():
     st.plotly_chart(_tf(_tk_cdf_fig(result, today, horizon=horizon)), width="stretch")
     rows = []
     for name, samples in [("Full coding automation", result["onset"])] + [
-            (name, result["onset"] + values) for name, values in result["events"].items()]:
+            (name, values) for name, values in result["events"].items()]:
         rows.append({"Milestone": name,
                      "10%": _tk_date(takeoff.quantile(samples, 0.1, horizon), today),
                      "Median": _tk_date(takeoff.quantile(samples, 0.5, horizon), today),
@@ -16009,11 +16405,56 @@ def render_takeoff():
     st.subheader("Time from coding automation to superintelligence")
     for col, months in zip(st.columns(3), (6, 12, 24)):
         col.metric(f"Superintelligence within {months} months",
-                   f"{100 * np.mean(asi <= months / 12):.1f}%")
+                   f"{100 * np.mean(durations <= months / 12):.1f}%")
     st.plotly_chart(_tf(_tk_cdf_fig(result)), width="stretch")
-    st.caption("Durations start at each scenario’s own coding-automation date. "
-               "All scenarios stay in the denominator, including those that do not "
-               "reach the milestone during the simulation.")
+    st.caption("Durations subtract each scenario’s coding date from its simulated arrival. "
+               "All scenarios stay in the denominator. Follow-up ends at the calendar horizon: "
+               "late coding dates have less follow-up, so these are horizon-censored probabilities.")
+    st.subheader("Human work and validated progress")
+    st.plotly_chart(_tf(_tk_workflow_fig(result)), width="stretch")
+    st.caption("Monthly snapshots from today: solid lines "
+               "show medians; shading shows the middle 80% of all scenarios. Lower human "
+               "hours and higher useful-project completion mean more automation. Full R&D "
+               "automation requires every stage and project completion to meet their dashed "
+               "targets in the same scenario; median lines alone do not establish this. "
+               "Paths retain their last modeled values once all milestones are reached. "
+               "These are assumed capability-to-workflow relationships, not measured trends.")
+    st.table(_tk_outcome_rows(result, horizon))
+    st.caption("Medians among scenarios reaching each milestone by the calendar horizon. "
+               "Human hours are relative to comparable baseline projects, not a staffing "
+               "forecast. The average weights direction, experiments, and verification "
+               "25/50/25; the automation trigger checks every stage separately. Progress "
+               "counts efficiency gains at fixed quality, after fast validation or successor "
+               "deployment. Historical coding dates have no reconstructed outcome measurements. "
+               "These are simulated outcomes, not observed measurements.")
+    st.subheader("Research acceleration, including human-directed work")
+    st.caption(f"RSI projects {np.median(np.exp(experiment_starts)):.2f}× experiments per "
+               "researcher today relative to 2025. This is the same projected activity "
+               "distribution as the RSI tab; today's validated research pace is a separate "
+               "1× baseline. A roughly 2× activity level is not a measured 2× discovery rate.")
+    st.plotly_chart(_tf(_tk_acceleration_fig(result)), width="stretch")
+    st.caption("Validated fixed-quality efficiency gains per month over the trailing three "
+               "months, shown only after a complete window. Medians and middle 80% include fast "
+               "and successor improvements. Today’s already AI-assisted pace is 1×. "
+               "The rate can fall between deployments or as research gets harder; cumulative "
+               "validated progress does not fall. The initial pipeline is an assumption, "
+               "not an observed history of deliveries. "
+               "The same-compute reference freezes AI research skills at today’s level. "
+               "Its ratio is undefined where the reference delivers no gains; those values "
+               "are excluded only from that panel. After all milestones, paths retain their "
+               "last measured rates. Faster research does not require full autonomy.")
+    st.caption(f"Near-term output blends the mechanistic model with the RSI activity "
+               f"trend at an initial {params['rsi_trend_weight']:g}% weight, halving every "
+               f"{params['rsi_trend_months']:g} months. Compute growth is accounted for once; "
+               "the useful-effort conversion is adjustable. This blends estimates rather "
+               "than multiplying two forecasts based on overlapping evidence. Zero AI "
+               "transfer disables the trend's influence on research output.")
+    st.table([{"Research acceleration": name,
+               "Median first observed crossing": _tk_date(takeoff.quantile(values, .5, horizon), today),
+               f"By {end_date:%b %Y}": f"{100 * np.mean(values <= horizon):.1f}%"}
+              for name, values in result["acceleration_events"].items()])
+    st.caption("Crossings use monthly observations of the trailing progress rate; they "
+               "do not require full R&D automation or a sustained successor-cycle streak.")
     compute_limited = 100 * np.mean(result["compute_limited"])
     st.subheader("What constrains experiment throughput?")
     st.table([
@@ -16025,45 +16466,113 @@ def render_takeoff():
                "of delay. Research judgment, rising difficulty, and successor cycles also matter.")
 
     with st.expander("What triggers full R&D automation?"):
-        nominal_gain = (1 / params["taste_at_onset"]) ** (1 / params["taste_slope"])
         st.markdown(
-            "Coding is assumed automated at the inherited RSI date. From there, "
-            "full R&D automation triggers at the **first available successor whose "
-            "research judgment matches the best human researcher**.\n\n"
-            "Judgment = judgment at onset × (effective compute / onset effective "
-            "compute) ^ judgment elasticity.\n\n"
-            f"With your central settings, judgment starts at **{params['taste_at_onset']:g}×** "
-            f"the best human, with elasticity **{params['taste_slope']:g}**. Reaching "
-            f"human parity requires **{nominal_gain:.2f}× effective compute**. "
-            "Uncertainty varies the starting judgment and elasticity across draws.\n\n"
-            "New algorithms count only after successor training and validation finish. "
-            "Compute, research transfer, and increasing difficulty determine how quickly "
-            "the threshold is reached.\n\n"
-            "This is a capability proxy: it does **not** independently test reliability, "
-            "long-horizon autonomy, experiment management, or human sign-off. It also does "
-            "not require the consecutive improvement cycles used for the separate "
-            "sustained-feedback milestone. Those missing requirements could delay actual "
-            "full R&D automation beyond this model’s threshold.")
+            "Research feedback starts today. Full automation also requires the inherited coding date to have arrived. "
+            f"the available research system must require **at most {params['full_human']:g}% "
+            "of baseline human hours in every research stage**, while completing "
+            f"**at least {params['full_success']:g}% of useful research projects**.\n\n"
+            "The stages are research direction, experiment design and interpretation, "
+            "and verification and integration. Progress in an easy stage cannot "
+            "compensate for a persistent human bottleneck elsewhere. Human work falls "
+            "toward the floor you set; a floor above the threshold prevents this milestone.\n\n"
+            "Starting human hours, completion rates, and learning rates are elicited "
+            "scenario assumptions. A halving time means months of capability progress "
+            "at today’s pace; takeoff acceleration compresses the calendar time. "
+            "The new definition is tied to measurable outcomes, but the model is not yet "
+            "fitted to a dataset of complete autonomous research projects.")
+    with st.expander("What triggers superhuman AI research?"):
+        st.markdown(
+            "Full R&D automation must already be satisfied. Then **each of "
+            f"{params['progress_cycles']} consecutive completed successor cycles** must "
+            f"deliver validated algorithmic progress at **{params['progress_target']:g}× "
+            "today’s rate**, and at least "
+            f"**{params['advantage_target']:g}× a same-compute baseline**.\n\n"
+            "Progress means reductions in training compute needed to reach a fixed "
+            "capability level. The model measures the change in total validated fast "
+            "and successor efficiency between successor deployments, divided by the "
+            "full calendar cycle duration. Buying a larger training cluster does not "
+            "itself count as an algorithmic gain.\n\n"
+            "The comparison path has identical compute growth, allocation, training "
+            "and validation times, and increasing research difficulty. Its AI research "
+            "skills stay at the today’s level. This controls for resource growth; it is "
+            "a modeled comparison, not a measured experiment.\n\n"
+            "The thresholds express what we choose to call superhuman performance. "
+            "They can be tested against replicated fixed-quality efficiency gains "
+            "and matched-team project evaluations.")
+    with st.expander("Evidence used and remaining assumptions", expanded=True):
+        st.write(f"OpenAI experiments per researcher: {evidence[0]['mult']:.2f}× on "
+                 f"{evidence[0]['date']:%b %d, %Y} → {evidence[-1]['mult']:.2f}× on "
+                 f"{evidence[-1]['date']:%b %d, %Y}, or {observed_growth:.2f}× growth. "
+                 "Values are four-week trailing averages relative to the 2025 baseline.")
+        if calibration:
+            st.write(f"Calibration basis: {calibration['basis']}. After the assumed compute "
+                     f"adjustment, useful-progress growth is {calibration['resource_adjusted_growth']:.2f}×. "
+                     f"The fitted quality elasticity is {calibration['quality_slope']:.2f}; "
+                     f"blending with your prior gives {params['taste_slope']:.2f}.")
+            if calibration["boundary"]:
+                st.caption("These assumptions imply no positive quality-feedback residual. "
+                           "The fitted elasticity is held at zero, the model’s lower bound.")
+        else:
+            st.caption("Feedback transfer is zero, so evidence calibration is inactive.")
+        st.markdown(
+            "[OpenAI’s research report](https://openai.com/index/research-acceleration-view-inside-openai/) "
+            "reports that more than half of successful 4–8 hour tasks required intervention. "
+            "That is task incidence, not human hours or whole-project success. The matched-stage "
+            "controls accept intervention and rescue hours without equating those quantities. "
+            "The report supplies no matched whole-project hours or validated efficiency-gain series. "
+            "Those inputs remain assumptions until measurements are supplied.\n\n"
+            "[Anthropic’s report](https://www.anthropic.com/institute/recursive-self-improvement) "
+            "reports 8× code per engineer relative to 2024. Code volume is contextual evidence; "
+            "it is not used as an 8× research-output multiplier.\n\n"
+            "The experiment fit removes assumed compute growth and modeled coding gains before "
+            "estimating research-quality feedback. Existing assistance is already in today’s "
+            "baseline; historical growth calibrates elasticity, not an extra starting multiplier. "
+            "RSI and calibration partly use the same evidence and are not independent confirmations.\n\n")
+        st.markdown(
+            "**Human involvement:** log human hours in each stage of comparable, "
+            "complete research projects, including rescue work and corrections. "
+            "Track project completion and independent evaluation alongside time saved.\n\n"
+            "**Validated progress:** measure compute saved at fixed capability, or "
+            "capability gained at a fixed compute budget. Count improvements after "
+            "replication and incorporation into successors, with total costs and "
+            "elapsed time recorded.\n\n"
+            "[METR’s RE-Bench](https://arxiv.org/abs/2411.15114) provides a starting "
+            "point for comparisons with human experts under resource constraints. "
+            "Our CoBench and next-step-judgment panels provide related signals, but "
+            "do not directly establish whole-workflow human-hours or success rates. "
+            "The experiment series informs feedback calibration, while whole-workflow "
+            "measurements must be supplied separately.\n\n"
+            "**Breadth:** broad superintelligence still uses a speculative gap after "
+            "the autonomous research milestone. Domain-specific project evaluations "
+            "are needed to replace that bridge.")
     with st.expander("How this model works"):
         st.markdown(
-            "Coding automation → experiments and research judgment → useful algorithms "
-            "→ successor training and validation → stronger AI research.\n\n"
-            "**Milestones.** Full R&D automation requires judgment matching the best "
-            "human researcher. Superhuman AI research requires 3× that judgment. "
-            "Broad superintelligence adds the two capability gaps you set. Sustained "
+            "Partially automated research today → experiments → validated efficiency "
+            "improvements → better tools and successors → faster research. Humans may "
+            "remain involved throughout this feedback loop.\n\n"
+            "**Milestones.** Full R&D automation requires low human involvement in every "
+            "research stage and high useful-project completion. Superhuman research "
+            "additionally requires sustained validated progress acceleration and a "
+            "same-compute advantage. Broad superintelligence adds the two speculative "
+            "capability gaps after that milestone. Sustained "
             "feedback requires consecutive completed cycles with incorporated algorithmic "
             "improvements and at least a 10% rise in AI research output per cycle. "
-            "These are modeling conventions, not validated equivalences.\n\n"
+            "These definitions and their input assumptions are documented above.\n\n"
             "**Research.** Coding labor and experiment compute combine through a harmonic "
             "mean, so a shortage of either constrains output. Research judgment multiplies "
             "that output. Software improvement slows as algorithms become harder to improve. "
-            "The transfer setting discounts gains beyond the capability present at onset.\n\n"
+            "The transfer setting discounts gains beyond the capability present today.\n\n"
+            "**Initial pipeline.** Both paths start with the same assumed stock of "
+            "undeployed discoveries. Validation is required before these become useful.\n\n"
+            "**Fast feedback.** A separate share of discoveries becomes available after "
+            "short validation cycles, without waiting for frontier training. Fast and slow "
+            "shares sum to 100%; the same gain is never added twice.\n\n"
             "**Successors.** Each run freezes its algorithms at the start. Compute is "
             "accumulated during training; the successor becomes available after validation. "
             "Later discoveries enter the next run. The reference model used a three-month "
             "run with 40% of the initial compute budget. Longer runs trade more compute "
             "against slower incorporation of discoveries.\n\n"
-            "Capability here means effective training compute relative to the onset "
+            "Capability here means effective training compute relative to today’s "
             "model: training compute × algorithmic efficiency. The mapping to "
             "coding, judgment, and general intelligence is an assumption. Training "
             "capacity stays reserved during validation; it is not reassigned to agents.\n\n"
@@ -16071,7 +16580,8 @@ def render_takeoff():
             "Other varied parameters use independent, bounded log-space draws; these are "
             "scenario priors, independent of the inherited onset date. Reruns with "
             "the same RSI samples and seed use identical draws.\n\n"
-            "**Scope.** This model uses the RSI blend as its starting-date distribution. "
+            "**Scope.** The RSI blend anchors the coding milestone and a smooth coding "
+            "productivity ramp. It does not postpone the start of research feedback. "
             "It does not fit a joint capability model, "
             "or simulate hardware innovation, manufacturing, or policy changes. "
             "Compute growth is your scenario assumption.\n\n"
@@ -16080,17 +16590,38 @@ def render_takeoff():
     snapshot = dict(version=result["version"], as_of=today.isoformat(),
                     samples=n, step_years=1/52, params=params,
                     project_through=end_date.isoformat(), rsi_settings=rsi_settings,
-                    onset_source="Final RSI projection", onset_days=onset_days.tolist())
+                    time_origin="today", onset_source="Final RSI projection",
+                    experiment_projection=dict(source=_RSI_EXPERIMENT_SOURCE_URL,
+                        log_levels_today=experiment_starts.tolist(),
+                        log_growth_per_year=experiment_slopes.tolist(), baseline="2025 experiments = 1"),
+                    onset_days=[float(v) if np.isfinite(v) else None for v in onset_days],
+                    calibration=dict(inputs={k: st.session_state[k] for k in _TK_DEFAULTS
+                                             if k.startswith(("tk_cal_", "tk_measure_"))},
+                                     experiment_growth=observed_growth, fit=calibration,
+                                     source=_RSI_EXPERIMENT_SOURCE_URL,
+                                     evidence_start=evidence[0]["date"].isoformat(),
+                                     evidence_end=evidence[-1]["date"].isoformat()))
     st.download_button("Download assumptions", json.dumps(snapshot, indent=2),
                        file_name="takeoff_assumptions.json", mime="application/json")
-    records = [dict(milestone=name, months_after_coding_automation=[
-        round(float(v * 12), 4) if np.isfinite(v) else None for v in values])
+    records = [dict(milestone=name, months_after_today=[
+        round(float(v * 12), 4) if np.isfinite(v) else None for v in values],
+        months_after_coding_automation=[
+        round(float(v * 12), 4) if np.isfinite(v) else None
+        for v in takeoff.after_coding(values, result["onset"])])
         for name, values in result["events"].items()]
     st.download_button(
         "Download simulation draws", json.dumps(dict(
-            snapshot, onset_months=(result["onset"] * 12).tolist(),
+            snapshot, onset_months=[float(v * 12) if np.isfinite(v) else None for v in result["onset"]],
             milestones=records,
-            missing_value="null means not reached within the simulated years after onset"),
+            acceleration_events={name: [float(v * 12) if np.isfinite(v) else None for v in values]
+                                 for name, values in result["acceleration_events"].items()},
+            workflow_progress={key: np.where(np.isfinite(values), values, None).tolist()
+                               for key, values in result["workflow_progress"].items()
+                               if key.endswith("quantiles") or key in ("years", "matched_coverage")},
+            outcomes={name: {key: [float(v) if np.isfinite(v) else None for v in values]
+                             for key, values in measures.items()}
+                      for name, measures in result["outcomes"].items()},
+            missing_value="null means not reached or undefined within the horizon from today"),
             indent=2, allow_nan=False),
         file_name="takeoff_draws.json", mime="application/json")
 

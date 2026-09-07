@@ -3573,6 +3573,56 @@ class TestRsiDirection:
             vp._PC_RSI_WEIGHTS[slug]
 
 
+class TestRsiExperiments:
+    def test_takeoff_inherits_the_same_activity_paths_without_changing_global_rng(self):
+        rows = vp.load_rsi_experiments()
+        before = np.random.get_state()
+        starts, daily = vp._rsi_experiment_draws(rows, n=20)
+        after = np.random.get_state()
+        np.testing.assert_array_equal(before[1], after[1])
+        assert before[2:] == after[2:]
+        today = datetime(2026, 9, 7)
+        current, annual = vp._tk_rsi_activity(rows, today, 20)
+        days = (today - rows[-1]['date']).days
+        np.testing.assert_array_equal(current, starts + daily * days)
+        np.testing.assert_array_equal(annual, daily * 365.25)
+        params = dict(years=1, uncertainty=0)
+        onset = np.ones(20)
+        a = vp._tk_simulate(params, onset, "test", current, annual)
+        b = vp._tk_simulate(params, onset, "test", current + np.log(2), annual)
+        # Relative growth informs dynamics; a different historical activity
+        # normalization must not multiply today's productivity a second time.
+        np.testing.assert_array_equal(a['software_log'], b['software_log'])
+        expected = np.exp(starts[:, None] + daily[:, None] *
+                          (days + a['workflow_progress']['years'] * 365.25))
+        np.testing.assert_allclose(a['workflow_progress']['rsi_activity_quantiles'],
+                                   np.quantile(expected, [.1, .5, .9], axis=0).T)
+
+    def test_source_weeks_and_baseline_are_preserved(self):
+        rows = vp.load_rsi_experiments()
+        assert len(rows) == 32
+        assert rows[0] == {'date': datetime(2026, 1, 5), 'mult': 0.72}
+        assert rows[-1] == {'date': datetime(2026, 8, 10), 'mult': 1.60}
+        assert all((b['date'] - a['date']).days == 7 for a, b in zip(rows, rows[1:]))
+        assert max(r['mult'] for r in rows) == 1.61
+        assert vp._RSI_EXPERIMENT_TARGET == 10.0
+
+    def test_threshold_dates_use_the_same_draws_as_the_fan(self, monkeypatch):
+        rows = vp.load_rsi_experiments()
+        # At a fixed 100-day doubling time, 1.25x reaches 10x in 300 days.
+        monkeypatch.setattr(vp, '_rsi_experiment_draws',
+                            lambda rows, n=None: (np.full(20, np.log(1.25)),
+                                                   np.full(20, np.log(2) / 100)))
+        anchor, days = vp._pc_rsi_experiment_eta(rows, samples=True)
+        assert anchor == rows[-1]['date']
+        assert days == pytest.approx(np.full(20, 300.0))
+
+    def test_declining_series_has_no_future_crossing(self):
+        rows = [{'date': datetime(2026, 1, 5), 'mult': 2.0},
+                {'date': datetime(2026, 1, 12), 'mult': 1.0}]
+        assert vp._pc_rsi_experiment_eta(rows) is None
+
+
 class TestRsiCode:
     """Merged code per Anthropic contributor, the RSI tab's fourth series."""
 
@@ -3643,14 +3693,14 @@ class TestRsiCode:
         assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
 
     def test_milestone_card_is_weighted_in_the_blend(self):
-        """The user-set mix: staff acceleration 8%, merged code 7%."""
+        """The user-set prior mix gives staff and both output proxies 10% each."""
         slug = f"code_{vp._RSI_CODE_TARGET:.0f}x"
         assert slug == "code_30x"
-        assert vp._PC_RSI_WEIGHTS[slug] == 7.0
-        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 8.0
+        assert vp._PC_RSI_WEIGHTS[slug] == 10.0
+        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 10.0
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
         assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
-        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 7.0
+        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 10.0
 
     def test_the_milestone_is_on_the_internal_clock(self):
         """Driven by models Anthropic uses internally before release, like
@@ -5142,7 +5192,7 @@ class TestPacing:
         # it keys the blend weight, so "eci_188" would silently unweight it.
         slugs = [f"eci_{t:g}".replace(".", "_") for t in vp._PC_ECI_TARGETS]
         assert slugs == ["eci_187_5", "eci_200"]
-        assert [vp._PC_RSI_WEIGHTS[s] for s in slugs] == [10.0, 10.0]
+        assert [vp._PC_RSI_WEIGHTS[s] for s in slugs] == [5.0, 10.0]
 
     def test_rli_eta_reproduces_the_rli_tab_defaults(self):
         """The RLI 90% card is the RLI tab at its defaults: single OLS in

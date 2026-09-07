@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Current branch constraint
+
+The user directed ongoing work onto `codex/grounded-takeoff`. Checkpoint `6e22ad2` preserves
+the RSI-linked takeoff explorer before the grounded-outcomes revision. Continue on this branch;
+do not commit or push to master without explicit user authorization.
+
 ## Running the App
 
 ```bash
@@ -38,44 +44,49 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses the pure NumPy simulator in `takeoff_model.py`. The `tk_` keys in
-`_TK_DEFAULTS` all round-trip through the URL. Fast/Central/Bottlenecked buttons restore
-complete takeoff parameter sets; Central resets the horizon to year-end 2031 while preserving
-the inherited RSI settings. Invalid individual URL values revert to defaults; invalid compute
-allocations show a recoverable error. The old onset-range and years-ahead URL keys are retired.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v4-present-feedback`.
+See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
+Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
+`events` are already years from today. Never add onset to event times. `after_coding`
+subtracts finite coding dates, preserving censored draws without inf-minus-inf NaNs.
+The horizon is December 31 of `tk_end_year` (default 2031); relative-duration charts have
+less follow-up for late coding dates and explicitly describe that censoring.
 
-Coding automation now inherits the final RSI blend through `_pc_rsi_onset`, including
-weights, conditioning, penalty, and clock. `_pc_milestone_components` caches by date,
-source-data signature, and conditioning settings; `_pc_rsi_projection_samples` caches the
-weighted blend. Both tabs consume these same draws. `_pc_rsi_onset` preserves the inherited
-widget keys when the RSI editors are absent on Takeoff. The display horizon never clips
-the onset distribution. Sorted onset draws preserve quantile pairing as penalties change.
+`_pc_rsi_onset` preserves hidden RSI widgets, caches source components and the mixture,
+and returns sorted exact final samples, including conditioning, penalty, and clock.
+This remains shared with the RSI tab. The display horizon does not clip its tail.
 
-This is a conditional model beginning at full coding automation, not a joint fit to the
-RSI indicators. Equating the blend with coding automation is explicit. Defaults for subsequent
-takeoff dynamics are illustrative scenario priors. `default_rng(seed)` is local
-and does not seed the app's global RNG. `_tk_simulate` caches by full parameters and inherited
-onset draws. Draws use the same base quantiles for paired parameter changes.
+The model starts with partial automation, today's already-assisted software progress,
+and an assumed existing undeployed backlog shared with the reference. Coding productivity
+ramps to the inherited milestone; overlapping endogenous coding gains use a maximum rather
+than multiplying the two. Fast and successor improvements partition discoveries and each
+validate a start-of-cycle snapshot. A same-compute reference freezes today's AI skills.
+Full R&D gates on coding plus workflow criteria. Research acceleration has a separate chart
+and 2×/5× first-crossing events; it does not require full autonomy. Sustained feedback stays
+in the table but is omitted from both milestone CDF charts.
 
-Research uses a harmonic mean of coding labor and experiment compute, multiplied by
-judgment. Transfer discounts gains beyond onset. Three disjoint compute allocations use
-40/40/20 as the reference; training capacity is reserved but idle during validation.
-Each run freezes algorithms at its start. Time steps are at most weekly and split at
-exact per-draw cycle events, avoiding accumulated weekly rounding delays. Longer runs
-buy more training compute, so their net effect need not be a pure delay.
+Evidence calibration uses the endpoint growth in `openai_experiment_velocity.csv`, adjusts
+for assumed historical compute and coding gains, and fits a quality elasticity blended with
+the prior. A supplied validated-progress ratio overrides the experiment proxy. Matched-stage
+human hours can set current shares/halving times; missing inputs are zero, not invented data.
+The `tk_cal_` and `tk_measure_` inputs round-trip in URLs and exports. Central resets all
+Takeoff inputs and preserves RSI. Workflow fit callbacks validate before changing widgets.
 
-`tk_end_year` sets the calendar horizon to December 31 (default 2031). The relative simulation
-window separately covers the calendar horizon, inherited past onsets, and at least two years
-for duration statistics. CDFs and quantiles retain +inf for unreached milestones; the calendar horizon also censors
-finite dates beyond the display. Duration probabilities start from each draw's own onset.
-Simulation draws beyond numerical range produce an explicit error instead of being counted
-as stalled outcomes. JSON exports include version, date, seed, parameters, and sample count.
-Tests in `test_takeoff_model.py` cover calibration, feedback, compute accounting, freezing
-algorithms, event ordering, censoring, RNG isolation, and convergence. `TestTakeoffTab`
-covers rendering, reset, shared URLs, exact equality to the final RSI CDF, year-end horizons,
-tab switching, and recoverable invalid controls. Full R&D automation remains a best-human
-judgment threshold (central 0.6 × capability^0.8 ≥ 1), reached on deployment; it is not gated
-by the consecutive-cycle feedback criterion or a separate autonomy/reliability evaluation.
+The model's source digest is checked on app reruns, reloads stale imported model code, and
+is an explicit argument to `_tk_simulate`'s Streamlit cache. Preserve this dependency when
+changing the simulator schema. Local seeded RNG and common draws support paired scenarios.
+Numerical divergence is reported explicitly, never silently counted as slow arrival.
+Unit tests cover accounting, snapshots, fast feedback, calibration, ordering, censoring,
+convergence, and RNG isolation. AppTests cover four charts, calibration, matched hours,
+URL sharing, stale imports, and exact inheritance from RSI.
+
+`_rsi_experiment_draws` uses a local fixed seed so the RSI fan, threshold card, and Takeoff
+reuse the same paths without perturbing global RNG. `_tk_rsi_activity` shifts these to today
+and annualizes slopes. `_tk_simulate` caches by these arrays as well as model source and RSI
+onsets. Forward activity and mechanistic effort are alternative estimates, blended with a
+fading weight, not multiplied. Current activity normalization only affects the displayed
+2025-baseline fan, not today's already-assisted productivity. The acceleration chart also
+shows cumulative gains, and delivered rates are missing until a full three-month window.
 
 ### Section deep links
 
@@ -419,7 +430,7 @@ scan that counts it swallowed 5,500 lines once. Tokenize, or edit by hand.
 ### RSI tab
 
 `render_rsi()` is titled *RSI* and runs CoBench, then the staff survey, then
-merged code per person, then research direction, then
+merged code per person, OpenAI experiment velocity, then research direction, then
 *Capabilities Milestones* + *RSI projection (tentative)* (`_pc_render_milestones()`,
 moved here from the Pacing tab). The CoBench section plots that eval — Anthropic's
 internal AI R&D benchmark — against release
@@ -974,7 +985,7 @@ RSI tab dates too), `_pc_rsi_survey_eta()` for self-reported staff speedup reach
 `_RSI_DIR_TARGET` (that study's own practical ceiling — see the RSI tab section),
 and `_pc_revenue_eta()` for the **leading** company's ARR reaching `_PC_REV_TARGET_B`
 (the Revenue tab's own top milestone) — the one bar here that isn't a benchmark, but still dated off
-released models, since ARR is what shipped models earn. They render in **two rows** — on one line every label squeezes to two words. Each reproduces
+released models, since ARR is what shipped models earn. They render in **three rows** (4–4–3 for the eleven milestones) so labels remain legible. Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
 [DT/2, DT*2], position over the current model's CI, p50 slope fits the trend;
 ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2; RLI: single OLS in

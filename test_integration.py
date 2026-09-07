@@ -1035,7 +1035,7 @@ class TestRsiTab:
         assert not [m for m in at.markdown if "When does" in str(m.value)]
 
     def test_every_chart_marks_today(self):
-        """All four RSI charts carry the dashed "Today" divider the other
+        """All five RSI charts carry the dashed "Today" divider the other
         tabs' projection charts have — without it the fan's start reads as
         the last data point."""
         import json
@@ -1045,7 +1045,7 @@ class TestRsiTab:
         charts = [json.loads(el.proto.spec)["layout"]
                   for el in at.get("plotly_chart")]
         series = [L for L in charts if (L.get("xaxis") or {}).get("title")]
-        assert len(series) == 4 and len(charts) == 5
+        assert len(series) == 5 and len(charts) == 6
         for L in series:
             notes = [a for a in L.get("annotations", [])
                      if a.get("text") == "Today"]
@@ -1065,7 +1065,7 @@ class TestRsiTab:
         assert len(row) == 1
         assert row.iloc[0]["Weight"].startswith("10%")
         # Every milestone gets a row, and the weights editor an input each.
-        assert len(t) == 10
+        assert len(t) == 11
 
     def test_merged_code_section_renders(self):
         at = self._rsi_app()
@@ -1073,14 +1073,31 @@ class TestRsiTab:
                                                         for h in at.subheader]
         assert "Code per person reaches 30x" in [str(m.label) for m in at.metric]
 
+    def test_experiment_velocity_chart_and_blend(self):
+        import json
+        at = self._rsi_app()
+        assert "Experiment velocity at OpenAI" in [str(h.value) for h in at.subheader]
+        label = "OpenAI experiment velocity reaches 10x"
+        assert label in [str(m.label) for m in at.metric]
+        table = next(x.value for x in at.table if "Milestone" in x.value.columns)
+        row = table[table["Milestone"] == label]
+        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("10%")
+        figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+        fig = next(f for f in figures if any(t.get('name') == 'OpenAI observations'
+                                             for t in f['data']))
+        observed = next(t for t in fig['data'] if t.get('name') == 'OpenAI observations')
+        assert len(observed['x']) == 32
+        assert observed['y'][0] == 0.72 and observed['y'][-1] == 1.60
+        assert any(s.get('y0') == s.get('y1') == 10 for s in fig['layout']['shapes'])
+
     def test_merged_code_row_in_the_blend(self):
         at = self._rsi_app()
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = t[t["Milestone"] == "Code per person reaches 30x"]
         assert len(row) == 1
-        assert row.iloc[0]["Weight"].startswith("7%")
+        assert row.iloc[0]["Weight"].startswith("10%")
         staff = t[t["Milestone"].str.contains("acceleration")]
-        assert staff.iloc[0]["Weight"].startswith("8%")
+        assert staff.iloc[0]["Weight"].startswith("10%")
 
     def test_every_milestone_card_carries_its_caveats_on_hover(self):
         """Caveats ride the card they belong to rather than piling into one
@@ -1092,7 +1109,7 @@ class TestRsiTab:
         helps = {str(m.label): (m.proto.help or "") for m in cards}
         milestones = {k: v for k, v in helps.items()
                       if "reaches" in k or "revenue" in k or "acceleration" in k}
-        assert len(milestones) == 10
+        assert len(milestones) == 11
         for lab, h in milestones.items():
             assert "defaults" in h, lab
             assert "clock" in h or "releases" in h, lab
@@ -1174,16 +1191,100 @@ class TestTakeoffTab:
         at = self._app()
         assert at.session_state["_active_tab"] == "Takeoff"
         assert any(h.value == "Takeoff to superintelligence" for h in at.header)
-        assert len(at.get("plotly_chart")) == 2
+        assert len(at.get("plotly_chart")) == 4
         assert at.number_input(key="tk_end_year").value == 2031
         assert not _has_widget(at, "number_input", "tk_onset_low")
         import json
         plot = json.loads(at.get("plotly_chart")[0].proto.spec)
         assert plot["data"][0]["x"][-1].startswith("2031-12-31")
+        workflow = json.loads(at.get("plotly_chart")[2].proto.spec)
+        assert len(workflow["data"]) == 12
+        assert [s["y0"] for s in workflow["layout"]["shapes"]] == [5, 5, 5, 90]
         before = [(m.label, m.value) for m in at.metric]
         at.run()
         assert [(m.label, m.value) for m in at.metric] == before
         assert any("within 24 months" in m.label for m in at.metric)
+
+    def test_takeoff_refreshes_an_old_imported_model(self, monkeypatch):
+        import takeoff_model as tk
+
+        def old_simulator(*args, **kwargs):
+            raise AssertionError("The stale imported simulator must be refreshed")
+
+        monkeypatch.setattr(tk, "SOURCE_DIGEST", "older-model-without-workflow-progress")
+        monkeypatch.setattr(tk, "simulate", old_simulator)
+        at = self._app()
+        assert tk.simulate is not old_simulator
+        assert len(at.get("plotly_chart")) == 4
+
+    def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
+        import takeoff_model as tk
+        captured = []
+        original = tk.simulate
+
+        def capture(params, **kwargs):
+            result = original(params, **kwargs)
+            captured.append(result)
+            return result
+
+        monkeypatch.setattr(tk, "simulate", capture)
+        at = self._app()
+        at.number_input(key="tk_seed").set_value(81219).run()
+        r = captured[-1]
+        assert r["time_origin"] == "today"
+        assert any("Research acceleration, including human-directed" in s.value for s in at.subheader)
+        assert at.number_input(key="tk_fast_share").value == 25
+        assert r["params"]["taste_slope"] != at.number_input(key="tk_taste_slope").value
+        at.number_input(key="tk_cal_weight").set_value(0.0).run()
+        assert captured[-1]["params"]["taste_slope"] == at.number_input(key="tk_taste_slope").value
+        at.number_input(key="tk_cal_weight").set_value(100.0)
+        at.number_input(key="tk_cal_validated").set_value(1.0).run()
+        assert captured[-1]["params"]["taste_slope"] == 0
+        _assert_no_error(at, "Takeoff / measured progress calibration")
+        at.button(key="tk_fit_verification").click().run()
+        assert "positive matched-project hours" in at.session_state["_tk_fit_message"]
+        at.number_input(key="tk_measure_baseline").set_value(10.0)
+        at.number_input(key="tk_measure_before").set_value(5.0)
+        at.number_input(key="tk_measure_now").set_value(2.5).run()
+        at.button(key="tk_fit_verification").click().run()
+        assert at.number_input(key="tk_human_verification").value == 25.0
+        assert at.number_input(key="tk_half_verification").value < 12.0
+        _assert_no_error(at, "Takeoff / matched intervention hours")
+        fresh = _fresh_app()
+        fresh.query_params.update(dict(at.query_params))
+        fresh.run()
+        assert fresh.number_input(key="tk_cal_validated").value == 1.0
+        assert fresh.number_input(key="tk_human_verification").value == 25.0
+
+    def test_grounded_thresholds_and_workflow_floor(self):
+        import json
+        at = self._app()
+        assert at.number_input(key="tk_full_human").value == 5.0
+        assert at.number_input(key="tk_progress_target").value == 12.0
+        assert at.number_input(key="tk_advantage_target").value == 2.0
+        assert any("Human work and validated progress" in s.value for s in at.subheader)
+        for chart in at.get("plotly_chart"):
+            names = [d["name"] for d in json.loads(chart.proto.spec)["data"]]
+            assert "Sustained research feedback" not in names
+        at.number_input(key="tk_human_floor").set_value(6.0).run()
+        _assert_no_error(at, "Takeoff / persistent human bottleneck")
+        table = next(t.value for t in at.table if "Milestone" in t.value.columns)
+        for name in ("Full R&D automation", "Superhuman AI research", "Broad superintelligence"):
+            assert table[table["Milestone"] == name].iloc[0]["Median"] == "Beyond horizon"
+        outcomes = next(t.value for t in at.table if "Outcome at" in t.value.columns)
+        assert outcomes[outcomes["Outcome at"] == "Full R&D automation"].iloc[0]["Human hours remaining"] == "Not reached"
+        assert at.query_params["tk_human_floor"] == ["6.0"]
+        at.button(key="tk_preset_Central").click().run()
+        assert at.number_input(key="tk_human_floor").value == 1.0
+
+    def test_invalid_workflow_start_is_recoverable(self):
+        at = self._app()
+        at.number_input(key="tk_human_direction").set_value(0.0).run()
+        _assert_no_error(at, "Takeoff / inconsistent workflow assumptions")
+        assert any("starting human work" in e.value for e in at.error)
+        at.number_input(key="tk_human_floor").set_value(0.0).run()
+        _assert_no_error(at, "Takeoff / corrected human floor")
+        assert not at.error
 
     @pytest.mark.parametrize("condition,timing", [
         ("1", "Training run finished"), ("0", "Model release")])
