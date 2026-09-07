@@ -3396,7 +3396,8 @@ class TestRsi:
     def test_tab_registered_between_rli_and_ukcyber(self):
         i = vp._TAB_OPTIONS.index("RSI")
         assert vp._TAB_OPTIONS[i - 1] == "Remote Labor Index"
-        assert vp._TAB_OPTIONS[i + 1] == "UK Cyber"
+        assert vp._TAB_OPTIONS[i + 1:i + 3] == ["Takeoff", "UK Cyber"]
+        assert vp._TAB_OPTIONS[vp._TAB_SLUG["takeoff"]] == "Takeoff"
         assert vp._SLUG_FOR_TAB["RSI"] == "rsi"
         assert vp._TAB_OPTIONS[vp._TAB_SLUG["rsi"]] == "RSI"
 

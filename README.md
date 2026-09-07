@@ -1,8 +1,8 @@
 # AI Capability Projections
 
-This is an interactive Streamlit dashboard that plots the **frontier** of AI progress across eleven
-different measures — benchmark capability, labor automation, cyber offense, revenue,
-compute buildout — fits a trend to each, and projects it forward with uncertainty bands.
+This interactive Streamlit dashboard has twelve tabs covering the **frontier** of AI progress,
+labor automation, cyber offense, revenue, compute buildout, and takeoff to superintelligence.
+Empirical panels project fitted trends with uncertainty bands; Takeoff explores conditional scenarios.
 
 > Note: In many cases, these are **projections**, not forecasts: they assume the current trend continues.
 
@@ -27,6 +27,7 @@ and the sidebar's *Share view* button copies a URL carrying your current control
 | ECI Company Gap | `ecigap` | Same CSV, split by organization | How far each lab/country trails the frontier |
 | Remote Labor Index | `rli` | `_RLI_RAW` (hardcoded) | Share of real remote-work projects completed. Fitted in logit space |
 | RSI | `rsi` | `_RSI_RAW` / `_RSI_SURVEY` (hardcoded) | Anthropic's internal AI-R&D benchmark + staff-survey speedup; ends with the *Capabilities Milestones* cards and the blended RSI projection |
+| Takeoff | `takeoff` | Final RSI blend + assumptions in `takeoff_model.py` | Progression from inherited coding-automation dates through research feedback to broad superintelligence |
 | UK Cyber | `ukcyber` | `aisi_cyber_narrow.csv`, `aisi_cyber_tlo.csv` | AISI cyber success rates, and how many months open-weight models trail the closed frontier |
 | Employment | `employment` | RLI frontier + assumptions | Unemployment / jobs displaced under slider assumptions |
 | Revenue | `revenue` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | OpenAI and Anthropic ARR |
@@ -35,7 +36,52 @@ and the sidebar's *Share view* button copies a URL carrying your current control
 | Pacing | `pacing` | Data centers | What a US pause buys: China's catch-up, then when each entity can first mount a run of the paused US scale |
 
 Each tab has its own render function (`grep '^def render_'`), its own sidebar controls, and a
-reset button backed by a per-tab `_<TAB>_DEFAULTS` / `_<TAB>_RESET_KEYS` pair.
+reset button backed by per-tab defaults and tracked keys. Takeoff's **Central** preset restores its defaults.
+
+### Takeoff scenarios
+
+Open `?tab=takeoff`. Coding automation inherits the **final RSI projection**, including its
+weights, conditioning, subjective penalty, and date clock. Both tabs share the same cached
+samples; changing the chart horizon does not truncate the onset distribution. Treating the
+RSI proxy blend as coding automation is an explicit modeling assumption. The calendar chart
+defaults to **December 31, 2031**. Explore **Fast**, **Central**, and **Bottlenecked** takeoff
+assumptions; these presets do not change the inherited RSI settings. The tab shows arrival CDFs, takeoff durations,
+6/12/24-month superintelligence probabilities, and scenarios still short of ASI at the horizon.
+These are conditional scenario probabilities, not forecasts fitted to the benchmark series.
+
+The pure NumPy simulator in `takeoff_model.py` combines coding labor and experiment compute
+through a harmonic mean, multiplies by research judgment, and models increasing research
+difficulty. Successors freeze algorithms at the start of training and become available only
+after training and validation finish. Integration advances by at most a week and processes
+cycle boundaries at their exact times. Training, experiments, and agents share one compute budget.
+
+Research judgment is expressed relative to the best human researcher. Full R&D automation
+triggers when a deployed successor first reaches 1× judgment, with coding assumed automated
+at onset. Judgment scales as `judgment_at_onset × effective_compute_ratio ** elasticity`.
+The central 0.6 and 0.8 settings imply `(1/0.6) ** (1/0.8) ≈ 1.89×` effective compute to
+reach parity, before sampling uncertainty. This is a capability proxy, not a separate test
+of end-to-end reliability, autonomous experiment management, or human sign-off. The full
+R&D trigger does not require the sustained-feedback milestone. Superhuman research requires
+3× judgment, and broad ASI adds two adjustable effective-compute
+gaps. These mappings are assumptions. Sustained feedback requires consecutive cycles with
+incorporated software improvements and at least a 10% gain in AI research output per cycle.
+
+The transfer control discounts **additional** coding/judgment gains beyond onset. At zero,
+AI feedback disappears, while baseline research and physical compute growth can continue.
+Non-arrivals remain in every CDF denominator. Date quantiles beyond the selected horizon
+read “Beyond horizon”; they are never silently computed only over successful draws.
+
+The seed is local to this simulator and the same parameter draws are used on each rerun.
+RSI component/blend samples are cached by date, data, and settings, and the sorted onset
+draws are paired with independent takeoff parameter draws. The full inherited distribution
+is retained, including past dates if the RSI reality check is disabled. The simulator follows
+each onset long enough to cover the calendar window and at least 24 months for duration statistics.
+Shared URLs preserve settings; downloads include the model version, as-of date, seed,
+parameters, sample count, inherited RSI settings and onset samples, and optionally all milestone
+draws (`null` for unreached milestones). It does not fit a joint onset/takeoff model from RSI
+indicators or include endogenous hardware/manufacturing feedback.
+
+Model tests: `pytest test_takeoff_model.py`; app tests: `pytest test_integration.py::TestTakeoffTab`.
 
 ### Projection engine
 

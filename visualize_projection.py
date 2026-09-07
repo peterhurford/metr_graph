@@ -12,6 +12,8 @@ import re
 import html
 import textwrap
 import os
+import json
+import takeoff_model as takeoff
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
@@ -2668,8 +2670,8 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "RSI", "UK Cyber", "Employment", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing"]
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "RSI": "rsi", "UK Cyber": "ukcyber", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute/capabilities/diffusion": "computecap", "Pacing": "pacing"}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "RSI", "Takeoff", "UK Cyber", "Employment", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing"]
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "RSI": "rsi", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute/capabilities/diffusion": "computecap", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 
 # Read ?tab= from URL for deep-linking
@@ -13357,6 +13359,7 @@ def _all_tracked():
         (_eci_tab_reset_keys("ecicn"), _eci_tab_defaults("ecicn")),
         (_RLI_RESET_KEYS, _RLI_DEFAULTS),
         (_RSI_RESET_KEYS, _RSI_DEFAULTS),
+        (list(_TK_DEFAULTS), _TK_DEFAULTS),
         (_UKC_RESET_KEYS, _UKC_DEFAULTS),
         (_EMP_RESET_KEYS, _EMP_DEFAULTS),
         (_REV_TRACKED_KEYS, _REV_DEFAULTS),
@@ -13791,6 +13794,38 @@ def _pc_projection(rows, dcs, today, since=None, ref_steps=None,
     return grid, out
 
 
+@st.cache_data(show_spinner=False, max_entries=32)
+def _pc_rsi_projection_samples(components, weights, origin, survival, raw_components):
+    """One sampled blend shared by RSI and Takeoff, before the ATC penalty."""
+    mix = (weights if survival is None else
+           {s: w * survival.get(s, 1.0) for s, w in weights.items()})
+    blend_days = _pc_rsi_blend_samples(components, mix, origin)
+    raw_days = (None if survival is None or raw_components is None else
+                _pc_rsi_blend_samples(raw_components, weights, origin))
+    return mix, blend_days, raw_days
+
+
+def _pc_rsi_onset(today):
+    """Final RSI projection in days from today, retaining the selected clock."""
+    # Reassign inherited widget keys so Streamlit keeps them on the Takeoff
+    # page even though their editors only render on RSI.
+    settings = {k: st.session_state.get(k, _RSI_DEFAULTS[k]) for k in
+                ("rsi_timing", "rsi_notyet", "rsi_notyet_ramp", "rsi_atc_penalty")}
+    for slug, default in _PC_RSI_WEIGHTS.items():
+        key = _PC_RSI_W_KEY + slug
+        settings[key] = st.session_state.get(key, default)
+    st.session_state.update(settings)
+    components, survival, raw, _ = _pc_rsi_components(
+        today, settings["rsi_timing"], settings["rsi_notyet"], settings["rsi_notyet_ramp"])
+    weights = {slug: float(settings[_PC_RSI_W_KEY + slug])
+               for slug, _, _, _ in components}
+    _, days, _ = _pc_rsi_projection_samples(components, weights, today, survival, raw)
+    if days is not None:
+        days = _pc_rsi_atc_samples(days, settings["rsi_atc_penalty"])
+        days = np.sort(days)  # stable quantile pairing with takeoff's seeded draws
+    return days, settings
+
+
 def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
                          raw_components=None):
     """The weighted blend of the milestone ETAs, plus its own weights editor.
@@ -13811,12 +13846,8 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
     weights = {slug: float(st.session_state.get(_PC_RSI_W_KEY + slug,
                                                 _PC_RSI_WEIGHTS.get(slug, 0.0)))
                for slug, _, _, _ in components}
-    mix = (weights if survival is None else
-           {s: w * survival.get(s, 1.0) for s, w in weights.items()})
-    # One draw feeds the cards and the plot, so they cannot disagree.
-    blend_days = _pc_rsi_blend_samples(components, mix, origin)
-    raw_days = (None if survival is None or raw_components is None else
-                _pc_rsi_blend_samples(raw_components, weights, origin))
+    mix, blend_days, raw_days = _pc_rsi_projection_samples(
+        components, weights, origin, survival, raw_components)
     if blend_days is None:
         return
     penalty = st.session_state.get("rsi_atc_penalty", 0)
@@ -13928,15 +13959,12 @@ def _pc_clock_note(release_dated, timing_label):
             f"\u201c{timing_label.lower()}\u201d clock.")
 
 
-def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
-                          end_year=None):
-    """Capabilities Milestones + the RSI blend. Rendered on the RSI tab.
+@st.cache_data(show_spinner=False, max_entries=24)
+def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_key):
+    """Shared milestone draws; the data key invalidates cache on source changes.
 
-    Still named `_pc_*` with the ETA helpers it calls; it moved to the RSI tab
-    but the milestone machinery is unchanged. With `condition` (the sidebar's
-    "not crossed yet" checkbox, default on) the cards and the blend below are
-    conditioned on the present via `_pc_condition_on_today` — the cards read
-    the same conditioned draws the blend mixes, so they cannot disagree.
+    Both RSI and Takeoff consume these exact arrays. The date is normalized to
+    midnight, so revisiting a tab does not silently redraw its input forecast.
     """
     # (slug, label, eta, release_dated, note) — see `_pc_report_lag`. The
     # note is the card's hover: what fit produced the date and what the bar
@@ -13944,7 +13972,7 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
     # caveats keyed to nothing the reader can see.
     _cap = [(f"metr_{lab}",
              f"METR {lab} horizon reaches {_PC_METR_TARGET_HRS:.0f}h",
-             _pc_metr_eta(frontier_all, k, samples=True), True,
+             _pc_metr_eta(frontier_all, k, n=n, samples=True), True,
              f"The horizon at {lab[1:]}% task success. METR tab at its "
              "defaults: piecewise fit broken at GPT-4o, doubling time over "
              "[DT/2, DT\u00d72], position over the current model's own CI "
@@ -13972,14 +14000,14 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                     t=_t, n=_n, a=_from_name, b=_to_name,
                     lo=_from, hi=_to, j=(_t - _to) / _n))
     _cap += [(f"eci_{t:g}".replace(".", "_"), f"ECI reaches {t:g}",
-              _pc_eci_eta(_eci_fr, t, samples=True), True,
+              _pc_eci_eta(_eci_fr, t, n=n, samples=True), True,
               "Epoch ECI tab at its defaults: single OLS on the US-best "
               "frontier, points/yr over [PPY/2, PPY\u00d72], position "
               f"\u00b1{_PC_ECI_POS_CI:g}." + _eci_jump.get(t, ""))
              for t in _PC_ECI_TARGETS]
     _cap.append((f"rli_{_PC_RLI_TARGET_PCT:.0f}",
                  f"RLI reaches {_PC_RLI_TARGET_PCT:.0f}%",
-                 _pc_rli_eta(rli_frontier_all, samples=True), True,
+                 _pc_rli_eta(rli_frontier_all, n=n, samples=True), True,
                  "RLI tab at its defaults: single OLS in logit space, "
                  "odds-doubling time over [DT/2, DT\u00d72] floored at 5 "
                  f"days, position \u00b1{_PC_RLI_POS_CI:g} point. "
@@ -13987,7 +14015,7 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                  "milestone table, which stops at 50%."))
     _cap.append((f"cobench_{_RSI_SUBSTITUTION_BAR:.0f}",
                  f"CoBench reaches {_RSI_SUBSTITUTION_BAR:.0f}%",
-                 _pc_rsi_eta(rsi_frontier_all, samples=True), False,
+                 _pc_rsi_eta(rsi_frontier_all, n=n, samples=True), False,
                  "The CoBench fan above, at its defaults: single OLS in "
                  "logit space, odds-doubling over that fit's widened rate "
                  f"CI, position \u00b1{_PC_RSI_POS_CI:g} points. "
@@ -13995,7 +14023,7 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                  "full-substitution bar, not a benchmark ceiling."))
     _cap.append((f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x",
                  f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
-                 _pc_rsi_survey_eta(load_rsi_survey(), samples=True), False,
+                 _pc_rsi_survey_eta(load_rsi_survey(), n=n, samples=True), False,
                  "The staff-survey fan above, at its defaults: OLS on "
                  "log(multiple) over every round fitted, the carried-over "
                  "estimated point included. The rounds do not report the "
@@ -14004,7 +14032,7 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                  "half past the most recent round's ~4x."))
     _cap.append((f"code_{_RSI_CODE_TARGET:.0f}x",
                  f"Code per person reaches {_RSI_CODE_TARGET:.0f}x",
-                 _pc_rsi_code_eta(load_rsi_code(), samples=True), False,
+                 _pc_rsi_code_eta(load_rsi_code(), n=n, samples=True), False,
                  "The merged-code fan above, at its defaults: OLS on "
                  "log(multiple) over the quarters from 2025 on, doubling "
                  "time over that fit's t-widened rate CI, position over its "
@@ -14016,7 +14044,7 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                  "than research progress."))
     _cap.append((f"nextstep_{_RSI_DIR_TARGET:.0f}",
                  f"Next-step judgment reaches {_RSI_DIR_TARGET:.0f}%",
-                 _pc_nextstep_eta(rsi_dir_frontier_all, samples=True), True,
+                 _pc_nextstep_eta(rsi_dir_frontier_all, n=n, samples=True), True,
                  "The research-direction fan above, at its defaults: single "
                  "OLS in logit space, odds-doubling over [DT/2, DT\u00d72] "
                  "widened to the slope's 80% t-interval, position "
@@ -14027,7 +14055,7 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                  "selected for having room for improvement."))
     _cap.append(("rev_1t", "Leading company revenue >$1T",
                  _pc_revenue_eta([_OPENAI_REVENUE, _ANTHROPIC_REVENUE],
-                                 samples=True), True,
+                                 n=n, samples=True), True,
                  "Revenue tab at its defaults, per company: OLS on "
                  "log2(ARR) over every point, doubling time over "
                  "[max(10, DT\u00d70.65), DT\u00d71.5], 0.3 log2 position "
@@ -14039,7 +14067,7 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
     # a crossing sits on the release clock exactly as a benchmark score does.
     _notes = {slug: note + _pc_clock_note(rel, timing_label)
               for slug, _l, r, rel, note in _cap if r is not None}
-    _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label))
+    _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label, n=n))
             for slug, lab, r, rel, _n in _cap if r is not None]
     survival, _cap_raw = None, None
     ramp_days = _pc_ramp_for(timing_label, ramp_days)
@@ -14047,6 +14075,31 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
         _cap_raw = _cap
         _cap, survival = _pc_condition_on_today(_cap, today,
                                                 ramp_days=ramp_days)
+    return _cap, survival, _cap_raw, _notes
+
+
+def _pc_rsi_components(today, timing_label, condition, ramp_days):
+    data_key = repr((frontier_all, _eci_entity_data("US best")[1],
+                     rli_frontier_all, rsi_frontier_all, load_rsi_survey(),
+                     load_rsi_code(), rsi_dir_frontier_all,
+                     _OPENAI_REVENUE, _ANTHROPIC_REVENUE))
+    return _pc_milestone_components(timing_label, today, condition, ramp_days,
+                                    N_SAMPLES, data_key)
+
+
+def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
+                          end_year=None):
+    """Capabilities Milestones + the RSI blend. Rendered on the RSI tab.
+
+    Still named `_pc_*` with the ETA helpers it calls; it moved to the RSI tab
+    but the milestone machinery is unchanged. With `condition` (the sidebar's
+    "not crossed yet" checkbox, default on) the cards and the blend below are
+    conditioned on the present via `_pc_condition_on_today` — the cards read
+    the same conditioned draws the blend mixes, so they cannot disagree.
+    """
+    today = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    _cap, survival, _cap_raw, _notes = _pc_rsi_components(
+        today, timing_label, condition, ramp_days)
     if _cap:
         st.subheader("Capabilities Milestones")
         # Two rows: all the cards on one line squeeze every label to two
@@ -15778,6 +15831,270 @@ def _render_anchor_links(scroll_to, tab_slug):
     )
 
 
+# ── Takeoff: conditional research-feedback scenarios ─────────────────────
+
+_TK_DEFAULTS = {"tk_" + k: v for k, v in takeoff.DEFAULTS.items()
+                if k not in ("onset_low", "onset_high", "years")}
+_TK_DEFAULTS["tk_end_year"] = 2031
+_TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
+
+
+def _tk_apply_preset(name):
+    st.session_state.update(_TK_DEFAULTS)
+    st.session_state.update({"tk_" + k: v for k, v in takeoff.PRESETS[name].items()})
+
+
+@st.cache_data(show_spinner=False, max_entries=12)
+def _tk_simulate(params, onset_years):
+    return takeoff.simulate(params, n=len(onset_years), onset_years=onset_years)
+
+
+def _tk_cdf_fig(result, today=None, horizon=None):
+    """Arrival CDF with a date origin, otherwise time since coding automation."""
+    years = horizon if horizon is not None else result["params"]["years"]
+    grid = np.linspace(0, years, int(years * 52) + 1)
+    x = ([today + timedelta(days=float(t * 365.25)) for t in grid]
+         if today else grid * 12)
+    fig = go.Figure()
+    if today:
+        series = [("Full coding automation", result["onset"], "#7f8c8d")]
+    else:
+        series = []
+    series += [(name, samples + result["onset"] if today else samples, color)
+               for (name, samples), color in zip(result["events"].items(), _TK_COLORS)
+               if name != "Sustained research feedback"]
+    for name, samples, color in series:
+        fig.add_trace(go.Scatter(
+            x=x, y=100 * takeoff.cdf(samples, grid), mode="lines", name=name,
+            line=dict(color=color, width=2.5),
+            hovertemplate=("%{x|%b %Y}" if today else "%{x:.1f} months")
+                          + "<br>%{y:.1f}%<extra>%{fullData.name}</extra>"))
+    fig.update_layout(
+        height=390, margin=dict(l=45, r=15, t=20, b=70),
+        xaxis=dict(title="Date" if today else "Months after full coding automation"),
+        yaxis=dict(title="Share of scenarios reaching milestone", range=[0, 100],
+                   ticksuffix="%"),
+        legend=dict(orientation="h", y=-0.2), hovermode="x unified")
+    return fig
+
+
+def _tk_date(value, today):
+    return ((today + timedelta(days=value * 365.25)).strftime("%b %Y")
+            if np.isfinite(value) else "Beyond horizon")
+
+
+def render_takeoff():
+    for key in ("tk_onset_low", "tk_onset_high", "tk_years"):
+        st.session_state.pop(key, None)
+        if key in st.query_params:
+            del st.query_params[key]
+    for key, default in _TK_DEFAULTS.items():
+        st.session_state.setdefault(key, default)
+
+    def number(label, name, low, high, step, help=None):
+        key = "tk_" + name
+        value = st.session_state[key]
+        # Discard malformed or stale URL values before Streamlit creates the
+        # widget; combination constraints remain visible and fixable below.
+        if not isinstance(value, (int, float)) or not np.isfinite(value) \
+                or not low <= value <= high:
+            st.session_state[key] = min(max(_TK_DEFAULTS[key], low), high)
+        if isinstance(_TK_DEFAULTS[key], int):
+            st.session_state[key] = int(st.session_state[key])
+        return _ss_number_input(st, label, key, _TK_DEFAULTS[key],
+                                min_value=low, max_value=high, step=step, help=help)
+
+    with st.sidebar:
+        st.subheader("Takeoff assumptions")
+        cols = st.columns(3)
+        for col, name in zip(cols, takeoff.PRESETS):
+            col.button(name, key="tk_preset_" + name,
+                       on_click=_tk_apply_preset, args=(name,))
+        st.caption("Presets are illustrative assumptions, without assigned probabilities. "
+                   "Central restores all defaults.")
+        st.caption("Coding automation inherits the final RSI projection. "
+                   "Adjust its weights and timing on the RSI tab.")
+        number("Project through (year end)", "end_year", datetime.now().year, 2050, 1)
+        with st.expander("Research feedback", expanded=True):
+            number("Software doubling time at onset (months)", "software_months", 3.0, 60.0, 1.0,
+                   "Initial algorithmic progress at the reference 40/40/20 compute split. "
+                   "Includes assistance already present when coding automation arrives.")
+            number("Research judgment at onset / best human", "taste_at_onset", 0.1, 1.0, 0.1)
+            number("Judgment elasticity to capability", "taste_slope", 0.1, 2.0, 0.1,
+                   "Judgment scales as capability raised to this power.")
+            number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1)
+            number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
+                   "Discounts coding and judgment gains beyond onset. Zero removes "
+                   "AI feedback; baseline research and compute can still improve models.")
+            number("Increasing research difficulty", "difficulty", 0.0, 2.0, 0.1,
+                   "A larger value means each further software improvement takes more work.")
+            number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
+                   "0.5 gives square-root returns to more coding labor or experiment compute.")
+            number("Consecutive cycles for sustained feedback", "feedback_cycles", 1, 5, 1)
+        with st.expander("Compute and successor cycles"):
+            number("Compute growth per year (×)", "compute_growth", 1.0, 5.0, 0.1)
+            number("Training duration (months)", "training_months", 0.5, 12.0, 0.5)
+            number("Validation and deployment delay (months)", "validation_months", 0.0, 12.0, 0.5)
+            number("Compute for training (%)", "training_share", 5, 90, 5)
+            number("Compute for experiments (%)", "experiment_share", 5, 90, 5)
+            agents = 100 - st.session_state["tk_training_share"] \
+                - st.session_state["tk_experiment_share"]
+            st.caption(f"Remaining compute for agents: {agents}%.")
+        with st.expander("General intelligence and uncertainty"):
+            number("Capability doublings: AI research → broad expertise", "general_gap", 0.0, 10.0, 0.5)
+            number("Further doublings to broad superintelligence", "superiority_gap", 0.5, 6.0, 0.5)
+            number("Parameter uncertainty (%)", "uncertainty", 0, 100, 5,
+                   "Independent bounded log-space variation around research rates, compute "
+                   "growth, cycle times, initial judgment, judgment slope, and generality gaps. "
+                   "40 means factors between exp(−0.4) and exp(0.4), not a confidence level.")
+            number("Simulation seed", "seed", 0, 4294967295, 1)
+
+    st.header("Takeoff to superintelligence")
+    st.caption("Coding-automation dates inherit the final RSI projection, including "
+               "its weights, conditioning, and all-things-considered penalty. "
+               "Treating that proxy blend as coding automation is an assumption; "
+               "the subsequent takeoff dynamics are illustrative scenarios.")
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    end_date = datetime(int(st.session_state["tk_end_year"]), 12, 31)
+    horizon = (end_date - today).total_seconds() / (365.25 * 86400)
+    onset_days, rsi_settings = _pc_rsi_onset(today)
+    if onset_days is None:
+        st.info("The RSI projection has no available draws. Adjust its settings on the RSI tab.")
+        return
+    onset_years = onset_days / 365.25
+    params = {k: st.session_state["tk_" + k] for k in takeoff.DEFAULTS
+              if k not in ("onset_low", "onset_high", "years")}
+    # Follow-up must cover the calendar chart even for inherited past onsets,
+    # and at least two years for the conditional 24-month statistic.
+    params["years"] = max(2.0, horizon - min(0.0, float(np.min(onset_years))))
+    try:
+        takeoff.validate(params)
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+    n = len(onset_years)
+    result = _tk_simulate(params, onset_years)
+    if result["numerically_limited"].any():
+        st.error("These assumptions exceed the simulation’s numerical range in "
+                 f"{100 * np.mean(result['numerically_limited']):.1f}% of draws. "
+                 "Milestone probabilities are unavailable for this configuration; "
+                 "the unresolved draws have not been counted as slow outcomes.")
+        return
+    asi = result["events"][takeoff.MILESTONES[-1]]
+    arrival = result["onset"] + asi
+    median = takeoff.quantile(arrival, 0.5, horizon)
+    lo = takeoff.quantile(arrival, 0.1, horizon)
+    hi = takeoff.quantile(arrival, 0.9, horizon)
+    a, b, c = st.columns(3)
+    a.metric("Median superintelligence arrival", _tk_date(median, today))
+    b.metric("Middle 80% of arrival scenarios",
+             f"{_tk_date(lo, today)} – {_tk_date(hi, today)}")
+    c.metric(f"No superintelligence by {end_date:%b %Y}",
+             f"{100 * np.mean(arrival > horizon):.0f}%")
+    st.caption(f"Coding automation uses RSI’s “{rsi_settings['rsi_timing']}” clock. "
+               "Successor milestones follow after the simulated training and deployment "
+               "delays. “Beyond horizon” includes slow or stalled paths; it does not mean never.")
+    st.subheader("Milestone arrival dates")
+    st.plotly_chart(_tf(_tk_cdf_fig(result, today, horizon=horizon)), width="stretch")
+    rows = []
+    for name, samples in [("Full coding automation", result["onset"])] + [
+            (name, result["onset"] + values) for name, values in result["events"].items()]:
+        rows.append({"Milestone": name,
+                     "10%": _tk_date(takeoff.quantile(samples, 0.1, horizon), today),
+                     "Median": _tk_date(takeoff.quantile(samples, 0.5, horizon), today),
+                     "90%": _tk_date(takeoff.quantile(samples, 0.9, horizon), today),
+                     f"By {end_date:%b %Y}": f"{100 * np.mean(samples <= horizon):.1f}%"})
+    st.table(rows)
+
+    st.subheader("Time from coding automation to superintelligence")
+    for col, months in zip(st.columns(3), (6, 12, 24)):
+        col.metric(f"Superintelligence within {months} months",
+                   f"{100 * np.mean(asi <= months / 12):.1f}%")
+    st.plotly_chart(_tf(_tk_cdf_fig(result)), width="stretch")
+    st.caption("Durations start at each scenario’s own coding-automation date. "
+               "All scenarios stay in the denominator, including those that do not "
+               "reach the milestone during the simulation.")
+    compute_limited = 100 * np.mean(result["compute_limited"])
+    st.subheader("What constrains experiment throughput?")
+    st.table([
+        {"Smaller research input": "Experiment compute", "Share of scenarios": f"{compute_limited:.0f}%"},
+        {"Smaller research input": "Coding labor", "Share of scenarios": f"{100-compute_limited:.0f}%"},
+    ])
+    st.caption("Compared just before superintelligence, or at the simulation’s end. "
+               "This identifies the smaller throughput input, not a causal attribution "
+               "of delay. Research judgment, rising difficulty, and successor cycles also matter.")
+
+    with st.expander("What triggers full R&D automation?"):
+        nominal_gain = (1 / params["taste_at_onset"]) ** (1 / params["taste_slope"])
+        st.markdown(
+            "Coding is assumed automated at the inherited RSI date. From there, "
+            "full R&D automation triggers at the **first available successor whose "
+            "research judgment matches the best human researcher**.\n\n"
+            "Judgment = judgment at onset × (effective compute / onset effective "
+            "compute) ^ judgment elasticity.\n\n"
+            f"With your central settings, judgment starts at **{params['taste_at_onset']:g}×** "
+            f"the best human, with elasticity **{params['taste_slope']:g}**. Reaching "
+            f"human parity requires **{nominal_gain:.2f}× effective compute**. "
+            "Uncertainty varies the starting judgment and elasticity across draws.\n\n"
+            "New algorithms count only after successor training and validation finish. "
+            "Compute, research transfer, and increasing difficulty determine how quickly "
+            "the threshold is reached.\n\n"
+            "This is a capability proxy: it does **not** independently test reliability, "
+            "long-horizon autonomy, experiment management, or human sign-off. It also does "
+            "not require the consecutive improvement cycles used for the separate "
+            "sustained-feedback milestone. Those missing requirements could delay actual "
+            "full R&D automation beyond this model’s threshold.")
+    with st.expander("How this model works"):
+        st.markdown(
+            "Coding automation → experiments and research judgment → useful algorithms "
+            "→ successor training and validation → stronger AI research.\n\n"
+            "**Milestones.** Full R&D automation requires judgment matching the best "
+            "human researcher. Superhuman AI research requires 3× that judgment. "
+            "Broad superintelligence adds the two capability gaps you set. Sustained "
+            "feedback requires consecutive completed cycles with incorporated algorithmic "
+            "improvements and at least a 10% rise in AI research output per cycle. "
+            "These are modeling conventions, not validated equivalences.\n\n"
+            "**Research.** Coding labor and experiment compute combine through a harmonic "
+            "mean, so a shortage of either constrains output. Research judgment multiplies "
+            "that output. Software improvement slows as algorithms become harder to improve. "
+            "The transfer setting discounts gains beyond the capability present at onset.\n\n"
+            "**Successors.** Each run freezes its algorithms at the start. Compute is "
+            "accumulated during training; the successor becomes available after validation. "
+            "Later discoveries enter the next run. The reference model used a three-month "
+            "run with 40% of the initial compute budget. Longer runs trade more compute "
+            "against slower incorporation of discoveries.\n\n"
+            "Capability here means effective training compute relative to the onset "
+            "model: training compute × algorithmic efficiency. The mapping to "
+            "coding, judgment, and general intelligence is an assumption. Training "
+            "capacity stays reserved during validation; it is not reassigned to agents.\n\n"
+            "**Uncertainty.** The coding-automation distribution is the final RSI blend. "
+            "Other varied parameters use independent, bounded log-space draws; these are "
+            "scenario priors, independent of the inherited onset date. Reruns with "
+            "the same RSI samples and seed use identical draws.\n\n"
+            "**Scope.** This model uses the RSI blend as its starting-date distribution. "
+            "It does not fit a joint capability model, "
+            "or simulate hardware innovation, manufacturing, or policy changes. "
+            "Compute growth is your scenario assumption.\n\n"
+            "Inspired by the [AI Futures model](https://www.aifuturesmodel.com/); "
+            "the parameters and output here are our own scenario model.")
+    snapshot = dict(version=result["version"], as_of=today.isoformat(),
+                    samples=n, step_years=1/52, params=params,
+                    project_through=end_date.isoformat(), rsi_settings=rsi_settings,
+                    onset_source="Final RSI projection", onset_days=onset_days.tolist())
+    st.download_button("Download assumptions", json.dumps(snapshot, indent=2),
+                       file_name="takeoff_assumptions.json", mime="application/json")
+    records = [dict(milestone=name, months_after_coding_automation=[
+        round(float(v * 12), 4) if np.isfinite(v) else None for v in values])
+        for name, values in result["events"].items()]
+    st.download_button(
+        "Download simulation draws", json.dumps(dict(
+            snapshot, onset_months=(result["onset"] * 12).tolist(),
+            milestones=records,
+            missing_value="null means not reached within the simulated years after onset"),
+            indent=2, allow_nan=False),
+        file_name="takeoff_draws.json", mime="application/json")
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
 if not os.environ.get("_VP_TESTING"):
@@ -15791,6 +16108,8 @@ if not os.environ.get("_VP_TESTING"):
         render_rli()
     elif active_tab == "RSI":
         render_rsi()
+    elif active_tab == "Takeoff":
+        render_takeoff()
     elif active_tab == "UK Cyber":
         render_ukcyber()
     elif active_tab == "Revenue":

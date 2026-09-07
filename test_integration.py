@@ -1162,6 +1162,115 @@ class TestRsiTab:
         _assert_no_error(at, "RSI / project through 2031")
 
 
+class TestTakeoffTab:
+    def _app(self):
+        at = _fresh_app()
+        at.query_params["tab"] = "takeoff"
+        at.run()
+        _assert_no_error(at, "Takeoff / deep link")
+        return at
+
+    def test_default_render_and_stable_rerun(self):
+        at = self._app()
+        assert at.session_state["_active_tab"] == "Takeoff"
+        assert any(h.value == "Takeoff to superintelligence" for h in at.header)
+        assert len(at.get("plotly_chart")) == 2
+        assert at.number_input(key="tk_end_year").value == 2031
+        assert not _has_widget(at, "number_input", "tk_onset_low")
+        import json
+        plot = json.loads(at.get("plotly_chart")[0].proto.spec)
+        assert plot["data"][0]["x"][-1].startswith("2031-12-31")
+        before = [(m.label, m.value) for m in at.metric]
+        at.run()
+        assert [(m.label, m.value) for m in at.metric] == before
+        assert any("within 24 months" in m.label for m in at.metric)
+
+    @pytest.mark.parametrize("condition,timing", [
+        ("1", "Training run finished"), ("0", "Model release")])
+    def test_coding_automation_inherits_the_exact_final_rsi_cdf(self, monkeypatch,
+                                                             condition, timing):
+        import json
+        import takeoff_model as tk
+        captured = []
+        original = tk.simulate
+
+        def capture(*args, **kwargs):
+            captured.append(kwargs["onset_years"].copy())
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(tk, "simulate", capture)
+        at = _fresh_app()
+        at.query_params.update(tab="rsi", rsi_atc_penalty="50",
+                               rsi_timing=timing, rsi_notyet=condition, rsi_notyet_ramp="180",
+                               pc_rsiw_rli_90="70", tk_seed="9182")
+        at.run()
+        _assert_no_error(at, "RSI / inherited configuration")
+        curve = json.loads(at.get("plotly_chart")[-1].proto.spec)["data"][-1]
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        grid = np.array([(datetime.fromisoformat(d) - today).total_seconds()
+                         / (365.25 * 86400) for d in curve["x"]])
+        _switch_tab(at, "Takeoff")
+        assert captured
+        np.testing.assert_allclose(100 * tk.cdf(captured[-1], grid), curve["y"])
+        assert at.session_state["rsi_atc_penalty"] == 50
+        assert at.session_state["pc_rsiw_rli_90"] == 70
+        _switch_tab(at, "RSI")
+        assert at.slider(key="rsi_atc_penalty").value == 50
+        second = json.loads(at.get("plotly_chart")[-1].proto.spec)["data"][-1]
+        assert second["y"] == curve["y"]
+
+    def test_horizon_and_rsi_settings_survive_presets(self):
+        at = self._app()
+        at.number_input(key="tk_end_year").set_value(2035).run()
+        _assert_no_error(at, "Takeoff / year end")
+        assert at.query_params["tk_end_year"] == ["2035"]
+        at.button(key="tk_preset_Central").click().run()
+        assert at.number_input(key="tk_end_year").value == 2031
+        assert "tk_end_year" not in at.query_params
+
+    def test_presets_reset_and_url_roundtrip(self):
+        at = self._app()
+        at.button(key="tk_preset_Bottlenecked").click().run()
+        _assert_no_error(at, "Takeoff / bottlenecked")
+        assert at.number_input(key="tk_transfer").value == 20
+        assert at.query_params["tk_transfer"] == ["20"]
+        fresh = _fresh_app()
+        fresh.query_params.update(dict(at.query_params))
+        fresh.run()
+        _assert_no_error(fresh, "Takeoff / shared scenario")
+        assert fresh.number_input(key="tk_transfer").value == 20
+        at.button(key="tk_preset_Central").click().run()
+        assert at.number_input(key="tk_transfer").value == 60
+        assert "tk_transfer" not in at.query_params
+        at.button(key="tk_preset_Fast").click().run()
+        _assert_no_error(at, "Takeoff / fast")
+
+    def test_invalid_budget_is_recoverable(self):
+        at = self._app()
+        at.number_input(key="tk_training_share").set_value(70).run()
+        _assert_no_error(at, "Takeoff / invalid budget")
+        assert any("Reserve positive compute" in e.value for e in at.error)
+        at.number_input(key="tk_experiment_share").set_value(20).run()
+        _assert_no_error(at, "Takeoff / fixed budget")
+        assert not at.error
+        at.number_input(key="tk_transfer").set_value(0).run()
+        _assert_no_error(at, "Takeoff / zero feedback")
+        table = next(t.value for t in at.table if "Milestone" in t.value.columns)
+        row = table[table["Milestone"] == "Sustained research feedback"].iloc[0]
+        assert row["Median"] == "Beyond horizon"
+
+    def test_malformed_url_values_and_tab_switching(self):
+        at = _fresh_app()
+        at.query_params.update(tab="takeoff", tk_compute_growth="nan", tk_seed="-2")
+        at.run()
+        _assert_no_error(at, "Takeoff / invalid URL")
+        assert at.number_input(key="tk_compute_growth").value == 2.0
+        at.number_input(key="tk_general_gap").set_value(4.0).run()
+        _switch_tab(at, "RSI")
+        _switch_tab(at, "Takeoff")
+        assert at.number_input(key="tk_general_gap").value == 4.0
+
+
 class TestUkCyberTab:
     """Frontier projection + open-weight lag."""
 
