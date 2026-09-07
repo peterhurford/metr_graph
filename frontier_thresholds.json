@@ -1,0 +1,971 @@
+{
+  "as_of": "2026-09-06",
+  "provenance": "User-supplied timeline; no independent source verification.",
+  "events": [
+    {
+      "id": "ft-018",
+      "date": "2023-09-19",
+      "date_end": "2023-09-19",
+      "date_label": "September 19, 2023",
+      "lab": "Anthropic",
+      "model": "Original RSP / Claude 2",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "RSP v1",
+      "status": "Framework change",
+      "threshold": "Claude 2 ASL-2; ASL-3 defined",
+      "details": "Current models showed precursors of dangerous capabilities without substantially elevating catastrophic risk. ASL-3 was established as the next safeguard package.",
+      "safeguards": "Testing for higher-risk capabilities and stronger containment/deployment measures before proceeding when required.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-001",
+      "date": "2023-12-18",
+      "date_end": "2023-12-18",
+      "date_label": "December 18, 2023",
+      "lab": "OpenAI",
+      "model": "Original Preparedness Framework",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "Preparedness v1",
+      "status": "Framework change",
+      "threshold": "Low / Medium / High / Critical established",
+      "details": "Cybersecurity, CBRN, persuasion, and model autonomy tracked. This was a framework publication, not a model crossing.",
+      "safeguards": "Deployment required post-mitigation Medium or lower; further development required High or lower.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-041",
+      "date": "2024-05-01",
+      "date_end": "2024-05-31",
+      "date_label": "May 2024 (day unspecified)",
+      "lab": "Google DeepMind",
+      "model": "Initial Frontier Safety Framework",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "FSF v1",
+      "status": "Framework change",
+      "threshold": "CCLs established",
+      "details": "Defined critical capabilities and evaluation/mitigation processes. Publication did not establish a model crossing.",
+      "safeguards": "Framework for frontier-risk evaluation and mitigation.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-002",
+      "date": "2024-08-08",
+      "date_end": "2024-08-08",
+      "date_label": "August 8, 2024",
+      "lab": "OpenAI",
+      "model": "GPT-4o system card",
+      "domains": [
+        "Persuasion",
+        "Biological / chemical",
+        "Cybersecurity",
+        "Autonomy / AI R&D"
+      ],
+      "framework": "Preparedness v1",
+      "status": "Assessment",
+      "threshold": "Medium persuasion; Low other domains",
+      "details": "Text persuasion narrowly entered Medium; voice remained Low. The overall rating was Medium because the highest domain rating determined it, not because persuasion was uniformly superhuman.",
+      "safeguards": "Original framework deployment requirements applied.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-003",
+      "date": "2024-09-12",
+      "date_end": "2024-09-12",
+      "date_label": "September 12, 2024",
+      "lab": "OpenAI",
+      "model": "o1-preview / o1-mini",
+      "domains": [
+        "Biological / chemical",
+        "Persuasion",
+        "Cybersecurity",
+        "Autonomy / AI R&D"
+      ],
+      "framework": "Preparedness v1",
+      "status": "Assessment",
+      "threshold": "Medium CBRN / persuasion; Low cyber / autonomy",
+      "details": "New biological escalation reflected greater assistance to experts in biological planning, not evidence that novices could independently cause severe harm. The conservative scorecard retained Medium before and after mitigation.",
+      "safeguards": "Medium retained before and after mitigations.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-019",
+      "date": "2024-10-15",
+      "date_end": "2024-10-15",
+      "date_label": "October 15, 2024",
+      "lab": "Anthropic",
+      "model": "RSP v2",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "RSP v2",
+      "status": "Framework change",
+      "threshold": "Capability thresholds separated from safeguards",
+      "details": "Added an AI R&D-oriented threshold; revised autonomous replication and related warning checkpoints. Not a model escalation.",
+      "safeguards": "Required safeguards tied more clearly to capability triggers.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-004",
+      "date": "2024-12-05",
+      "date_end": "2024-12-05",
+      "date_label": "December 5, 2024",
+      "lab": "OpenAI",
+      "model": "o1",
+      "domains": [
+        "Biological / chemical",
+        "Persuasion",
+        "Cybersecurity",
+        "Autonomy / AI R&D"
+      ],
+      "framework": "Preparedness v1",
+      "status": "Assessment",
+      "threshold": "Medium CBRN / persuasion; Low cyber / autonomy",
+      "details": "Full o1 confirmed the preview classification, with no new threshold crossing.",
+      "safeguards": "Existing safeguards continued.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-005",
+      "date": "2025-01-31",
+      "date_end": "2025-01-31",
+      "date_label": "January 31, 2025",
+      "lab": "OpenAI",
+      "model": "o3-mini",
+      "domains": [
+        "Autonomy / AI R&D",
+        "Biological / chemical",
+        "Persuasion",
+        "Cybersecurity"
+      ],
+      "framework": "Preparedness v1",
+      "status": "Assessment",
+      "threshold": "Medium autonomy / CBRN / persuasion; Low cyber",
+      "details": "Added Medium autonomy under the old rubric, not recursive self-improvement or complete research automation. The updated card retained these ratings.",
+      "safeguards": "Old-framework safeguards applied.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-042",
+      "date": "2025-02-01",
+      "date_end": "2025-02-28",
+      "date_label": "February 2025 (day unspecified)",
+      "lab": "Google DeepMind",
+      "model": "FSF v2",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "FSF v2",
+      "status": "Framework change",
+      "threshold": "Framework revised",
+      "details": "Continued CCL-based assessment; no model crossing implied by publication.",
+      "safeguards": "Updated evaluation/mitigation process.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-020",
+      "date": "2025-02-24",
+      "date_end": "2025-02-24",
+      "date_label": "February 24, 2025",
+      "lab": "Anthropic",
+      "model": "Claude 3.7 Sonnet",
+      "domains": [
+        "Biological / chemical",
+        "Autonomy / AI R&D"
+      ],
+      "framework": "RSP v2",
+      "status": "Warning / alert",
+      "threshold": "Still ASL-2; concern about successors",
+      "details": "No ASL-3 activation. Upcoming models might require stronger safeguards.",
+      "safeguards": "ASL-2 retained; preparations for stronger protections.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-006",
+      "date": "2025-02-25",
+      "date_end": "2025-02-25",
+      "date_label": "February 25, 2025 (product launched February 2)",
+      "lab": "OpenAI",
+      "model": "Deep Research system card",
+      "domains": [
+        "Cybersecurity",
+        "Biological / chemical",
+        "Persuasion",
+        "Autonomy / AI R&D"
+      ],
+      "framework": "Preparedness v1",
+      "status": "Assessment",
+      "threshold": "First Medium cybersecurity; all four categories Medium",
+      "details": "Improved operational cyber capability remained below High. February 25 is the card publication date, not the product launch.",
+      "safeguards": "Medium-level deployment assessment.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-021",
+      "date": "2025-03-31",
+      "date_end": "2025-03-31",
+      "date_label": "March 31, 2025",
+      "lab": "Anthropic",
+      "model": "RSP v2.1",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "RSP v2.1",
+      "status": "Framework change",
+      "threshold": "Higher CBRN and AI R&D-4 / AI R&D-5 thresholds clarified",
+      "details": "Higher CBRN concerned moderately resourced state programs. Entry-level research automation (AI R&D-4) separated from dramatic acceleration (AI R&D-5). Definitions, not crossings.",
+      "safeguards": "AI R&D-4 required ASL-3 security and a misalignment-risk case; AI R&D-5 required at least ASL-4 security.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-007",
+      "date": "2025-04-15",
+      "date_end": "2025-04-15",
+      "date_label": "April 15, 2025",
+      "lab": "OpenAI",
+      "model": "Preparedness Framework v2",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "Preparedness v2",
+      "status": "Framework change",
+      "threshold": "High / Critical become operative thresholds",
+      "details": "Removed Low/Medium. Tracked categories became Biological and Chemical, Cybersecurity, and AI Self-Improvement. Old persuasion/autonomy ratings stop being directly comparable.",
+      "safeguards": "High and Critical require corresponding safeguards and controls.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-022",
+      "date": "2025-05-22",
+      "date_end": "2025-05-22",
+      "date_label": "May 22, 2025",
+      "lab": "Anthropic",
+      "model": "Claude Opus 4",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "RSP v2.1",
+      "status": "Precaution",
+      "threshold": "First ASL-3 activation",
+      "details": "Could not confidently exclude dangerous biological assistance; explicitly not a definitive capability crossing. Opus 4 assessed below higher thresholds.",
+      "safeguards": "Biological-misuse safeguards, monitoring, substantially stronger weight security.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-023",
+      "date": "2025-05-22",
+      "date_end": "2025-05-22",
+      "date_label": "May 22, 2025",
+      "lab": "Anthropic",
+      "model": "Claude Sonnet 4",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "RSP v2.1",
+      "status": "Assessment",
+      "threshold": "ASL-2 retained",
+      "details": "ASL-3 activation for Opus 4 was model-specific; Sonnet 4 remained ASL-2.",
+      "safeguards": "ASL-2 protections.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-008",
+      "date": "2025-06-18",
+      "date_end": "2025-06-18",
+      "date_label": "June 18, 2025",
+      "lab": "OpenAI",
+      "model": "Biology preparedness announcement",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "Preparedness v2",
+      "status": "Warning / alert",
+      "threshold": "Approaching High biology",
+      "details": "Preparation for more capable biological models, not a named-model crossing. Precursor to the July designation.",
+      "safeguards": "Stronger biological safeguards prepared.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-043",
+      "date": "2025-06-27",
+      "date_end": "2025-06-27",
+      "date_label": "Documented by June 27, 2025; checkpoint March 25",
+      "lab": "Google DeepMind",
+      "model": "Gemini 2.5 Pro",
+      "domains": [
+        "Cybersecurity"
+      ],
+      "framework": "FSF v2",
+      "status": "Warning / alert",
+      "threshold": "Cyber Uplift Level 1 alert; CCL not reached",
+      "details": "March 25 experimental checkpoint crossed the cyber alert. May preview and GA follow-up did not establish a CCL crossing. June 27 is the updated card date verified in the supplied brief, not necessarily the first public disclosure.",
+      "safeguards": "More frequent testing and accelerated mitigation work.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-009",
+      "date": "2025-07-17",
+      "date_end": "2025-07-17",
+      "date_label": "July 17, 2025",
+      "lab": "OpenAI",
+      "model": "ChatGPT agent",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "Preparedness v2",
+      "status": "Precaution",
+      "threshold": "First precautionary High Biological and Chemical",
+      "details": "OpenAI lacked definitive evidence of the novice-uplift threshold but treated the model as High.",
+      "safeguards": "Stronger refusal training, always-on classifiers, reasoning monitors, and enforcement.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-044",
+      "date": "2025-08-01",
+      "date_end": "2025-08-01",
+      "date_label": "August 1, 2025",
+      "lab": "Google DeepMind",
+      "model": "Gemini 2.5 Deep Think: CBRN",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "FSF v2",
+      "status": "Precaution",
+      "threshold": "CBRN alert; CBRN Uplift Level 1 CCL could not be ruled out",
+      "details": "Additional evaluation needed. Stronger than a routine alert but not a confirmed CCL crossing; subsequently resolved downward.",
+      "safeguards": "Additional mitigations supported by an internal safety case.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-045",
+      "date": "2025-08-01",
+      "date_end": "2025-08-01",
+      "date_label": "August 1, 2025",
+      "lab": "Google DeepMind",
+      "model": "Gemini 2.5 Deep Think: cyber",
+      "domains": [
+        "Cybersecurity"
+      ],
+      "framework": "FSF v2",
+      "status": "Warning / alert",
+      "threshold": "Cyber alert continued; below cyber CCL",
+      "details": "Cyber uncertainty must be distinguished from the biological could-not-rule-out assessment.",
+      "safeguards": "Continued cyber scrutiny and mitigations.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-024",
+      "date": "2025-08-05",
+      "date_end": "2025-08-05",
+      "date_label": "August 5, 2025",
+      "lab": "Anthropic",
+      "model": "Claude Opus 4.1",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "RSP (2025 ASL framework)",
+      "status": "Operational update",
+      "threshold": "ASL-3 extended",
+      "details": "Continued the existing safeguard level, not a higher crossing.",
+      "safeguards": "ASL-3 protections.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-010",
+      "date": "2025-08-07",
+      "date_end": "2025-08-07",
+      "date_label": "August 7, 2025",
+      "lab": "OpenAI",
+      "model": "GPT-5 Thinking",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "Preparedness v2",
+      "status": "Precaution",
+      "threshold": "High biology approach extended",
+      "details": "Extended precautionary High biological treatment to the reasoning model; not a higher threshold.",
+      "safeguards": "High biological safeguards applied.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-046",
+      "date": "2025-09-22",
+      "date_end": "2025-09-22",
+      "date_label": "September 22, 2025",
+      "lab": "Google DeepMind",
+      "model": "FSF v3",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "FSF v3",
+      "status": "Framework change",
+      "threshold": "Harmful-manipulation CCL added; risk assessment revised",
+      "details": "Greater emphasis on expected real-world harm rather than capability measurements alone; affects pre/post revision comparisons.",
+      "safeguards": "Revised risk-assessment requirements.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-025",
+      "date": "2025-09-29",
+      "date_end": "2025-09-29",
+      "date_label": "September 29, 2025",
+      "lab": "Anthropic",
+      "model": "Claude Sonnet 4.5",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "RSP (2025 ASL framework)",
+      "status": "Precaution",
+      "threshold": "ASL-3, precautionarily",
+      "details": "Precautionary extension to Sonnet 4.5; not a company-wide classification.",
+      "safeguards": "ASL-3 protections.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-026",
+      "date": "2025-10-15",
+      "date_end": "2025-10-15",
+      "date_label": "October 15, 2025",
+      "lab": "Anthropic",
+      "model": "Claude Haiku 4.5",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "RSP (2025 ASL framework)",
+      "status": "Assessment",
+      "threshold": "ASL-2 retained",
+      "details": "Haiku 4.5 retained ASL-2 despite other releases requiring ASL-3.",
+      "safeguards": "ASL-2 protections.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-047",
+      "date": "2025-11-18",
+      "date_end": "2025-11-18",
+      "date_label": "November 18, 2025",
+      "lab": "Google DeepMind",
+      "model": "Gemini 2.5 Deep Think reassessment (Gemini 3 Pro report)",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "FSF v3 report revisiting v2 result",
+      "status": "Reassessment",
+      "threshold": "Earlier CBRN uncertainty resolved: CCL not reached",
+      "details": "Subsequent analysis concluded Deep Think had not reached the CBRN CCL. This is a reassessment, not evidence that a newer model became less capable.",
+      "safeguards": "Earlier uncertainty closed after further analysis.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-048",
+      "date": "2025-11-18",
+      "date_end": "2025-11-18",
+      "date_label": "November 18, 2025",
+      "lab": "Google DeepMind",
+      "model": "Gemini 3 Pro: CCL assessment",
+      "domains": [
+        "Biological / chemical",
+        "Autonomy / AI R&D",
+        "Persuasion"
+      ],
+      "framework": "FSF v3",
+      "status": "Assessment",
+      "threshold": "Below all CCLs; below CBRN alert",
+      "details": "Under the updated framework Gemini 3 Pro did not reach the CBRN alert; no affirmative CCL crossing.",
+      "safeguards": "Existing framework safeguards.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-049",
+      "date": "2025-11-18",
+      "date_end": "2025-11-18",
+      "date_label": "November 18, 2025",
+      "lab": "Google DeepMind",
+      "model": "Gemini 3 Pro: cyber",
+      "domains": [
+        "Cybersecurity"
+      ],
+      "framework": "FSF v3",
+      "status": "Warning / alert",
+      "threshold": "Cyber alert continued; no cyber CCL crossing",
+      "details": "Cyber alert remained despite the downward biological reassessment.",
+      "safeguards": "Continued cyber scrutiny and mitigations.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-027",
+      "date": "2025-11-24",
+      "date_end": "2025-11-24",
+      "date_label": "November 24, 2025",
+      "lab": "Anthropic",
+      "model": "Claude Opus 4.5",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "RSP (2025 ASL framework)",
+      "status": "Operational update",
+      "threshold": "ASL-3 retained",
+      "details": "No new higher safeguard level announced.",
+      "safeguards": "ASL-3 protections.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-011",
+      "date": "2025-12-18",
+      "date_end": "2025-12-18",
+      "date_label": "December 18, 2025",
+      "lab": "OpenAI",
+      "model": "GPT-5.2-Codex",
+      "domains": [
+        "Cybersecurity"
+      ],
+      "framework": "Preparedness v2",
+      "status": "Warning / alert",
+      "threshold": "Below High cyber; successors may reach High",
+      "details": "Explicitly below High; this announcement must not be conflated with the February 2026 designation.",
+      "safeguards": "Stronger cyber safeguards and trusted-access arrangements anticipated.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-028",
+      "date": "2025-12-19",
+      "date_end": "2025-12-19",
+      "date_label": "December 19, 2025",
+      "lab": "Anthropic",
+      "model": "Frontier Compliance Framework",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "FCF (December 2025)",
+      "status": "Framework change",
+      "threshold": "Separate domain-specific tiers introduced",
+      "details": "FCF operates alongside the voluntary RSP. Cyber/manipulation Tier 1 or Tier 2 must not be translated into ASL-3 or ASL-4.",
+      "safeguards": "Separate framework for frontier-risk assessment and mitigation.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-029",
+      "date": "2026-02-05",
+      "date_end": "2026-02-10",
+      "date_label": "February 5–10, 2026",
+      "lab": "Anthropic",
+      "model": "Claude Opus 4.6 / sabotage report",
+      "domains": [
+        "Autonomy / AI R&D",
+        "Biological / chemical"
+      ],
+      "framework": "RSP pre-v3; old AI R&D-4 rubric",
+      "status": "Warning / alert",
+      "threshold": "ASL-3; near, but below, AI R&D-4",
+      "details": "Rule-out case became more tenuous in an autonomy gray zone; Anthropic nevertheless concluded below threshold. Not an ASL-4 declaration.",
+      "safeguards": "ASL-3 retained; voluntary sabotage risk case and precautionary protections.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-012",
+      "date": "2026-02-05",
+      "date_end": "2026-02-05",
+      "date_label": "February 5, 2026",
+      "lab": "OpenAI",
+      "model": "GPT-5.3-Codex",
+      "domains": [
+        "Cybersecurity"
+      ],
+      "framework": "Preparedness v2",
+      "status": "Precaution",
+      "threshold": "First High cybersecurity classification",
+      "details": "Cautious classification without definitive evidence of fully automated end-to-end cyberattacks. High cyber, not Critical.",
+      "safeguards": "Stronger cyber safety controls and trusted-access measures.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-030",
+      "date": "2026-02-17",
+      "date_end": "2026-02-17",
+      "date_label": "February 17, 2026",
+      "lab": "Anthropic",
+      "model": "Claude Sonnet 4.6",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "RSP pre-v3",
+      "status": "Operational update",
+      "threshold": "ASL-3 retained",
+      "details": "Continuation of the existing safeguard level, not a higher crossing.",
+      "safeguards": "ASL-3 protections.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-050",
+      "date": "2026-02-19",
+      "date_end": "2026-02-19",
+      "date_label": "February 19, 2026",
+      "lab": "Google DeepMind",
+      "model": "Gemini 3.1 Pro",
+      "domains": [
+        "Cybersecurity"
+      ],
+      "framework": "FSF v3",
+      "status": "Warning / alert",
+      "threshold": "Cyber alert continued; below CCLs",
+      "details": "No new higher crossing declared; requires cyber scrutiny, not a confirmed critical capability level.",
+      "safeguards": "Continued cyber scrutiny and mitigations.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-031",
+      "date": "2026-02-24",
+      "date_end": "2026-02-24",
+      "date_label": "February 24, 2026",
+      "lab": "Anthropic",
+      "model": "RSP v3",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "RSP v3",
+      "status": "Framework change",
+      "threshold": "Universal future ASL ladder replaced by tailored approach",
+      "details": "Shifted to explicit threat models, published risk reports, and safeguards roadmap instead of the next universal ASL package.",
+      "safeguards": "Existing ASL-3 protections remain relevant; future measures tailored to risks.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-032",
+      "date": "2026-04-07",
+      "date_end": "2026-04-07",
+      "date_label": "April 7, 2026",
+      "lab": "Anthropic",
+      "model": "Claude Mythos Preview",
+      "domains": [
+        "Biological / chemical",
+        "Autonomy / AI R&D",
+        "Cybersecurity"
+      ],
+      "framework": "RSP v3",
+      "status": "Operational update",
+      "threshold": "CB-1 protections; Autonomy Threat Model 1 applicable",
+      "details": "Restricted cyber deployment. High-stakes sabotage threat model applied; higher Bio/Chem and automated-R&D thresholds assessed not crossed. Does not establish replacement of an entire research organization.",
+      "safeguards": "CB-1 safeguards, sabotage protections, restricted cybersecurity access.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-051",
+      "date": "2026-04-17",
+      "date_end": "2026-04-17",
+      "date_label": "April 17, 2026",
+      "lab": "Google DeepMind",
+      "model": "FSF v3.1",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "FSF v3.1",
+      "status": "Framework change",
+      "threshold": "Tracked Capability Levels introduced",
+      "details": "TCLs track significant risks at lower levels than CCL severe risks, including CBRN and ML R&D/misalignment. Category creation is not a model crossing; TCLs are distinct from early-warning alerts.",
+      "safeguards": "Explicit tracking of lower-threshold significant risks.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-033",
+      "date": "2026-05-26",
+      "date_end": "2026-05-26",
+      "date_label": "May 26, 2026",
+      "lab": "Anthropic",
+      "model": "RSP revision",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "RSP May 2026 revision",
+      "status": "Framework change",
+      "threshold": "Higher chemical / biological threshold revised",
+      "details": "Later below-threshold statements must be read using the new definition.",
+      "safeguards": "Threat-specific policy requirements updated.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-034",
+      "date": "2026-06-09",
+      "date_end": "2026-06-09",
+      "date_label": "June 9, 2026",
+      "lab": "Anthropic",
+      "model": "Claude Fable 5 / Mythos 5",
+      "domains": [
+        "Cybersecurity",
+        "Operations"
+      ],
+      "framework": "RSP v3 (May revision)",
+      "status": "Operational update",
+      "threshold": "Differentiated access; no new ASL declaration",
+      "details": "Closely related capabilities released as a more tightly safeguarded general configuration and a less-restricted selected-user configuration.",
+      "safeguards": "Fable broadly available with tighter safeguards; Mythos reserved for selected users.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-035",
+      "date": "2026-07-08",
+      "date_end": "2026-07-08",
+      "date_label": "July 8, 2026",
+      "lab": "Anthropic",
+      "model": "RSP revision",
+      "domains": [
+        "Framework"
+      ],
+      "framework": "RSP July 2026 revision",
+      "status": "Framework change",
+      "threshold": "Automated-R&D threshold revised",
+      "details": "Comparisons with earlier AI R&D-4 or R&D-5 findings must preserve the policy version.",
+      "safeguards": "Updated automated-R&D trigger definition.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-013",
+      "date": "2026-08-07",
+      "date_end": "2026-08-07",
+      "date_label": "August 7, 2026",
+      "lab": "OpenAI",
+      "model": "Astra (unreleased)",
+      "domains": [
+        "Cybersecurity"
+      ],
+      "framework": "Preparedness v2",
+      "status": "Precaution",
+      "threshold": "Could no longer rule out Critical cyber",
+      "details": "Precautionary trigger, not yet an affirmative Critical assessment. Astra was distinguished from the model involved in the Hugging Face incident.",
+      "safeguards": "Restricted development failing heightened security requirements; tightened containment and weight protection; monitoring of tool use.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-052",
+      "date": "2026-08-13",
+      "date_end": "2026-08-13",
+      "date_label": "August 13, 2026",
+      "lab": "Google DeepMind",
+      "model": "Gemini 3.7 Flash: biological / cyber alerts",
+      "domains": [
+        "Biological / chemical",
+        "Cybersecurity"
+      ],
+      "framework": "FSF v3.1",
+      "status": "Warning / alert",
+      "threshold": "Biological alert reached again; cyber alert continued",
+      "details": "Below biological CCL despite some experts eliciting useful information across tested scenarios. No T/CCL crossing declared.",
+      "safeguards": "Existing mitigations judged adequate for deployment.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-053",
+      "date": "2026-08-13",
+      "date_end": "2026-08-13",
+      "date_label": "August 13, 2026",
+      "lab": "Google DeepMind",
+      "model": "Gemini 3.7 Flash: other CBRN scenarios",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "FSF v3.1",
+      "status": "Assessment",
+      "threshold": "Chemical / radiological / nuclear TCLs ruled out",
+      "details": "These TCL assessments concern different threat scenarios from the biological alert and must not be collapsed onto one ladder.",
+      "safeguards": "Existing mitigations judged adequate for deployment.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-036",
+      "date": "2026-08-14",
+      "date_end": "2026-08-14",
+      "date_label": "August 14, 2026 (covers work through July 15)",
+      "lab": "Anthropic",
+      "model": "Risk Report: CB-1",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "RSP July 2026 revision",
+      "status": "Precaution",
+      "threshold": "Most new models treated as crossing CB-1 by default",
+      "details": "Lower biological threshold no longer treated as exceptional for each new model. Default treatment does not independently establish every model's capability crossing.",
+      "safeguards": "Maintained biological protections and preparations for stronger capabilities.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-037",
+      "date": "2026-08-14",
+      "date_end": "2026-08-14",
+      "date_label": "August 14, 2026 (covers work through July 15)",
+      "lab": "Anthropic",
+      "model": "Risk Report: higher thresholds",
+      "domains": [
+        "Biological / chemical",
+        "Autonomy / AI R&D"
+      ],
+      "framework": "RSP July 2026 revision",
+      "status": "Assessment",
+      "threshold": "CB-2 and automated-R&D thresholds not crossed",
+      "details": "Increasing AI research contribution without a formal research-acceleration threshold declaration.",
+      "safeguards": "Existing protections and preparations for stronger capabilities continued.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-014",
+      "date": "2026-08-18",
+      "date_end": "2026-08-18",
+      "date_label": "August 18, 2026",
+      "lab": "OpenAI",
+      "model": "Implementation update",
+      "domains": [
+        "Operations",
+        "Cybersecurity"
+      ],
+      "framework": "Preparedness v2",
+      "status": "Operational update",
+      "threshold": "Actual development restrictions; no new tier",
+      "details": "Reported a two-week RL pause on latest deployment-intended models. Largest planned frontier RL run remained on hold; smaller training and evaluations continued. Response addressed both the security incident and potential Critical capabilities, not a company-wide shutdown caused solely by a crossing.",
+      "safeguards": "Training restrictions and heightened security requirements implemented.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-038",
+      "date": "2026-09-01",
+      "date_end": "2026-09-01",
+      "date_label": "September 1, 2026",
+      "lab": "Anthropic",
+      "model": "Fable 5.1 / Mythos 5.1: biology",
+      "domains": [
+        "Biological / chemical"
+      ],
+      "framework": "RSP July 2026 revision",
+      "status": "Assessment",
+      "threshold": "Below next chemical / biological tier",
+      "details": "Increased biological capability while still assessed below the next RSP tier.",
+      "safeguards": "Differentiated safeguards and access maintained.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-039",
+      "date": "2026-09-01",
+      "date_end": "2026-09-01",
+      "date_label": "September 1, 2026",
+      "lab": "Anthropic",
+      "model": "Mythos 5.1: cyber",
+      "domains": [
+        "Cybersecurity"
+      ],
+      "framework": "FCF",
+      "status": "Assessment",
+      "threshold": "Cyber Tier 1; approaching Tier 2",
+      "details": "Anthropic's domain-specific classification, not OpenAI's Critical or an ASL-4 designation.",
+      "safeguards": "Differentiated safeguards and access maintained.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-040",
+      "date": "2026-09-01",
+      "date_end": "2026-09-01",
+      "date_label": "September 1, 2026",
+      "lab": "Anthropic",
+      "model": "Helpful-only Mythos 5.1: manipulation evaluation",
+      "domains": [
+        "Persuasion"
+      ],
+      "framework": "FCF",
+      "status": "Warning / alert",
+      "threshold": "Tier-2-range result; full Tier 2 not conclusively surpassed",
+      "details": "Helpful-only variant scored in the Tier-2-associated range on agentic influence campaigns; Anthropic did not conclude the full harmful-manipulation threshold was surpassed.",
+      "safeguards": "No new Tier-2 determination; configuration-specific assessment retained.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-015",
+      "date": "2026-09-01",
+      "date_end": "2026-09-01",
+      "date_label": "September 1, 2026",
+      "lab": "OpenAI",
+      "model": "Astra",
+      "domains": [
+        "Cybersecurity"
+      ],
+      "framework": "Preparedness v2",
+      "status": "Assessment",
+      "threshold": "First affirmative Critical cybersecurity",
+      "details": "OpenAI said evidence now supported Critical classification. Large-scale RL had restarted August 28; some experiments remained paused.",
+      "safeguards": "Restricted access to advanced cyber capabilities, tighter safeguards, defensive partnerships.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-054",
+      "date": "2026-09-02",
+      "date_end": "2026-09-02",
+      "date_label": "September 2, 2026",
+      "lab": "Google DeepMind",
+      "model": "Gemini 3.8 Flash",
+      "domains": [
+        "Biological / chemical",
+        "Cybersecurity",
+        "Autonomy / AI R&D"
+      ],
+      "framework": "FSF v3.1",
+      "status": "Assessment",
+      "threshold": "Inferred unlikely to cross T/CCLs",
+      "details": "No meaningful risk-relevant differences from 3.7 Flash. Assessment relied on comparison, not a completely new full threshold evaluation.",
+      "safeguards": "Existing mitigations carried forward based on comparison.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-055",
+      "date": "2026-09-02",
+      "date_end": "2026-09-02",
+      "date_label": "September 2, 2026",
+      "lab": "Google DeepMind",
+      "model": "Gemini 3.8 Flash Cyber",
+      "domains": [
+        "Cybersecurity",
+        "Operations"
+      ],
+      "framework": "FSF v3.1",
+      "status": "Operational update",
+      "threshold": "Restricted cyber deployment; no affirmative CCL declaration in announcement",
+      "details": "More permissive Cyber configuration must remain separate from ordinary Flash; restricted access alone is not a CCL crossing.",
+      "safeguards": "Restricted Fairwind access arrangements.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-016",
+      "date": "2026-09-03",
+      "date_end": "2026-09-03",
+      "date_label": "September 3, 2026",
+      "lab": "OpenAI",
+      "model": "GPT-6 Astra release / system card",
+      "domains": [
+        "Cybersecurity",
+        "Biological / chemical",
+        "Autonomy / AI R&D"
+      ],
+      "framework": "Preparedness v2",
+      "status": "Assessment",
+      "threshold": "Critical cyber; High Bio/Chem; below High AI Self-Improvement",
+      "details": "Confirmed domain-specific status. Critical cyber did not mean Critical in every domain or a recursive self-improvement declaration.",
+      "safeguards": "Domain-specific safeguards and differentiated access.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    },
+    {
+      "id": "ft-017",
+      "date": "2026-09-06",
+      "date_end": "2026-09-06",
+      "date_label": "September 6, 2026",
+      "lab": "OpenAI",
+      "model": "Automated research intern announcement",
+      "domains": [
+        "Autonomy / AI R&D"
+      ],
+      "framework": "Preparedness v2",
+      "status": "Operational update",
+      "threshold": "No change to below-High AI Self-Improvement",
+      "details": "Research automation announcements are not formal self-improvement threshold declarations. Astra's published below-High assessment remained the relevant designation.",
+      "safeguards": "No new threshold-linked safeguards specified in the supplied brief.",
+      "provenance": "User-provided public frontier-threshold timeline through September 6, 2026; not independently verified."
+    }
+  ]
+}

@@ -4,6 +4,7 @@ Run: streamlit run visualize_projection.py
 """
 
 import streamlit as st
+import frontier_thresholds as thresholds
 import numpy as np
 import plotly.graph_objects as go
 import yaml
@@ -2693,8 +2694,8 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "RSI", "Takeoff", "UK Cyber", "Employment", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing"]
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "RSI": "rsi", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute/capabilities/diffusion": "computecap", "Pacing": "pacing"}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "RSI", "Takeoff", "UK Cyber", "Frontier Thresholds", "Employment", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing"]
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "RSI": "rsi", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute/capabilities/diffusion": "computecap", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 
 # Read ?tab= from URL for deep-linking
@@ -13509,6 +13510,7 @@ def _all_tracked():
         (_RLI_RESET_KEYS, _RLI_DEFAULTS),
         (_RSI_RESET_KEYS, _RSI_DEFAULTS),
         (list(_TK_DEFAULTS), _TK_DEFAULTS),
+        (list(thresholds.DEFAULTS), thresholds.DEFAULTS),
         (_UKC_RESET_KEYS, _UKC_DEFAULTS),
         (_EMP_RESET_KEYS, _EMP_DEFAULTS),
         (_REV_TRACKED_KEYS, _REV_DEFAULTS),
@@ -16643,6 +16645,8 @@ if not os.environ.get("_VP_TESTING"):
         render_takeoff()
     elif active_tab == "UK Cyber":
         render_ukcyber()
+    elif active_tab == "Frontier Thresholds":
+        thresholds.render(st)
     elif active_tab == "Revenue":
         render_revenue()
     elif active_tab == "Employment":

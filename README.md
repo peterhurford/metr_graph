@@ -1,8 +1,10 @@
 # AI Capability Projections
 
-This interactive Streamlit dashboard has twelve tabs covering the **frontier** of AI progress,
-labor automation, cyber offense, revenue, compute buildout, and takeoff to superintelligence.
-Empirical panels project fitted trends with uncertainty bands; Takeoff explores conditional scenarios.
+This interactive Streamlit dashboard has thirteen tabs covering benchmark capability,
+labor automation, cyber offense, revenue, compute buildout, takeoff to superintelligence,
+and public frontier-risk assessments. Empirical panels project trends with uncertainty
+bands; Takeoff explores scenarios; Frontier Thresholds records reported assessments
+and safeguard changes.
 
 > Note: In many cases, these are **projections**, not forecasts: they assume the current trend continues.
 
@@ -29,6 +31,7 @@ and the sidebar's *Share view* button copies a URL carrying your current control
 | RSI | `rsi` | `_RSI_RAW` / `_RSI_SURVEY` (hardcoded) | Anthropic's internal AI-R&D benchmark, staff-survey speedup, merged code, and research direction; OpenAI experiment velocity; ends with the *Capabilities Milestones* cards and the blended RSI projection |
 | Takeoff | `takeoff` | Final RSI blend + assumptions in `takeoff_model.py` | Research feedback from today, with inherited coding milestones and evidence calibration |
 | UK Cyber | `ukcyber` | `aisi_cyber_narrow.csv`, `aisi_cyber_tlo.csv` | AISI cyber success rates, and how many months open-weight models trail the closed frontier |
+| Frontier Thresholds | `thresholds` | `frontier_thresholds.json` (supplied timeline through September 6, 2026) | Lab/domain event timeline separating assessments, precautions, alerts, policy changes, reassessments, and operational responses |
 | Employment | `employment` | RLI frontier + assumptions | Unemployment / jobs displaced under slider assumptions |
 | Revenue | `revenue` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | OpenAI and Anthropic ARR |
 | Data Centers | `datacenters` | `data_centers.csv` + `data_center_timelines.csv` | H100-equivalents, power, cost, time-to-train; ends with a US-vs-China buildout panel |
@@ -236,3 +239,21 @@ Default weights before conditioning: METR p50 5%, METR p80 10%, ECI 187.5 5%,
 ECI 200 10%, RLI 15%, CoBench 5%, staff acceleration 10%, merged code 10%,
 experiment velocity 10%, next-step judgment 10%, and revenue 10%.
 Custom weights remain editable. Capability milestones occupy three rows.
+
+### Frontier threshold timeline
+
+Open `?tab=thresholds`. Choose one risk category: Cybersecurity, Biological /
+chemical, Autonomy / AI R&D, or Persuasion. Each lab has a separate bordered panel
+with a category-specific summary and a small timeline of selected milestones.
+Labels and hovers use domain-specific wording, even when the underlying source
+record covers several domains. No range slider or legend is shown. Each panel includes a compact milestone table
+and a visible explanation for the selected event. Additional context appears as
+small chart points; only the main milestones receive inline labels. The full
+chronology remains collapsed. Category and archive filters round-trip
+through Share view; CSV export retains complete records.
+
+The 55 event records in `frontier_thresholds.json` transcribe the supplied September 6,
+2026 timeline, without independent source verification. Some source rows are split by
+assessment type or configuration. Edit that file to update the chronology; keep status,
+model/configuration, domain, policy version, date qualifications, and safeguards together.
+`frontier_thresholds.py` provides filtering, charting, CSV export, and the tab UI.
