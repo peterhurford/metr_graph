@@ -15999,6 +15999,7 @@ _TK_DEFAULTS.update({
     "tk_end_year": 2031, "tk_cal_weight": 50.0, "tk_cal_compute": 2.0,
     "tk_cal_capability": 2.0, "tk_cal_yield": 1.0, "tk_cal_validated": 0.0,
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
+    "tk_cal_2025_yield": 1.0,
 })
 _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
 
@@ -16033,13 +16034,13 @@ def _tk_acceleration_fig(result):
 
     p = result["workflow_progress"]
     fig = make_subplots(rows=2, cols=2, vertical_spacing=.22, subplot_titles=[
-        "Inherited RSI experiment activity", "New validated gains per month",
-        "Cumulative validated progress", "Advantage over the same-compute reference"])
+        "Inherited RSI experiment activity", "Useful research pace (pre-validation)",
+        "Additional validated progress since today", "Same-compute reference research pace"])
     for row, col, key, label, color, axis in (
             (1, 1, "rsi_activity_quantiles", "RSI experiments / 2025", "#8e44ad", "Experiments (× 2025)"),
-            (1, 2, "rate_quantiles", "Delivered rate / today", "#2980b9", "Rate (× today's baseline)"),
-            (2, 1, "cumulative_quantiles", "Cumulative progress", "#d68910", "Months of today's progress"),
-            (2, 2, "matched_quantiles", "Progress / same compute", "#229954", "Rate (× same compute)")):
+            (1, 2, "pace_2025_quantiles", "Useful pace / 2025", "#2980b9", "Research pace (× 2025)"),
+            (2, 1, "cumulative_2025_quantiles", "Additional validated progress", "#d68910", "Months of 2025 research progress"),
+            (2, 2, "reference_2025_quantiles", "Reference pace / 2025", "#229954", "Research pace (× 2025)")):
         for qi in (0, 2, 1):
             fig.add_trace(go.Scatter(
                 x=p["years"] * 12, y=p[key][:, qi],
@@ -16047,13 +16048,11 @@ def _tk_acceleration_fig(result):
                 mode="lines", line=dict(color=color, width=2.5 if qi == 1 else 0),
                 fill="tonexty" if qi == 2 else None,
                 fillcolor="rgba(100,140,160,0.15)", showlegend=False,
-                customdata=100 * p["matched_coverage"],
                 hovertemplate=("%{x:.1f} months<br>%{y:.2f}"
-                               + (" baseline months" if key == "cumulative_quantiles" else "×")
-                               + ("<br>Defined for %{customdata:.0f}% of scenarios" if key == "matched_quantiles" else "")
+                               + (" months of 2025 progress" if key == "cumulative_2025_quantiles" else "× 2025")
                                + "<extra>%{fullData.name}</extra>")
                 if qi == 1 else None, hoverinfo=None if qi == 1 else "skip"), row=row, col=col)
-        if key != "cumulative_quantiles":
+        if key != "cumulative_2025_quantiles":
             fig.add_hline(y=1, line_dash="dot", line_color="#777", row=row, col=col)
         fig.update_yaxes(title_text=axis, type="log" if col == 1 and row == 1 else "linear",
                          rangemode="tozero", row=row, col=col)
@@ -16072,7 +16071,8 @@ def _tk_rsi_activity(rows, today, n):
 
 
 @st.cache_data(show_spinner=False, max_entries=12)
-def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, experiment_slopes):
+def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, experiment_slopes,
+                 baseline_yield=1.0):
     # The source digest invalidates results when the imported simulator changes.
     result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
                              experiment_slopes=experiment_slopes)
@@ -16080,6 +16080,19 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
     paths = np.exp(experiment_starts[:, None] + experiment_slopes[:, None] * grid)
     result["workflow_progress"]["rsi_activity_quantiles"] = np.quantile(
         paths, [.1, .5, .9], axis=0).T
+    # Rebase each draw before taking quantiles, preserving uncertainty and
+    # pairing. This is a reporting anchor, never a second productivity boost.
+    baseline = np.exp(experiment_starts)[:, None] * baseline_yield
+    progress = result["workflow_progress"]
+    for key, values in (("pace_2025_quantiles", progress["pace"]),
+                        ("reference_2025_quantiles", progress["reference_pace"]),
+                        ("cumulative_2025_quantiles", progress["validated_baseline_months"])):
+        progress[key] = np.quantile(values * baseline, [.1, .5, .9], axis=0).T
+    result["pace_events_2025"] = {}
+    for threshold in (2, 5):
+        reached = progress["pace"] * baseline >= threshold
+        result["pace_events_2025"][f"{threshold}× 2025 research pace"] = np.where(
+            reached.any(axis=1), grid[np.argmax(reached, axis=1)], np.inf)
     return result
 
 
@@ -16229,6 +16242,10 @@ def render_takeoff():
                    "Each cycle validates discoveries available at its start. Like successor "
                    "training, unfinished work cannot improve the available research system.")
         with st.expander("Evidence calibration"):
+            number("Useful progress per experiment today / 2025 (×)", "cal_2025_yield", 0.1, 5.0, 0.1,
+                   "Reporting assumption for the 2025 research baseline. Default 1 means "
+                   "unchanged yield: today's useful pace inherits RSI's activity multiple. "
+                   "This rebases the charts, not the simulated dynamics or automation dates.")
             number("Weight on inherited RSI activity trend (%)", "rsi_trend_weight", 0.0, 100.0, 5.0,
                    "Blend the RSI experiment projection with modeled research effort. "
                    "These are alternative estimates, not multiplicative gains. Zero keeps "
@@ -16370,7 +16387,7 @@ def render_takeoff():
         return
     experiment_starts, experiment_slopes = activity
     result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
-                          experiment_starts, experiment_slopes)
+                          experiment_starts, experiment_slopes, st.session_state["tk_cal_2025_yield"])
     if result["numerically_limited"].any():
         st.error("These assumptions exceed the simulation’s numerical range in "
                  f"{100 * np.mean(result['numerically_limited']):.1f}% of draws. "
@@ -16430,21 +16447,22 @@ def render_takeoff():
                "deployment. Historical coding dates have no reconstructed outcome measurements. "
                "These are simulated outcomes, not observed measurements.")
     st.subheader("Research acceleration, including human-directed work")
-    st.caption(f"RSI projects {np.median(np.exp(experiment_starts)):.2f}× experiments per "
-               "researcher today relative to 2025. This is the same projected activity "
-               "distribution as the RSI tab; today's validated research pace is a separate "
-               "1× baseline. A roughly 2× activity level is not a measured 2× discovery rate.")
+    st.caption(f"All panels use a 2025 baseline. RSI projects "
+               f"{np.median(np.exp(experiment_starts)):.2f}× experiments per researcher today. "
+               f"With your assumed {st.session_state['tk_cal_2025_yield']:g}× useful yield per "
+               "experiment, that anchors today's modeled research pace. This is a proxy-based "
+               "normalization, not a measurement of validated discoveries since 2025.")
     st.plotly_chart(_tf(_tk_acceleration_fig(result)), width="stretch")
-    st.caption("Validated fixed-quality efficiency gains per month over the trailing three "
-               "months, shown only after a complete window. Medians and middle 80% include fast "
-               "and successor improvements. Today’s already AI-assisted pace is 1×. "
-               "The rate can fall between deployments or as research gets harder; cumulative "
-               "validated progress does not fall. The initial pipeline is an assumption, "
-               "not an observed history of deliveries. "
-               "The same-compute reference freezes AI research skills at today’s level. "
-               "Its ratio is undefined where the reference delivers no gains; those values "
-               "are excluded only from that panel. After all milestones, paths retain their "
-               "last measured rates. Faster research does not require full autonomy.")
+    st.caption("Research pace measures ongoing useful work before validation, so it includes "
+               "work in progress while successors train. The same-compute reference also uses "
+               "2025 = 1× and freezes AI research skills at today's level; it is no longer "
+               "plotted as a ratio to the modeled path. Both pace curves start from today's "
+               "already-assisted baseline and may decline if difficulty outweighs productivity "
+               "gains. Lines show medians; shading shows the middle 80%.")
+    st.caption("Additional validated progress counts only gains delivered after today, in "
+               "months of research at the 2025 pace. It starts at zero because it is a "
+               "cumulative amount, not a speed multiplier. It can pause between deployments "
+               "but never loses prior gains. Completed paths retain their last modeled pace.")
     st.caption(f"Near-term output blends the mechanistic model with the RSI activity "
                f"trend at an initial {params['rsi_trend_weight']:g}% weight, halving every "
                f"{params['rsi_trend_months']:g} months. Compute growth is accounted for once; "
@@ -16454,8 +16472,8 @@ def render_takeoff():
     st.table([{"Research acceleration": name,
                "Median first observed crossing": _tk_date(takeoff.quantile(values, .5, horizon), today),
                f"By {end_date:%b %Y}": f"{100 * np.mean(values <= horizon):.1f}%"}
-              for name, values in result["acceleration_events"].items()])
-    st.caption("Crossings use monthly observations of the trailing progress rate; they "
+              for name, values in result["pace_events_2025"].items()])
+    st.caption("Crossings use monthly observations of research pace relative to 2025; they "
                "do not require full R&D automation or a sustained successor-cycle streak.")
     compute_limited = 100 * np.mean(result["compute_limited"])
     st.subheader("What constrains experiment throughput?")
@@ -16615,6 +16633,8 @@ def render_takeoff():
         "Download simulation draws", json.dumps(dict(
             snapshot, onset_months=[float(v * 12) if np.isfinite(v) else None for v in result["onset"]],
             milestones=records,
+            pace_events_2025={name: [float(v * 12) if np.isfinite(v) else None for v in values]
+                              for name, values in result["pace_events_2025"].items()},
             acceleration_events={name: [float(v * 12) if np.isfinite(v) else None for v in values]
                                  for name, values in result["acceleration_events"].items()},
             workflow_progress={key: np.where(np.isfinite(values), values, None).tolist()

@@ -207,6 +207,18 @@ def test_rates_need_a_full_window_and_cumulative_progress_never_falls():
     np.testing.assert_array_equal(h["cumulative_quantiles"][0], 0)
 
 
+def test_ongoing_research_pace_does_not_wait_for_successor_deliveries():
+    r = tk.simulate(dict(years=.5, uncertainty=0, fast_share=0,
+                         training_months=12, validation_months=3, transfer=0,
+                         compute_growth=1), n=2)
+    h = r["workflow_progress"]
+    np.testing.assert_array_equal(h["pace"][:, 0], 1)
+    np.testing.assert_array_equal(h["reference_pace"][:, 0], 1)
+    assert np.all(h["pace"] > 0)
+    assert np.all(h["validated_baseline_months"] == 0)
+    np.testing.assert_allclose(h["pace"], h["reference_pace"], rtol=1e-10)
+
+
 def test_inherited_activity_informs_effort_without_a_second_compute_multiplier():
     p = dict(years=1, uncertainty=0, rsi_trend_weight=100)
     slow = tk.simulate(p, n=1, experiment_slopes=np.array([0.0]))

@@ -3574,6 +3574,30 @@ class TestRsiDirection:
 
 
 class TestRsiExperiments:
+    def test_all_research_panels_use_2025_units_and_rebase_draws_before_quantiles(self):
+        params = dict(years=1, uncertainty=0)
+        onset = np.ones(20)
+        starts = np.linspace(np.log(1.5), np.log(2.5), 20)
+        slopes = np.full(20, np.log(2))
+        a = vp._tk_simulate(params, onset, "2025-test", starts, slopes)
+        b = vp._tk_simulate(params, onset, "2025-test", starts, slopes, baseline_yield=2)
+        h = a['workflow_progress']
+        for key in ['pace_2025_quantiles', 'reference_2025_quantiles']:
+            np.testing.assert_allclose(h[key][0], np.quantile(np.exp(starts), [.1, .5, .9]))
+            assert h[key][0, 1] > 1
+        for key in ['pace_2025_quantiles', 'reference_2025_quantiles', 'cumulative_2025_quantiles']:
+            np.testing.assert_allclose(b['workflow_progress'][key], 2 * h[key])
+        np.testing.assert_array_equal(h['cumulative_2025_quantiles'][0], 0)
+        for key, sample_key in [('pace_2025_quantiles', 'pace'),
+                                ('reference_2025_quantiles', 'reference_pace'),
+                                ('cumulative_2025_quantiles', 'validated_baseline_months')]:
+            np.testing.assert_allclose(h[key], np.quantile(
+                h[sample_key] * np.exp(starts)[:, None], [.1, .5, .9], axis=0).T)
+        np.testing.assert_array_equal(a['software_log'], b['software_log'])
+        fig = vp._tk_acceleration_fig(a)
+        for axis in ['yaxis', 'yaxis2', 'yaxis3', 'yaxis4']:
+            assert '2025' in fig.layout[axis].title.text
+
     def test_takeoff_inherits_the_same_activity_paths_without_changing_global_rng(self):
         rows = vp.load_rsi_experiments()
         before = np.random.get_state()

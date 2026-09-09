@@ -86,7 +86,12 @@ and annualizes slopes. `_tk_simulate` caches by these arrays as well as model so
 onsets. Forward activity and mechanistic effort are alternative estimates, blended with a
 fading weight, not multiplied. Current activity normalization only affects the displayed
 2025-baseline fan, not today's already-assisted productivity. The acceleration chart also
-shows cumulative gains, and delivered rates are missing until a full three-month window.
+shows cumulative gains. All four panels now use 2025 units: activity, useful production
+pace before validation, cumulative deliveries in baseline months, and the reference's own
+pace (not an actual/reference ratio). `tk_cal_2025_yield` supplies the assumed reporting
+conversion. Rebase each draw before taking quantiles; never multiply quantile bands.
+The simulator records ongoing production separately from delivery-window rates, which
+remain available for internal diagnostics and the validated milestone definitions.
 
 ### Section deep links
 

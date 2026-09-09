@@ -63,9 +63,12 @@ replace that proxy. Matched human hours, including interventions and rescue, can
 individual stage. Task intervention incidence and code volume are not equated with human
 hours or useful discoveries. Missing measurements remain labeled assumptions.
 
-The acceleration chart reuses the RSI experiment projection (2025 = 1×), alongside
-delivered progress rates (today = 1×), cumulative validated gains, and a same-compute
-comparison. Rates begin after a complete three-month window and can dip between deliveries.
+The acceleration chart uses 2025 units throughout: RSI experiment activity, ongoing
+useful research pace before validation, additional validated gains in months of 2025
+progress, and the same-compute reference's own research pace. The assumed useful yield
+per experiment supplies the reporting conversion; it does not boost model dynamics.
+Pace starts from today's existing research activity rather than an empty delivery window.
+Additional validated gains start at zero and still wait for validation and deployment.
 The inherited activity trend also informs near-term research effort through an adjustable,
 fading blend, with compute accounted for once and an explicit useful-effort conversion.
 

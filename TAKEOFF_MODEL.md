@@ -48,17 +48,28 @@ budgets rather than creating additional resources.
 
 ## Acceleration and autonomy are different outcomes
 
-The acceleration chart separates RSI experiment activity (relative to 2025), delivered
-efficiency gains per month (relative to today), cumulative validated gains (in months of
-today's progress), and the same-compute comparison. A declining delivery rate is not lost
-capability. Batch deployments and increasing difficulty can cause rate declines. Rates use
-a complete trailing three-month window; no artificial 1× startup point or shorter window
-is connected to subsequent deliveries. The first three months have no displayed rate.
-A second panel compares with a reference having identical compute, allocations, initial
-backlog, difficulty, and delivery schedules, but frozen AI skills. A zero reference gain
-makes the ratio undefined, never infinite. Its percentile panel excludes those undefined
-ratios and explains the coverage. Monthly first crossings of 2× and 5× progress are shown
-without requiring full autonomy or a sustained streak.
+All four acceleration panels use 2025 units. The first preserves the RSI experiment
+activity fan. The second shows ongoing useful research production before validation,
+including work still in training/validation queues. The fourth shows the same-compute
+reference's own production pace, not the actual/reference ratio. These pace series use
+the derivative of the simulated discovery process, with the same increasing-difficulty
+penalty, sampled near monthly boundaries within the weekly integration resolution.
+They start from today's already-assisted rate and can fall if difficulty outpaces gains.
+No minimum of 1× is imposed.
+
+The reporting anchor is each draw's RSI activity multiple today times an assumed useful
+yield per experiment relative to 2025 (default 1). This is an explicit proxy conversion,
+not measured discovery growth. It rescales each draw before computing percentiles and
+does not multiply existing assistance into dynamics a second time. Under default resource
+allocation and yield assumptions, both modeled pace series start at the inherited activity
+multiple, rather than appearing near zero while waiting for the first new successor.
+
+The third panel counts additional validated deliveries after today, measured in months
+of research at the 2025 pace. It starts at zero because it measures an additional amount,
+not a pace multiplier. Gains still wait for validation; none are backfilled into the
+cumulative series. Table crossings refer to 2×/5× 2025 production pace. The internal
+three-month delivered-rate and actual/reference diagnostics remain available for model
+analysis and validated milestone definitions; they are not the chart's ongoing pace.
 
 Full R&D automation still requires every research stage to need at most 5% of baseline
 human hours and useful-project completion to reach at least 90%, after the coding milestone.

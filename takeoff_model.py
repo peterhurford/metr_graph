@@ -302,6 +302,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     parallel = p["parallelization"]
     initial_throughput = _harmonic((shares[2] / 0.2) ** parallel,
                                    (shares[1] / 0.4) ** parallel)
+    # Ongoing useful research production is distinct from batched deliveries.
+    # Today's production baseline already includes existing AI assistance.
+    pace_history = np.full_like(capability_history, initial_throughput)
+    reference_pace_history = np.full_like(capability_history, initial_throughput)
+    observation_index = np.ones(n, dtype=int)
+    last_pace = np.full(n, initial_throughput)
+    last_reference_pace = np.full(n, initial_throughput)
     # Today's model's training compute: a three-month run at the reference
     # 40% allocation. This constant must not depend on the chosen run duration.
     reference_train_compute = 0.4 * 3 / 12
@@ -316,6 +323,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         deploy_end = train_end + eval_time
         next_event = np.minimum(np.where(finished, deploy_end, train_end), fast_next)
         next_event = np.minimum(next_event, np.where(onset > t + 1e-12, onset, np.inf))
+        next_observation = workflow_grid[np.minimum(observation_index, len(workflow_grid) - 1)]
+        next_event = np.minimum(next_event, next_observation)
         end = np.minimum(np.minimum(t + step, next_event), p["years"])
         active = t < p["years"] - 1e-12
         end = np.where(active, end, t)
@@ -353,6 +362,14 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             research_log = (1 - weight) * research_log + weight * proxy_log
         log_amount = np.log(software_rate) + research_log + np.log(
             dt, out=np.full(n, -np.inf), where=dt > 0)
+        # Derivative of the same discovery process being integrated below,
+        # in multiples of today's software-progress rate. Snapshot near the
+        # end of each monthly integration interval (at most one week long).
+        pace = np.exp(np.minimum(research_log - beta * (software - initial_stock), 700))
+        reference_progress = reference_software(t, software_rate, compute_rate,
+                                                parallel, initial_throughput, beta)
+        reference_pace = np.exp(np.minimum(np.log(initial_throughput)
+            + parallel * compute_log - beta * reference_progress, 700))
         if beta > 0:
             updated = initial_stock + np.logaddexp(
                 beta * (software - initial_stock), np.log(beta) + log_amount) / beta
@@ -461,10 +478,20 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         run_compute[ready] = 0
         finished[ready] = False
         all_reached = np.all(np.isfinite(np.array(list(events.values()))), axis=0)
+        observed = active & (end >= next_observation - 1e-12)
+        rows = np.flatnonzero(observed)
+        pace_history[rows, observation_index[rows]] = pace[rows]
+        reference_pace_history[rows, observation_index[rows]] = reference_pace[rows]
+        observation_index[rows] += 1
+        last_pace[active] = pace[active]
+        last_reference_pace[active] = reference_pace[active]
         stopped_at[active & (all_reached | diverged)] = end[active & (all_reached | diverged)]
         t = np.where(all_reached | diverged, p["years"], end)
     total_budget = np.divide(np.expm1(compute_rate * p["years"]), compute_rate,
                              out=np.full(n, float(p["years"])), where=compute_rate != 0)
+    stopped = workflow_grid[None, :] > stopped_at[:, None]
+    pace_history = np.where(stopped, last_pace[:, None], pace_history)
+    reference_pace_history = np.where(stopped, last_reference_pace[:, None], reference_pace_history)
     # Retain all draws in each percentile, including slow/non-arriving paths.
     # Early-stopped paths retain their last deployed state; no post-ASI
     # capability growth is invented for the chart.
@@ -521,6 +548,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             "matched_quantiles": finite_quantiles(matched_history),
             "matched_coverage": np.mean(np.isfinite(matched_history), axis=0),
             "validated_log": validated_history,
+            "validated_baseline_months": validated_history / software_rate[:, None] * 12,
+            "pace": pace_history,
+            "reference_pace": reference_pace_history,
             "reference_log": reference_history,
             "rate": rate_history,
             "matched": matched_history,

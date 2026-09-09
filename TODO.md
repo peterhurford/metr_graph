@@ -1,3 +1,7 @@
+Read the handoff and TAKEOFF_MODEL.md, check out codex/grounded-takeoff, and resume from the saved state. Do not modify master.
+
+Handoff: [TAKEOFF_HANDOFF.md](TAKEOFF_HANDOFF.md). Parameter guide: [TAKEOFF_PARAMETERS.md](TAKEOFF_PARAMETERS.md).
+
 https://www.forethought.org/research/will-ai-r-and-d-automation-cause-a-software-intelligence-explosion
 https://chatgpt.com/c/6a9ddedf-930c-83e9-b4c1-5e57056a1cbb
 https://www.google.com/search?q=software+only+singularity&oq=software+only+&gs_lcrp=EgZjaHJvbWUqBwgBEAAYgAQyBwgAEAAYgAQyBwgBEAAYgAQyCggCEEUYFhgeGDkyBwgDEAAYgAQyBwgEEAAYgAQyBwgFEAAYgAQyCAgGEAAYFhgeMggIBxAAGBYYHjIICAgQABgWGB4yCAgJEAAYFhge0gEINjY3N2owajeoAgCwAgA&sourceid=chrome&ie=UTF-8
