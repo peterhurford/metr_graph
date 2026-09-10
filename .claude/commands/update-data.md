@@ -16,11 +16,12 @@ Four downloadable feeds, two hardcoded tables, one digitized figure. For downloa
 | Source | Type | Canonical location |
 |---|---|---|
 | `benchmark_results_1_1.yaml` (METR) | download | `https://metr.org/assets/benchmark_results_1_1.yaml` |
-| `epoch_capabilities_index.csv` (ECI) | download (inside zip) | `epoch_capabilities_index.csv` inside `https://epoch.ai/data/benchmark_data.zip` |
+| `epoch_capabilities_index.csv` (ECI) | download two files + convert | `https://epoch.ai/data/eci_scores.csv` and `https://epoch.ai/data/all_ai_models.csv`, then `python3 convert_eci.py eci_scores.csv all_ai_models.csv epoch_capabilities_index.csv` (one row per model; it prints any stale `ALIASES`) |
 | `data_centers.csv` | download | `https://epoch.ai/data/data_centers/data_centers.csv` |
 | `data_center_timelines.csv` | download | `https://epoch.ai/data/data_centers/data_center_timelines.csv` |
 | `_RLI_RAW` (in `visualize_projection.py`) | hardcoded | Scale Labs RLI leaderboard `labs.scale.com/leaderboard/rli` / `remotelabor.ai` |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (in `visualize_projection.py`) | hardcoded | Press reports (The Information, Reuters, Bloomberg, CNBC, etc.) |
+| RSI tables (`_RSI_RAW`, `_RSI_SURVEY`, `_RSI_DIR_RAW`, `_RSI_CODE_RAW`, `openai_experiment_velocity.csv`) | hand-read figures | Sources in CLAUDE.md *Data Sources*. Check new Anthropic system cards for CoBench and survey rounds: a card's CoBench problem set differs from the Risk Report's, so its scores go in via `_RSI_SYSCARD_RESCALE`, never raw |
 | `aisi_cyber_narrow.csv` (UK Cyber) | **digitized figure — verify, don't download** | AISI blog post, [open-weight cyber gap](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) |
 | `aisi_cyber_tlo.csv` (UK Cyber cross-check) | **digitized figure + quoted prose** | Same post's Figure 2, plus the [UK AISI/CAISI Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) |
 

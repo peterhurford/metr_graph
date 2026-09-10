@@ -2406,13 +2406,13 @@ class TestCcCompanyAllReleases:
         assert sol[0][0] == datetime(2026, 7, 9)
 
     def test_keeps_redated_revisions_of_one_model_name_apart(self):
-        # Epoch ships five dated revisions under the single Model name
-        # "GPT-4o"; two of them set OpenAI ECI records. Collapsing on the name
-        # alone would keep only the earliest and lose the rest, so the fallback
-        # pool would be missing releases the frontier series has. Asserted as a
-        # superset, not an exact list — Epoch can add revisions.
+        # GPT-4o shipped dated revisions; collapsing them would lose releases
+        # the frontier series has. Epoch has spelled them both as one Model
+        # name and as dated names ("GPT-4o (May 2024)"), so match either.
+        # Asserted as a superset — Epoch can add revisions.
         rel = vp._cc_company_all_releases()["OpenAI"]
-        gpt4o = {t[0] for t in rel if t[2] == "GPT-4o"}
+        gpt4o = {t[0] for t in rel
+                 if t[2] == "GPT-4o" or t[2].startswith("GPT-4o (")}
         assert {datetime(2024, 5, 13), datetime(2024, 8, 6)} <= gpt4o
         assert len(gpt4o) >= 3
 
@@ -2888,10 +2888,13 @@ class TestCcFrontierGradeAlgo:
         cc = vp.load_eci_compute()
         eci = vp.load_eci_frontier(full_window=True)
         dec = vp._cc_decomp(cc)
-        for m in (3, 5):
-            r = vp._cc_frontier_grade_algo(cc, eci, margin=m)
-            assert r is not None and r['n'] >= 20, f"margin {m} too thin"
-            assert r['b_time'] <= dec['b_time'] - 1.0
+        # n counts models, not reasoning-effort rows; margin 3 is too thin to
+        # fit, which is why the innovation bands fall back to margin 5.
+        r = vp._cc_frontier_grade_algo(cc, eci, margin=5.0)
+        assert r is not None and r['n'] >= 10, "margin 5 too thin"
+        assert r['b_time'] <= dec['b_time'] - 1.0
+        pure = vp._cc_pure_innovation_band(cc, eci)
+        assert pure is not None and pure[0] < pure[1], "pure-innovation band collapsed"
 
     def test_flop_screen_drops_the_low_compute_distillers(self):
         """Without the compute screen the 'can't-distill' subset admits the
@@ -2900,8 +2903,8 @@ class TestCcFrontierGradeAlgo:
         fit's. The screen must both admit extra rows and slow the fit."""
         cc = vp.load_eci_compute()
         eci = vp.load_eci_frontier(full_window=True)
-        tight = vp._cc_frontier_grade_algo(cc, eci, margin=3.0)
-        loose = vp._cc_frontier_grade_algo(cc, eci, margin=3.0, flop_margin=99.0)
+        tight = vp._cc_frontier_grade_algo(cc, eci, margin=5.0)
+        loose = vp._cc_frontier_grade_algo(cc, eci, margin=5.0, flop_margin=99.0)
         assert tight is not None and loose is not None
         assert loose['n'] > tight['n']
         assert loose['b_time'] > tight['b_time']
@@ -3412,7 +3415,8 @@ class TestRsi:
         rows = vp.load_rsi_data()
         assert [m['name'] for m in rows] == [
             "Claude Opus 4.6", "Claude Mythos Preview",
-            "Claude Mythos 5", "Model 2 (internal)"]
+            "Claude Mythos 5", "Model 2 (internal)",
+            "Claude Opus 5", "Claude Mythos 5.1"]
         assert [m['date'] for m in rows] == sorted(m['date'] for m in rows)
         best = -float('inf')
         for m in rows:
@@ -3454,14 +3458,14 @@ class TestRsi:
         assert lo3 < np.log(2) / slope
 
     def test_small_sample_ci_widens_both_rsi_fits(self):
-        """Live data: CoBench's three points leave one residual dof, so its
-        rate CI runs to the flat-slope cap; the survey's four (the estimated
-        round included) leave two, so its slow edge widens well past the
-        convention but stays under the cap. "Not crossing until 2028" sits
-        inside both intervals. If a new round moves either, update this."""
+        """Live data: CoBench's four frontier points and the survey's four
+        rounds (the estimated one included) each leave two residual dof, so
+        both slow edges widen past the convention but stay under the cap.
+        If a new round moves either, update this."""
         fr = [m for m in vp.load_rsi_data() if m['is_frontier']]
         _, _, slope = vp._rsi_fit(fr)
-        assert vp._rsi_dt_ci(fr, np.log(2) / slope)[1] == vp._DT_CAP_DAYS
+        dt = np.log(2) / slope
+        assert round(dt * 2) < vp._rsi_dt_ci(fr, dt)[1] < vp._DT_CAP_DAYS
         rows = vp.load_rsi_survey()
         days = np.array([(r['date'] - rows[0]['date']).days for r in rows],
                         dtype=float)
@@ -5158,7 +5162,8 @@ class TestPacing:
         fr = vp._eci_entity_data("US best")[1]
         for nm, val in ((name, lo), (to_name, hi)):
             hit = [m for m in fr
-                   if str(m.get('display_name', '')).startswith(nm + " ")]
+                   if str(m.get('display_name', '')) == nm
+                   or str(m.get('display_name', '')).startswith(nm + " (")]
             assert hit, f"{nm} is no longer on the US-best frontier"
             assert abs(hit[0]['eci_score'] - val) < 1.5, (nm, hit[0])
         # The bars are extrapolations: the frontier has not reached them.

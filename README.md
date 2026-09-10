@@ -119,10 +119,10 @@ the full refresh recipe, including the AISI cyber data that is deliberately *not
 | File / table | Source | Type |
 |---|---|---|
 | `benchmark_results_1_1.yaml` | METR (26 models, 2019–2026; 18 on the frontier) | download |
-| `epoch_capabilities_index.csv` | Epoch AI benchmark data | download (inside a zip) |
-| `data_centers.csv` / `data_center_timelines.csv` | Epoch AI Frontier Data Centers (85 sites) | download |
+| `epoch_capabilities_index.csv` | Epoch AI ECI scores + AI models (training compute) | download, converted by `convert_eci.py` |
+| `data_centers.csv` / `data_center_timelines.csv` | Epoch AI Frontier Data Centers (86 sites) | download |
 | `_RLI_RAW` | Scale Labs Remote Labor Index | hand-edited |
-| `_RSI_RAW` / `_RSI_SURVEY` | Anthropic, Redacted Risk Report §3.4 | hand-edited, read off a figure |
+| `_RSI_RAW` / `_RSI_SURVEY` | Anthropic, Redacted Risk Report §3.4; Fable 5.1 system card (CoBench, rescaled) | hand-edited, read off a figure |
 | `openai_experiment_velocity.csv` | OpenAI, *Research acceleration*, “Experiment velocity has increased” | 32 weekly browser-hover tooltip values; 2025 = 1× |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` | Press reports and company disclosures | hand-edited |
 | `aisi_cyber_narrow.csv` / `aisi_cyber_tlo.csv` | UK AISI cyber blog posts | **digitized from published PNGs** |

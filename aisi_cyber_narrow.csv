@@ -3,16 +3,18 @@
 # PROVENANCE: AISI publishes NO numeric data for this figure. Every value below was digitized from the
 #   published PNG (fig1-narrow.png) by pixel analysis, not read from a table. Treat as approximate.
 # CALIBRATION: y-axis 0%=row1760, 100%=row547. x-axis ticks Aug2024=601.5px, Feb2025=1010.0px,
-#   Aug2025=1411.0px, Feb2026=1819.5px; linear fit 0.45080 days/px, residuals <=0.11px.
+#   Aug2025=1411.0px, Feb2026=1819.5px; linear fit 0.45080 days/px, residuals <=0.26px (0.11 days).
 # VALIDATION: derived dates match known releases (GPT-5 2025-08-07 exact; Opus 3 off by 1d; o3 off by 1d).
 #   Derived lags reproduce AISI's printed annotations: GLM-5.2 vs Opus 4.6 = 4.30mo (chart "4.3 mo");
 #   DeepSeek-V4-Pro vs Opus 4.5 = 5.06mo (chart "5.0 mo").
-# LAST VERIFIED 2026-09-03 (figure-unchanged check, not a re-digitization): re-fetched fig1-narrow.png
+# LAST VERIFIED 2026-09-10: same URL, headers, x-tick fit and 12 marker hits as the 2026-09-03 check below.
+#   No AISI/CAISI post since 08-27; the Fable 5.1 and GPT-6 Astra system cards print no narrow-task score.
+# 2026-09-03 CHECK (figure-unchanged, not a re-digitization): re-fetched fig1-narrow.png
 #   from the post's current CDN URL (.../6a5a119ab40ff07b1ffba031_fig1-narrow.png). Webflow content-hashes
 #   the filename, so an unchanged URL is itself evidence the asset was not re-uploaded; its CDN headers
 #   still report last-modified 2026-07-17 11:27:23 GMT, content-length 609388, etag 08de3a27...0632.
 #   Pixel-verified anyway: still 2840x2160, the x-tick fit still returns 0.45080 days/px with residuals
-#   <=0.114px, and all 12 rows below still land on their marker colour off the recorded 547/1760 y-axis
+#   <=0.114 days, and all 12 rows below still land on their marker colour off the recorded 547/1760 y-axis
 #   calibration. Note the OpenAI markers are a *greyscale* ramp (o1 168, o3 145, GPT-5 99, GPT-5.2-Codex
 #   74, GPT-5.6-Sol overplotted black) and Opus 3's salmon is nearly unsaturated at (233,214,208), so a
 #   naive "saturated pixel" probe reports those six as empty -- check against the near-white background

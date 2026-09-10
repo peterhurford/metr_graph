@@ -146,11 +146,6 @@ Meta Aiken,161697.82718544718,142,5.379244,Meta #confident,Meta #confident,"- [M
 - [DPR Construction project page](https://www.dpr.com/projects/meta-aiken-data-center-aiken-sc)
 
 ",https://docs.google.com/spreadsheets/d/1AoK8Ky5mZJ_hhsFx16S1ugapGMrlIIcMVWYSWqkJmkU/edit?gid=2010365208#gid=2010365208,,B300,B300,,,,United States,"7601 State Hwy 105, Trenton, SC 29847, USA"
-Coreweave Helios,159551.768236855,132,5.000424000000001,CoreWeave #confident,OpenAI #speculative,"- [Galaxy Q3 financial results with power capacity timeline](https://investor.galaxy.com/news/news-details/2025/Galaxy-Announces-Third-Quarter-2025-Financial-Results/default.aspx)
-- [Permit review with details on backup generators and power capacity](https://records.tceq.texas.gov/cs/idcplg?IdcService=TCEQ_EXTERNAL_SEARCH_GET_FILE&dID=8711478&Rendition=Web#:~:text=Galaxy%20Helios%20I%20LLC%20owns,are%20the%20basis%20of%20the)
-- [3D renderings of Helios Building 1 on Galaxy's website, showing generators and chillers](https://www.galaxy.com/data-centers)
-- [TDLR record with Building 1 construction costs and end date](https://www.tdlr.texas.gov/TABS/Search/Project/TABS2025012175)
-",https://docs.google.com/spreadsheets/d/1qcYPDCBHZOg0EKGpK7Ru4-cGd8Y8BkXAxf2W3umOwmo/edit?usp=sharing,,B200,B200,,,,United States,"984 County Road 112, Afton, TX 79220"
 Microsoft Project Osmium,155634.15866599293,190,7.19758,Microsoft #confident,OpenAI #speculative,"- [SemiAnalysis article with IT power estimations and detailing usage by OpenAI for training GPT 3.5](https://newsletter.semianalysis.com/p/microsofts-ai-strategy-deconstructed)
 - [DCD Article on site expansion](https://www.datacenterdynamics.com/en/news/microsoft-granted-permit-for-new-data-center-in-des-moines-iowa/)
 - [MISO Announcement reporting power for newest buildings, likely an overestimate](https://cdn.misoenergy.org/NEW%20LOAD%20ANNOUNCEMENTS%20IN%20MISO%20REGIONS%2012062024684954.pdf)
@@ -304,6 +299,11 @@ CoreWeave Muskogee OK,0,0,0,CoreWeave #confident,OpenAI #speculative,"- [Core Sc
 - [Port Muskogee ground breaking announcement](https://www.portmuskogee.com/core-scientific-and-port-muskogee-break-ground-on-100-mw-hpc-data-center/)
 - [Air quality permit application](https://applications.deq.ok.gov/permitspublic/storedpermits/9138.pdf)
 ",https://docs.google.com/spreadsheets/d/14s8DmbRuWQQsfaZ7E7pj4XoOq-3RrXiDNn6p0dbZ8nc/edit?usp=sharing,,,B300,,,,United States,"1525 W 43rd St S, Muskogee, OK 74401, USA"
+Coreweave Helios,0,0,0,CoreWeave #confident,OpenAI #speculative,"- [Galaxy Q3 financial results with power capacity timeline](https://investor.galaxy.com/news/news-details/2025/Galaxy-Announces-Third-Quarter-2025-Financial-Results/default.aspx)
+- [Permit review with details on backup generators and power capacity](https://records.tceq.texas.gov/cs/idcplg?IdcService=TCEQ_EXTERNAL_SEARCH_GET_FILE&dID=8711478&Rendition=Web#:~:text=Galaxy%20Helios%20I%20LLC%20owns,are%20the%20basis%20of%20the)
+- [3D renderings of Helios Building 1 on Galaxy's website, showing generators and chillers](https://www.galaxy.com/data-centers)
+- [TDLR record with Building 1 construction costs and end date](https://www.tdlr.texas.gov/TABS/Search/Project/TABS2025012175)
+",https://docs.google.com/spreadsheets/d/1qcYPDCBHZOg0EKGpK7Ru4-cGd8Y8BkXAxf2W3umOwmo/edit?usp=sharing,,,B200,,,,United States,"984 County Road 112, Afton, TX 79220"
 Crusoe Abilene Expansion,0,0,0,Microsoft #confident,Microsoft #likely,"- [Bloomberg reporting that Oracle and OpenAI pulled out of expanding to these buildings, NVIDIA and Meta might replace them](https://www.bloomberg.com/news/articles/2026-03-06/oracle-and-openai-end-plans-to-expand-flagship-data-center)
 - [Air Permit Application for the buildings, featuring blueprints on p.391](https://www.tceq.texas.gov/assets/public/permitting/air/reports/applications/400428-ac.pdf) (via [Aterio](https://www.aterio.io/blog/stargate-files-for-phase-3-expansion-in-abilene))
 - [Partnership Announcement with Microsoft](https://x.com/mustafasuleyman/status/2037547756320141587)

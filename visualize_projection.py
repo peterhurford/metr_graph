@@ -893,6 +893,9 @@ _RLI_RAW = [
     # is on Scale but still not in the CAIS API; Grok 4 is in CAIS but not on Scale. Scale
     # stores 2.502/2.501 for gpt-5.2 (medium)/Manus 1.5 -- rank tie-break jitter behind the
     # rendered 2.50, not a score change.
+    # Rechecked 2026-09-10: no new model and no changed score on either surface -- Scale's JSON still
+    # tops out at Gemini 3.7 Flash (createdAt 2026-08-24), safe.ai/blog at 2026-07-01. Fable 5.1 /
+    # Mythos 5.1, GPT-6 Astra and Gemini 3.8 Flash have no RLI score anywhere.
 ]
 
 
@@ -945,11 +948,25 @@ _RSI_SOURCE_URL = ("https://www-cdn.anthropic.com/f61d49fa5596956a5dec75fea0e973
 # for its Research Scientists and Engineers would reach.
 _RSI_SUBSTITUTION_BAR = 85.0
 
+# The Fable 5.1 & Mythos 5.1 system card (Sep 2026, Fig 2.3.4.1.A) reruns CoBench
+# on a slightly larger problem set, where Mythos 5 scores 45.6 against the Risk
+# Report's 50.3. Its newer models are carried onto the Risk Report's set by that
+# ratio — an assumption, not a published score, which `note` says on hover.
+_RSI_SYSCARD_URL = ("https://www-cdn.anthropic.com/0339e6a7c5c7b87f5c07798616dc32c215d14235/"
+                    "Claude%20Fable%205.1%20&%20Claude%20Mythos%205.1%20System%20Card.pdf#page=37")
+_RSI_SYSCARD_RESCALE = 50.3 / 45.6
+
 _RSI_RAW = [
     {"name": "Claude Opus 4.6",       "date": "2026-02-05", "cobench": 15.6, "date_known": True},
     {"name": "Claude Mythos Preview", "date": "2026-04-07", "cobench": 54.8, "date_known": False},
     {"name": "Claude Mythos 5",       "date": "2026-06-09", "cobench": 50.3, "date_known": True},
     {"name": "Model 2 (internal)",    "date": "2026-07-06", "cobench": 62.8, "date_known": False},
+    {"name": "Claude Opus 5",         "date": "2026-07-24",
+     "cobench": round(59.6 * _RSI_SYSCARD_RESCALE, 1), "date_known": True,
+     "note": "59.6% on the system card's larger set, rescaled by Mythos 5's 50.3/45.6"},
+    {"name": "Claude Mythos 5.1",     "date": "2026-09-01",
+     "cobench": round(57.6 * _RSI_SYSCARD_RESCALE, 1), "date_known": True,
+     "note": "57.6% on the system card's larger set, rescaled by Mythos 5's 50.3/45.6"},
 ]
 
 
@@ -1172,6 +1189,7 @@ def load_rsi_data():
         'date': datetime.strptime(r['date'], '%Y-%m-%d'),
         'cobench': r['cobench'],
         'date_known': r['date_known'],
+        'note': r.get('note'),
     } for r in _RSI_RAW]
     models.sort(key=lambda m: m['date'])
 
@@ -5548,11 +5566,10 @@ def _rsi_dt_ci(frontier, fit_dt):
     """Default 80% CI on the odds-doubling time, in days.
 
     Every other tab defaults to the fitted rate halved and doubled, which
-    assumes enough points for the fit to mean something. Three frontier points
-    whose two segments disagree by ~8x do not, so the consecutive-segment rates
+    assumes enough points for the fit to mean something. A handful of frontier
+    points whose segment rates disagree do not, so the consecutive-segment rates
     widen that interval wherever they fall outside it, and the slope's own 80%
-    t-interval (`_dt_t_interval` — one residual dof today, so it reaches the
-    flat-slope cap) widens it further — never narrow it.
+    t-interval (`_dt_t_interval`) widens it further — never narrow it.
     """
     lo, hi = max(5.0, fit_dt / 2), fit_dt * 2
     for a, b in zip(frontier, frontier[1:]):
@@ -5779,7 +5796,8 @@ def render_rsi():
             textposition='top center',
             textfont=dict(size=10, color='#1a1a2e' if _is_fr else '#999999'),
             hovertext=f"{m['name']}<br>{_rsi_date_label(m)}<br>"
-                      f"CoBench: {m['cobench']:.1f}%",
+                      f"CoBench: {m['cobench']:.1f}%"
+                      + (f"<br>{m['note']}" if m['note'] else ""),
             hoverinfo='text', showlegend=False))
 
     fig.add_hline(
@@ -5809,10 +5827,21 @@ def render_rsi():
         plot_bgcolor='white', paper_bgcolor='white')
     st.plotly_chart(fig, width="stretch")
 
-    st.caption(
+    _fn_caption(
         "Source: "
         f"[Anthropic, Redacted Risk Report, August 2026, §3.4.3]({_RSI_SOURCE_URL}); "
-        "scores read off Figure 3.4.3.A.")
+        "scores read off Figure 3.4.3.A. Opus 5 and Mythos 5.1 are from the "
+        f"[Fable 5.1 system card]({_RSI_SYSCARD_URL}), Figure 2.3.4.1.A, rescaled "
+        "onto the Risk Report's problem set.",
+        ("Opus 5 and Mythos 5.1",
+         "“Mythos 5.1 scores slightly worse than Claude Opus 5 in this "
+         "evaluation… The lower performance relative to Opus 5 may be an "
+         "artifact of this particular evaluation, as our qualitative sense is "
+         "that Mythos 5.1 is somewhat more useful for performing this kind of "
+         "work internally than Opus 5 (though not dramatically so); one possible "
+         "explanation for this result is that Mythos 5.1 tends to run somewhat "
+         "shorter investigations for the same token budget on these evaluation "
+         "transcripts.” — Fable 5.1 & Mythos 5.1 system card, p. 37"))
 
     _render_rsi_survey()
     _render_rsi_code()
@@ -7119,6 +7148,9 @@ _OPENAI_REVENUE = [
     # ("$1 billion in latest reported ARR"). That is product-level, like Codex ARR, and must not
     # be read as a company total -- it will generate frequent "OpenAI ARR" headlines that do not
     # belong in this table.
+    # Rechecked 2026-09-10: TickerTrends' three posts since (09-02 Fable 5.1 launch tracking, 09-07 product
+    # feature, 09-09 GitHub activity) carry no company total, and Epoch's revenue CSV still tops out at
+    # Bloomberg's $40B. Also excluded: OpenAI's own ChatGPT Ads $1B run rate (08-31) is product-level.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -7197,6 +7229,9 @@ _ANTHROPIC_REVENUE = [
     # figure exists. Epoch's newest Anthropic row is unchanged at 65.0 / 2026-07-31, sourced to
     # the same Bloomberg story. All later coverage (Fortune, CNBC, TechCrunch, Axios) is
     # derivative of that one scoop, not an independent read.
+    # Rechecked 2026-09-10: still nothing newer. anthropic.com/news' two 09-01 posts carry no run rate,
+    # EDGAR still has no Anthropic PBC registrant (press expects a public S-1 late Sep-Oct), and
+    # Epoch's newest Anthropic row is unchanged at 65.0 / 2026-07-31.
 ]
 
 
@@ -10766,11 +10801,13 @@ def _cc_innovation_algo_band(cc_rows, eci_all=None):
     hi = float(top['slope'])
     if eci_all is None:
         eci_all = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
-    fg3 = _cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
-    a_ref = fg3['a_partial'] if fg3 else dec['a_partial']
+    # Margin 3 when it has the rows to fit, else the default margin.
+    fg = (_cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
+          or _cc_frontier_grade_algo(cc_rows, eci_all))
+    a_ref = fg['a_partial'] if fg else dec['a_partial']
     lo = _CC_PRETRAIN_ALGO_OOM * a_ref
-    if fg3:
-        lo = max(lo, fg3['b_time'])
+    if fg:
+        lo = max(lo, fg['b_time'])
     return (min(lo, hi), max(lo, hi))
 
 
@@ -10786,8 +10823,10 @@ def _cc_pure_innovation_band(cc_rows, eci_all=None):
         return None
     if eci_all is None:
         eci_all = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
-    fg3 = _cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
-    a_ref = fg3['a_partial'] if fg3 else dec['a_partial']
+    # Margin 3 when it has the rows to fit, else the default margin.
+    fg = (_cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
+          or _cc_frontier_grade_algo(cc_rows, eci_all))
+    a_ref = fg['a_partial'] if fg else dec['a_partial']
     lo = _CC_PRETRAIN_ALGO_OOM * a_ref
     hi = band[0]
     return (min(lo, hi), max(lo, hi))
@@ -11804,7 +11843,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
 # moves between pulls. Retarget when
 # TestCcCnTargetIsTodaysUsFrontier fails, and re-read the captions that
 # compare this bar with the Pacing pause panel's.
-_CC_CN_TARGET_ECI = 169.0
+_CC_CN_TARGET_ECI = 166.0
 
 
 def _cc_cn_target_years(anchor_eci, target, algo_lo, algo_mid, algo_hi,

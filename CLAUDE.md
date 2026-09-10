@@ -26,7 +26,7 @@ Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tes
 - **`visualize_projection.py`** — single-file Streamlit app containing all logic
 - **`test_visualize_projection.py`** / **`test_integration.py`** — unit tests (fake Streamlit) and integration tests (AppTest)
 - **`benchmark_results_1_1.yaml`** — METR-Horizon-v1.1 data
-- **`epoch_capabilities_index.csv`** — Epoch ECI data
+- **`epoch_capabilities_index.csv`** — Epoch ECI data, written by **`convert_eci.py`** from Epoch's `eci_scores.csv` + `all_ai_models.csv`
 - **`data_centers.csv`** / **`data_center_timelines.csv`** — Epoch Frontier Data Centers: one metadata row per site, many dated capacity rows per site
 - **`aisi_cyber_narrow.csv`** / **`aisi_cyber_tlo.csv`** — AISI narrow cyber success rates (12 models); AISI/CAISI cyber-range "The Last Ones" avg steps of 32 (10 models). Both **chart-digitized, not published feeds** — see each file's `#` header
 
@@ -81,7 +81,7 @@ recipe, including the AISI cyber data deliberately *not* ingested.
 | File / table | Source | How to refresh |
 |---|---|---|
 | `benchmark_results_1_1.yaml` | METR | Overwrite from `https://metr.org/assets/benchmark_results_1_1.yaml` |
-| `epoch_capabilities_index.csv` | Epoch AI | Extract from `https://epoch.ai/data/benchmark_data.zip`. Epoch recomputes scores live, so existing rows drift on each pull |
+| `epoch_capabilities_index.csv` | Epoch AI | **Converted, not extracted**: `python3 convert_eci.py eci_scores.csv all_ai_models.csv epoch_capabilities_index.csv` from `https://epoch.ai/data/eci_scores.csv` and `https://epoch.ai/data/all_ai_models.csv`. One row per model; training compute joins by name, with `ALIASES` for renames (`test_convert_eci.py`; the script prints stale ones). Epoch recomputes scores live, so existing rows drift on each pull |
 | `data_centers.csv` | Epoch AI | Overwrite from `https://epoch.ai/data/data_centers/data_centers.csv` |
 | `data_center_timelines.csv` | Epoch AI | Same, `…/data_center_timelines.csv`. Column order varies between pulls; the loader uses `DictReader`, so that's safe. **One curated deletion — see below** |
 | `_RLI_RAW` (hardcoded) | Scale Labs RLI leaderboard (`labs.scale.com/leaderboard/rli`) / `remotelabor.ai` | Hand-edit rows |
@@ -388,26 +388,26 @@ its research staff — not a benchmark ceiling). Four things are load-bearing:
 
 1. **The fit is logit-space**, like RLI and UK Cyber: CoBench is a bounded success
    rate and a score-space line runs through 100%.
-2. **Only a single OLS basis is offered.** Three frontier points cannot distinguish
+2. **Only a single OLS basis is offered.** Four frontier points cannot distinguish
    a line from a bend, so there is no piecewise or superexponential option and no
    backtest vantage-point selector. Don't add them by copying another tab.
-3. **The default rate CI is widened, not the convention.** The two segments disagree
-   by nearly an order of magnitude, so `_rsi_dt_ci()` takes the usual fit/2..fit×2 interval and widens it to
-   span both segment rates **and** the slope's 80% t-interval (`_dt_t_interval`,
+3. **The default rate CI is widened, not the convention.** The segments disagree,
+   so `_rsi_dt_ci()` takes the usual fit/2..fit×2 interval and widens it to
+   span every segment rate **and** the slope's 80% t-interval (`_dt_t_interval`,
    `_DT_T80` multipliers by residual dof, decaying to the normal limit as points
-   accumulate). A t-interval that cannot exclude a
-   flat slope — true today for both this fit and the staff survey's, which gets the
-   same treatment via `_rsi_survey_dt_ci()` — caps the slow edge at `_DT_CAP_DAYS`
-   (flat at every horizon the app offers), which is what puts
-   "no crossing before 2028" inside the default fan rather than outside it. It can
-   only widen — `test_dt_ci_default_spans_both_segment_rates` and
-   `test_small_sample_ci_widens_both_rsi_fits` hold that (the latter pins the
-   live caps; retarget it when a new round tightens the interval).
+   accumulate). A t-interval that cannot exclude a flat slope caps the slow edge at
+   `_DT_CAP_DAYS` (flat at every horizon the app offers); the staff survey gets the
+   same treatment via `_rsi_survey_dt_ci()`. Neither reaches the cap today (two
+   residual dof each). It can only widen — `test_dt_ci_default_spans_both_segment_rates`
+   and `test_small_sample_ci_widens_both_rsi_fits` hold that (the latter pins the
+   live edges; retarget it when a new round moves the interval).
 4. **`date_known` drives the "~" prefix** via `_rsi_date_label()`. Mythos Preview has
    no published release record (its date is carried over from AISI's narrow cyber
    figure, as in `aisi_cyber_tlo.csv`) and Model 2 (internal) is unreleased with its name
    redacted; Mythos 5 ships with Fable 5 on 2026-06-09, which puts it *below* the
-   running max and off the frontier.
+   running max and off the frontier. Opus 5 and Mythos 5.1 come from the Fable 5.1
+   system card's larger problem set, carried onto the Risk Report's by Mythos 5's
+   ratio across the two (`_RSI_SYSCARD_RESCALE`) — an assumption each hover states.
 
 CoBench is filtered for difficulty (mostly problems Mythos Preview failed at least
 once in three tries) and run at a 300k-token budget, so scores don't compare to
@@ -882,7 +882,10 @@ date distribution rather than the gap metrics above it. Three things are load-be
    gradient claim is dead. The refit's pair still replaces the pooled one for every
    frontier-facing projection (US-vs-China slopes, the pause bar mapping and climb, the
    compute terms), with pooled as fallback; `TestCcFrontierGradeAlgo` pins the b_time
-   drop, the screen's bite and the coverage guard. Measured by country, distillation is
+   drop, the screen's bite and the coverage guard. Its n counts models (~12 at margin 5),
+   and margin 3 is too thin to fit, so the innovation bands (`_cc_innovation_algo_band`,
+   `_cc_pure_innovation_band`) fall back to margin 5 before pooled — pooled there
+   collapses the pure-innovation band to a point. Measured by country, distillation is
    a *level*, not a rate: `_cc_cn_level_offset` (the country dummy at matched compute
    and date, quoted live in the control caption and the Pacing distillation checkbox)
    puts Chinese models above their US compute-peers while the two iso-compute rates are
