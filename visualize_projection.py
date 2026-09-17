@@ -10866,31 +10866,22 @@ def _cc_quarter_ends(start, end):
     return out
 
 
-def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
-                     share_lo, share_mid, share_hi,
+def _cc_eci_forecast(cc_rows, frontier, today, coef, g_planned, obs_slope,
                      horizon=datetime(2029, 12, 31)):
     """Quarterly frontier-ECI projection to the sidebar's *Project through*
     year-end (default end-2029).
 
-    Decomposes the frontier's ECI growth into a *physical-compute* component that
-    rides the projected compute-frontier path (so it decelerates as the buildout
-    matures) and a constant *algorithmic-efficiency* component, then Monte-Carlos
-    over the contested physical/algo mix, compute-delivery, and pace to produce a
-    fan chart and a quarter-by-quarter table.
-
     Model (per trajectory, anchored at today's running-max ECI):
-        ECI(t) = ECI_now
-                 + (share·obs_slope·pace / g_recent) · cmult · Δlog₁₀FLOP_proj(t)
-                 + (1 − share)·obs_slope·pace · Δt
-    where Δlog₁₀FLOP_proj(t) is read off the projected compute frontier (extended
-    past its end at the planned-buildout rate). The compute coefficient is
-    calibrated so that, at today's compute slope, the physical term reproduces the
-    `share` fraction of the observed frontier ECI rate.
+        ECI(t) = ECI_now + a · cmult · Δlog₁₀FLOP_proj(t) + b · Δt
+    with `coef` = `_cc_frontier_coefs` (a, b and their honest ranges, sampled
+    triangular), Δlog₁₀FLOP_proj(t) read off the projected compute frontier
+    (extended past its end at `g_planned`) and cmult the compute-delivery
+    factor. `obs_slope`, the frontier's observed rate, is drawn as a reference
+    line only.
     """
-    if obs_slope is None or obs_slope <= 0:
+    if coef is None or coef['b'] <= 0:
         st.info("Not enough frontier history to project ECI.")
         return
-    g_recent = g_recent if (g_recent and g_recent > 0) else (g_planned or obs_slope)
 
     # Current frontier anchor: the true running-max ECI across *all* models, not
     # just the compute-having subset (the newest frontier models rarely disclose
@@ -10921,19 +10912,21 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     dt_yrs = np.array([(d - today).days / 365.25 for d in x_dates])
     dlog = np.array([_logflop_at(d) - logflop_now for d in x_dates])
 
-    # Monte-Carlo over the three uncertainties the section already quantifies.
-    s_lo, s_mid, s_hi = sorted([share_lo, share_mid, share_hi])
-    if s_hi - s_lo < 1e-6:
-        s_lo, s_hi = s_lo - 0.05, s_hi + 0.05
-    s_mid = min(max(s_mid, s_lo), s_hi)
-
+    # Monte-Carlo over the coefficients' honest ranges and compute delivery.
     N = N_SAMPLES
-    share = np.random.triangular(s_lo, s_mid, s_hi, N)          # physical/algo mix
-    pace = np.clip(np.random.normal(1.0, 0.12, N), 0.65, 1.35)  # overall pace
+
+    def _tri(lo, mid, hi, pad):
+        lo, hi = min(lo, hi), max(lo, hi)
+        if hi - lo < 1e-6:
+            lo, hi = lo - pad, hi + pad
+        return np.random.triangular(lo, min(max(mid, lo), hi), hi, N)
+
+    a_s = _tri(coef['a_lo'], coef['a'], coef['a_hi'], 0.25)
+    b_s = _tri(coef['b_lo'], coef['b'], coef['b_hi'], 0.5)
     cmult = np.random.triangular(0.5, 1.0, 1.15, N)             # compute delivery
 
-    coef_phys = (share * obs_slope * pace / g_recent * cmult)[:, None]
-    coef_algo = ((1.0 - share) * obs_slope * pace)[:, None]
+    coef_phys = (a_s * cmult)[:, None]
+    coef_algo = b_s[:, None]
     traj = eci_now + coef_phys * dlog[None, :] + coef_algo * dt_yrs[None, :]
 
     pct = {p: np.percentile(traj, p, axis=0) for p in (5, 10, 25, 50, 75, 90, 95)}
@@ -10980,6 +10973,12 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
         hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                       '<br>METR p50 ≈ %{customdata[0]}'
                       '<br>METR p80 ≈ %{customdata[1]}<extra></extra>'))
+    if obs_slope and obs_slope > 0:
+        fig.add_trace(go.Scatter(
+            x=x_dates, y=list(eci_now + obs_slope * dt_yrs), mode='lines',
+            line=dict(color='#888', width=1.5, dash='dot'),
+            name=f'Observed trend since 2024 (~{obs_slope:.0f}/yr)',
+            hoverinfo='skip'))
     # Historical frontier ECI points for context (true running-max frontier).
     fr = [m for m in eci_all if m.get('is_frontier')] or \
         [m for m in cc_rows if m.get('is_eci_frontier')]
@@ -11065,16 +11064,22 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     _fn_caption(
         "Frontier ECI = an anchor plus compute growth plus a constant "
         "algorithmic term, sampled over its inputs, with METR horizons read off "
-        "the ECI bridge. Order-of-magnitude, not a promise.",
-        ("an anchor plus compute growth", "Today's anchor + physical-compute "
-                                          f"growth (its share of ~{obs_slope:.0f} "
-                                          "ECI/yr, scaled to the projected "
-                                          "compute path so it decelerates with "
-                                          "the buildout)."),
-        ("sampled over its inputs", f"The physical/algo mix ({s_lo*100:.0f}"
-                                    f"\u2013{s_hi*100:.0f}%), compute delivery "
-                                    "(\u00d70.5\u20131.15 of plan) and pace "
-                                    "(\u00b112%)."),
+        "the ECI bridge; the dotted line is the observed trend. "
+        "Order-of-magnitude, not a promise.",
+        ("an anchor plus compute growth", "Today's anchor + the compute "
+                                          f"coefficient (~{coef['a']:.0f} ECI per "
+                                          "\u00d710) times the projected compute "
+                                          "path's \u0394log\u2081\u2080 FLOP, "
+                                          "which decelerates with the buildout."),
+        ("sampled over its inputs", f"a over {coef['a_lo']:.1f}\u2013"
+                                    f"{coef['a_hi']:.1f}, b over "
+                                    f"{coef['b_lo']:.1f}\u2013{coef['b_hi']:.1f} "
+                                    "ECI/yr (standard errors, fit windows and "
+                                    "the imputation offset) and compute delivery "
+                                    "(\u00d70.5\u20131.15 of plan)."),
+        ("the observed trend", "The US frontier's running-max slope since 2024, "
+                               f"~{obs_slope:.0f} ECI/yr, extrapolated \u2014 "
+                               "what the components are checked against."),
         ("the ECI bridge", "Org-neutral fits p50_min = 2^(0.24\u00b7ECI "
                            "\u2212 28.68) and p80_min = 2^(0.23\u00b7ECI "
                            "\u2212 29.95); their ranges track the ECI 80% band, "
@@ -13325,6 +13330,8 @@ _CC_LAB_COLORS = {'OpenAI': '#10A37F', 'Anthropic': '#D97757',
 def _cc_offset_sensitivity(cc_rows, imp, factors=(0.0, 1.0, 2.0)):
     """The regression's US rate at multiples of the imputation offset:
     [(offset, b_us), …], skipping fits that fail."""
+    if imp['offset'] is None:
+        return []
     out = []
     for f in factors:
         off = imp['offset'] * f + 0.0        # + 0.0 turns -0.0 into 0.0
@@ -13333,6 +13340,41 @@ def _cc_offset_sensitivity(cc_rows, imp, factors=(0.0, 1.0, 2.0)):
         if fit is not None:
             out.append((off, fit['b_us']))
     return out
+
+
+def _cc_frontier_coefs(cc_rows, eci_full, reg, imp, fg, dec):
+    """The (a, b) pair the tab projects on, with an honest range.
+
+    Under the regression: ±`_CC_DIST_LEVEL_Z` standard errors, the fits from
+    2023 and from 2025, and the imputation offset at 0 and twice its value —
+    the widest of these, not their sum. `alts` lists them as (label, a, b),
+    a None where the alternative moves only b. The frontier-grade refit or
+    the pooled fit otherwise, as a point estimate.
+    """
+    if reg is None:
+        a, b = ((fg['a_partial'], fg['b_time']) if fg
+                else (dec['a_partial'], dec['b_time']))
+        return {'a': a, 'se_a': 0.0, 'a_lo': a, 'a_hi': a, 'b': b, 'se_b': 0.0,
+                'b_lo': b, 'b_hi': b, 'alts': [],
+                'method': 'frontier_grade' if fg else 'pooled'}
+    z = _CC_DIST_LEVEL_Z
+    a_all = [reg['a_partial'] - z * reg['se_a'], reg['a_partial'] + z * reg['se_a']]
+    b_all = [reg['b_us'] - z * reg['se_b_us'], reg['b_us'] + z * reg['se_b_us']]
+    alts = []
+    for y in (2023, 2025):
+        r = _cc_regression_fit(cc_rows, eci_full, since=datetime(y, 1, 1))[0]
+        if r is not None:
+            alts.append((f"from {y}", r['a_partial'], r['b_us']))
+    if imp and imp['offset'] is not None:
+        for off, b in _cc_offset_sensitivity(cc_rows, imp, factors=(0.0, 2.0)):
+            alts.append((f"offset {off:+.2f}", None, b))
+    a_all += [a for _, a, _ in alts if a is not None]
+    b_all += [b for _, _, b in alts]
+    return {'a': reg['a_partial'], 'se_a': reg['se_a'],
+            'a_lo': max(min(a_all), 0.5), 'a_hi': max(a_all),
+            'b': reg['b_us'], 'se_b': reg['se_b_us'],
+            'b_lo': max(min(b_all), 0.0), 'b_hi': max(b_all),
+            'alts': alts, 'method': 'regression'}
 
 
 def _cc_render_known_vs_estimated(cc_rows, imp, today):
@@ -13490,8 +13532,7 @@ def render_compute_capabilities():
     # ══════════════════════════════════════════════════════════════════════
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
     dec = _cc_decomp(cc_rows)
-    eff = _cc_efficiency(cc_rows)
-    if dec is None or eff is None:
+    if dec is None:
         st.warning("Not enough models with both ECI and training-compute data.")
         return
     # The one fit every later section reads (`_CC_COEF_METHOD`), and the
@@ -13613,164 +13654,102 @@ def render_compute_capabilities():
             ("estimated compute", "From the training site \u2014 the section "
                                   "above."))
 
-    # Two engines — what a compute slowdown really costs. Flows on from the
-    # exchange-rate section above (no separate header).
-    eci_per_oom = eff['eci_per_oom']
-    g_frontier = dec['frontier_compute_oom']          # frontier-model physical OOM/yr
-    obs_slope = dec['eci_frontier_slope']             # observed frontier ECI pts/yr
-    g_recent = fits[-2]['slope_oom'] if len(fits) >= 2 else g_frontier   # capacity now
-    g_planned = fits[-1]['slope_oom'] if len(fits) >= 1 else g_recent    # capacity planned
-
-    # Algorithmic efficiency is bracketed by the two views of Section 2, which
-    # disagree by ~2× (regression dilution). Low end = iso-ECI (hold capability,
-    # compute falls); high end = iso-compute (hold compute, ECI rises) converted
-    # to OOM/yr via the neutral (geometric-mean) exchange rate. The truth sits
-    # between; we report the band and use the geometric mean as central.
-    g_algo_lo = eff['g_central']                      # iso-ECI family, OOM/yr
-    xr_neutral = (dec['a_partial'] * eci_per_oom) ** 0.5 if dec['a_partial'] > 0 else eci_per_oom
-    g_algo_hi = (isoc['eci_per_yr'] / xr_neutral) if (isoc and xr_neutral > 0) else g_algo_lo
-    if g_algo_hi < g_algo_lo:
-        g_algo_lo, g_algo_hi = g_algo_hi, g_algo_lo
-    g_algo_mid = (g_algo_lo * g_algo_hi) ** 0.5
-
-    def _phys_share(g_algo):
-        return g_recent / (g_recent + g_algo) if (g_recent + g_algo) else 0.0
-
-    share_hi = _phys_share(g_algo_lo)                 # compute-favorable
-    share_mid = _phys_share(g_algo_mid)
-    share_lo = _phys_share(g_algo_hi)                 # algo-favorable
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 3: effective compute — frontier growth as a·g + b, from the
+    # same fit, with its honest range
+    # ══════════════════════════════════════════════════════════════════════
+    st.subheader("Effective compute")
+    coef = _cc_frontier_coefs(cc_rows, _eci_full, reg, imp, fg, dec)
+    _us_fr = _cc_country_frontier(load_eci_frontier(_mtime=_eci_mtime()), _CC_US)
+    obs_slope = (_cc_frontier_eci_slope(_us_fr, _CC_GAP_WINDOWS[1][1])
+                 or dec['eci_frontier_slope'])
+    g_recent = (fits[-2]['slope_oom'] if len(fits) >= 2
+                else dec['frontier_compute_oom'])
+    g_planned = fits[-1]['slope_oom'] if fits else g_recent
+    g_lo_c, g_hi_c = min(g_recent, g_planned), max(g_recent, g_planned)
+    phys_c = coef['a'] * g_recent
+    phys_lo, phys_hi = coef['a_lo'] * g_lo_c, coef['a_hi'] * g_hi_c
+    algo_c, algo_lo, algo_hi = coef['b'], coef['b_lo'], coef['b_hi']
+    pred_c = phys_c + algo_c
+    share_c = phys_c / pred_c if pred_c else 0.0
+    share_lo = phys_lo / (phys_lo + algo_hi) if phys_lo + algo_hi else 0.0
+    share_hi = phys_hi / (phys_hi + algo_lo) if phys_hi + algo_lo else 0.0
 
     st.markdown(
-        f"#### ~{obs_slope:.0f} ECI/yr  =  physical compute  +  algorithmic "
-        "efficiency  →  effective compute")
-    st.caption(
-        "The two views above (compute-constant and ECI-constant) disagree by ~2× "
-        "due to regression dilution, so each engine below is given as a range.")
-    phys_lo, phys_hi = obs_slope * share_lo, obs_slope * share_hi
-    algo_lo, algo_hi = obs_slope * (1 - share_hi), obs_slope * (1 - share_lo)
+        f"#### ~{pred_c:.0f} ECI/yr  =  physical compute (~{phys_c:.0f})  +  "
+        f"algorithmic efficiency (~{algo_c:.0f})")
+    _range_help = (
+        " Range: \u00b11.28 standard errors on both coefficients, the fits "
+        "from 2023 and from 2025, and the imputation offset at 0 and twice its "
+        "value \u2014 the widest of these, not their sum."
+        if coef['alts'] else " Point estimate: this estimator reports no errors.")
+    _alts = "".join(
+        f" {lab}: b {b:.1f}" + (f", a {a:.1f}" if a is not None else "") + ";"
+        for lab, a, b in coef['alts'])
     e1, e2, e3 = st.columns(3)
-    e1.metric("Physical compute", f"~{phys_lo:.0f}–{phys_hi:.0f} ECI/yr",
-              f"×{10**g_recent:.1f}/yr capacity")
-    e2.metric("Algorithmic efficiency", f"~{algo_lo:.0f}–{algo_hi:.0f} ECI/yr",
-              "iso-ECI ↔ iso-compute")
-    e3.metric("Share of growth of compute", f"{share_lo*100:.0f}–{share_hi*100:.0f}%",
-              "≈ ⅓ to ½")
+    e1.metric("Physical compute", f"~{phys_c:.0f} ECI/yr",
+              f"{phys_lo:.0f}\u2013{phys_hi:.0f} \u00b7 "
+              f"\u00d7{10 ** g_recent:.1f}/yr capacity",
+              delta_color="off",
+              help=f"{coef['a']:.1f} ECI per \u00d710 compute, times the "
+                   f"largest lab site's recent pace ({g_recent:.2f} OOM/yr; "
+                   f"planned {g_planned:.2f})." + _range_help)
+    e2.metric("Algorithmic efficiency", f"~{algo_c:.0f} ECI/yr",
+              f"{algo_lo:.0f}\u2013{algo_hi:.0f} at fixed compute",
+              delta_color="off",
+              help="The US fixed-compute rate: what a year buys at the same "
+                   "compute \u2014 architectures, data, RL, post-training."
+                   + _range_help
+                   + (f" Alternatives \u2014{_alts}" if _alts else ""))
+    e3.metric("Share of growth of compute", f"{share_c * 100:.0f}%",
+              f"{share_lo * 100:.0f}\u2013{share_hi * 100:.0f}%",
+              delta_color="off",
+              help="Physical compute over the two together; the range takes "
+                   "the corners of both ranges.")
     _fn_caption(
-        f"The \u00d7{10**g_recent:.1f}/yr capacity pace comes from the [Data "
+        f"The components add to ~{pred_c:.0f} ECI/yr; the US frontier has "
+        f"managed ~{obs_slope:.0f} ECI/yr since 2024. The "
+        f"\u00d7{10 ** g_recent:.1f}/yr capacity pace comes from the [Data "
         "Centers tab](?tab=datacenters), on lab-attributable sites only.",
+        ("managed", "The running-max US frontier's OLS slope since Jan 2024, "
+                    "release-dated. It runs a little under the components: "
+                    "frontier releases train below the record site, and the "
+                    "running max moves only when a model ships."),
         ("lab-attributable sites only",
          f"The \u201c{fits[-2]['label'] if len(fits) >= 2 else ''}\u201d fit of "
          "the largest-lab-site train-FLOP series, restricted to sites "
          "attributable to a model-shipping lab \u2014 neutral hosts excluded, "
          "deliberately stricter than that tab's own record line."))
-    st.markdown(
-        f"So **physical compute drives roughly a third to a half** of the "
-        f"~{obs_slope:.0f} ECI-points/yr.")
 
-    # Frontier control: the frontier's own fixed-compute rate, from the same
-    # estimator the projections read (`_CC_COEF_METHOD`).
-    share_fg = None
-    if reg is not None:
-        xr_fg = ((reg['a_partial'] * eci_per_oom) ** 0.5
-                 if reg['a_partial'] > 0 else xr_neutral)
-        if xr_fg > 0:
-            share_fg = _phys_share(reg['b_us'] / xr_fg)
-            _alt = [(y, _cc_regression_fit(cc_rows, _eci_full,
-                                           since=datetime(y, 1, 1))[0])
-                    for y in (2023, 2025)]
-            _alt = [(y, r) for y, r in _alt if r is not None]
-            _alt_note = ((" The window moves these: " + "; ".join(
-                f"from {y}, US {r['b_us']:.1f} and China {r['b_cn']:.1f}"
-                for y, r in _alt) + ".") if _alt else "")
-            _imp_note = (
-                f" Epoch gives no training compute for US frontier releases "
-                f"since {imp['after']:%b %Y}, so {reg['n_imputed']} of them "
-                f"take their training site's 2-month run "
-                f"{imp['offset']:+.2f} OOM — the median gap to Epoch's "
-                f"figure over {imp['n_calib']} releases with both "
-                f"(sd {imp['sd']:.2f})."
-                if imp['after'] and reg['n_imputed'] else "")
-            _fn_caption(
-                f"<b>Frontier rate:</b> one regression over US and Chinese "
-                f"models puts the frontier's fixed-compute rate at "
-                f"~{reg['b_us']:.0f} ECI/yr and compute's share at the frontier "
-                f"at ~{share_fg * 100:.0f}% on the algo-favorable estimator.",
-                ("one regression",
-                 "ECI on log10 compute, time, and a China intercept and slope, "
-                 f"over models released from {reg['since']:%b %Y} "
-                 f"(n={reg['n']}, {reg['n_cn']} Chinese)." + _imp_note),
-                ("fixed-compute rate",
-                 f"US {reg['b_us']:.1f}±{reg['se_b_us']:.1f}, China "
-                 f"{reg['b_cn']:.1f}±{reg['se_b_cn']:.1f} ECI/yr; compute "
-                 f"{reg['a_partial']:.1f}±{reg['se_a']:.1f} ECI per "
-                 "×10." + _alt_note + " The country gap is a level, not a "
-                 "rate, and that level is how distillation enters the "
-                 "projections."))
-    elif fg is not None:
-        xr_fg = ((fg['a_partial'] * eci_per_oom) ** 0.5
-                 if fg['a_partial'] > 0 else xr_neutral)
-        if xr_fg > 0:
-            share_fg = _phys_share(fg['b_time'] / xr_fg)
-            _lvl = _cc_cn_level_offset(cc_rows)
-            _lvl_note = (
-                f" China's edge is a level, not a rate: at matched compute and "
-                f"date its models sit ~{_lvl[0]:+.0f} ECI above US peers "
-                f"(n={_lvl[1]}), while the two countries' iso-compute slopes "
-                "are indistinguishable." if _lvl else "")
-            _fn_caption(
-                f"<b>Distillation control:</b> refitting on frontier-grade models "
-                f"slows the time coefficient, so at the frontier the algo engine is "
-                f"smaller and compute's share is nearer ~{share_fg * 100:.0f}% even on "
-                "the algo-favorable estimator.",
-                ("frontier-grade models",
-                 f"Within 5 ECI of the running frontier at release AND trained "
-                 f"within {_CC_FG_FLOP_MARGIN:.0f} OOM of the frontier run, "
-                 f"n={fg['n']}. The compute screen matters: near-frontier ECI at "
-                 "10\u2013100\u00d7 less compute is the distillation fingerprint "
-                 "itself (DeepSeek, Qwen, Kimi), so a capability margin alone "
-                 "admits the heaviest distillers to the control." + _lvl_note),
-                ("slows the time coefficient",
-                 f"+{fg['b_time']:.1f} ECI/yr at fixed compute vs "
-                 f"+{dec['b_time']:.1f} all-model \u2014 followers ride a teacher, "
-                 "the frontier cannot. The compute coefficient does <i>not</i> "
-                 f"steepen (+{fg['a_partial']:.1f} vs +{dec['a_partial']:.1f} per "
-                 "\u00d710): reasoning-era models reach the frontier at "
-                 "sub-frontier compute."))
-
-    # One 100%-of-growth split bar. The boundary between the two engines isn't
-    # pinned down, so the contested middle (iso-compute share → iso-ECI share) is
-    # drawn as a hatched band, with a solid line marking the central-view split.
-    algo_min = (1 - share_hi) * 100          # guaranteed-algorithmic share
-    contested = (share_hi - share_lo) * 100  # boundary could lie anywhere here
-    phys_min = share_lo * 100                # guaranteed-physical share
-    central_split = (1 - share_mid) * 100    # central-view boundary (algo share)
+    # One 100%-of-growth split bar: compute's share across the honest range
+    # as a hatched band, the central estimate as a solid line.
+    algo_min = (1 - share_hi) * 100
+    contested = (share_hi - share_lo) * 100
+    phys_min = share_lo * 100
     figs = go.Figure()
     figs.add_trace(go.Bar(
         y=[''], x=[algo_min], orientation='h', name='Algorithmic efficiency',
-        marker_color='#1F77B4', hovertemplate='Algorithmic ≥%{x:.0f}%<extra></extra>'))
+        marker_color='#1F77B4',
+        hovertemplate='Algorithmic \u2265%{x:.0f}%<extra></extra>'))
     figs.add_trace(go.Bar(
-        y=[''], x=[contested], orientation='h', name='contested boundary',
+        y=[''], x=[contested], orientation='h', name='either, across the range',
         marker=dict(color='#ECECEC',
-                    pattern=dict(shape='/', fgcolor='#9AA0A6', size=8, solidity=0.35)),
+                    pattern=dict(shape='/', fgcolor='#9AA0A6', size=8,
+                                 solidity=0.35)),
         hovertemplate='either engine: %{x:.0f}%<extra></extra>'))
     figs.add_trace(go.Bar(
         y=[''], x=[phys_min], orientation='h', name='Physical compute',
-        marker_color='#D62728', hovertemplate='Physical ≥%{x:.0f}%<extra></extra>'))
+        marker_color='#D62728',
+        hovertemplate='Physical \u2265%{x:.0f}%<extra></extra>'))
     figs.add_annotation(x=algo_min / 2, y=0, text='Algorithmic', showarrow=False,
                         font=dict(color='white', size=13))
-    figs.add_annotation(x=algo_min + contested + phys_min / 2, y=0, text='Physical',
-                        showarrow=False, font=dict(color='white', size=13))
-    figs.add_vline(x=central_split, line=dict(color='#111', width=2.5),
-                   annotation_text=f'central view (~{share_mid*100:.0f}% physical)',
+    figs.add_annotation(x=algo_min + contested + phys_min / 2, y=0,
+                        text='Physical', showarrow=False,
+                        font=dict(color='white', size=13))
+    figs.add_vline(x=(1 - share_c) * 100, line=dict(color='#111', width=2.5),
+                   annotation_text=f'central (~{share_c * 100:.0f}% physical)',
                    annotation_position='top', annotation_yshift=2,
                    annotation_font=dict(size=10, color='#111'))
-    if share_fg is not None:
-        figs.add_vline(x=(1 - share_fg) * 100,
-                       line=dict(color='#555555', width=1.8, dash='dash'),
-                       annotation_text=(('frontier rate' if reg is not None else 'frontier-grade')
-                                        + f' (~{share_fg*100:.0f}%)'),
-                       annotation_position='bottom',
-                       annotation_font=dict(size=10, color='#555555'))
     figs.update_layout(
         barmode='stack', height=190, plot_bgcolor='white', paper_bgcolor='white',
         margin=dict(l=10, r=10, t=28, b=30), font=dict(color='#222222'),
@@ -13782,64 +13761,52 @@ def render_compute_capabilities():
         yaxis=dict(showticklabels=False))
     st.plotly_chart(figs, use_container_width=True)
     _fn_caption(
-        f"<b>Hatched band</b> = physical compute's contested share, "
-        f"<b>{share_lo*100:.0f}\u2013{share_hi*100:.0f}%</b>; <b>solid "
-        f"line</b> = central view (~{share_mid*100:.0f}%). Algorithms are the "
-        "rest.",
-        ("contested share", "Low = iso-compute fit, high = iso-ECI fit. "
-                            "Frontier-model compute growth "
-                            f"(\u00d7{10**g_frontier:.1f}/yr) argues for the "
-                            "high end."))
+        f"<b>Hatched band</b> = physical compute's share across the range, "
+        f"<b>{share_lo * 100:.0f}\u2013{share_hi * 100:.0f}%</b>; <b>solid "
+        f"line</b> = central (~{share_c * 100:.0f}%). Algorithms are the rest.",
+        ("across the range", "Low: the smallest compute coefficient at the "
+                             "planned pace against the largest fixed-compute "
+                             "rate; high: the reverse. The corners of the two "
+                             "ranges above."))
 
-    _top_band = (max(isoc['bands'], key=lambda b: b['center'])
-                 if isoc and isoc.get('bands') else None)
-    # st.warning takes no HTML, so the caveats render as a flagged markdown
-    # line rather than a yellow box — the hovers are worth more than the box.
+    fg_ctl = fg if fg is not None else _cc_frontier_grade_algo(cc_rows, _eci_full)
     _fn_line(
         "\u26a0\ufe0f **Caveats.** Order-of-magnitude, not forecasts. The two "
-        "engines aren't independent; ECI is not pretraining efficiency; "
-        "cheap-model data is sparse; and the capacity series is a ceiling"
-        + ("; the iso-compute rates include distillation." if _top_band else "."),
+        "engines aren't independent; ECI is not pretraining efficiency; the "
+        "capacity series is a ceiling; and the rates are fit on models, not "
+        "frontiers.",
         ("aren't independent", "Algorithmic progress is compute-fed, so a "
                                "physical slowdown drags the algorithmic rate "
-                               "too, making a stall worse than the "
-                               "\u2153\u2013\u00bd shown."),
+                               "too, making a stall worse than the share shown."),
         ("not pretraining efficiency", "ECI bundles post-training/RL, so this is "
                                        "total-capability efficiency."),
-        ("cheap-model data is sparse", "Labs rarely retrain small models to "
-                                       "re-hit old levels (Qwen, Kimi, "
-                                       "distilled MoEs)."),
         ("a ceiling", f"The {run_mo}mo-capacity series is a ceiling, not "
                       "per-model training compute."),
-        *([("include distillation", "Which the frontier itself cannot use "
-                                    "\u2014 the top compute band runs "
-                                    f"+{_top_band['slope']:.0f} vs "
-                                    f"+{isoc['eci_per_yr']:.0f} ECI/yr central. "
-                                    "The frontier rate above is the "
-                                    "control.")] if _top_band else []))
-    _fn_caption(
-        "Data: Epoch AI Capabilities Index + Frontier Data Centers. The "
-        "efficiency band spans two OLS directions.",
-        ("two OLS directions", "Iso-ECI (compute on ECI+time) and iso-compute "
-                               "(ECI on compute+time), which bracket the true "
-                               "rate (errors-in-variables dilution). Frontier "
-                               "rates use the running-max-ECI subset."))
+        ("fit on models, not frontiers",
+         "The regression pools every US and Chinese model since 2024. A refit "
+         "on frontier-grade models alone (within 5 ECI and 1 OOM of the "
+         "frontier"
+         + (f", n={fg_ctl['n']}) reads the fixed-compute rate at "
+            f"~{fg_ctl['b_time']:.1f} ECI/yr \u2014 too few rows to carry, "
+            "but the direction is a warning." if fg_ctl else
+            ") has too few rows to fit.")))
+    st.caption("Data: Epoch AI Capabilities Index + Frontier Data Centers.")
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 2: ECI Forecasts — quarterly frontier projection to end of 2029
+    # Section 4: ECI Forecasts — quarterly frontier projection
     # ══════════════════════════════════════════════════════════════════════
     st.subheader("ECI Forecasts")
-    _cc_eci_forecast(cc_rows, frontier, _today, obs_slope, g_recent, g_planned,
-                     share_lo, share_mid, share_hi, horizon=horizon)
+    _cc_eci_forecast(cc_rows, frontier, _today, coef, g_planned, obs_slope,
+                     horizon=horizon)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 3: US vs. China — the same decomposition read by country
+    # Section 5: US vs. China — the same decomposition read by country
     # ══════════════════════════════════════════════════════════════════════
     _cc_us_vs_china(cc_rows, _today, horizon=horizon,
                     run_key=run_key, run_days=run_days)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 4: the world split the catalogue above cannot see
+    # Section 6: the world split the catalogue above cannot see
     # ══════════════════════════════════════════════════════════════════════
     _render_cc_world_shares(_today, horizon)
 
