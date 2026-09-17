@@ -2859,22 +2859,21 @@ class TestCcCnTargetYears:
 
 
 class TestCcInnovationAlgoBand:
-    def test_band_is_ordered_and_below_the_measured_central(self):
+    def test_band_spans_its_two_sources(self):
+        # One edge is the top iso-compute band's rate, the other the frontier
+        # floor: the pretraining prior x the exchange rate, lifted to the
+        # frontier's fixed-compute rate. Which edge is higher is the data's
+        # call, so the test holds the construction, not an ordering.
         cc = vp.load_eci_compute()
         band = vp._cc_innovation_algo_band(cc)
         assert band is not None
         lo, hi = band
         assert 0 < lo < hi
-        # The indigenous band sits at or below the distillation-inclusive
-        # central rate — the premise of the correction.
-        assert hi <= vp._cc_iso_compute(cc)['eci_per_yr'] + 1.0
-        # And its low end is at least the pretraining-efficiency floor,
-        # lifted to the tight frontier-grade time coefficient when that
-        # refit is available.
-        fg3 = vp._cc_frontier_grade_algo(cc, vp.load_eci_frontier(full_window=True),
-                                         margin=3.0)
-        if fg3:
-            assert lo >= min(fg3['b_time'], hi) - 1e-9
+        a_ref, b_floor = vp._cc_frontier_floor(cc, vp.load_eci_frontier(full_window=True))
+        isoc = vp._cc_iso_compute(cc)
+        top = max(isoc['bands'], key=lambda b: b['center'])['slope']
+        floor = max(vp._CC_PRETRAIN_ALGO_OOM * a_ref, b_floor)
+        assert abs(lo - min(floor, top)) < 1e-9 and abs(hi - max(floor, top)) < 1e-9
 
 
 class TestCcFrontierGradeAlgo:
@@ -2924,6 +2923,81 @@ class TestCcFrontierGradeAlgo:
         assert r is not None and r['n'] == len(good)
 
 
+class TestCcJointRegression:
+    US, CN = "United States of America", "China"
+
+    def _rows(self, n_each=12):
+        base = vp._CC_REG_FROM
+        rows = []
+        for i in range(n_each):
+            d = base + timedelta(days=45 * i)
+            t = (d - base).days / 365.25
+            for c, b, lc0, lvl in ((self.US, 10.0, 25.0, 0.0),
+                                   (self.CN, 14.0, 24.0, 2.0)):
+                lc = lc0 + 0.3 * t + 0.1 * ((i * 7) % 3)
+                rows.append({'date': d, 'country': c, 'log10_flop': lc,
+                             'eci': 100 + 8.0 * (lc - 24) + b * t + lvl})
+        return rows
+
+    def test_recovers_constructed_coefficients(self):
+        r = vp._cc_joint_regression(self._rows())
+        assert abs(r['a_partial'] - 8.0) < 1e-6
+        assert abs(r['b_us'] - 10.0) < 1e-6 and abs(r['b_cn'] - 14.0) < 1e-6
+        assert abs(r['cn_minus_us'] - 4.0) < 1e-6
+        assert r['n'] == 24 and r['n_cn'] == 12 and r['n_imputed'] == 0
+
+    def test_needs_both_countries_and_respects_the_window(self):
+        rows = self._rows()
+        assert vp._cc_joint_regression([m for m in rows if m['country'] == self.US]) is None
+        late = vp._CC_REG_FROM + timedelta(days=45 * 8)
+        assert vp._cc_joint_regression(rows, since=late) is None
+
+
+class TestCcImputedFrontierCompute:
+    def test_fills_the_us_frontier_gap_from_training_sites(self):
+        cc = vp.load_eci_compute()
+        imp = vp._cc_imputed_frontier_compute(cc)
+        assert imp['rows'], "no US frontier release left to impute"
+        assert imp['n_calib'] >= 5
+        # A whole site for a full run bounds any one model's compute from above.
+        assert imp['offset'] < 0
+        names = {m['name'] for m in cc}
+        for r in imp['rows']:
+            assert r['imputed'] and r['name'] not in names
+            assert r['country'] == "United States of America"
+            # Only the gap after the last frontier release Epoch does cover.
+            assert r['date'] > imp['after']
+
+    def test_calibration_rows_define_the_offset(self):
+        """The offset is the median of the listed releases' Epoch-minus-site
+        gaps, and each imputed row is its site figure plus that offset — what
+        the tab's first section tabulates."""
+        cc = vp.load_eci_compute()
+        imp = vp._cc_imputed_frontier_compute(cc)
+        assert len(imp['calib']) == imp['n_calib'] >= 5
+        assert np.median([c['diff'] for c in imp['calib']]) == pytest.approx(
+            imp['offset'])
+        for r in imp['rows']:
+            assert r['log10_flop'] == pytest.approx(r['site_lf'] + imp['offset'])
+            assert r['lab'] in vp._CC_PANEL_LABS and r['site']
+
+
+class TestCcCoefPair:
+    def test_regression_supplies_the_pair_with_imputed_rows(self):
+        cc = vp.load_eci_compute()
+        a, b, fit = vp._cc_coef_pair(cc)
+        assert vp._CC_COEF_METHOD == 'regression' and fit is not None
+        assert (a, b) == (fit['a_partial'], fit['b_us'])
+        assert fit['n_imputed'] > 0 and fit['since'] == vp._CC_REG_FROM
+
+    def test_switch_restores_the_frontier_grade_pair(self, monkeypatch):
+        cc = vp.load_eci_compute()
+        monkeypatch.setattr(vp, '_CC_COEF_METHOD', 'frontier_grade')
+        a, b, fit = vp._cc_coef_pair(cc)
+        fg = vp._cc_frontier_grade_algo(cc, vp.load_eci_frontier(full_window=True))
+        assert fit is None and (a, b) == (fg['a_partial'], fg['b_time'])
+
+
 class TestCcCnLevelOffset:
     def test_recovers_a_constructed_level_premium(self):
         base = datetime(2024, 6, 1)
@@ -2951,6 +3025,95 @@ class TestCcCnLevelOffset:
         off, n = lvl
         assert n >= 20
         assert 0.0 < off < 12.0
+
+
+class TestCcDistLevel:
+    """Distillation as a banked level: the fit, and the sim law it drives."""
+
+    US, CN = "United States of America", "China"
+    KW = dict(a_partial=8.0, g_lo=0.15, g_hi=0.30, algo_lo=11.0,
+              algo_mid=12.5, algo_hi=13.0, pace_lo=0.9, pace_hi=1.1, n=4000,
+              inno_lo=8.0, inno_hi=10.0)
+
+    def _rows(self, level=4.0, n_each=12):
+        base = vp._CC_REG_FROM
+        rows = []
+        for i in range(n_each):
+            d = base + timedelta(days=45 * i)
+            t = (d - base).days / 365.25
+            lc = 24.5 + 0.2 * t + 0.1 * (i % 3)
+            for c, lvl in ((self.US, 0.0), (self.CN, level)):
+                rows.append({'date': d, 'country': c, 'log10_flop': lc,
+                             'eci': 100 + 8.0 * (lc - 24) + 12.0 * t + lvl})
+        return rows
+
+    def test_recovers_a_constructed_premium(self):
+        lvl, se, n = vp._cc_cn_dist_level(self._rows(level=4.0))
+        assert lvl == pytest.approx(4.0, abs=1e-6)
+        assert se < 1e-6 and n == 24
+
+    def test_live_band_is_a_positive_level_in_points(self):
+        """What the projections bank. If an Epoch refresh pushes it out of
+        this range, re-check the captions before loosening."""
+        band = vp._cc_dist_level_band(vp.load_eci_compute())
+        assert band is not None
+        lo, mid, hi = band
+        assert 0.0 <= lo < mid < hi
+        assert 0.0 < mid < 12.0
+
+    def test_none_under_the_frontier_grade_switch(self, monkeypatch):
+        """One switch, one mechanism: 'frontier_grade' keeps distillation as
+        the rate gap, so no level is offered."""
+        monkeypatch.setattr(vp, '_CC_COEF_METHOD', 'frontier_grade')
+        assert vp._cc_dist_level_band(vp.load_eci_compute()) is None
+
+    def test_level_is_inert_while_the_teacher_leads(self):
+        """A level is already in China's anchor: with the US pulling away the
+        premium never erodes, so the path is what the rate terms alone give."""
+        common = dict(self.KW, us_anchor=200.0, us_rate=25.0)
+        y_zero, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, dist_level=0.0, **common)
+        y_lvl, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, dist_level=4.0, **common)
+        assert abs(np.nanmedian(y_lvl) - np.nanmedian(y_zero)) < 0.06
+
+    def test_a_frozen_teacher_squeezes_the_level(self):
+        """Frozen bar: China closes on the teacher, the premium is squeezed
+        to the remaining gap, and the same bar takes longer."""
+        common = dict(self.KW, us_anchor=160.0, us_rate=0.0)
+        y_zero, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, dist_level=0.0, **common)
+        y_lvl, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 160.0, dist_level=4.0, **common)
+        assert np.nanmedian(y_lvl) > np.nanmedian(y_zero)
+
+    def test_cutting_it_costs_the_whole_premium(self):
+        """t_dist_stop fades the banked level even with the teacher far
+        ahead, so the column ends at minus the level."""
+        common = dict(self.KW, us_anchor=200.0, us_rate=25.0)
+        chan = {}
+        y_on, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 170.0, dist_level=4.0, **common)
+        y_off, _, _ = vp._cc_cn_crossing_sim(
+            150.0, 170.0, dist_level=4.0, t_dist_stop=0.0, dist_fade_yrs=1.0,
+            channels=chan, **common)
+        assert np.nanmedian(y_off) > np.nanmedian(y_on)
+        assert chan['distillation'][:, -1].max() <= 1e-9
+        assert np.median(chan['distillation'][:, -1]) == pytest.approx(
+            -4.0, abs=0.3)
+
+    def test_the_level_keeps_the_accounting_identity(self):
+        """Erosion is a channel like any other: the four columns still sum to
+        the path exactly, but distillation's can fall."""
+        kw = dict(self.KW, us_anchor=160.0, us_rate=0.0, pure_lo=3.0,
+                  pure_hi=4.0, t_pause=0.5)
+        chan = {}
+        _, _grid, traj = vp._cc_cn_crossing_sim(
+            150.0, 160.0, dist_level=4.0, channels=chan, **kw)
+        assert np.allclose(sum(chan[k] for k in vp._CC_CHANNELS),
+                           traj - 150.0)
+        assert chan['distillation'][:, -1].min() < 0
+        assert (np.diff(traj, axis=1) >= -1e-9).all()
 
 
 class TestCcCnPaceBand:

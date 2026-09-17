@@ -10663,6 +10663,10 @@ _CC_PRETRAIN_ALGO_OOM = 0.4
 # How long the already-published methods stock keeps paying out after a pause
 # stops new publications — the diffusion channel's absorption ramp.
 _CC_DIFF_ABSORB_YRS = 1.0
+# How fast a banked distillation premium erodes once no stronger teacher is
+# queryable. Unmeasured — a model generation or two; the *level* is what the
+# data pin (`_cc_dist_level_band`), not this.
+_CC_DIST_FADE_YRS = 2.0
 
 
 # Frontier-grade compute screen (OOM below the running-max training run).
@@ -10786,9 +10790,9 @@ def _cc_innovation_algo_band(cc_rows, eci_all=None):
 
     The measured iso-compute rates include distillation, which a true frontier
     cannot use. Two near-frontier measurements bracket the rate: lo = the
-    tight (±3) frontier-grade refit's time coefficient — still
+    frontier's fixed-compute rate (`_cc_frontier_floor`) — still
     teacher-adjacent, so even the low end is generous — floored at the
-    pretraining-efficiency prior × the frontier-grade exchange rate; hi = the
+    pretraining-efficiency prior × the frontier exchange rate; hi = the
     top iso-compute band's own rate (internal-teacher distillation remains,
     hence an upper bound). None when the fits are unavailable. `eci_all`,
     when given, must be the full-window frontier series — the default load.
@@ -10801,20 +10805,19 @@ def _cc_innovation_algo_band(cc_rows, eci_all=None):
     hi = float(top['slope'])
     if eci_all is None:
         eci_all = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
-    # Margin 3 when it has the rows to fit, else the default margin.
-    fg = (_cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
-          or _cc_frontier_grade_algo(cc_rows, eci_all))
-    a_ref = fg['a_partial'] if fg else dec['a_partial']
+    a_ref, b_floor = _cc_frontier_floor(cc_rows, eci_all)
+    if a_ref is None:
+        a_ref = dec['a_partial']
     lo = _CC_PRETRAIN_ALGO_OOM * a_ref
-    if fg:
-        lo = max(lo, fg['b_time'])
+    if b_floor is not None:
+        lo = max(lo, b_floor)
     return (min(lo, hi), max(lo, hi))
 
 
 def _cc_pure_innovation_band(cc_rows, eci_all=None):
     """(lo, hi) ECI/yr for innovation alone — no distillation *and* no
     diffusion of others' methods: the pretraining-efficiency prior × the
-    frontier-grade exchange rate, up to the no-external-distillation band's
+    frontier exchange rate, up to the no-external-distillation band's
     own floor (which still includes diffusion, hence the ceiling). None when
     the underlying fits are unavailable."""
     band = _cc_innovation_algo_band(cc_rows, eci_all)
@@ -10823,10 +10826,9 @@ def _cc_pure_innovation_band(cc_rows, eci_all=None):
         return None
     if eci_all is None:
         eci_all = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
-    # Margin 3 when it has the rows to fit, else the default margin.
-    fg = (_cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
-          or _cc_frontier_grade_algo(cc_rows, eci_all))
-    a_ref = fg['a_partial'] if fg else dec['a_partial']
+    a_ref, b_floor = _cc_frontier_floor(cc_rows, eci_all)
+    if a_ref is None:
+        a_ref = dec['a_partial']
     lo = _CC_PRETRAIN_ALGO_OOM * a_ref
     hi = band[0]
     return (min(lo, hi), max(lo, hi))
@@ -11255,6 +11257,220 @@ def _cc_pooled_decomp(rows):
     return float(beta[0]), float(beta[1])
 
 
+# ── Single-regression coefficients (prototype) ───────────────────────────
+# One OLS over US and Chinese models, ECI ~ log10(FLOP) + t + CN + CN·t, in
+# place of refitting on a frontier-grade subset. The country terms keep
+# China's fixed-compute rate explicit instead of reading the US–China
+# difference as distillation, and the covariance travels with the fit. The
+# rates move several ECI/yr with the window's start, so `_CC_REG_FROM` is
+# stated wherever the fit is quoted.
+_CC_REG_FROM = datetime(2024, 1, 1)
+_CC_US, _CC_CN = 'United States of America', 'China'
+
+
+def _cc_joint_regression(rows, since=_CC_REG_FROM):
+    """ECI on log10(FLOP), time and a China intercept and slope, from `since`.
+
+    Returns {'a_partial', 'b_us', 'b_cn', 'cn_minus_us', 'se_a', 'se_b_us',
+    'se_b_cn', 'se_diff', 'cov', 'n', 'n_cn', 'n_imputed', 'since'}, or None
+    when either country has fewer than 8 models. `a_partial` is shared (ECI
+    per ×10 compute); `b_us`/`b_cn` are each country's ECI/yr at fixed
+    compute. Rows flagged `imputed` count in the fit and in `n_imputed`.
+    """
+    sub = [m for m in rows
+           if m.get('country') in (_CC_US, _CC_CN) and m['date'] >= since]
+    n_cn = sum(m['country'] == _CC_CN for m in sub)
+    if n_cn < 8 or len(sub) - n_cn < 8:
+        return None
+    t = np.array([(m['date'] - since).days / 365.25 for m in sub])
+    cn = np.array([m['country'] == _CC_CN for m in sub], dtype=float)
+    X = np.column_stack([[m['log10_flop'] for m in sub], t, cn, cn * t,
+                         np.ones(len(sub))])
+    y = np.array([m['eci'] for m in sub])
+    beta, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+    resid = y - X @ beta
+    cov = (resid @ resid / (len(sub) - X.shape[1])) * np.linalg.pinv(X.T @ X)
+    var_cn = cov[1, 1] + cov[3, 3] + 2 * cov[1, 3]
+    return {
+        'a_partial': float(beta[0]), 'b_us': float(beta[1]),
+        'b_cn': float(beta[1] + beta[3]), 'cn_minus_us': float(beta[3]),
+        'se_a': float(np.sqrt(cov[0, 0])), 'se_b_us': float(np.sqrt(cov[1, 1])),
+        'se_b_cn': float(np.sqrt(max(var_cn, 0.0))),
+        'se_diff': float(np.sqrt(cov[3, 3])), 'cov': cov,
+        'n': len(sub), 'n_cn': n_cn,
+        'n_imputed': sum(bool(m.get('imputed')) for m in sub), 'since': since,
+    }
+
+
+def _cc_imputed_frontier_compute(cc_rows, eci_all=None):
+    """Training compute for US frontier releases Epoch gives none, from their site.
+
+    Targets are releases on the running-max US ECI frontier dated after the
+    last one with an Epoch FLOP figure — flagships by construction, so a
+    small model trained on a big site is not credited with the whole site.
+    Each gets log10 of its responsible site's 2-month train FLOP
+    (`_cc_responsible_cluster` over the lab's largest-site steps) plus
+    `offset`: the median of Epoch FLOP − site FLOP over every lab frontier
+    release that has both. The site figure is a whole site for a full run,
+    so the offset is negative; `sd` is its scatter. Returns {'rows',
+    'offset', 'sd', 'n_calib', 'after', 'calib'}; rows carry `imputed`,
+    `lab`, `site` and `site_lf` (the site figure before the offset), and
+    `calib` lists the releases the offset was read off.
+    """
+    if eci_all is None:
+        eci_all = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
+    flop = {m['name']: m['log10_flop'] for m in cc_rows}
+    attr = _cc_lab_attribution()
+    steps = {lab: _cc_lab_dc_milestones(lab, attr, key='train_flop')
+             for lab in _CC_PANEL_LABS}
+
+    def _lab(org):
+        return next((lab for lab, f in _CC_LAB_ORG_MATCH.items() if f(org)), None)
+
+    calib = []
+    for lab, fr in _cc_company_frontier_models().items():
+        for d, _sc, nm in fr:
+            step, _ = _cc_responsible_cluster(d, nm, lab, steps[lab])
+            if nm in flop and step is not None and step[1] > 0:
+                site_lf = float(np.log10(step[1]))
+                calib.append({'name': nm, 'lab': lab, 'site': step[2],
+                              'date': d, 'epoch_lf': flop[nm],
+                              'site_lf': site_lf, 'diff': flop[nm] - site_lf})
+    calib.sort(key=lambda c: c['date'])
+    diffs = [c['diff'] for c in calib]
+    if len(diffs) < 3:
+        return {'rows': [], 'offset': None, 'sd': None, 'n_calib': len(diffs),
+                'after': None, 'calib': calib}
+    offset = float(np.median(diffs))
+
+    us = sorted((m for m in eci_all if m.get('country') == _CC_US),
+                key=lambda m: m['date'])
+    frontier, best = [], -float('inf')
+    for m in _best_per_date(us, lambda m: m['eci_score']):
+        if m['eci_score'] > best:
+            best = m['eci_score']
+            frontier.append(m)
+    known = [m['date'] for m in frontier if m['display_name'] in flop]
+    rows = []
+    for m in frontier:
+        lab = _lab(m['organization'])
+        if (m['display_name'] in flop or lab is None
+                or (known and m['date'] <= max(known))):
+            continue
+        step, _ = _cc_responsible_cluster(m['date'], m['display_name'], lab,
+                                          steps[lab])
+        if step is None or step[1] <= 0:
+            continue
+        rows.append({'date': m['date'], 'eci': m['eci_score'],
+                     'log10_flop': float(np.log10(step[1])) + offset,
+                     'site_lf': float(np.log10(step[1])),
+                     'name': m['display_name'],
+                     'organization': m['organization'], 'country': _CC_US,
+                     'imputed': True, 'lab': lab, 'site': step[2]})
+    return {'rows': rows, 'offset': offset,
+            'sd': float(np.std(diffs, ddof=1)), 'n_calib': len(diffs),
+            'after': max(known) if known else None, 'calib': calib}
+
+
+# Which coefficient pair the frontier-facing projections read: 'regression'
+# (`_cc_joint_regression` with imputed US frontier compute) or
+# 'frontier_grade' (`_cc_frontier_grade_algo`, the pooled fit as fallback).
+_CC_COEF_METHOD = 'regression'
+
+
+def _cc_regression_fit(cc_rows, eci_all=None, since=_CC_REG_FROM):
+    """`_cc_joint_regression` over `cc_rows` plus imputed US frontier compute.
+
+    Returns (fit or None, imputation dict)."""
+    imp = _cc_imputed_frontier_compute(cc_rows, eci_all)
+    return _cc_joint_regression(list(cc_rows) + imp['rows'], since=since), imp
+
+
+def _cc_cn_dist_level(rows, since=_CC_REG_FROM):
+    """China's ECI premium at matched compute and date: (level, se, n).
+
+    The country intercept in ECI ~ log10 FLOP + t + CN from `since`, one
+    shared time slope — `_cc_joint_regression` puts the two countries' rates
+    within noise of each other, so what distillation buys is a *level*:
+    points banked at a given compute budget, not a faster climb. None when
+    either country has fewer than 8 models.
+    """
+    sub = [m for m in rows
+           if m.get('country') in (_CC_US, _CC_CN) and m['date'] >= since]
+    n_cn = sum(m['country'] == _CC_CN for m in sub)
+    if n_cn < 8 or len(sub) - n_cn < 8:
+        return None
+    t = np.array([(m['date'] - since).days / 365.25 for m in sub])
+    cn = np.array([m['country'] == _CC_CN for m in sub], dtype=float)
+    X = np.column_stack([[m['log10_flop'] for m in sub], t, cn,
+                         np.ones(len(sub))])
+    y = np.array([m['eci'] for m in sub])
+    beta, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+    resid = y - X @ beta
+    cov = (resid @ resid / (len(sub) - X.shape[1])) * np.linalg.pinv(X.T @ X)
+    return float(beta[2]), float(np.sqrt(cov[2, 2])), len(sub)
+
+
+_CC_DIST_LEVEL_Z = 1.2816       # 80% band on the fitted premium
+
+
+def _cc_dist_level_band(cc_rows, eci_all=None, since=_CC_REG_FROM):
+    """(lo, mid, hi) ECI of banked distillation premium, or None.
+
+    `_cc_cn_dist_level` over the rows the regression reads (imputed US
+    frontier compute included), ±`_CC_DIST_LEVEL_Z` standard errors, floored
+    at 0. None under `_CC_COEF_METHOD` 'frontier_grade', which keeps
+    distillation as the rate gap instead: one switch, one mechanism.
+    """
+    if _CC_COEF_METHOD != 'regression':
+        return None
+    imp = _cc_imputed_frontier_compute(cc_rows, eci_all)
+    r = _cc_cn_dist_level(list(cc_rows) + imp['rows'], since=since)
+    if r is None:
+        return None
+    lvl, se, _n = r
+    return tuple(max(lvl + z * se, 0.0)
+                 for z in (-_CC_DIST_LEVEL_Z, 0.0, _CC_DIST_LEVEL_Z))
+
+
+def _cc_coef_pair(cc_rows, eci_all=None):
+    """(a_partial, b_time, fit) for frontier-facing projections.
+
+    `b_time` is the frontier's ECI/yr at fixed compute — the regression's US
+    rate under `_CC_COEF_METHOD` 'regression', else the frontier-grade
+    refit's. `fit` is the regression dict, None when it did not supply the
+    pair. Each estimator falls back to the next: regression, frontier-grade,
+    pooled.
+    """
+    if eci_all is None:
+        eci_all = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
+    if _CC_COEF_METHOD == 'regression':
+        fit, _ = _cc_regression_fit(cc_rows, eci_all)
+        if fit is not None:
+            return fit['a_partial'], fit['b_us'], fit
+    fg = _cc_frontier_grade_algo(cc_rows, eci_all)
+    if fg is not None:
+        return fg['a_partial'], fg['b_time'], None
+    a, b = _cc_pooled_decomp(cc_rows)
+    return a, b, None
+
+
+def _cc_frontier_floor(cc_rows, eci_all):
+    """(a_ref, b_floor) for the innovation bands, or (None, None).
+
+    The regression's pair under 'regression'; otherwise the frontier-grade
+    refit at margin 3 when it has the rows to fit, else at the default
+    margin.
+    """
+    if _CC_COEF_METHOD == 'regression':
+        fit, _ = _cc_regression_fit(cc_rows, eci_all)
+        if fit is not None:
+            return fit['a_partial'], fit['b_us']
+    fg = (_cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
+          or _cc_frontier_grade_algo(cc_rows, eci_all))
+    return (fg['a_partial'], fg['b_time']) if fg else (None, None)
+
+
 def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                     run_key='train_flop', run_days=_DAYS_2MO):
     """Section 4: the US-China frontier read through the compute lens.
@@ -11325,17 +11541,10 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     # ECI projection: derived from compute (Chart A growth) + shared algorithmic
     # progress. a_partial = ECI per ×10 compute; b_algo = shared ECI/yr at fixed
     # compute (methods diffuse). Each country's ECI slope = a_partial·g + b_algo.
-    # Frontier projections use the frontier-grade coefficient pair — the
-    # all-model fit's b_time is inflated by distillation among followers,
-    # which the frontier cannot use, so the refit (near-frontier ECI at
-    # frontier-scale compute, full-window frontier) runs ~2–3 ECI/yr slower
-    # at fixed compute. The pooled fit is the fallback when the refit is too
-    # thin.
-    a_partial, b_algo = _cc_pooled_decomp(cc_rows)
-    fgm = _cc_frontier_grade_algo(
-        cc_rows, load_eci_frontier(_mtime=_eci_mtime(), full_window=True))
-    if fgm:
-        a_partial, b_algo = fgm['a_partial'], fgm['b_time']
+    # Frontier projections read the frontier's own fixed-compute rate from
+    # `_cc_coef_pair` (the joint regression's US rate, or the frontier-grade
+    # refit), since the all-model fit's b_time mixes in followers' rates.
+    a_partial, b_algo, _ = _cc_coef_pair(cc_rows)
     inno_band = _cc_innovation_algo_band(cc_rows)
     pure_band = _cc_pure_innovation_band(cc_rows)
     us_eci_slo, us_eci_shi = b_algo + a_partial * g_us_lo, b_algo + a_partial * g_us_hi
@@ -11831,7 +12040,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     _render_cc_china_target(
         cn_fr=cn_fr, us_fr=us_fr, a_partial=a_partial, b_algo=b_algo,
         us_algo=us_algo, cn_algo=cn_algo, g_lo=g_cn_lo, g_hi=g_cn_hi,
-        us_eci_smid=us_eci_smid, today=today, inno_band=inno_band)
+        us_eci_smid=us_eci_smid, today=today, inno_band=inno_band,
+        dist_band=_cc_dist_level_band(cc_rows))
 
 
 # ── China's ETA to a target ECI ───────────────────────────────────────────
@@ -11913,7 +12123,9 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         us_pause_level=None, pure_lo=None, pure_hi=None,
                         t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS,
                         t_dist_stop=None, comp_dead=None, comp_slow=None,
-                        dist_teacher=None, channels=None, comp_shadow=None):
+                        dist_teacher=None, dist_level=None,
+                        dist_fade_yrs=_CC_DIST_FADE_YRS,
+                        channels=None, comp_shadow=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -11943,7 +12155,18 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     gap sees: the best *queryable* model when the true frontier is withheld,
     so distillation dries up at the teacher's level, below the bar.
 
-    Pass a dict as `channels` to have it filled with the four rate terms'
+    `dist_level` (scalar or per-sample ECI) switches distillation from a rate
+    to a **level**: the rate gap `algo − nodist` goes to zero and China
+    instead carries that many banked points, which hold while a stronger
+    teacher is queryable, are squeezed to the remaining gap as it closes on
+    one (you cannot copy past your teacher), and fade over `dist_fade_yrs`
+    once cut or overtaken. The released frontier is a running max, so erosion
+    stops gains rather than taking points back. The channel column is then
+    the *change* in that premium — 0 while the teacher leads, negative once
+    it dries up — and `dist_level + column` is the premium still standing,
+    which is what a "never distilled" counterfactual subtracts.
+
+    Pass a dict as `channels` to have it filled with the four channels'
     *cumulative* ECI contributions, each an (n, len(grid)) array summing to
     `traj − anchor_eci` — what the Pacing tab's breakdown reads to say which
     channel closed the gap. Off by default: four more arrays of traj's size.
@@ -11972,8 +12195,17 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     algo = _tri(algo_lo, algo_mid, algo_hi, 0.05)
     g = _tri(g_lo, 0.5 * (g_lo + g_hi), g_hi, 0.01)
     pace = np.maximum(_tri(pace_lo, 1.0, pace_hi, 0.05), 0.0)
-    nodist = np.minimum(
-        _tri(inno_lo, 0.5 * (inno_lo + inno_hi), inno_hi, 0.05), algo)
+    if dist_level is None:
+        nodist = np.minimum(
+            _tri(inno_lo, 0.5 * (inno_lo + inno_hi), inno_hi, 0.05), algo)
+        lvl = None
+    else:
+        # As a level, distillation takes nothing off China's measured rate —
+        # the two countries' iso-compute rates are indistinguishable — so the
+        # inno band never caps it and `dist` below is 0 by construction.
+        nodist = algo
+        lvl = np.maximum(np.broadcast_to(
+            np.asarray(dist_level, dtype=float), n).astype(float), 0.0)
     if pure_lo is None:
         pure = nodist
     else:
@@ -11994,6 +12226,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         for _k in _CC_CHANNELS + (('compute_domestic',) if shadow else ()):
             channels[_k] = np.zeros((n, steps + 1))
     e = np.full(n, float(anchor_eci))
+    prem = None if lvl is None else lvl.copy()
     years = np.full(n, np.nan)
     us_rate = np.asarray(us_rate)      # scalar or per-sample array
     for i in range(1, steps + 1):
@@ -12014,9 +12247,23 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         parts = (pace * comp_t * c_on, pace * pure, pace * diffu * d_avail,
                  pace * dist * d_on * np.minimum(1.0, gap / gap0))
         rate = parts[0] + parts[1] + parts[2] + parts[3]
+        e_next = e + rate * dt
+        d_prem = 0.0
+        if lvl is not None:
+            # The premium holds under a stronger teacher, is squeezed to what
+            # is left of the gap, and fades once the teacher is cut. The
+            # released frontier is a running max, so erosion stops gains
+            # rather than taking banked points back.
+            step = lvl * (dt / max(dist_fade_yrs, dt))
+            d_prem = np.clip(np.minimum(lvl, gap) * d_on - prem, -step, step)
+            prem = prem + d_prem
+            d_prem = d_prem + np.maximum(e - (e_next + d_prem), 0.0)
+            e_next = e_next + d_prem
         if channels is not None:
             for _k, _p in zip(_CC_CHANNELS, parts):
                 channels[_k][:, i] = channels[_k][:, i - 1] + _p * dt
+            if lvl is not None:
+                channels['distillation'][:, i] += d_prem
         if shadow:
             cap, dead = comp_shadow
             d_on_c = (0.0 if dead is not None
@@ -12025,7 +12272,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                              parts[0])
             channels['compute_domestic'][:, i] = \
                 channels['compute_domestic'][:, i - 1] + dom * dt
-        e = e + rate * dt
+        e = e_next
         traj[:, i] = e
         hit = np.isnan(years) & (e >= target)
         if np.any(hit):
@@ -12147,7 +12394,7 @@ def _wc_share_paths(years, n, common=None):
 
 def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo,
                             g_lo, g_hi, us_eci_smid, today, inno_band=None,
-                            target=_CC_CN_TARGET_ECI):
+                            dist_band=None, target=_CC_CN_TARGET_ECI):
     """Section 5: the date China's ECI frontier crosses `target`.
 
     Everything above reports *gaps* — points behind, months behind, how the gap
@@ -12197,11 +12444,13 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
 
     # Distillation-aware headline; the constant-rate model is the comparison.
     inno_lo, inno_hi = inno_band if inno_band else (a_lo, a_hi)
+    dist_level = (_pc_tri(dist_band[0], dist_band[2], N_SAMPLES)
+                  if dist_band else None)
     years, grid_yrs, traj_m = _cc_cn_crossing_sim(
         anchor_eci, target, us_anchor=us_best[1],
         us_rate=max(us_eci_smid, 0.0), a_partial=a_partial,
         g_lo=g_lo, g_hi=g_hi, algo_lo=a_lo, algo_mid=a_mid, algo_hi=a_hi,
-        inno_lo=inno_lo, inno_hi=inno_hi,
+        inno_lo=inno_lo, inno_hi=inno_hi, dist_level=dist_level,
         pace_lo=pace_lo, pace_hi=pace_hi, release_gap_days=gap_d)
     years_const, rates = _cc_cn_target_years(anchor_eci, target, a_lo, a_mid,
                                              a_hi, a_partial, g_lo, g_hi,
@@ -13069,6 +13318,123 @@ def _render_cc_world_shares(today, horizon):
         "China's share drifts down even as its compute grows.")
 
 
+_CC_LAB_COLORS = {'OpenAI': '#10A37F', 'Anthropic': '#D97757',
+                  'Google': '#4285F4', 'xAI': '#555555', 'Meta': '#0866FF'}
+
+
+def _cc_offset_sensitivity(cc_rows, imp, factors=(0.0, 1.0, 2.0)):
+    """The regression's US rate at multiples of the imputation offset:
+    [(offset, b_us), …], skipping fits that fail."""
+    out = []
+    for f in factors:
+        off = imp['offset'] * f + 0.0        # + 0.0 turns -0.0 into 0.0
+        rows = [dict(r, log10_flop=r['site_lf'] + off) for r in imp['rows']]
+        fit = _cc_joint_regression(list(cc_rows) + rows)
+        if fit is not None:
+            out.append((off, fit['b_us']))
+    return out
+
+
+def _cc_render_known_vs_estimated(cc_rows, imp, today):
+    """Section 1: which training-compute figures are Epoch's and which are
+    imputed from the training site (`_cc_imputed_frontier_compute`)."""
+    st.subheader("Known vs. estimated compute")
+    rows, calib = imp['rows'], imp.get('calib', [])
+    if not rows or imp['offset'] is None:
+        st.info("Every US frontier release has an Epoch compute figure; "
+                "nothing is imputed.")
+        return
+    attr = _cc_lab_attribution()
+    x0 = datetime(2024, 1, 1)
+    fig = go.Figure()
+    ctx = [m for m in cc_rows if m['date'] >= x0]
+    fig.add_trace(go.Scatter(
+        x=[m['date'] for m in ctx], y=[10.0 ** m['log10_flop'] for m in ctx],
+        mode='markers', marker=dict(size=5, color='#D9D9D9', line=dict(width=0)),
+        text=[f"{pretty(m['name'])}<br>{_logop_lbl(m['log10_flop'])} (Epoch)"
+              f"<br>ECI {m['eci']:.0f}" for m in ctx],
+        hoverinfo='text', name='Epoch figure (all models)'))
+    cal = [c for c in calib if c['date'] >= x0]
+    fig.add_trace(go.Scatter(
+        x=[c['date'] for c in cal], y=[10.0 ** c['epoch_lf'] for c in cal],
+        mode='markers',
+        marker=dict(size=9, color=[_CC_LAB_COLORS.get(c['lab'], '#333') for c in cal],
+                    line=dict(color='white', width=0.5)),
+        text=[f"<b>{pretty(c['name'])}</b> ({c['lab']})<br>Epoch "
+              f"{_logop_lbl(c['epoch_lf'])}<br>{c['site']}: "
+              f"{_logop_lbl(c['site_lf'])} for a 2-month run<br>"
+              f"Δ {c['diff']:+.2f} OOM" for c in cal],
+        hoverinfo='text', name='Lab frontier release, Epoch figure (calibration)'))
+    fig.add_trace(go.Scatter(
+        x=[r['date'] for r in rows], y=[10.0 ** r['log10_flop'] for r in rows],
+        mode='markers',
+        marker=dict(size=9, color='white',
+                    line=dict(color=[_CC_LAB_COLORS.get(r['lab'], '#333')
+                                     for r in rows], width=2)),
+        text=[f"<b>{pretty(r['name'])}</b> ({r['lab']})<br>Imputed "
+              f"{_logop_lbl(r['log10_flop'])}<br>{r['site']}: "
+              f"{_logop_lbl(r['site_lf'])} for a 2-month run, "
+              f"{imp['offset']:+.2f} OOM<br>ECI {r['eci']:.0f}" for r in rows],
+        hoverinfo='text', name='Imputed from the training site'))
+    for lab in sorted({r['lab'] for r in rows}):
+        steps = [s for s in _cc_lab_dc_milestones(lab, attr, key='train_flop')
+                 if s[0] <= today]
+        if not steps:
+            continue
+        fig.add_trace(go.Scatter(
+            x=[d for d, _v, _s in steps] + [today],
+            y=[v for _d, v, _s in steps] + [steps[-1][1]],
+            mode='lines', opacity=0.7,
+            line=dict(color=_CC_LAB_COLORS.get(lab, '#333'), width=1.5,
+                      dash='dash', shape='hv'),
+            text=[f"{s}<br>{_logop_lbl(np.log10(v))} for a 2-month run"
+                  for _d, v, s in steps] + [''],
+            hoverinfo='text', name=f"{lab} largest site"))
+    fig.update_layout(
+        height=420, plot_bgcolor='white', paper_bgcolor='white',
+        margin=dict(l=70, r=20, t=10, b=40), font=dict(color='#222222'),
+        legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
+                    bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
+                    borderwidth=1),
+        xaxis=dict(gridcolor='rgba(0,0,0,0.12)',
+                   range=[x0, today + timedelta(days=60)],
+                   tickfont=dict(color='#222'), title_font=dict(color='#222')),
+        yaxis=dict(gridcolor='rgba(0,0,0,0.12)'))
+    _cc_logop_yaxis(fig, "Training compute (log₁₀ OP)")
+    st.plotly_chart(fig, use_container_width=True)
+    sens = _cc_offset_sensitivity(cc_rows, imp)
+    sens_note = ((" The fitted US rate is " + ", ".join(
+        f"{b:.1f} ECI/yr at {off:+.2f}" for off, b in sens) + ".")
+        if len(sens) > 1 else "")
+    _fn_caption(
+        f"Epoch publishes no training compute for any US frontier release "
+        f"after {imp['after']:%b %Y}. The {len(rows)} since take their "
+        f"training site's 2-month run less {-imp['offset']:.2f} OOM — "
+        "the hollow points; the dashed lines are the sites.",
+        ("training site", "The lab's largest site online at least "
+                          f"{_CC_TRAIN_FLOOR_DAYS} days before the release, at "
+                          "30% utilization and Epoch's 8-bit OP/s over two "
+                          "months — the most the model could have used, "
+                          "so an upper bound."),
+        (f"less {-imp['offset']:.2f} OOM",
+         f"The median of Epoch's figure minus the site figure over the "
+         f"{imp['n_calib']} lab frontier releases that have both (sd "
+         f"{imp['sd']:.2f}; table below). A whole site for a full run bounds "
+         "any one model from above, so the gap is negative." + sens_note))
+    st.table([{"Model": pretty(r['name']), "Lab": r['lab'],
+               "Trained on": r['site'],
+               "Site, 2-mo run": _logop_lbl(r['site_lf']),
+               "Imputed": _logop_lbl(r['log10_flop']),
+               "Released": f"{r['date']:%b %Y}"} for r in rows])
+    with st.expander(f"How the {imp['offset']:+.2f} OOM offset is calibrated"):
+        st.table([{"Model": pretty(c['name']), "Lab": c['lab'],
+                   "Trained on": c['site'], "Epoch": _logop_lbl(c['epoch_lf']),
+                   "Site, 2-mo run": _logop_lbl(c['site_lf']),
+                   "Δ (OOM)": f"{c['diff']:+.2f}"} for c in calib])
+        st.caption(f"Median {imp['offset']:+.2f}, sd {imp['sd']:.2f}, "
+                   f"n={imp['n_calib']}.")
+
+
 def render_compute_capabilities():
     _today = datetime.now()
 
@@ -13122,114 +13488,67 @@ def render_compute_capabilities():
     # Section 1: The exchange rate — how much capability per FLOP, and how fast
     # that exchange rate improves (algorithmic efficiency / iso-ECI)
     # ══════════════════════════════════════════════════════════════════════
-    st.subheader("Compute ⟷ ECI")
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
     dec = _cc_decomp(cc_rows)
     eff = _cc_efficiency(cc_rows)
     if dec is None or eff is None:
         st.warning("Not enough models with both ECI and training-compute data.")
         return
+    # The one fit every later section reads (`_CC_COEF_METHOD`), and the
+    # imputation it rests on.
+    _eci_full = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
+    reg, imp = (_cc_regression_fit(cc_rows, _eci_full)
+                if _CC_COEF_METHOD == 'regression' else (None, None))
+    fg = None if reg is not None else _cc_frontier_grade_algo(cc_rows, _eci_full)
 
-    st.markdown(
-        "| Exchange rate | Value | What it means |\n"
-        "|---|---|---|\n"
-        f"| Compute → capability | **+{eff['eci_per_oom']:.0f} ECI** per 10× compute "
-        "| at a fixed moment in time |\n"
-        f"| Capability gets cheaper | **−{eff['g_central']:.1f} OOM/yr** "
-        f"(÷{eff['algo_mult']:.1f}/yr) | hold ECI fixed → less compute needed |")
-    _fn_caption(
-        f"Based on {dec['n']} models reporting training compute. Row 2 is "
-        "algorithmic efficiency.",
-        ("algorithmic efficiency", "Better architectures, data, RL, "
-                                   "post-training, scaffolding \u2014 i.e. "
-                                   "\u201ceffective compute per real "
-                                   "operation\u201d going up."))
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 1: which compute figures are known and which are estimated
+    # ══════════════════════════════════════════════════════════════════════
+    if imp is not None:
+        _cc_render_known_vs_estimated(cc_rows, imp, _today)
 
-    # Iso-ECI scatter: compute vs date. Continuous ECI-by-color reads poorly, so
-    # we use discrete capability bands — each band's dots and its downward fit
-    # line share a distinct color; models outside any band are grey context.
-    _BAND_COLORS = {105: '#4C78A8', 115: '#F58518', 125: '#54A24B'}
-    band_centers = {b['center'] for b in eff['bands']}
-
-    def _in_band(m, c):
-        return abs(m['eci'] - c) <= _CC_BAND_HALFWIDTH
-
-    figx = go.Figure()
-    other = [m for m in cc_rows if not any(_in_band(m, c) for c in band_centers)]
-    figx.add_trace(go.Scatter(
-        x=[m['date'] for m in other], y=[10.0 ** m['log10_flop'] for m in other],
-        mode='markers', marker=dict(size=5, color='#D9D9D9', line=dict(width=0)),
-        text=[f"{m['name']}<br>ECI {m['eci']:.0f}" for m in other],
-        hoverinfo='text', name='outside bands', showlegend=True))
-    for bseg in eff['bands']:
-        c = bseg['center']
-        col = _BAND_COLORS.get(c, '#D62728')
-        rate = 10 ** (-bseg['slope'])
-        mem = [m for m in cc_rows if _in_band(m, c)]
-        figx.add_trace(go.Scatter(
-            x=[m['date'] for m in mem], y=[10.0 ** m['log10_flop'] for m in mem],
-            mode='markers',
-            marker=dict(size=7, color=col, line=dict(color='white', width=0.5)),
-            text=[f"{m['name']}<br>ECI {m['eci']:.0f}" for m in mem],
-            hoverinfo='text', legendgroup=str(c),
-            name=f"ECI {c}±{_CC_BAND_HALFWIDTH:.0f}  →  compute ÷{rate:.1f}/yr",
-            showlegend=True))
-        figx.add_trace(go.Scatter(
-            x=bseg['fit_x'], y=[10.0 ** v for v in bseg['fit_y']], mode='lines',
-            line=dict(color=col, width=2.5, dash='dot'),
-            legendgroup=str(c), hoverinfo='skip', showlegend=False))
-    figx.update_layout(
-        height=440, plot_bgcolor='white', paper_bgcolor='white',
-        margin=dict(l=70, r=20, t=10, b=40), font=dict(color='#222222'),
-        legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
-                    bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
-                    borderwidth=1),
-        xaxis=dict(gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
-                   title_font=dict(color='#222')),
-        yaxis=dict(gridcolor='rgba(0,0,0,0.12)'))
-    _cc_logop_yaxis(figx, "Training compute (log₁₀ OP)")
-    st.plotly_chart(figx, use_container_width=True)
-    _fn_caption(
-        "The compute needed to stay in a band slopes <i>down</i> over time "
-        "\u2014 that downward slope is the efficiency rate.",
-        ("a band", "Each colored set is a fixed-capability band (ECI \u00b1 "
-                   f"{_CC_BAND_HALFWIDTH:.0f}); its matching dotted line is the "
-                   "within-band fit. Grey dots sit outside these bands."))
-
-    # Time-to-cheaper table.
-    st.markdown("**Time to reach the same ECI at less compute** "
-                f"(central ≈{eff['g_central']:.1f} OOM/yr; range "
-                f"{eff['g_lo']:.1f}–{eff['g_hi']:.1f} from the band vs all-data fits):")
-    tmd = ["| Compute reduction | Time to match capability | Range |",
-           "|---|---|---|"]
-    for f in (2, 5, 10):
-        tm = eff['times'][f]
-        tmd.append(f"| **{f}× less** | ~{tm['central']:.0f} months | "
-                   f"{tm['lo']:.0f}–{tm['hi']:.0f} mo |")
-    st.markdown("\n".join(tmd))
-    _fn_caption(
-        f"Inverse regression gives \u2212\u03b2\u209c = {eff['g_inv']:.2f} "
-        f"OOM/yr (R\u00b2 {eff['r2']:.2f}); the iso-ECI bands give a median "
-        f"{eff['band_median']:.2f} OOM/yr. This is total capability efficiency.",
-        ("Inverse regression", "log10(OP) = \u03b1\u00b7ECI + "
-                               "\u03b2\u209c\u00b7t + c."),
-        ("total capability efficiency", "ECI rewards reasoning/RL/post-training, "
-                                        "so this runs faster than "
-                                        "pure-pretraining algorithmic "
-                                        "efficiency."))
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 2: the exchange rates — capability per FLOP, and capability per
+    # year at fixed FLOP
+    # ══════════════════════════════════════════════════════════════════════
+    st.subheader("Compute ⟷ ECI")
+    if reg is not None:
+        _cheaper = (reg['b_us'] / reg['a_partial'] if reg['a_partial'] > 0
+                    else float('nan'))
+        st.markdown(
+            "| Exchange rate | Value | What it means |\n"
+            "|---|---|---|\n"
+            f"| Compute → capability | **+{reg['a_partial']:.1f} ± "
+            f"{reg['se_a']:.1f} ECI** per 10× compute | at a fixed date |\n"
+            f"| Same compute, a year later — US | **+{reg['b_us']:.1f} ± "
+            f"{reg['se_b_us']:.1f} ECI/yr** | the fixed-compute rate: "
+            "algorithms, data, post-training |\n"
+            f"| Same compute, a year later — China | **+{reg['b_cn']:.1f} ± "
+            f"{reg['se_b_cn']:.1f} ECI/yr** | {reg['cn_minus_us']:+.1f} ± "
+            f"{reg['se_diff']:.1f} vs the US — within noise |\n"
+            f"| Capability gets cheaper | **−{_cheaper:.1f} OOM/yr** | derived: "
+            f"a year's progress is worth ×{10 ** _cheaper:.0f} compute |")
+        _fn_caption(
+            f"One regression over {reg['n']} US and Chinese models released "
+            f"from {reg['since']:%b %Y} ({reg['n_cn']} Chinese, "
+            f"{reg['n_imputed']} with estimated compute).",
+            ("One regression", "ECI on log₁₀ compute, time, and a "
+                               "China intercept and slope. The countries share "
+                               "the compute coefficient; each gets its own "
+                               "fixed-compute rate."),
+            ("estimated compute", "The hollow points in the section above."))
+    else:
+        _a, _b = ((fg['a_partial'], fg['b_time']) if fg
+                  else (dec['a_partial'], dec['b_time']))
+        st.markdown(
+            "| Exchange rate | Value |\n|---|---|\n"
+            f"| Compute → capability | **+{_a:.1f} ECI** per 10× compute |\n"
+            f"| Same compute, a year later | **+{_b:.1f} ECI/yr** |")
+        st.caption("Frontier-grade refit." if fg else "Pooled fit.")
 
     # Mirror image: hold compute fixed, watch ECI climb.
     isoc = _cc_iso_compute(cc_rows)
     if isoc is not None:
-        _fn_line(
-            "**The mirror image — same compute, rising capability.** A model "
-            f"trained on the same compute a year later scores about "
-            f"**+{isoc['eci_per_yr']:.0f} ECI points** higher.",
-            ("The mirror image", "Same engine as the chart above, axes flipped: "
-                                 "hold the compute budget fixed and watch ECI "
-                                 "climb."),
-            ("higher", f"Range {isoc['lo']:.0f}\u2013{isoc['hi']:.0f} across "
-                       "budgets."))
         _CBAND_COLORS = {23.5: '#8C6BB1', 24.5: '#3690C0', 25.5: '#02818A'}
 
         def _in_cband(m, c):
@@ -13260,6 +13579,16 @@ def render_compute_capabilities():
                 x=bseg['fit_x'], y=bseg['fit_y'], mode='lines',
                 line=dict(color=col, width=2.5, dash='dot'),
                 legendgroup=str(c), hoverinfo='skip', showlegend=False))
+        if imp is not None and imp['rows']:
+            figc.add_trace(go.Scatter(
+                x=[r['date'] for r in imp['rows']],
+                y=[r['eci'] for r in imp['rows']], mode='markers',
+                marker=dict(size=8, color='white',
+                            line=dict(color='#02818A', width=2)),
+                text=[f"{pretty(r['name'])}<br>ECI {r['eci']:.0f}<br>~"
+                      f"{_logop_lbl(r['log10_flop'])} (estimated)"
+                      for r in imp['rows']],
+                hoverinfo='text', name='estimated compute (not fitted)'))
         figc.update_layout(
             height=420, plot_bgcolor='white', paper_bgcolor='white',
             margin=dict(l=55, r=20, t=10, b=40), font=dict(color='#222222'),
@@ -13273,38 +13602,16 @@ def render_compute_capabilities():
         st.plotly_chart(figc, use_container_width=True)
         _fn_caption(
             "Each dotted line slopes <i>up</i> \u2014 that's ECI gained per year at "
-            "a constant compute budget.",
+            "a constant compute budget. Hollow points carry estimated compute "
+            "and are drawn, not fitted.",
             ("Each dotted line", "Each colored set is a fixed compute band "
                                  f"(log\u2081\u2080 OP \u00b1 "
-                                 f"{_CC_CBAND_HALFWIDTH:.1f} dex). Same engine as "
-                                 "the chart above, axes flipped."))
-
-        # Mirror of the time-to-cheaper table: hold the compute budget fixed and
-        # read off the ECI gained over time. The last column converts that gain to
-        # the compute multiplier it's worth (via the exchange rate), tying this
-        # table back to the one above.
-        st.markdown("**ECI gained at a fixed compute budget** "
-                    f"(central ≈{isoc['eci_per_yr']:.0f} ECI/yr; range "
-                    f"{isoc['lo']:.0f}–{isoc['hi']:.0f} across budgets):")
-        epo = eff['eci_per_oom']
-        imd = ["| Time at same compute | ECI gained | Range | Worth ~ |",
-               "|---|---|---|---|"]
-        for yrs in (1, 2, 3):
-            c = isoc['eci_per_yr'] * yrs
-            lo, hi = isoc['lo'] * yrs, isoc['hi'] * yrs
-            oom = c / epo if epo else float('nan')
-            imd.append(f"| **{yrs} year{'s' if yrs > 1 else ''}** | "
-                       f"+{c:.0f} ECI | +{lo:.0f} to +{hi:.0f} | "
-                       f"{10 ** oom:.0f}× more compute |")
-        st.markdown("\n".join(imd))
-        _fn_caption(
-            f"At a constant budget, a year's algorithmic progress adds "
-            f"~{isoc['eci_per_yr']:.0f} ECI \u2014 the same capability you'd "
-            f"otherwise have to buy with "
-            f"~{10 ** (isoc['eci_per_yr'] / epo):.0f}\u00d7 more compute.",
-            ("more compute", f"At {epo:.0f} ECI per \u00d710 compute. The mirror "
-                             "image of the table above: there capability gets "
-                             "cheaper, here the same spend buys more."))
+                                 f"{_CC_CBAND_HALFWIDTH:.1f} dex), fit on Epoch's "
+                                 "figures only. The regression above pools the "
+                                 "bands with a compute term, which is why its "
+                                 "rate is not any one band's."),
+            ("estimated compute", "From the training site \u2014 the section "
+                                  "above."))
 
     # Two engines — what a compute slowdown really costs. Flows on from the
     # exchange-rate section above (no separate header).
@@ -13360,13 +13667,46 @@ def render_compute_capabilities():
         f"So **physical compute drives roughly a third to a half** of the "
         f"~{obs_slope:.0f} ECI-points/yr.")
 
-    # Distillation control: the same regression on frontier-grade models only —
-    # near-frontier ECI at frontier-scale compute, the subset that could not
-    # lean on a stronger teacher.
-    fg = _cc_frontier_grade_algo(
-        cc_rows, load_eci_frontier(_mtime=_eci_mtime(), full_window=True))
+    # Frontier control: the frontier's own fixed-compute rate, from the same
+    # estimator the projections read (`_CC_COEF_METHOD`).
     share_fg = None
-    if fg is not None:
+    if reg is not None:
+        xr_fg = ((reg['a_partial'] * eci_per_oom) ** 0.5
+                 if reg['a_partial'] > 0 else xr_neutral)
+        if xr_fg > 0:
+            share_fg = _phys_share(reg['b_us'] / xr_fg)
+            _alt = [(y, _cc_regression_fit(cc_rows, _eci_full,
+                                           since=datetime(y, 1, 1))[0])
+                    for y in (2023, 2025)]
+            _alt = [(y, r) for y, r in _alt if r is not None]
+            _alt_note = ((" The window moves these: " + "; ".join(
+                f"from {y}, US {r['b_us']:.1f} and China {r['b_cn']:.1f}"
+                for y, r in _alt) + ".") if _alt else "")
+            _imp_note = (
+                f" Epoch gives no training compute for US frontier releases "
+                f"since {imp['after']:%b %Y}, so {reg['n_imputed']} of them "
+                f"take their training site's 2-month run "
+                f"{imp['offset']:+.2f} OOM — the median gap to Epoch's "
+                f"figure over {imp['n_calib']} releases with both "
+                f"(sd {imp['sd']:.2f})."
+                if imp['after'] and reg['n_imputed'] else "")
+            _fn_caption(
+                f"<b>Frontier rate:</b> one regression over US and Chinese "
+                f"models puts the frontier's fixed-compute rate at "
+                f"~{reg['b_us']:.0f} ECI/yr and compute's share at the frontier "
+                f"at ~{share_fg * 100:.0f}% on the algo-favorable estimator.",
+                ("one regression",
+                 "ECI on log10 compute, time, and a China intercept and slope, "
+                 f"over models released from {reg['since']:%b %Y} "
+                 f"(n={reg['n']}, {reg['n_cn']} Chinese)." + _imp_note),
+                ("fixed-compute rate",
+                 f"US {reg['b_us']:.1f}±{reg['se_b_us']:.1f}, China "
+                 f"{reg['b_cn']:.1f}±{reg['se_b_cn']:.1f} ECI/yr; compute "
+                 f"{reg['a_partial']:.1f}±{reg['se_a']:.1f} ECI per "
+                 "×10." + _alt_note + " The country gap is a level, not a "
+                 "rate, and that level is how distillation enters the "
+                 "projections."))
+    elif fg is not None:
         xr_fg = ((fg['a_partial'] * eci_per_oom) ** 0.5
                  if fg['a_partial'] > 0 else xr_neutral)
         if xr_fg > 0:
@@ -13427,7 +13767,8 @@ def render_compute_capabilities():
     if share_fg is not None:
         figs.add_vline(x=(1 - share_fg) * 100,
                        line=dict(color='#555555', width=1.8, dash='dash'),
-                       annotation_text=f'frontier-grade (~{share_fg*100:.0f}%)',
+                       annotation_text=(('frontier rate' if reg is not None else 'frontier-grade')
+                                        + f' (~{share_fg*100:.0f}%)'),
                        annotation_position='bottom',
                        annotation_font=dict(size=10, color='#555555'))
     figs.update_layout(
@@ -13474,7 +13815,7 @@ def render_compute_capabilities():
                                     "\u2014 the top compute band runs "
                                     f"+{_top_band['slope']:.0f} vs "
                                     f"+{isoc['eci_per_yr']:.0f} ECI/yr central. "
-                                    "The frontier-grade refit above is the "
+                                    "The frontier rate above is the "
                                     "control.")] if _top_band else []))
     _fn_caption(
         "Data: Epoch AI Capabilities Index + Frontier Data Centers. The "
@@ -14786,7 +15127,7 @@ _PC_CHANNEL_LABELS = {
     'innovation': "Indigenous innovation — never dries up",
     'diffusion': "Diffusion — published US methods, drying up after "
                  "pacing plan",
-    'distillation': "Distillation — training against US model outputs",
+    'distillation': "Distillation — a level banked from US model outputs",
 }
 
 
@@ -14801,7 +15142,8 @@ def _pc_fmt_horizon(hours):
 
 def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    cn_gain, cn_extra, cn_run_mo, us_run_mo, anchor_name,
-                   anchor_d, anchor_eci, horizon_year, notes=()):
+                   anchor_d, anchor_eci, horizon_year, dist_level=None,
+                   notes=()):
     """Bottom-of-panel breakdown: which channel closed how much of the gap.
 
     Two readings of the same sampled paths, because neither alone answers
@@ -14852,8 +15194,12 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
             d = _delta(years_base)
         else:
             label = _PC_CHANNEL_LABELS[k]
-            d = _delta(_pc_cross_years(traj0 - cum[k], grid0, target0)
-                       + cn_extra)
+            alt = traj0 - cum[k]
+            if k == 'distillation' and dist_level is not None:
+                # The banked premium sits in the anchor, not in the column:
+                # never having distilled removes that level too.
+                alt = alt - np.asarray(dist_level, dtype=float).reshape(-1, 1)
+            d = _delta(_pc_cross_years(alt, grid0, target0) + cn_extra)
         rows.append({
             "Channel": label,
             "ECI closed": f"{eci:+.1f}",
@@ -14869,10 +15215,13 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                  "Share": "100%", "Without it": "—"})
     st.markdown("##### Why that long?")
     st.table(rows)
+    _lvl_note = ("" if dist_level is None else
+                 " <b>Distillation</b> is a level China already holds, so it "
+                 "closes none of the remaining gap.")
     _fn_caption(
         f"The {total_mo:.1f} months run from China's last frontier model, not "
         "from the pacing plan start. <b>ECI closed</b> and "
-        "<b>Without it</b> answer different questions."
+        "<b>Without it</b> answer different questions." + _lvl_note
         + ("".join(" " + n for n in notes) if notes else ""),
         ("ECI closed", "Each term's cumulative contribution at its own sample's "
                        "crossing. The terms sum to the gap by construction, "
@@ -14885,7 +15234,14 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                        "distillation keeps running at full strength longer and "
                        "the shortfalls partly cover for each other. Median over "
                        "samples, so a row's two columns need not agree in "
-                       "rank."))
+                       "rank."),
+        *([("a level China already holds",
+            f"~{float(np.median(dist_level)):.1f} ECI above US models at "
+            "matched compute and date, and already in China's anchor. The "
+            "row counts only the premium that erodes once no stronger "
+            "teacher is queryable — a negative contribution — "
+            "while <i>Without it</i> removes the banked points as well.")]
+          if dist_level is not None else []))
 
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
@@ -14967,7 +15323,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              + (f"(~{_lvl[0]:+.0f} ECI at matched compute and date vs US "
                 "models, iso-compute rates indistinguishable), "
                 if _lvl else "advantage, ")
-             + "and points already banked stay banked.")
+             + f"which fades over ~{_CC_DIST_FADE_YRS:.0f} yr once no "
+               "stronger teacher is queryable.")
     stop_remote = cb3.checkbox(
         "Cut Chinese remote access to compute abroad", key="pc_stop_remote",
         help="Chinese labs lose the DayOne Johor-class sites and rented "
@@ -15051,12 +15408,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         st.success(f"{pretty(anchor_name)} is already at the US frontier.")
         return
 
-    # Frontier-grade coefficient pair, as in _cc_us_vs_china (pooled fallback).
-    a_partial, b_algo = _cc_pooled_decomp(cc_rows)
-    fgm = _cc_frontier_grade_algo(
-        cc_rows, load_eci_frontier(_mtime=_eci_mtime(), full_window=True))
-    if fgm:
-        a_partial, b_algo = fgm['a_partial'], fgm['b_time']
+    # The frontier coefficient pair, as in _cc_us_vs_china.
+    a_partial, b_algo, _ = _cc_coef_pair(cc_rows)
     # A longer Chinese run is a one-off *level* move, not a faster rate: it
     # puts ×(L/L_us) the compute into one model, worth a_partial per ×10 of
     # capability, and needs proportionally less cluster so the hardware is
@@ -15208,12 +15561,18 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # whole band takes the cut — the conservative reading of the lever.
         g_lo_eff, g_hi_eff = g_lo_eff * dom_keep, g_hi_eff * dom_keep
     pure = _cc_pure_innovation_band(cc_rows)
+    # Distillation as a banked level under `_CC_COEF_METHOD` 'regression':
+    # China carries the measured premium, which erodes only once no stronger
+    # teacher is queryable. None under 'frontier_grade', which keeps the rate.
+    dist_band = _cc_dist_level_band(cc_rows)
+    dist_level_s = (_pc_tri(dist_band[0], dist_band[2], n_s)
+                    if dist_band else None)
     kw = dict(us_anchor=us_best[1], us_rate=us_rate_s, us_pause_level=level_s,
               a_partial=a_partial, g_lo=g_lo_eff,
               g_hi=g_hi_eff, algo_lo=a_lo, algo_mid=a_mid,
               algo_hi=a_hi, pace_lo=pace_lo, pace_hi=pace_hi,
               n=n_s, t_pause=t_pause_s, comp_dead=comp_dead,
-              comp_slow=comp_slow,
+              comp_slow=comp_slow, dist_level=dist_level_s,
               t_dist_stop=(max((d_dist - anchor_d).days, 0) / 365.25
                            if stop_dist else None),
               dist_teacher=teacher_s if withhold else None,
@@ -15392,19 +15751,25 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     else:
         _asm_comp = (f"compute — keeps growing ×{10 ** g_lo_eff:.1f}–"
                      f"{10 ** g_hi_eff:.1f}/yr (export-control band{_slow})")
+    _lvl_tail = ("" if dist_level_s is None else
+                 f"; the ~{float(np.median(dist_level_s)):.0f} ECI it has "
+                 "banked at matched compute fades over "
+                 f"~{_CC_DIST_FADE_YRS:.0f} yr once no stronger teacher is "
+                 "queryable")
     if stop_dist:
-        _asm_dist = ("distillation — **cut today** (checkbox)"
-                     if d_dist <= today else
-                     f"distillation — **cut {d_dist:%b %Y}** (checkbox); "
-                     "the gap-decay law until then")
+        _asm_dist = (("distillation — **cut today** (checkbox)"
+                      if d_dist <= today else
+                      f"distillation — **cut {d_dist:%b %Y}** (checkbox); "
+                      "squeezed by the closing gap until then") + _lvl_tail)
     elif withhold:
         _asm_dist = ("distillation — release freeze from pause-run start "
                      f"(checkbox): the teacher is the last pre-freeze "
                      f"release (ECI ~{teach50:.0f}), so it dries up well "
-                     "below the bar")
+                     "below the bar" + _lvl_tail)
     else:
         _asm_dist = ("distillation — the paused frontier itself stays "
-                     "queryable, fading only as China closes the gap")
+                     "queryable, fading only as China closes the gap"
+                     + _lvl_tail)
     def _strip(txt):
         """The channel strings lead with their own name; the marker is that
         name, so drop the prefix rather than saying it twice."""
@@ -15576,7 +15941,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         chan, grid0, traj0, target0, years, years_base,
         cn_gain=cn_gain, cn_extra=cn_extra, cn_run_mo=cn_run_mo,
         us_run_mo=us_run_mo, anchor_name=anchor_name, anchor_d=anchor_d,
-        anchor_eci=anchor_eci,
+        anchor_eci=anchor_eci, dist_level=dist_level_s,
         horizon_year=(horizon.year if horizon is not None else _PC_HORIZON.year),
         notes=_notes)
 

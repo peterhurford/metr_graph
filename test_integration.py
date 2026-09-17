@@ -843,8 +843,9 @@ class TestComputeVsCapabilities:
         text = (" ".join(str(m.value) for m in at.markdown) +
                 " ".join(str(h.value) for h in at.subheader) +
                 " ".join(str(w.value) for w in at.warning)).lower()
-        # All three sections render: 1 (exchange rate + two-engine flow),
-        # 2 (ECI forecasts), 3 (US vs. China).
+        # Every section renders: known vs. estimated compute, the exchange
+        # rates, the two-engine flow, ECI forecasts, US vs. China.
+        assert "known vs. estimated compute" in text
         assert "exchange rate" in text
         assert "two engines" in text
         assert "eci forecasts" in text
@@ -1627,17 +1628,27 @@ class TestPacingTab:
         # noise. `test_channels_account_for_the_whole_climb` is the exactness
         # guard; this one just checks the row is a decomposition.
         assert parts == pytest.approx(gap, abs=0.5)
-        assert all(v[0] > 0 for v in base.values())
-        # Every channel is load-bearing: removing it costs months.
+        assert gap > 0
+        # Every rate channel is load-bearing: removing it costs months. Under
+        # `_CC_COEF_METHOD` 'regression' distillation is a banked *level*, so
+        # its row reads ~0 while the teacher leads and goes negative once a
+        # freeze erodes it — the rate assertions don't apply to it.
+        dist_material = base["distillation"][0] >= 0.5
         for k, v in base.items():
-            if k == "total":
+            if k == "total" or (k == "distillation" and not dist_material):
                 continue
+            assert v[0] > 0, k
             assert v[2] == "not by 2031" or float(v[2].rstrip(" mo")) > 0, k
 
         at.checkbox(key="pc_stop_dist").check().run()
         _assert_no_error(at, "Pacing / why with distillation cut")
         cut = _rows(at)
-        assert cut["distillation"][0] < base["distillation"][0] / 2
+        if dist_material:
+            assert cut["distillation"][0] < base["distillation"][0] / 2
+        else:
+            # Cutting a level fades the banked premium: the row can only get
+            # more negative, never larger.
+            assert cut["distillation"][0] <= base["distillation"][0] + 0.1
         assert cut["total"][0] == pytest.approx(gap, abs=1.0)
         at.checkbox(key="pc_stop_dist").uncheck().run()
 

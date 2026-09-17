@@ -879,17 +879,37 @@ date distribution rather than the gap metrics above it. Three things are load-be
    (DeepSeek/Qwen/Kimi). The surviving fingerprint is one-way: the refit's b_time runs
    below pooled (followers ride a teacher); a_partial does **not** rise —
    reasoning-era models reach the frontier at sub-frontier compute — so the old two-way
-   gradient claim is dead. The refit's pair still replaces the pooled one for every
-   frontier-facing projection (US-vs-China slopes, the pause bar mapping and climb, the
-   compute terms), with pooled as fallback; `TestCcFrontierGradeAlgo` pins the b_time
-   drop, the screen's bite and the coverage guard. Its n counts models (~12 at margin 5),
-   and margin 3 is too thin to fit, so the innovation bands (`_cc_innovation_algo_band`,
-   `_cc_pure_innovation_band`) fall back to margin 5 before pooled — pooled there
-   collapses the pure-innovation band to a point. Measured by country, distillation is
-   a *level*, not a rate: `_cc_cn_level_offset` (the country dummy at matched compute
-   and date, quoted live in the control caption and the Pacing distillation checkbox)
-   puts Chinese models above their US compute-peers while the two iso-compute rates are
-   indistinguishable; `TestCcCnLevelOffset` guards it.
+   gradient claim is dead. `TestCcFrontierGradeAlgo` pins the b_time drop, the screen's
+   bite and the coverage guard. Its n counts models (~12 at margin 5), and margin 3 is
+   too thin to fit; pooled in its place collapses the pure-innovation band to a point.
+
+   **Which pair the projections read is `_CC_COEF_METHOD`** (prototype, branch
+   `cc-single-regression`). `_cc_coef_pair` feeds the US-vs-China slopes, the pause bar
+   mapping and climb and the compute terms; `_cc_frontier_floor` feeds the innovation
+   bands. Under `'regression'` both read `_cc_joint_regression`: one OLS over US and
+   Chinese models from `_CC_REG_FROM`, ECI ~ log10 FLOP + t + CN + CN·t, so China's
+   fixed-compute rate is its own term rather than read as distillation, and the US rate
+   is the frontier's. Epoch has no training compute for any US frontier release after
+   GPT-5, so `_cc_imputed_frontier_compute` fills that gap from each release's training
+   site (`_cc_responsible_cluster` on 2-month train FLOP) plus the median Epoch-minus-site
+   offset over lab frontier releases that have both. The rates move several ECI/yr with
+   the window's start (the caption quotes 2023 and 2025 live), and the US rate sits at or
+   above China's, so no rate gap is left to read as distillation.
+   `'frontier_grade'` restores the refit (margin 3, then 5, for the bands;
+   pooled last). `TestCcJointRegression`, `TestCcImputedFrontierCompute`, `TestCcCoefPair`.
+
+   **Distillation is carried as a level, not a rate**, which is what measuring it by
+   country supports: `_cc_dist_level_band` (the country dummy at matched compute and
+   date, one shared time slope, ±1.28 se) sets the sim's `dist_level` — the ECI China has
+   banked over its US compute-peers. It holds while a stronger teacher is queryable, is
+   squeezed to the remaining gap as China closes on one, and fades over
+   `_CC_DIST_FADE_YRS` once cut; the released frontier is a running max, so erosion stops
+   gains rather than taking banked points back. The Pacing breakdown's distillation row
+   therefore reads ~0 while the teacher leads and goes *negative* under a pause, while
+   *Without it* subtracts the banked points the anchor already contains.
+   `_cc_cn_level_offset` is the older band-matched read of the same premium, quoted in
+   the CC control caption and the distillation checkbox. `TestCcDistLevel`,
+   `TestCcCnLevelOffset`.
 
 Fan traces set `mode='lines'` explicitly: the fan spans ~6 quarters, and plotly defaults a
 Scatter under 20 points to `lines+markers`, studding the band outline with stray dots.
@@ -1153,9 +1173,10 @@ The two columns answer different questions and
 distillation runs at full strength longer; the caption says so. The total's months run
 from China's last model, not from the pause the cards count from — also captioned. A
 longer Chinese run appears as its own row (`years_base` is its counterfactual). Live at
-defaults innovation dominates, then diffusion, then distillation, then the two compute
-rows; the frontier-grade fix shrank distillation and grew diffusion, since the
-no-teacher band's floor rose while the pure-innovation floor fell. Note for tests: this table renders *after* the race table, so address
+defaults innovation dominates, then diffusion, then the two compute rows; distillation
+is a banked level under `_CC_COEF_METHOD` 'regression', so its row reads ~0 or negative
+(see the frontier-rate paragraph under the CC tab), and a rate — third, ahead of
+compute — under 'frontier_grade'. Note for tests: this table renders *after* the race table, so address
 the race table by its columns (`TestPacingTab._entities`), never by position.
 China
 races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the
