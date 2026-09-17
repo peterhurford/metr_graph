@@ -70,7 +70,7 @@ has no main-column headings, so it has no section to link to.
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`) and ends with the region-share stack (`_dc_render_region_share()`) |
-| Compute/capabilities/diffusion (slug `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; carries China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) and ends with the global compute distribution, today and projected (`_render_cc_world_shares()`) |
+| Compute/capabilities/diffusion (slug `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | six sections on one regression (see *Compute/capabilities/diffusion — layout*): known vs. estimated compute, exchange rates, effective compute, ECI forecast, US vs. China with China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`), and the global compute distribution (`_render_cc_world_shares()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
 
 ### Data Sources and How to Update
@@ -665,6 +665,42 @@ The tab's *Project through* year caps the recorded data for every country alike;
 planned buildout off gives a trend-only projection from today. `TestDcByCountry` (unit)
 and `TestDataCentersByCountry` (integration).
 
+### Compute/capabilities/diffusion — layout
+
+Six sections, every number from one fit. `_cc_regression_fit` (ECI ~ log₁₀ FLOP + t +
+CN + CN·t over US and Chinese models from `_CC_REG_FROM`, `_cc_imputed_frontier_compute`
+filling the US frontier releases Epoch gives no compute for) is computed once at the top
+of `render_compute_capabilities()` and threaded down:
+
+1. **Known vs. estimated compute** (`_cc_render_known_vs_estimated`): the imputed models
+   hollow against Epoch's figures and their sites' 2-month runs, the table of what each
+   was given, and the calibration table behind the offset. `_cc_offset_sensitivity`
+   quotes the US rate at 0/1/2× the offset, live.
+2. **Compute ⟷ ECI**: the exchange-rate table straight from the regression (a, b_US,
+   b_CN with errors, −b/a as "capability gets cheaper"), then the iso-compute chart as
+   the picture of b, imputed models drawn hollow and not fitted. The iso-ECI chart and
+   its two tables were removed — three restatements of one quantity from a weaker
+   estimator, and the source of the old "two views disagree by 2×" framing.
+3. **Effective compute**: frontier growth ≈ a·g + b (`_cc_frontier_coefs`), g the largest
+   lab site's recent pace. The range is the honest one — ±1.28 se, the 2023 and 2025
+   windows, the imputation offset at 0 and ×2; widest, not summed — and the components'
+   sum is quoted against the US frontier's observed slope since 2024 (the running-max
+   frontier, not `_cc_decomp`'s compute-having subset, which stalls at GPT-5).
+4. **ECI Forecasts** (`_cc_eci_forecast`): a and b sampled triangular over those ranges
+   times the projected compute path; the observed trend drawn dotted as the reference.
+5. **US vs. China** (`_cc_us_vs_china`): Chart A grounds compute (imputed US points
+   hollow); Chart B climbs each country at its own rate (b_US, b_CN) plus a × its compute
+   band; the channel table carries compute, innovation (the pure band's midpoint — a
+   prior) and diffusion (b minus innovation) as rates and distillation as the banked
+   level; the scenario lines are `_cc_scenario_paths`, median paths of
+   `_cc_cn_crossing_sim` with the pace factor off, so this section and the crossing
+   below run one engine. The old three-channel bar read distillation as the all-band
+   iso-compute rate minus the top band's — a rate the regression says is not there.
+6. **Global compute distribution**: unchanged.
+
+`TestComputeVsCapabilities` pins the headings and the strings the scenario table keeps;
+`TestCcCnAlgoBand`, `TestCcScenarioPaths` and `TestCcDistLevel` the helpers.
+
 ### Compute/capabilities/diffusion — the buildout-vs-release-timing panel
 
 `_cc_company_buildout()` (bottom of the Data Centers tab) is a **pure timing test**: each
@@ -840,13 +876,15 @@ date distribution rather than the gap metrics above it. Three things are load-be
    that test, retarget the constant rather than loosening the test, and re-check the
    caption. Don't hardcode the anchor model in prose — Epoch recomputes live and the anchor
    moves between pulls, sometimes dropping a model off its own lab's running max entirely.
-2. **The rate is the same two-engine model as Chart B**, deliberately: algorithmic term
-   (iso-compute rates, mode = China's own) + `a_partial` × China's compute growth. A direct
-   fit of China's frontier would contradict the chart above. The bottom-up rate runs hot
-   against what the frontier has actually managed, so `_cc_cn_target_years()` takes
-   a `pace_lo`/`pace_hi` band derived from China's observed slope over `_CC_GAP_WINDOWS`.
-   That reality check is the main uncertainty — the two iso-compute fits sit within a point
-   of each other and alone would give a spuriously tight band.
+2. **The rate is the same model as Chart B**, deliberately: China's own fixed-compute
+   rate from the joint regression (`_cc_cn_algo_band` — the China term ±1.28 se; the
+   iso-compute pair under `'frontier_grade'`) + `a_partial` × China's compute growth, with
+   the banked distillation level carried as `dist_level`. A direct fit of China's frontier
+   would contradict the chart above. The bottom-up rate runs hot against what the frontier
+   has actually managed, so `_cc_cn_target_years()` takes a `pace_lo`/`pace_hi` band
+   derived from China's observed slope over `_CC_GAP_WINDOWS`. That reality check is the
+   main uncertainty. The Pacing pause panel reads the same band, so the two tabs' Chinese
+   engines cannot disagree.
 3. **The crossing waits for a release.** The frontier is a step function, so clearing the
    bar needs a model to ship: `release_gap_days` (`_cc_release_gap_days()`, median recent
    inter-release gap) adds an exponential wait on top of the smooth crossing. That's why the

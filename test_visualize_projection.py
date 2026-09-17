@@ -2601,43 +2601,6 @@ class TestCcDecomp:
         assert d["eci_frontier_slope"] is None
 
 
-class TestCcEfficiency:
-    """_cc_efficiency: compute needed for a fixed ECI falls over time."""
-
-    def _rows(self):
-        # log10(FLOP) = 0.05·ECI − 0.4·t + 10  →  exchange rate 20 ECI/dex,
-        # iso-ECI compute falling 0.4 OOM/yr.
-        base = datetime(2022, 1, 1)
-        # A ≥5-member band around ECI 115, with ECI decorrelated from time.
-        band = [(112, 0.0), (118, 0.5), (113, 1.0), (117, 1.5),
-                (114, 2.0), (116, 2.5), (115, 3.0)]
-        extras = [(104, 0.3), (106, 1.2), (124, 0.8), (126, 2.2)]
-        rows = []
-        for eci, t in band + extras:
-            d = base + timedelta(days=round(t * 365.25))
-            rows.append(_ccrow(d, 0.05 * eci - 0.4 * t + 10.0, eci))
-        return rows
-
-    def test_returns_none_under_ten_rows(self):
-        assert vp._cc_efficiency(self._rows()[:9]) is None
-
-    def test_recovers_exchange_rate_and_efficiency(self):
-        e = vp._cc_efficiency(self._rows())
-        assert e["eci_per_oom"] == pytest.approx(20.0, rel=1e-3)  # 1/alpha
-        assert e["g_inv"] == pytest.approx(0.4, rel=1e-3)
-        assert 0.0 < e["g_central"] < 1.0
-        assert e["algo_mult"] == pytest.approx(10 ** e["g_central"], rel=1e-9)
-        assert e["bands"], "the ECI-115 band should produce a fit line"
-
-    def test_times_are_monotonic_and_bracketed(self):
-        e = vp._cc_efficiency(self._rows())
-        t2, t5, t10 = e["times"][2], e["times"][5], e["times"][10]
-        # More compute reduction → more months to match capability.
-        assert 0 < t2["central"] < t5["central"] < t10["central"]
-        # lo uses the faster efficiency rate (g_hi) → fewer months.
-        assert t2["lo"] <= t2["central"] <= t2["hi"]
-
-
 class TestCcIsoCompute:
     """_cc_iso_compute: hold compute fixed, watch ECI rise."""
 
@@ -3114,6 +3077,41 @@ class TestCcDistLevel:
                            traj - 150.0)
         assert chan['distillation'][:, -1].min() < 0
         assert (np.diff(traj, axis=1) >= -1e-9).all()
+
+
+class TestCcCnAlgoBand:
+    def test_regression_supplies_chinas_rate_with_its_errors(self):
+        cc = vp.load_eci_compute()
+        fit, _ = vp._cc_regression_fit(cc)
+        lo, mid, hi = vp._cc_cn_algo_band(cc)
+        z = vp._CC_DIST_LEVEL_Z
+        assert mid == fit['b_cn']
+        assert lo == pytest.approx(max(fit['b_cn'] - z * fit['se_b_cn'], 0.0))
+        assert hi == pytest.approx(fit['b_cn'] + z * fit['se_b_cn'])
+
+    def test_switch_falls_back_to_the_iso_compute_pair(self, monkeypatch):
+        cc = vp.load_eci_compute()
+        monkeypatch.setattr(vp, '_CC_COEF_METHOD', 'frontier_grade')
+        us, _, _ = vp._cc_iso_compute_rate(cc, vp._CC_US)
+        cn, _, _ = vp._cc_iso_compute_rate(cc, vp._CC_CN)
+        assert vp._cc_cn_algo_band(cc) == (min(us, cn), cn, max(us, cn))
+
+
+class TestCcScenarioPaths:
+    def test_scenarios_order_and_the_level_is_what_a_cut_costs(self):
+        """With the US far ahead the banked level never erodes on its own, so
+        cutting it costs exactly the level by the horizon; stripping diffusion
+        too lands lower still, and the US-rate line above them all."""
+        paths = vp._cc_scenario_paths(
+            150.0, 200.0, 25.0, a_partial=8.0, g_lo=0.2, g_hi=0.2, b_cn=13.0,
+            b_us=14.0, pure_band=(3.0, 4.0), dist_band=(3.0, 4.0, 5.0),
+            horizon_yrs=4.0, n=2000)
+        own, us_rate, no_dist, indig = (
+            paths[k][1] for k in ('own', 'us_rate', 'no_dist', 'indigenous'))
+        assert us_rate[-1] > own[-1] > no_dist[-1] > indig[-1]
+        assert own[-1] - no_dist[-1] == pytest.approx(4.0, abs=0.3)
+        assert (own[-1] - own[0]) / 4.0 == pytest.approx(13.0 + 8.0 * 0.2,
+                                                         abs=0.4)
 
 
 class TestCcCnPaceBand:
