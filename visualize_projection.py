@@ -1168,6 +1168,94 @@ def load_rsi_code():
     return rows
 
 
+# ── R&D automation index (Anthropic's own share of model R&D work) ───────
+# The most direct of the five: not a benchmark score or an output proxy, but
+# the share of Anthropic's own model-R&D tasks a Claude judge rates at AL4
+# ("AI leads") on Epoch's automation scale. Monthly, from
+# `anthropic_rd_automation.csv`, whose header carries the provenance — the
+# six labelled values are transcribed off the figure, the 90% measurement
+# intervals digitized from it.
+#
+# Fitted in logit space like CoBench and the detour study: a share of a fixed
+# basket is bounded, and a score-space line runs through 100%.
+
+_RSI_AUTO_SOURCE_URL = (
+    "https://www.anthropic.com/institute/measuring-pace-of-ai-development")
+_RSI_AUTO_VERSION = "v2026.07"     # the index version the figure names
+
+# The bar. The post names no threshold, so this one is the app's: Claude
+# leading all but a tenth of the work humans were doing. 90% and not a
+# majority because the fitted trend has already passed a majority — a bar
+# today's fit puts in the past dates nothing, as the low ECI card did.
+# Note what it still does not claim: AL4 has a human supervising, and AL5
+# (fully autonomous) is zero in every month measured.
+_RSI_AUTO_TARGET = 90.0
+
+# Same reason the survey and merged-code fans stop short of the tab's
+# horizon: at a ~30-day odds doubling the fan is pinned at 100% within a
+# year, and the remaining years of flat dashed line only squash the six
+# measured months into the left margin.
+_RSI_AUTO_HORIZON_DAYS = 365
+
+
+@st.cache_data
+def load_rsi_automation():
+    """Monthly AL4 share, dated at each month's midpoint.
+
+    `fitted` is the figure's own printed label: the unlabelled months sit
+    below its pixel floor and are charted at zero but never fitted, exactly
+    as the pre-2025 code bars are.
+    """
+    rows = []
+    with Path(__file__).with_name('anthropic_rd_automation.csv').open() as f:
+        for r in csv.DictReader(line for line in f if not line.startswith('#')):
+            y, m = (int(v) for v in r['month'].split('-'))
+            rows.append({
+                'month': r['month'],
+                'date': datetime(y, m, 15),
+                'al4': float(r['al4_pct']),
+                'lo': float(r['lo90']) if r['lo90'] else None,
+                'hi': float(r['hi90']) if r['hi90'] else None,
+                'fitted': r['printed'] == '1'})
+    rows.sort(key=lambda r: r['date'])
+    return rows
+
+
+def _rsi_auto_fit(rows):
+    """OLS through the labelled months in logit space. (base, icpt, slope)."""
+    fr = [r for r in rows if r['fitted']]
+    base = fr[0]['date']
+    days = np.array([(r['date'] - base).days for r in fr], dtype=float)
+    ys = _logit(np.array([r['al4'] for r in fr]) / 100)
+    if len(fr) < 2:
+        return base, float(ys[0]), 0.0
+    icpt, slope = fit_line(days, ys)
+    return base, icpt, slope
+
+
+def _rsi_auto_dt_ci(rows, fit_dt):
+    """Default 80% CI on the odds-doubling time, in days."""
+    fr = [r for r in rows if r['fitted']]
+    return _dt_ci_t_widened([(r['date'] - fr[0]['date']).days for r in fr],
+                            _logit(np.array([r['al4'] for r in fr]) / 100),
+                            fit_dt)
+
+
+def _rsi_auto_pos_sigma(row):
+    """Position sigma in log-odds, from the figure's own 90% interval.
+
+    Every other section picks a position CI by convention; this figure
+    publishes one per month, so the latest month's whisker is used directly.
+    The app's fans are quoted at 80%, hence the 1.645 of a 90% interval
+    rather than the 1.282 the other sections divide by.
+    """
+    if row['lo'] is None or row['hi'] is None:
+        return 0.0
+    lo = min(max(row['lo'], 0.05), 99.95)
+    hi = min(max(row['hi'], 0.05), 99.95)
+    return max((_logit(hi / 100) - _logit(lo / 100)) / (2 * 1.645), 0.0)
+
+
 _RSI_EXPERIMENT_SOURCE_URL = (
     "https://openai.com/index/research-acceleration-view-inside-openai/")
 _RSI_EXPERIMENT_TARGET = 10.0
@@ -5843,6 +5931,7 @@ def render_rsi():
          "shorter investigations for the same token budget on these evaluation "
          "transcripts.” — Fable 5.1 & Mythos 5.1 system card, p. 37"))
 
+    _render_rsi_automation()
     _render_rsi_survey()
     _render_rsi_code()
     _render_rsi_experiments(rsi_end_year)
@@ -5857,6 +5946,170 @@ def render_rsi():
                               "rsi_notyet_ramp",
                               _RSI_DEFAULTS["rsi_notyet_ramp"]),
                           end_year=rsi_end_year)
+
+
+def _render_rsi_automation():
+    """Anthropic's R&D Automation Index: the share of its own work Claude leads.
+
+    Fitted and projected exactly as CoBench and the detour study are — a
+    bounded share, so the trend runs on the log-odds — over the six months the
+    figure labels. The unlabelled months are charted at zero and never fitted.
+    """
+    st.subheader("R&D automation index")
+    _fn_line(
+        "The other four sections measure how well models score or how much "
+        "they produce. This one rates the work itself: the share of "
+        "Anthropic's model R&D tasks where Claude **leads** rather than "
+        "assists.",
+        ("rates the work itself",
+         "Anthropic catalogued ~15,000 granular model-R&D tasks from Slack "
+         "and internal docs into a 542-node tree, weighted each node by the "
+         "person-time it took in July 2026, and had a Claude judge assign "
+         "each one an Epoch automation level from the evidence available "
+         "that month or earlier."),
+        ("leads",
+         "AL4 on Epoch's scale: the model “can complete most of the "
+         "task end-to-end from a high-level prompt, while the human "
+         "supervises”. The level above it, AL5 — fully autonomous, "
+         "no human in the loop — is zero in every month measured, so "
+         "this series is not a measure of unsupervised research."))
+
+    rows = load_rsi_automation()
+    fitted_rows = [r for r in rows if r['fitted']]
+    base, icpt, slope = _rsi_auto_fit(rows)
+    cur = fitted_rows[-1]
+
+    fig = go.Figure()
+
+    if slope > 0:
+        dt = np.log(2) / slope
+        n = N_SAMPLES
+        proj_slope = np.log(2) / np.maximum(
+            _lognormal_from_ci(*_rsi_auto_dt_ci(rows, round(dt)), n=n), 1.0)
+        fitted = icpt + slope * (cur['date'] - base).days
+        start_logit = np.random.normal(fitted, _rsi_auto_pos_sigma(cur), n)
+
+        pdays = np.arange(0, _RSI_AUTO_HORIZON_DAYS + 1, dtype=float)
+        pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
+        traj = _inv_logit(start_logit[:, None]
+                          + pdays[None, :] * proj_slope[:, None]) * 100
+        pct = {q: np.percentile(traj, q, axis=0)
+               for q in (5, 10, 25, 50, 75, 90, 95)}
+
+        for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
+                                     (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
+                                     (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+            fig.add_trace(go.Scatter(
+                x=pdates + pdates[::-1],
+                y=list(pct[hi]) + list(pct[lo][::-1]),
+                fill='toself', fillcolor=color, line=dict(width=0),
+                name=label, hoverinfo='skip', showlegend=True))
+
+        hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
+        hdates = [base + timedelta(days=int(d)) for d in hdays]
+        hy = _inv_logit(icpt + slope * hdays) * 100
+        fig.add_trace(go.Scatter(
+            x=hdates, y=hy.tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5),
+            name=f"Fitted trend (2x odds: {dt:.0f}d)",
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
+                       for d, y in zip(hdates, hy)],
+            hoverinfo='text'))
+        fig.add_trace(go.Scatter(
+            x=pdates, y=pct[50].tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5, dash='dash'),
+            name='Median projection',
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}%"
+                       for d, y in zip(pdates, pct[50])],
+            hoverinfo='text'))
+        x_end = pdates[-1]
+    else:
+        x_end = cur['date']
+
+    # The measured months. The labelled ones carry the figure's own 90%
+    # whiskers as error bars; the unlabelled ones draw hollow at zero, the
+    # same convention the pre-2025 code bars use for "charted, not fitted".
+    unfit = [r for r in rows if not r['fitted']]
+    if unfit:
+        fig.add_trace(go.Scatter(
+            x=[r['date'] for r in unfit], y=[r['al4'] for r in unfit],
+            mode='markers',
+            marker=dict(color='#aaaaaa', size=8, symbol='circle-open',
+                        line=dict(color='#777777', width=2)),
+            hovertext=[f"{r['date']:%b %Y}<br>No labelled value<br>"
+                       "below the figure's resolution" for r in unfit],
+            hoverinfo='text', showlegend=False))
+    fig.add_trace(go.Scatter(
+        x=[r['date'] for r in fitted_rows], y=[r['al4'] for r in fitted_rows],
+        mode='markers+lines',
+        line=dict(color='rgba(79,141,253,0.30)', width=1.5),
+        marker=dict(color='#4F8DFD', size=11, line=dict(color='white', width=2)),
+        error_y=dict(type='data', symmetric=False,
+                     array=[r['hi'] - r['al4'] for r in fitted_rows],
+                     arrayminus=[r['al4'] - r['lo'] for r in fitted_rows],
+                     color='rgba(79,141,253,0.85)', thickness=1.5, width=5),
+        hovertext=[f"{r['date']:%b %Y}<br>Claude leads {r['al4']:.0f}%<br>"
+                   f"90% measurement interval: {r['lo']:.1f}–{r['hi']:.1f}%"
+                   for r in fitted_rows],
+        hoverinfo='text', showlegend=False))
+
+    fig.add_hline(
+        y=_RSI_AUTO_TARGET, line=dict(color='#e74c3c', width=1.5, dash='dash'),
+        annotation_text=f"{_RSI_AUTO_TARGET:.0f}% — Claude leads all but "
+                        "a tenth of model R&D",
+        annotation_position="top left",
+        annotation_font=dict(size=11, color='#e74c3c'))
+    _add_today_vline(fig)
+
+    fig.update_layout(
+        height=520, margin=dict(l=50, r=60, t=50, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(title="Month rated",
+                   range=[rows[0]['date'] - timedelta(days=20),
+                          max(x_end, rows[-1]['date']) + timedelta(days=20)],
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        yaxis=dict(title="Model R&D tasks Claude leads (AL4+)",
+                   range=[0, 100], ticksuffix='%',
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        hovermode='closest',
+        legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
+                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+        plot_bgcolor='white', paper_bgcolor='white')
+    st.plotly_chart(fig, width="stretch")
+
+    _fn_caption(
+        "Six labelled months on a frozen basket of tasks, judged by a model. "
+        f"The bar is this app's, not the post's. Source: [Anthropic R&D "
+        f"Automation Index {_RSI_AUTO_VERSION}]({_RSI_AUTO_SOURCE_URL}); "
+        "values transcribed from the figure, intervals digitized from it.",
+        ("Six labelled months",
+         "March–August 2026, 1% to 26%. The earlier months are drawn "
+         "hollow at zero and left out of the fit: the figure labels no value "
+         "for them and shows no readable band, and the post says only that "
+         "February was “under 1%”. Six points on a steep ramp fit a "
+         "~30-day odds doubling with little room to argue — the rate CI "
+         "is the narrowness of this fit, not of the world."),
+        ("a frozen basket of tasks",
+         "The tasks and their weights are fixed on a July 2026 snapshot of "
+         "person-time, so a rising share means the work humans were doing "
+         "then is being automated — not that no new human work has "
+         "appeared. The post checked this by rebuilding the tree from "
+         "January 2026 data and found no rise in novel tasks through July, "
+         "and says it plans to re-version the basket periodically."),
+        ("judged by a model",
+         "A Claude judge assigned the levels. Against staff who own the work "
+         "areas it matched exactly 59% of the time and to within one level "
+         "97% of the time, where two humans agreed exactly 35% of the time. "
+         "The post names the AL3/AL4 boundary as where that disagreement "
+         "concentrates, which is the boundary this whole series is drawn at."),
+        ("The bar is this app's, not the post's",
+         f"The post names no threshold. {_RSI_AUTO_TARGET:.0f}% is the app's "
+         "choice, and a majority would not do: the fitted trend has already "
+         "passed one, so it would date nothing. Even at this bar a human is "
+         "still supervising — AL5, fully autonomous, is zero in every "
+         "month measured."))
 
 
 def _render_rsi_survey():
@@ -13697,8 +13950,13 @@ _PC_RSI_WEIGHTS = {
     "rli_90": 15.0,
     "cobench_85": 5.0,
     "staff_10x": 10.0,
-    "code_30x": 10.0,
-    "experiments_10x": 10.0,
+    # The two output-volume proxies give up 5 points each to the automation
+    # index: lines merged and experiments launched are things a coding model
+    # inflates directly, while the index rates the share of the work itself
+    # that the model leads — nearer the question the blend is asking.
+    "code_30x": 5.0,
+    "experiments_10x": 5.0,
+    "rdauto_90": 10.0,
     "nextstep_90": 10.0,
     "rev_1t": 10.0,
 }
@@ -14173,6 +14431,18 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                  f"CI, position \u00b1{_PC_RSI_POS_CI:g} points. "
                  f"{_RSI_SUBSTITUTION_BAR:.0f}% is Anthropic's own stated "
                  "full-substitution bar, not a benchmark ceiling."))
+    _cap.append((f"rdauto_{_RSI_AUTO_TARGET:.0f}",
+                 f"Claude leads {_RSI_AUTO_TARGET:.0f}% of Anthropic R&D",
+                 _pc_rsi_auto_eta(load_rsi_automation(), samples=True), False,
+                 "The R&D automation fan above, at its defaults: single OLS "
+                 "in logit space over the six labelled months, odds-doubling "
+                 "over that fit's t-widened rate CI, position over the "
+                 "figure's own 90% measurement interval on the latest month. "
+                 f"{_RSI_AUTO_TARGET:.0f}% is this app's bar, not the post's, "
+                 "and it still has a human supervising \u2014 AL5 is zero "
+                 "throughout. Six points on a steep ramp, judged by a model "
+                 "against a basket frozen in July 2026; treat the narrowness "
+                 "as the fit's, not the world's."))
     _cap.append((f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x",
                  f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
                  _pc_rsi_survey_eta(load_rsi_survey(), samples=True), False,
@@ -14503,6 +14773,33 @@ def _pc_rsi_code_eta(rows, target_x=_RSI_CODE_TARGET, n=None, samples=False):
     fitted = icpt + slope * (cur['date'] - base).days
     start = np.random.normal(fitted, np.log(_RSI_CODE_POS_FACTOR) / 1.282, n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
+    return _pc_eta_out(cur['date'], days_to, samples)
+
+
+# The R&D automation companion: when does Claude lead `_RSI_AUTO_TARGET`% of
+# Anthropic's own model R&D work. Reuses the section's own fit, rate CI and
+# published position interval, so the card and the fan cannot disagree.
+
+
+def _pc_rsi_auto_eta(rows, target_pct=_RSI_AUTO_TARGET, n=None, samples=False):
+    """(early, median, late) dates for the AL4 share to reach `target_pct`.
+
+    The section's fan at its defaults — single OLS in logit space over the
+    labelled months, odds-doubling time lognormal over `_rsi_auto_dt_ci()`,
+    position normal over the figure's own 90% interval on the latest month.
+    Returns None if the fitted slope is flat or negative.
+    """
+    n = n or N_SAMPLES
+    base, icpt, slope = _rsi_auto_fit(rows)
+    if slope <= 0:
+        return None
+    proj_slope = np.log(2) / np.maximum(
+        _lognormal_from_ci(*_rsi_auto_dt_ci(rows, round(np.log(2) / slope)),
+                           n=n), 1.0)
+    cur = [r for r in rows if r['fitted']][-1]
+    fitted = icpt + slope * (cur['date'] - base).days
+    start = np.random.normal(fitted, _rsi_auto_pos_sigma(cur), n)
+    days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
     return _pc_eta_out(cur['date'], days_to, samples)
 
 

@@ -3672,19 +3672,141 @@ class TestRsiCode:
         assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
 
     def test_milestone_card_is_weighted_in_the_blend(self):
-        """The user-set prior mix gives staff and both output proxies 10% each."""
+        """Both output proxies sit at 5%, having given half their weight to
+        the R&D automation index; the staff survey keeps its 10%."""
         slug = f"code_{vp._RSI_CODE_TARGET:.0f}x"
         assert slug == "code_30x"
-        assert vp._PC_RSI_WEIGHTS[slug] == 10.0
+        assert vp._PC_RSI_WEIGHTS[slug] == 5.0
+        assert vp._PC_RSI_WEIGHTS["experiments_10x"] == 5.0
         assert vp._PC_RSI_WEIGHTS["staff_10x"] == 10.0
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
         assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
-        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 10.0
+        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 5.0
 
     def test_the_milestone_is_on_the_internal_clock(self):
         """Driven by models Anthropic uses internally before release, like
         CoBench and the staff survey — so it must not be pulled back a report
         lag as the release-dated cards are."""
+        days = np.zeros(10)
+        for label in ("Training run finished", vp._PC_TIMING_RELEASE):
+            assert np.array_equal(vp._pc_report_lag(days, False, label), days)
+
+
+class TestRsiAutomation:
+    """Anthropic's R&D Automation Index — the AL4 ("AI leads") share.
+
+    The six fitted values are transcribed from the figure's own printed
+    labels; the 90% measurement intervals are digitized from it. The bracket
+    checks below are the calibration guard on that digitization, exactly as
+    the pre-2025 mean is for the merged-code bars.
+    """
+
+    def test_loader_dates_each_month_at_its_midpoint(self):
+        rows = vp.load_rsi_automation()
+        assert len(rows) == 13
+        assert [r['date'] for r in rows] == sorted(r['date'] for r in rows)
+        assert rows[0]['date'] == datetime(2025, 8, 15)
+        assert rows[-1]['date'] == datetime(2026, 8, 15)
+        assert rows[-1]['al4'] == 26.0 and rows[-1]['fitted']
+        assert [r['al4'] for r in rows if r['fitted']] == [1, 3, 12, 14, 22, 26]
+
+    def test_every_interval_brackets_its_printed_label(self):
+        """The calibration guard: the labels are transcribed and the whiskers
+        digitized, so a whisker that misses its own label is a bad read."""
+        fitted = [r for r in vp.load_rsi_automation() if r['fitted']]
+        assert len(fitted) == 6
+        for r in fitted:
+            assert r['lo'] < r['al4'] < r['hi'], r['month']
+            # The figure's whiskers are a few points wide, never a whole band.
+            assert r['hi'] - r['lo'] < 15.0, r['month']
+
+    def test_unlabelled_months_are_charted_but_never_fitted(self):
+        """A logit fit cannot take 0, and the figure prints no value for them
+        — the post says only that February 2026 was "under 1%"."""
+        rows = vp.load_rsi_automation()
+        unfit = [r for r in rows if not r['fitted']]
+        assert len(unfit) == 7
+        assert all(r['al4'] == 0.0 for r in unfit)
+        assert all(r['lo'] is None and r['hi'] is None for r in unfit)
+        assert all(r['date'] < datetime(2026, 3, 1) for r in unfit)
+        base, _icpt, _slope = vp._rsi_auto_fit(rows)
+        assert base == datetime(2026, 3, 15)
+
+    def test_fit_is_logit_space_over_the_labelled_months(self):
+        """A bounded share, fitted on the log-odds like CoBench and the
+        detour study — a score-space line runs through 100%."""
+        rows = vp.load_rsi_automation()
+        fitted = [r for r in rows if r['fitted']]
+        base, icpt, slope = vp._rsi_auto_fit(rows)
+        assert slope > 0
+        days = np.array([(r['date'] - base).days for r in fitted], dtype=float)
+        want = vp.fit_line(days, vp._logit(
+            np.array([r['al4'] for r in fitted]) / 100))
+        assert (icpt, slope) == pytest.approx(tuple(want))
+
+    def test_rate_ci_only_widens_the_convention(self):
+        rows = vp.load_rsi_automation()
+        dt = np.log(2) / vp._rsi_auto_fit(rows)[2]
+        lo, hi = vp._rsi_auto_dt_ci(rows, round(dt))
+        assert lo <= round(dt / 2) and hi >= round(dt * 2)
+        fitted = [r for r in rows if r['fitted']]
+        assert (lo, hi) == vp._dt_ci_t_widened(
+            [(r['date'] - fitted[0]['date']).days for r in fitted],
+            vp._logit(np.array([r['al4'] for r in fitted]) / 100), round(dt))
+
+    def test_position_ci_is_the_figures_own_published_interval(self):
+        """Every other section picks a position CI by convention; this figure
+        publishes one per month, quoted at 90% where the fans read 80%."""
+        cur = [r for r in vp.load_rsi_automation() if r['fitted']][-1]
+        sigma = vp._rsi_auto_pos_sigma(cur)
+        want = (vp._logit(cur['hi'] / 100) - vp._logit(cur['lo'] / 100)) / (2 * 1.645)
+        assert sigma == pytest.approx(want)
+        assert sigma > 0
+        # An unlabelled month has no interval to read, and must not crash.
+        assert vp._rsi_auto_pos_sigma(
+            {'al4': 0.0, 'lo': None, 'hi': None}) == 0.0
+
+    def test_eta_reproduces_the_section_defaults(self):
+        """The milestone card is the section's own fit: same anchor, and a
+        median near the deterministic crossing of the fitted line."""
+        rows = vp.load_rsi_automation()
+        anchor, days = vp._pc_rsi_auto_eta(rows, n=4000, samples=True)
+        cur = [r for r in rows if r['fitted']][-1]
+        assert anchor == cur['date']
+        base, icpt, slope = vp._rsi_auto_fit(rows)
+        fitted = icpt + slope * (anchor - base).days
+        deterministic = (vp._logit(vp._RSI_AUTO_TARGET / 100) - fitted) / slope
+        assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
+
+    def test_target_is_above_what_the_fit_already_reached(self):
+        """A bar the trend has passed dates nothing — the low ECI card's
+        lesson. The fitted share today is already a majority, which is why
+        the bar is 90% and not 50%."""
+        rows = vp.load_rsi_automation()
+        base, icpt, slope = vp._rsi_auto_fit(rows)
+        today = vp._inv_logit(
+            icpt + slope * (datetime.now() - base).days) * 100
+        assert today > 50.0
+        assert vp._RSI_AUTO_TARGET > today
+
+    def test_declining_series_has_no_future_crossing(self):
+        rows = [{'date': datetime(2026, 3, 15), 'al4': 20.0, 'lo': 15.0,
+                 'hi': 25.0, 'fitted': True},
+                {'date': datetime(2026, 4, 15), 'al4': 10.0, 'lo': 5.0,
+                 'hi': 15.0, 'fitted': True}]
+        assert vp._pc_rsi_auto_eta(rows) is None
+
+    def test_milestone_card_is_weighted_in_the_blend(self):
+        slug = f"rdauto_{vp._RSI_AUTO_TARGET:.0f}"
+        assert slug == "rdauto_90"
+        assert vp._PC_RSI_WEIGHTS[slug] == 10.0
+        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
+        assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
+        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 10.0
+
+    def test_the_milestone_is_on_the_internal_clock(self):
+        """An internal measurement of Anthropic's own work, not a score on a
+        released model — so it must not be pulled back a report lag."""
         days = np.zeros(10)
         for label in ("Training run finished", vp._PC_TIMING_RELEASE):
             assert np.array_equal(vp._pc_report_lag(days, False, label), days)

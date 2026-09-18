@@ -1035,7 +1035,7 @@ class TestRsiTab:
         assert not [m for m in at.markdown if "When does" in str(m.value)]
 
     def test_every_chart_marks_today(self):
-        """All five RSI charts carry the dashed "Today" divider the other
+        """All six RSI charts carry the dashed "Today" divider the other
         tabs' projection charts have — without it the fan's start reads as
         the last data point."""
         import json
@@ -1045,7 +1045,7 @@ class TestRsiTab:
         charts = [json.loads(el.proto.spec)["layout"]
                   for el in at.get("plotly_chart")]
         series = [L for L in charts if (L.get("xaxis") or {}).get("title")]
-        assert len(series) == 5 and len(charts) == 6
+        assert len(series) == 6 and len(charts) == 7
         for L in series:
             notes = [a for a in L.get("annotations", [])
                      if a.get("text") == "Today"]
@@ -1065,7 +1065,7 @@ class TestRsiTab:
         assert len(row) == 1
         assert row.iloc[0]["Weight"].startswith("10%")
         # Every milestone gets a row, and the weights editor an input each.
-        assert len(t) == 11
+        assert len(t) == 12
 
     def test_merged_code_section_renders(self):
         at = self._rsi_app()
@@ -1081,7 +1081,7 @@ class TestRsiTab:
         assert label in [str(m.label) for m in at.metric]
         table = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = table[table["Milestone"] == label]
-        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("10%")
+        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("5%")
         figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
         fig = next(f for f in figures if any(t.get('name') == 'OpenAI observations'
                                              for t in f['data']))
@@ -1091,13 +1091,35 @@ class TestRsiTab:
         assert any(s.get('y0') == s.get('y1') == 10 for s in fig['layout']['shapes'])
 
     def test_merged_code_row_in_the_blend(self):
+        """Merged code is down to 5%: it and experiment velocity each gave
+        half their weight to the R&D automation index, which rates the work
+        rather than counting the output a coding model inflates directly."""
         at = self._rsi_app()
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = t[t["Milestone"] == "Code per person reaches 30x"]
         assert len(row) == 1
-        assert row.iloc[0]["Weight"].startswith("10%")
+        assert row.iloc[0]["Weight"].startswith("5%")
         staff = t[t["Milestone"].str.contains("acceleration")]
         assert staff.iloc[0]["Weight"].startswith("10%")
+
+    def test_rd_automation_section_and_blend_row(self):
+        """The index's own section, card and weighted row — and the fitted
+        markers carry the figure's published 90% intervals as error bars."""
+        import json
+        at = self._rsi_app()
+        assert "R&D automation index" in [str(h.value) for h in at.subheader]
+        label = "Claude leads 90% of Anthropic R&D"
+        assert label in [str(m.label) for m in at.metric]
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns)
+        row = t[t["Milestone"] == label]
+        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("10%")
+        figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+        fig = next(f for f in figures
+                   if "AL4+" in (f["layout"].get("yaxis") or {}).get("title", {})
+                                .get("text", ""))
+        obs = next(t for t in fig["data"] if t.get("error_y"))
+        assert len(obs["x"]) == 6 and obs["y"][-1] == 26.0
+        assert any(s.get("y0") == s.get("y1") == 90 for s in fig["layout"]["shapes"])
 
     def test_every_milestone_card_carries_its_caveats_on_hover(self):
         """Caveats ride the card they belong to rather than piling into one

@@ -1,0 +1,43 @@
+# Anthropic R&D Automation Index v2026.07 — the AL4 ("AI leads") share.
+# Source: https://www.anthropic.com/institute/measuring-pace-of-ai-development
+# Figure: "Claude now leads 26% of model R&D work"; monthly share of model R&D
+# tasks at Anthropic, rated on Epoch AI's AL0-AL5 automation scale. AL4 = the
+# model "can complete most of the task end-to-end from a high-level prompt,
+# while the human supervises". AL5 (fully autonomous) is zero in every month.
+#
+# NOT a published feed. The figure is a stacked area; these rows come from the
+# chart asset (cdn.sanity.io/.../31704b297a9350f392f143ea078561f36cd14908-1920x1230.png),
+# read on 2026-09-17.
+#
+#   al4_pct  The figure PRINTS this value next to each labelled marker
+#            (1%, 3%, 12%, 14%, 22%, 26%) — transcribed, not digitized.
+#   lo90/hi90  The "90% measurement intervals" whisker ends, digitized by
+#            pixel analysis: y calibrated off the 0%/20%/.../100% tick labels
+#            (1008.5px = 0%, 6.90px per point). The calibration guard is that
+#            every bracket contains its own printed label, which all six do.
+#   printed  0 = the figure labels no value and the band is below the ~0.3pt
+#            pixel floor. Charted at zero, never fitted: a logit fit cannot
+#            take 0, and the post says only "under 1% in February 2026".
+#            Aug-Dec 2025 show no AL4 band at all; Jan and Feb 2026 show a
+#            whisker at the axis but no readable band.
+#
+# Caveats the post states about itself, carried into the section's hovers:
+# the basket of tasks is frozen on a July 2026 person-time weighting (the post
+# found no rise in novel tasks between its January and July baskets), and the
+# automation levels are assigned by a Claude judge that agreed with staff
+# owners exactly 59% of the time and within one level 97% of the time, against
+# 35% exact agreement between humans.
+month,al4_pct,lo90,hi90,printed
+2025-08,0.0,,,0
+2025-09,0.0,,,0
+2025-10,0.0,,,0
+2025-11,0.0,,,0
+2025-12,0.0,,,0
+2026-01,0.0,,,0
+2026-02,0.0,,,0
+2026-03,1.0,0.4,3.0,1
+2026-04,3.0,0.9,5.1,1
+2026-05,12.0,8.3,16.5,1
+2026-06,14.0,10.8,17.9,1
+2026-07,22.0,16.7,26.9,1
+2026-08,26.0,21.2,32.5,1
