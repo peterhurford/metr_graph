@@ -3673,12 +3673,12 @@ class TestRsiCode:
 
     def test_milestone_card_is_weighted_in_the_blend(self):
         """Both output proxies sit at 5%, having given half their weight to
-        the R&D automation index; the staff survey keeps its 10%."""
+        the R&D automation index; the staff survey then gave 5 more to AL5."""
         slug = f"code_{vp._RSI_CODE_TARGET:.0f}x"
         assert slug == "code_30x"
         assert vp._PC_RSI_WEIGHTS[slug] == 5.0
         assert vp._PC_RSI_WEIGHTS["experiments_10x"] == 5.0
-        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 10.0
+        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 5.0
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
         assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
         assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 5.0
@@ -3797,16 +3797,186 @@ class TestRsiAutomation:
         assert vp._pc_rsi_auto_eta(rows) is None
 
     def test_milestone_card_is_weighted_in_the_blend(self):
+        """AL4 is an intermediate rung once AL5 is the headline, so it sits
+        at 5 while AL5 takes the single largest weight."""
         slug = f"rdauto_{vp._RSI_AUTO_TARGET:.0f}"
         assert slug == "rdauto_90"
-        assert vp._PC_RSI_WEIGHTS[slug] == 10.0
+        assert vp._PC_RSI_WEIGHTS[slug] == 5.0
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
         assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
-        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 10.0
+        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 5.0
+        al5 = f"al5_{vp._RSI_AL5_TARGET:.0f}"
+        assert al5 == "al5_50"
+        assert vp._PC_RSI_WEIGHTS[al5] == max(vp._PC_RSI_WEIGHTS.values())
+        assert vp._PC_RSI_W_KEY + al5 in vp._PC_RESET_KEYS
 
     def test_the_milestone_is_on_the_internal_clock(self):
         """An internal measurement of Anthropic's own work, not a score on a
         released model — so it must not be pulled back a report lag."""
+        days = np.zeros(10)
+        for label in ("Training run finished", vp._PC_TIMING_RELEASE):
+            assert np.array_equal(vp._pc_report_lag(days, False, label), days)
+
+
+class TestRsiAutomationLadder:
+    """The AL2+/AL3+/AL4+ rungs and the lag between them.
+
+    The rungs are cumulative shares digitized from the same stacked figure.
+    AL4 is the only level the figure prints numbers for, so AL4-digitized vs
+    AL4-printed is the calibration guard on the whole method.
+    """
+
+    def test_digitised_al4_reproduces_the_printed_labels(self):
+        """The guard: the same pixel method that produced AL2+ and AL3+,
+        applied to the one band whose truth is printed."""
+        rows = [r for r in vp.load_rsi_automation() if r['fitted']]
+        assert len(rows) == 6
+        errs = [abs(r['al4_dig'] - r['al4']) for r in rows]
+        assert max(errs) < 0.7, errs
+        assert np.mean(errs) < 0.4, errs
+
+    def test_levels_are_cumulative_and_nest(self):
+        """al1 >= al2 >= al3 >= al4 at every month, all inside [0, 100].
+        A cumulative share cannot be exceeded by a stricter one."""
+        for r in vp.load_rsi_automation():
+            assert 100.0 >= r['al1'] >= r['al2'] >= r['al3'] >= r['al4'] >= 0.0, r
+
+    def test_every_level_climbs_monotonically(self):
+        rows = vp.load_rsi_automation()
+        for key in ('al1', 'al2', 'al3'):
+            vals = [r[key] for r in rows]
+            assert vals == sorted(vals), key
+
+    def test_saturated_and_floor_months_are_dropped_before_fitting(self):
+        """A share pinned against 100 carries no rate — one pixel moves its
+        log-odds further than a month of progress does."""
+        rows = vp.load_rsi_automation()
+        for key in ('al1', 'al2', 'al3', 'al4'):
+            for r in vp._rsi_auto_points(rows, key):
+                assert vp._RSI_AUTO_FLOOR < r[key] < vp._RSI_AUTO_SAT_HI
+        # AL2 saturates partway through; AL3 is the one full climb.
+        assert len(vp._rsi_auto_points(rows, 'al2')) < len(rows)
+        assert len(vp._rsi_auto_points(rows, 'al3')) == len(rows)
+        # AL4 is additionally restricted to the months the figure labels.
+        assert all(r['fitted'] for r in vp._rsi_auto_points(rows, 'al4'))
+
+    def test_al1_is_not_a_rung(self):
+        """It is already at 95% in the first rated month and pinned at 100
+        from December, so it never shows a climb to measure."""
+        assert 'al1' not in vp._RSI_AUTO_LADDER
+        rows = vp.load_rsi_automation()
+        assert all(r['al1'] > 95.0 for r in vp._rsi_auto_points(rows, 'al1'))
+
+    def test_the_rungs_are_near_parallel_in_log_odds(self):
+        """What licenses treating each level as the one below it shifted in
+        time. If this stops holding the lag stops being well defined, and the
+        AL5 projection loses its basis."""
+        rows = vp.load_rsi_automation()
+        dts = [np.log(2) / vp._rsi_auto_level_fit(rows, k)[2]
+               for k in vp._RSI_AUTO_LADDER]
+        assert all(d > 0 for d in dts)
+        assert max(dts) / min(dts) < 1.5, dts
+
+    def test_lag_is_positive_ordered_and_only_mildly_reference_dependent(self):
+        rows = vp.load_rsi_automation()
+        steps = vp._rsi_auto_ladder(rows)
+        assert [s[:2] for s in steps] == [('al2', 'al3'), ('al3', 'al4')]
+        assert all(s[2] > 0 for s in steps)
+        for lo, hi, days in steps:
+            spread = vp._rsi_auto_lag_spread(rows, lo, hi)
+            assert spread[0] <= days <= spread[1]
+            # Near-parallel, so where the gap is read moves it by well under
+            # the gap itself.
+            assert spread[1] - spread[0] < 0.5 * days, (lo, hi, spread)
+
+    def test_collapse_puts_every_rung_on_one_clock(self):
+        """The section's diagnostic: each rung against its own reference
+        crossing, which is where the shift model can be seen to hold."""
+        rows = vp.load_rsi_automation()
+        for key in vp._RSI_AUTO_LADDER:
+            pts = vp._rsi_auto_collapse(rows, key)
+            assert len(pts) == len(vp._rsi_auto_points(rows, key))
+            xs = [p[0] for p in pts]
+            assert xs == sorted(xs)
+            # x=0 is that rung's own crossing of the reference share, so the
+            # points must straddle it in value terms.
+            near = min(pts, key=lambda p: abs(p[0]))
+            assert abs(near[1] - vp._RSI_AUTO_LADDER_REF) < 25.0, (key, near)
+
+
+class TestRsiAl5:
+    """Full autonomy: projected, never measured."""
+
+    def test_al5_has_no_column_at_all(self):
+        """The whole point of the section's warning. If a refresh ever adds
+        AL5 data this test should fail and the section be rebuilt on it."""
+        rows = vp.load_rsi_automation()
+        assert all('al5' not in r for r in rows)
+        with open('anthropic_rd_automation.csv') as f:
+            header = next(l for l in f if not l.startswith('#'))
+        assert 'al5' not in header
+
+    def test_ladder_extrapolation_continues_the_measured_step(self):
+        rows = vp.load_rsi_automation()
+        steps = [s[2] for s in vp._rsi_auto_ladder(rows)]
+        lag = vp._rsi_al5_lag(rows)
+        assert lag['ladder'] == pytest.approx(steps[-1] + (steps[-1] - steps[-2]))
+
+    def test_the_absent_al5_band_censors_the_lag_from_below(self):
+        """The zeros are evidence, not nothing: at a shorter lag AL5 would
+        already be a visible band in the last rated month, and it is not. So
+        the censoring bound binds, and the projection uses it."""
+        rows = vp.load_rsi_automation()
+        lag = vp._rsi_al5_lag(rows)
+        assert lag['censor'] > lag['ladder']
+        assert lag['lag'] == lag['censor']
+        # At exactly the censoring lag, AL5 sits on the figure's floor.
+        base, icpt, slope = vp._rsi_auto_fit(rows)
+        at_last = ((rows[-1]['date'] - base).days - lag['censor'])
+        assert vp._inv_logit(icpt + slope * at_last) * 100 == pytest.approx(
+            vp._RSI_AUTO_FLOOR, rel=0.05)
+        # And the extrapolated lag alone would have made it visible.
+        at_ladder = ((rows[-1]['date'] - base).days - lag['ladder'])
+        assert vp._inv_logit(icpt + slope * at_ladder) * 100 > vp._RSI_AUTO_FLOOR
+
+    def test_al5_is_the_al4_curve_shifted(self):
+        """Not a second fit: same rung, plus a lag. A zero lag must reproduce
+        the AL4 card at the same bar."""
+        rows = vp.load_rsi_automation()
+        anchor4, d4 = vp._pc_rsi_auto_eta(rows, vp._RSI_AL5_TARGET, n=6000,
+                                          samples=True)
+        anchor5, d5 = vp._pc_rsi_al5_eta(rows, lag_days=1e-9, n=6000,
+                                         samples=True)
+        assert anchor5 == anchor4
+        assert np.median(d5) == pytest.approx(np.median(d4), rel=0.1)
+
+    def test_a_longer_assumed_lag_only_moves_it_later(self):
+        rows = vp.load_rsi_automation()
+        med = []
+        for mo in (6, 12, 24):
+            _a, d = vp._pc_rsi_al5_eta(rows, lag_days=mo * 30.44, n=6000,
+                                       samples=True)
+            med.append(np.median(d))
+        assert med == sorted(med)
+        # Doubling the lag moves the median by about the lag, not by more.
+        assert 0.7 < (med[2] - med[1]) / (12 * 30.44) < 1.6
+
+    def test_lag_band_never_runs_faster_than_the_data_allows(self):
+        """The fast edge is the censored lag itself: a symmetric band would
+        put mass below what the absent AL5 band already rules out."""
+        draws = vp._rsi_al5_tau_draws(200.0, 20000)
+        assert np.percentile(draws, 10) == pytest.approx(200.0, rel=0.05)
+        assert np.percentile(draws, 90) == pytest.approx(
+            200.0 * vp._RSI_AL5_TAU_HI_MULT, rel=0.05)
+
+    def test_al5_lands_later_than_al4_at_the_same_bar(self):
+        rows = vp.load_rsi_automation()
+        _a4, d4 = vp._pc_rsi_auto_eta(rows, vp._RSI_AL5_TARGET, n=6000,
+                                      samples=True)
+        _a5, d5 = vp._pc_rsi_al5_eta(rows, n=6000, samples=True)
+        assert np.median(d5) > np.median(d4)
+
+    def test_the_milestone_is_on_the_internal_clock(self):
         days = np.zeros(10)
         for label in ("Training run finished", vp._PC_TIMING_RELEASE):
             assert np.array_equal(vp._pc_report_lag(days, False, label), days)
@@ -5943,3 +6113,31 @@ class TestRevenueCombined:
 
     def test_the_toggle_is_off_by_default(self):
         assert vp._REV_DEFAULTS["rev_combined"] is False
+
+
+class TestMilestoneCardLayout:
+    """Thirteen cards have to stay legible: at most four per row, and the
+    rows balanced rather than filled greedily."""
+
+    @staticmethod
+    def _rows(n, per_row=None):
+        per_row = per_row or vp._PC_CARDS_PER_ROW
+        n_rows = max(-(-n // per_row), 1)
+        return [n // n_rows + (i < n % n_rows) for i in range(n_rows)]
+
+    def test_no_row_is_wider_than_the_cap(self):
+        for n in range(1, 25):
+            assert max(self._rows(n)) <= vp._PC_CARDS_PER_ROW, n
+
+    def test_rows_are_balanced_and_account_for_every_card(self):
+        for n in range(1, 25):
+            sizes = self._rows(n)
+            assert sum(sizes) == n, n
+            # Balanced: no row carries two more cards than another.
+            assert max(sizes) - min(sizes) <= 1, (n, sizes)
+
+    def test_the_live_card_count_lays_out_four_three_three_three(self):
+        """The shape the RSI tab actually renders today. If a milestone is
+        added or dropped, retarget this deliberately."""
+        assert len(vp._PC_RSI_WEIGHTS) == 13
+        assert self._rows(13) == [4, 3, 3, 3]

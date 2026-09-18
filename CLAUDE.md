@@ -64,7 +64,7 @@ has no main-column headings, so it has no section to link to.
 | METR Horizon | `render_metr()` | `benchmark_results_1_1.yaml` → `load_frontier()` | log₂(minutes) |
 | Epoch ECI | `render_eci()` | `epoch_capabilities_index.csv` → `load_eci_frontier()` | linear score |
 | Remote Labor Index | `render_rli()` | `_RLI_RAW` → `load_rli_data()` | logit-transformed score |
-| RSI | `render_rsi()` | `_RSI_RAW` → `load_rsi_data()`; `anthropic_rd_automation.csv` → `load_rsi_automation()`; `_RSI_SURVEY`; `_RSI_CODE_RAW` → `load_rsi_code()`; `_RSI_DIR_RAW` → `load_rsi_direction()` | CoBench score % (logit-projected), AL4 share of R&D tasks % (logit-projected), staff speedup ×, merged code per contributor ×, next-step win rate % |
+| RSI | `render_rsi()` | `_RSI_RAW` → `load_rsi_data()`; `anthropic_rd_automation.csv` → `load_rsi_automation()`; `_RSI_SURVEY`; `_RSI_CODE_RAW` → `load_rsi_code()`; `_RSI_DIR_RAW` → `load_rsi_direction()` | CoBench score % (logit-projected), AL2+/AL3+/AL4+ shares of R&D tasks % (logit-projected) and AL5 projected off their lag ladder, staff speedup ×, merged code per contributor ×, next-step win rate % |
 | UK Cyber | `render_ukcyber()` | `aisi_cyber_narrow.csv` → `load_ukcyber()`; `aisi_cyber_tlo.csv` → `load_ukcyber_tlo()` | success rate % + open-weight lag in months; plus a TLO cyber-range cross-check in steps (`_render_ukcyber_tlo()`) and a callout for models only the range has measured (`_render_ukcyber_newest_open()`) |
 | Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` | ARR in billions; optional summed line (`rev_combined`, off by default) via `_rev_combined_series()` |
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
@@ -88,7 +88,7 @@ recipe, including the AISI cyber data deliberately *not* ingested.
 | `_RSI_RAW` (hardcoded) | Anthropic, Redacted Risk Report (Aug 2026), §3.4.3 Fig 3.4.3.A (`_RSI_SOURCE_URL`) | **Not downloadable** — scores read off the figure, Anthropic prints no table. Hand-edit rows |
 | `_RSI_DIR_RAW` (hardcoded) | Anthropic, [*When AI builds itself*](https://www.anthropic.com/institute/recursive-self-improvement) (`_RSI_DIR_SOURCE_URL`) | **Not downloadable** — the figure prints its own bar values, so the rows are read off the labels, not pixel-digitized. Dates are the models' Epoch-catalogued release dates (`test_dates_are_the_published_release_dates`), not the figure's row order, which is not chronological. Hand-edit rows |
 | `_RSI_CODE_RAW` (hardcoded) | Same post's *Code contributed per person, by quarter* figure (`_RSI_CODE_SOURCE_URL`) | **Not downloadable** — the figure labels its bars only from 2025Q1 on; the earlier ones are read off the axis. Their mean must come back at ~1 (`test_pre_2025_bars_average_to_the_baseline_they_define`) and the post states the 2026Q2 figure in prose, which pins the other end. Hand-edit rows |
-| `anthropic_rd_automation.csv` | Anthropic, [*Measuring the pace of AI development*](https://www.anthropic.com/institute/measuring-pace-of-ai-development) (`_RSI_AUTO_SOURCE_URL`) | **Not downloadable** — the R&D Automation Index's AL4 (“AI leads”) band. The six labelled months are *transcribed* from the figure's own printed labels; only the 90% measurement intervals are pixel-digitized, from the chart asset the page serves. The calibration guard is that every interval brackets its own printed label (`test_every_interval_brackets_its_printed_label`). Refreshing is a re-read of the figure when Anthropic re-versions the index — the version is in `_RSI_AUTO_VERSION` and the file's `#` header. Hand-edit rows |
+| `anthropic_rd_automation.csv` | Anthropic, [*Measuring the pace of AI development*](https://www.anthropic.com/institute/measuring-pace-of-ai-development) (`_RSI_AUTO_SOURCE_URL`) | **Not downloadable** — the R&D Automation Index, as **cumulative** shares (`al3_plus` = “rated AL3 or above”, the stacked figure's band boundary). The six AL4 months the figure labels are *transcribed*; every other number is pixel-digitized from the chart asset the page serves. Two calibration guards: each 90% interval brackets its own printed label, and `al4_dig` — the AL4 boundary read the same way as the unlabelled rungs — matches the printed `al4_pct` within ~0.6pt (`test_digitised_al4_reproduces_the_printed_labels`), which is what validates the method on the rungs that have no printed truth. **AL5 has no column**: it is absent in every month, and that absence is used as a censoring bound, not as a zero to fit. Refreshing is a re-read of the figure when Anthropic re-versions the index — the version is in `_RSI_AUTO_VERSION` and the file's `#` header. Hand-edit rows |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | Press reports | Hand-edit `(date, ARR_in_billions)` tuples |
 | `aisi_cyber_tlo.csv` | UK AISI Figure 2 + [Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) | **Not downloadable** — 9 rows digitized from `fig2-ranges.png`, one value quoted from prose. Calibration and validation checks are in the file's `#` header, guarded by `TestUkCyberTlo`. Dates are **published release dates**; the figure's x-axis is tokens |
 | `aisi_cyber_narrow.csv` | UK AISI [open-weight cyber gap post](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) | **Not downloadable** — AISI publishes no numbers; values digitized from `fig1-narrow.png` by pixel analysis. Refreshing is a *figure-unchanged check*: re-fetch the PNG, confirm gridline rows and marker colours still match, re-digitize only if the figure changed. `test_digitized_dates_match_known_releases` and `test_optimistic_bracket_reproduces_aisi_published_lags` are the calibration guards. Hand-editing a row is fine if AISI states a number in prose |
@@ -341,7 +341,7 @@ keys, not caveats.
 Three mechanisms, in order of preference:
 
 1. **`st.metric(..., help=…)`** where a metric exists. Native tooltip, no raw
-   HTML. The *Capabilities Milestones* row is the worked example: twelve cards,
+   HTML. The *Capabilities Milestones* row is the worked example: thirteen cards,
    each with its own note (`_notes` by slug, plus `_pc_clock_note()` for the
    release-vs-internal split that used to be a sentence naming every milestone on
    both sides), and a two-line caption under them. Widget `help=` does the same
@@ -379,7 +379,7 @@ scan that counts it swallowed 5,500 lines once. Tokenize, or edit by hand.
 ### RSI tab
 
 `render_rsi()` is titled *RSI* and runs CoBench, then the R&D automation index,
-then the staff survey, then
+then full autonomy (AL5), then the staff survey, then
 merged code per person, OpenAI experiment velocity, then research direction, then
 *Capabilities Milestones* + *RSI projection (tentative)* (`_pc_render_milestones()`,
 moved here from the Pacing tab). The CoBench section plots that eval — Anthropic's
@@ -424,44 +424,103 @@ its own section's fit is pinned unit-side, per section, by
 `test_eta_reproduces_the_section_defaults`. Don't re-add an in-section ETA.
 
 The tab's second section (`_render_rsi_automation()`) is the most direct of the
-five: not a score or an output count but the share of Anthropic's own model-R&D
-tasks a Claude judge rates at **AL4** (“AI leads”) on Epoch's automation scale,
-from `anthropic_rd_automation.csv` via `load_rsi_automation()`. Fitted in logit
-space like CoBench, dated against `_RSI_AUTO_TARGET` = 90%. Five things are
-load-bearing.
+six: not a score or an output count but the share of Anthropic's own model-R&D
+tasks a Claude judge rates at each level of Epoch's automation scale, from
+`anthropic_rd_automation.csv` via `load_rsi_automation()`. It charts the three
+rungs the figure resolves — AL2+, AL3+, AL4+ — and projects AL4, dated
+against `_RSI_AUTO_TARGET` = 90%. Six things are load-bearing.
 
-1. **The values are transcribed; only the intervals are digitized.** The figure
-   prints its own label on each of the six months from March 2026 (1, 3, 12, 14,
-   22, 26%), so those are read, not measured. The 90% measurement-interval
-   whiskers are pixel-digitized, and the calibration guard is that each one
-   brackets its own printed label.
-2. **The unlabelled months are charted at zero and never fitted.** Aug 2025–Feb
-   2026 carry no label and no readable band; a logit fit cannot take 0 anyway,
-   and the post says only that February was “under 1%”. Same
-   charted-not-fitted split as the pre-2025 merged-code bars, drawn hollow for
-   the same reason.
-3. **The position CI is the figure's own published interval**
+1. **The columns are cumulative, not per-band.** `al3_plus` is “at AL3 or
+   above”, i.e. a boundary of the stacked figure. Cumulative because that is
+   the monotone bounded quantity a logit fit wants: a single band's height
+   rises and then falls as work moves up past it, so the AL3 *band* is
+   shrinking while AL3+ still climbs.
+2. **AL4's values are transcribed; everything else is digitized.** The figure
+   prints a label only for AL4. `al4_dig` reads that same boundary by pixel
+   analysis and must match the printed `al4_pct` within ~0.6pt — that is the
+   calibration guard on the method used for the rungs with no printed truth.
+3. **Saturated and floor months are dropped before fitting**
+   (`_rsi_auto_points`, outside `_RSI_AUTO_FLOOR`..`_RSI_AUTO_SAT_HI`). AL2+
+   passes 99% in April 2026 and AL1+ in December 2025; one pixel moves a share
+   that close to the ceiling further in log-odds than a month of progress does.
+   AL1+ is carried in the CSV for the nesting check only and is deliberately
+   not in `_RSI_AUTO_LADDER` — every usable month of it is already above 95%.
+4. **AL4's unlabelled months are charted at zero and never fitted.** Aug
+   2025–Feb 2026 carry no label and no readable band; a logit fit cannot take
+   0 anyway, and the post says only that February was “under 1%”.
+5. **The position CI is the figure's own published interval**
    (`_rsi_auto_pos_sigma`), not a convention — the only section here whose
    source publishes one. It is quoted at 90% where the fans read 80%, hence the
    1.645.
-4. **The bar is the app's, not the post's, and 90% rather than a majority.**
-   The post names no threshold. The fitted trend has *already* passed 50%, so a
-   majority bar would date nothing — the lesson of the low ECI card
-   (`test_target_is_above_what_the_fit_already_reached`). Even at 90% a human is
-   still supervising: AL5 is zero in every month measured.
-5. **The fan stops at `_RSI_AUTO_HORIZON_DAYS`, not the tab's *Project through*
-   year**, like the survey and merged-code fans: at a ~30-day odds doubling it
-   is pinned at 100% within a year and the remaining years only squash the six
-   measured months into the left margin.
+6. **The AL4 bar is the app's, not the post's, and 90% rather than a majority.**
+   The post names no threshold, and the fitted trend has *already* passed 50%,
+   so a majority bar would date nothing — the lesson of the low ECI card
+   (`test_target_is_above_what_the_fit_already_reached`).
 
 The caveats the post states about itself ride the caption's hovers rather than a
 paragraph: the basket of tasks is frozen on a July 2026 person-time weighting
 (the post found no rise in novel tasks between its January and July baskets), and
 the levels come from a Claude judge that matched staff owners exactly 59% of the
 time — against 35% between two humans — with the disagreement concentrated at
-the AL3/AL4 boundary this series is drawn at. Guarded by `TestRsiAutomation`.
+the AL3/AL4 boundary this series is drawn at. Guarded by `TestRsiAutomation` and
+`TestRsiAutomationLadder`.
 
-The tab's third section (`_render_rsi_survey()`) charts the report's other
+### RSI tab — full autonomy (AL5)
+
+`_render_rsi_al5()` answers “when is model R&D done with no human in the
+loop”, and it is the tab's only section projecting something **never
+measured**. The rungs above are near-parallel in log-odds, so each level's curve
+is roughly the one below it shifted right in time; the section measures that
+shift, extends it one rung, and reads AL5 as AL4 shifted by it. Six things are
+load-bearing.
+
+1. **AL5 has no observations at all.** It is absent in every rated month and the
+   post says Claude “is not operating fully autonomously for any measured
+   subset”. `test_al5_has_no_column_at_all` fails the moment a refresh adds
+   any, at which point the section should be rebuilt on the data rather than on
+   the ladder.
+2. **The step that removes the human is not obviously like the steps that
+   don't.** Every measured rung is the model doing more of a task while a person
+   still supervises. Nothing in the data says a boundary gated by trust,
+   verification and accountability is spaced like the ones inside supervised
+   work. This is the dominant uncertainty, it is structural rather than
+   statistical, and **no band on the chart expresses it** — the visible line
+   and both captions say so.
+3. **The lag is measured at a reference share, and the reference matters a
+   little.** `_rsi_auto_lag` compares two rungs' fitted crossings of
+   `_RSI_AUTO_LADDER_REF` (50%). The rungs are near-parallel but the higher ones
+   climb slightly faster, so the gap fans with the reference; the cards quote
+   the sweep over `_RSI_AUTO_REF_SWEEP` instead of implying one number.
+   `test_the_rungs_are_near_parallel_in_log_odds` is what keeps the shift model
+   meaningful — if the rungs stop being parallel the lag stops being defined.
+4. **The zeros censor the lag from below, and the censoring binds.**
+   `_rsi_al5_lag` returns both the ladder extrapolation (continue the measured
+   step-to-step increment) and `censor`, the shortest lag under which AL5 would
+   still sit below the figure's ~`_RSI_AUTO_FLOOR` floor in the last rated
+   month. Live, the extrapolation alone would have put AL5 above that floor
+   already — a visible band — so the observed absence wins and the
+   projection uses `max(ladder, censor)`.
+   `test_the_absent_al5_band_censors_the_lag_from_below` pins that it binds;
+   retarget it deliberately rather than loosening it.
+5. **AL5 is the AL4 sampler's own draw plus a lag, not a second fit.**
+   `_pc_rsi_al5_eta` calls `_pc_rsi_auto_eta` and shifts it, so the two cards
+   cannot disagree about the rung they share; a zero lag reproduces the AL4 card
+   at the same bar (`test_al5_is_the_al4_curve_shifted`). The lag's 80% band runs
+   from the censored value to `_RSI_AL5_TAU_HI_MULT`x it — asymmetric because
+   the fast edge is what the data allows and the slow edge is a stated
+   judgement, and a symmetric band would put mass below what is already ruled
+   out.
+6. **The collapse chart is the evidence, and the only place the method can be
+   seen to fail.** `_rsi_auto_collapse` replots each rung against its own
+   reference crossing; if the levels really are one curve shifted, they land on
+   top of each other. They nearly do. It is deliberately *not* on a calendar
+   clock, which is why `test_every_chart_marks_today` selects calendar charts by
+   their date x-range rather than counting every chart on the tab.
+
+A number input (`rsi_al5_lag_mo`, default the censored lag) exposes the
+assumption, since it is the whole answer. Guarded by `TestRsiAl5`.
+
+The tab's fourth section (`_render_rsi_survey()`) charts the report's other
 substitution series, the internal staff survey (§3.4.2): self-reported output
 multiple against no AI assistance, from `_RSI_SURVEY` via `load_rsi_survey()`,
 fitted and projected on **log(multiple)** — a multiple has no ceiling to bound it
@@ -485,7 +544,7 @@ orders of magnitude past the data by end-decade, which on a log axis squashes th
 three actual points into the bottom decile. The chart draws
 `_PC_RSI_SURVEY_TARGET_X` as its bar, the same one the milestone card dates.
 
-The tab's fourth section (`_render_rsi_code()`) is the counted counterpart to
+The tab's fifth section (`_render_rsi_code()`) is the counted counterpart to
 that survey: lines merged per active contributor per quarter, as a multiple of
 the pre-2025 average, from `_RSI_CODE_RAW` via `load_rsi_code()`, fitted on
 log(multiple) like the survey and dated against `_RSI_CODE_TARGET` = 30x. Four
@@ -515,7 +574,7 @@ Lines merged is an output proxy a coding model inflates directly, so the caption
 and the milestone card's hover both have to keep saying it measures how much code
 ships, not how much research it settles. Guarded by `TestRsiCode`.
 
-The tab's fifth section (`_render_rsi_direction()`) charts Anthropic's Claude
+The tab's sixth section (`_render_rsi_direction()`) charts Anthropic's Claude
 Code detour study from `_RSI_DIR_RAW` via `load_rsi_direction()`: `_RSI_DIR_N`
 turns where one of its own researchers went the wrong way, replayed to each
 model, with a judge that has seen the finished session picking the better next
@@ -952,7 +1011,7 @@ read.
 
 *Capabilities Milestones* and the RSI blend live at the **bottom of the RSI
 tab** (`_pc_render_milestones()`), not here — they are still named `_pc_*` with
-the ETA helpers they call, and the machinery is unchanged. Twelve cards, driven by
+the ETA helpers they call, and the machinery is unchanged. Thirteen cards, driven by
 the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_eta()`
 for the METR frontier reaching `_PC_METR_TARGET_HRS` — about one work-month — at each
 of `_PC_METR_LEVELS` (at the month-scale bar p50's earlier firing is its own card and
@@ -974,11 +1033,15 @@ RSI tab dates too), `_pc_rsi_survey_eta()` for self-reported staff speedup reach
 `_pc_rsi_code_eta()` for merged code per Anthropic contributor reaching
 `_RSI_CODE_TARGET`, `_pc_rsi_auto_eta()` for the AL4 share of Anthropic's model
 R&D work reaching `_RSI_AUTO_TARGET` (the app's bar, not the post's — see the
-RSI tab section), `_pc_nextstep_eta()` for the detour study's frontier reaching
+RSI tab section), `_pc_rsi_al5_eta()` for the AL5 share — model R&D with no
+human in the loop — reaching `_RSI_AL5_TARGET`, which is **not a fitted
+series** but the AL4 rung shifted by the ladder's own step (see the AL5 tab
+section; it carries the single largest blend weight and the loudest caveat),
+`_pc_nextstep_eta()` for the detour study's frontier reaching
 `_RSI_DIR_TARGET` (that study's own practical ceiling — see the RSI tab section),
 and `_pc_revenue_eta()` for the **leading** company's ARR reaching `_PC_REV_TARGET_B`
 (the Revenue tab's own top milestone) — the one bar here that isn't a benchmark, but still dated off
-released models, since ARR is what shipped models earn. They render in **three rows** (`ceil(n/3)` per row — 4–4–4 for the twelve milestones) so labels remain legible. Each reproduces
+released models, since ARR is what shipped models earn. They render at most `_PC_CARDS_PER_ROW` (4) to a row — wider and a label truncates mid-word — with the rows **balanced** rather than filled greedily, so thirteen cards read 4–3–3–3 and not 4–4–4–1 (`TestMilestoneCardLayout`). Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
 [DT/2, DT*2], position over the current model's CI, p50 slope fits the trend;
 ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2; RLI: single OLS in
@@ -992,7 +1055,8 @@ fitted multiple ÷ and × `_RSI_SURVEY_POS_FACTOR`; merged code: the same,
 over the quarters from 2025 on, with `_rsi_code_dt_ci()` and
 `_RSI_CODE_POS_FACTOR`; R&D automation: single OLS in logit space over the six
 labelled months, odds-doubling over `_rsi_auto_dt_ci()`, position over the
-figure's own 90% interval on the latest month; next-step: single OLS in
+figure's own 90% interval on the latest month; AL5: that same draw shifted by a
+lag drawn over [censored ladder, `_RSI_AL5_TAU_HI_MULT`x it]; next-step: single OLS in
 logit space, odds-doubling over `_rsi_dir_dt_ci()`, position
 ± `_RSI_DIR_POS_CI` points (the study's own binomial SE at n=`_RSI_DIR_N`);
 revenue: OLS on
@@ -1009,13 +1073,13 @@ last dates, since they end on different days. `test_metr_eta_reproduces_the_metr
 `test_pacing_quotes_the_same_milestone` compares the two CoBench dates with a
 tolerance, since both are Monte Carlo medians off an unseeded RNG.
 
-Seven of the twelve are dated off *released* models (METR, ECI, RLI and the detour
+Seven of the thirteen are dated off *released* models (METR, ECI, RLI and the detour
 study — publicly benchmarked or run on shipped models — and revenue, since ARR is
 earned by shipped models); CoBench, the staff survey, merged code, experiment
-velocity and the R&D automation index are internal
+velocity and both R&D-automation cards (AL4 and AL5) are internal
 measurements, driven by work on models the lab has internal access to
 before release. So `_pc_report_lag()` pulls the seven back
-by `_PC_REPORT_LAG_DAYS` (sampled over the range so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other five
+by `_PC_REPORT_LAG_DAYS` (sampled over the range so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other six
 are already on that clock and must not be shifted twice.
 
 A checkbox (`rsi_notyet`, default on, in the blend's *Set your own weights*
