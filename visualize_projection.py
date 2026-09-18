@@ -1377,7 +1377,10 @@ def _rsi_auto_lag_spread(rows, lower, upper):
 # AL4->AL5 lag were as short as the extrapolation alone suggests, AL5 would
 # already be a visible band in the last rated month, and it is not.
 
-_RSI_AL5_TARGET = 50.0
+# Deliberately the same level as `_RSI_AUTO_TARGET`: both rungs are dated
+# against one bar, so the gap between where the two fans cross it is the
+# ladder's own step made visible rather than a comparison of two thresholds.
+_RSI_AL5_TARGET = 90.0
 
 # The slow edge of the lag's 80% interval, as a multiple of the censored
 # central value: the judgement that removing the supervisor could be twice as
@@ -1440,20 +1443,6 @@ def _pc_rsi_al5_eta(rows, target_pct=_RSI_AL5_TARGET, lag_days=None, n=None,
         lag_days = lag['lag']
     days_to = days_to + _rsi_al5_tau_draws(float(lag_days), n)
     return _pc_eta_out(anchor, np.maximum(days_to, 0.0), samples)
-
-
-def _rsi_auto_collapse(rows, key, share=_RSI_AUTO_LADDER_REF):
-    """One rung's measured months on the ladder's common clock.
-
-    x is days from that rung's own crossing of `share`, so if the rungs really
-    are one curve shifted, every rung's points land on top of each other. This
-    is the evidence for the shift model, and the only way to see it fail.
-    """
-    at = _rsi_auto_reach(rows, key, share)
-    if at is None:
-        return []
-    return [((r['date'] - _RSI_AUTO_EPOCH).days - at, r[key])
-            for r in _rsi_auto_points(rows, key)]
 
 
 _RSI_EXPERIMENT_SOURCE_URL = (
@@ -6132,7 +6121,6 @@ def render_rsi():
          "transcripts.” — Fable 5.1 & Mythos 5.1 system card, p. 37"))
 
     _render_rsi_automation()
-    _render_rsi_al5()
     _render_rsi_survey()
     _render_rsi_code()
     _render_rsi_experiments(rsi_end_year)
@@ -6150,42 +6138,120 @@ def render_rsi():
 
 
 # The ladder's colours: a light-to-saturated ramp, so the rungs read as one
-# scale rather than as unrelated series. AL4 keeps the app's frontier blue.
-_RSI_AUTO_COLORS = {'al2': '#b9c6d8', 'al3': '#7e9dc4', 'al4': '#4F8DFD'}
+# scale rather than as unrelated series. AL4 keeps the app's frontier blue and
+# AL5 — the rung that is projected rather than measured — is the purple the
+# app uses elsewhere for a quantity standing apart from its neighbours.
+_RSI_AUTO_COLORS = {'al2': '#b9c6d8', 'al3': '#7e9dc4', 'al4': '#4F8DFD',
+                    'al5': '#8e44ad'}
 
 
 def _render_rsi_automation():
-    """Anthropic's R&D Automation Index: the share of its own work Claude leads.
+    """The automation ladder, and AL5 projected off it — one chart.
 
-    Charts the cumulative share at AL2+, AL3+ and AL4+ — the rungs the figure
-    resolves — and projects AL4, which is the only one still climbing through
-    the middle of its range. Each is fitted on the log-odds like CoBench.
+    Charts the cumulative share at AL2+, AL3+ and AL4+ (the rungs the figure
+    resolves), projects AL4, and carries AL5 as the AL4 rung shifted by the
+    ladder's own step. Each measured rung is fitted on the log-odds like
+    CoBench; AL5 is not fitted at all, because it is never observed.
     """
     st.subheader("R&D automation index")
     _fn_line(
         "The other four sections measure how well models score or how much "
         "they produce. This one rates the work itself: the share of "
-        "Anthropic's model R&D tasks where Claude **leads** rather than "
-        "assists.",
+        "Anthropic's model R&D tasks at each rung of Epoch's automation "
+        "scale, from **AI assists** up to **no human in the loop**.",
         ("rates the work itself",
          "Anthropic catalogued ~15,000 granular model-R&D tasks from Slack "
          "and internal docs into a 542-node tree, weighted each node by the "
          "person-time it took in July 2026, and had a Claude judge assign "
          "each one an Epoch automation level from the evidence available "
          "that month or earlier."),
-        ("leads",
-         "AL4 on Epoch's scale: the model “can complete most of the "
-         "task end-to-end from a high-level prompt, while the human "
-         "supervises”. The level above it, AL5 — fully autonomous, "
-         "no human in the loop — is zero in every month measured, so "
-         "this series is not a measure of unsupervised research."))
+        ("no human in the loop",
+         "AL5. The rung below it, AL4, is the model “completing most of "
+         "the task end-to-end from a high-level prompt, while the human "
+         "supervises” — so AL4 is not a measure of unsupervised "
+         "research, and AL5 is."))
 
     rows = load_rsi_automation()
     fitted_rows = [r for r in rows if r['fitted']]
     base, icpt, slope = _rsi_auto_fit(rows)
     cur = fitted_rows[-1]
+    lag = _rsi_al5_lag(rows)
+
+    _fn_line(
+        "⚠️ **AL5 has no measurements at all** — it is zero in "
+        "every rated month. Its curve below is the AL4 rung shifted by the "
+        "spacing of the rungs beneath it, which is an assumption about the "
+        "step that removes the human, not a reading of it.",
+        ("the spacing of the rungs beneath it",
+         "Each level's curve is close to the one below it shifted right in "
+         "time — the rungs are near-parallel in log-odds, within 50% of "
+         "each other's rate, which is what makes the shift meaningful. "
+         "AL2+→AL3+ and AL3+→AL4+ are the two steps the figure "
+         "resolves; AL4+→AL5 is this section's extrapolation of them."),
+        ("the step that removes the human",
+         "Every measured step is the model doing more of a task while a "
+         "person still supervises. AL5 is the person leaving. Nothing in the "
+         "data says a boundary of that kind is spaced like the ones inside "
+         "supervised work — trust, verification and accountability "
+         "plausibly gate it — and the band below does not contain that "
+         "possibility."))
+
+    if lag is not None:
+        steps = _rsi_auto_ladder(rows)
+        cols = st.columns(len(steps) + 2)
+        for col, (lo, hi, days) in zip(cols, steps):
+            spread = _rsi_auto_lag_spread(rows, lo, hi)
+            with col:
+                st.metric(f"{lo.upper()}+ → {hi.upper()}+",
+                          f"{days / 30.44:.1f} mo",
+                          help="Measured: how far the upper rung's fitted "
+                               "curve trails the lower one at "
+                               f"{_RSI_AUTO_LADDER_REF:.0f}%. The rungs are "
+                               "near-parallel but the higher ones climb "
+                               "slightly faster, so the gap depends a little "
+                               "on where it is read: over "
+                               f"{_RSI_AUTO_REF_SWEEP[0]:.0f}–"
+                               f"{_RSI_AUTO_REF_SWEEP[-1]:.0f}% it runs "
+                               f"{spread[0] / 30.44:.1f}–"
+                               f"{spread[1] / 30.44:.1f} months.")
+        with cols[-2]:
+            st.metric("AL4+ → AL5 (assumed)",
+                      f"{lag['ladder'] / 30.44:.1f} mo",
+                      help="Not measured. The measured steps continue by "
+                           f"about {(steps[-1][2] - steps[-2][2]) / 30.44:+.1f} "
+                           "months each, and this extends that increment one "
+                           "rung past the data.")
+        with cols[-1]:
+            _at_ladder = _inv_logit(
+                icpt + slope * ((rows[-1]['date'] - base).days
+                                - lag['ladder'])) * 100
+            st.metric("… raised by the zeros to",
+                      f"{lag['censor'] / 30.44:.1f} mo",
+                      help="The absence of an AL5 band is evidence. At the "
+                           "extrapolated lag AL5 would already have been "
+                           f"about {_at_ladder:.1f}% in "
+                           f"{rows[-1]['date']:%b %Y} — above the "
+                           f"figure's ~{_RSI_AUTO_FLOOR:g}pt floor, so it "
+                           "would show. This is the shortest lag that keeps "
+                           "it invisible, and it is the one the projection "
+                           "uses.")
+
+        with st.expander("Assumption: the AL4 → AL5 lag"):
+            lag_mo = _ss_number_input(
+                st, "Months AL5 trails AL4", "rsi_al5_lag_mo",
+                float(round(lag['lag'] / 30.44, 1)),
+                min_value=0.0, max_value=120.0, step=0.5,
+                help="The default is the censored ladder extrapolation. Raise "
+                     "it to price in that removing the supervisor is a harder "
+                     "step than any rung measured inside supervised work; the "
+                     "80% band already runs to "
+                     f"{_RSI_AL5_TAU_HI_MULT:g}× whatever is set here.")
+        lag_days = max(float(lag_mo) * 30.44, 1.0)
+    else:
+        lag_days = None
 
     fig = go.Figure()
+    x_end = cur['date']
 
     if slope > 0:
         dt = np.log(2) / slope
@@ -6195,21 +6261,44 @@ def _render_rsi_automation():
         fitted = icpt + slope * (cur['date'] - base).days
         start_logit = np.random.normal(fitted, _rsi_auto_pos_sigma(cur), n)
 
-        pdays = np.arange(0, _RSI_AUTO_HORIZON_DAYS + 1, dtype=float)
+        # The window has to hold the AL5 fan, which is the AL4 one pushed out
+        # by the lag; without that the projected rung runs off the right edge.
+        horizon = _RSI_AUTO_HORIZON_DAYS + int(lag_days or 0)
+        pdays = np.arange(0, horizon + 1, dtype=float)
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
-        traj = _inv_logit(start_logit[:, None]
-                          + pdays[None, :] * proj_slope[:, None]) * 100
-        pct = {q: np.percentile(traj, q, axis=0)
-               for q in (5, 10, 25, 50, 75, 90, 95)}
+        x_end = pdates[-1]
 
-        for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
-                                     (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
-                                     (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
-            fig.add_trace(go.Scatter(
-                x=pdates + pdates[::-1],
-                y=list(pct[hi]) + list(pct[lo][::-1]),
-                fill='toself', fillcolor=color, line=dict(width=0),
-                name=label, hoverinfo='skip', showlegend=True))
+        # AL4 and AL5 come off the *same* sampled paths — AL5 is those paths
+        # shifted per sample — so the two fans cannot tell different stories
+        # about the rung they share.
+        shifts = {'al4': np.zeros(n)}
+        if lag_days is not None:
+            shifts['al5'] = _rsi_al5_tau_draws(lag_days, n)
+        bands = {
+            'al4': [(5, 95, 'rgba(52,152,219,0.10)'),
+                    (10, 90, 'rgba(52,152,219,0.18)'),
+                    (25, 75, 'rgba(52,152,219,0.28)')],
+            'al5': [(5, 95, 'rgba(155,89,182,0.10)'),
+                    (10, 90, 'rgba(155,89,182,0.18)'),
+                    (25, 75, 'rgba(155,89,182,0.28)')]}
+        medians = {}
+        for key, shift in shifts.items():
+            traj = _inv_logit(
+                start_logit[:, None]
+                + (pdays[None, :] - shift[:, None]) * proj_slope[:, None]) * 100
+            pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 75, 90, 95)}
+            medians[key] = np.percentile(traj, 50, axis=0)
+            for i, (lo, hi, color) in enumerate(bands[key]):
+                fig.add_trace(go.Scatter(
+                    x=pdates + pdates[::-1],
+                    y=list(pct[hi]) + list(pct[lo][::-1]),
+                    fill='toself', fillcolor=color, line=dict(width=0),
+                    # One entry per fan, not three. Two fans at the app's usual
+                    # three-band legend would be six rows of key for two
+                    # objects, and the legend then covers the fans it labels.
+                    name=f"{key.upper()}{'+' if key == 'al4' else ''} "
+                         "50/80/90% CI",
+                    hoverinfo='skip', showlegend=(i == 0)))
 
         hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
         hdates = [base + timedelta(days=int(d)) for d in hdays]
@@ -6221,16 +6310,16 @@ def _render_rsi_automation():
             hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
                        for d, y in zip(hdates, hy)],
             hoverinfo='text'))
-        fig.add_trace(go.Scatter(
-            x=pdates, y=pct[50].tolist(), mode='lines',
-            line=dict(color='#2c3e50', width=2.5, dash='dash'),
-            name='Median projection',
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}%"
-                       for d, y in zip(pdates, pct[50])],
-            hoverinfo='text'))
-        x_end = pdates[-1]
-    else:
-        x_end = cur['date']
+        for key, med in medians.items():
+            fig.add_trace(go.Scatter(
+                x=pdates, y=med.tolist(), mode='lines',
+                line=dict(color=_RSI_AUTO_COLORS[key], width=2.5, dash='dash'),
+                name=(f"{key.upper()}+ median projection" if key == 'al4'
+                      else "AL5 median (assumed lag)"),
+                hovertext=[f"{d.strftime('%b %d, %Y')}<br>"
+                           f"{key.upper()} median: {y:.1f}%"
+                           for d, y in zip(pdates, med)],
+                hoverinfo='text'))
 
     # The rungs below AL4, as measured context. Saturated months draw hollow:
     # they are real readings, but a share pinned against 100 carries no rate,
@@ -6263,8 +6352,8 @@ def _render_rsi_automation():
         fig.add_trace(go.Scatter(
             x=[r['date'] for r in unfit], y=[r['al4'] for r in unfit],
             mode='markers',
-            marker=dict(color='#aaaaaa', size=8, symbol='circle-open',
-                        line=dict(color='#777777', width=2)),
+            marker=dict(color='#aaaaaa', size=7, symbol='circle-open',
+                        line=dict(color='#777777', width=1.5)),
             hovertext=[f"{r['date']:%b %Y}<br>No labelled AL4 value<br>"
                        "below the figure's resolution" for r in unfit],
             hoverinfo='text', showlegend=False))
@@ -6283,17 +6372,33 @@ def _render_rsi_automation():
                    f"90% measurement interval: {r['lo']:.1f}–{r['hi']:.1f}%"
                    for r in fitted_rows],
         hoverinfo='text'))
+    # AL5's own measurements: zero, every month. Drawn as a flat line rather
+    # than markers because AL4's own pre-March zeros occupy the same seven
+    # points — as markers the two series were indistinguishable rings sitting
+    # on each other. The axis is floored below zero so this is not swallowed
+    # by the axis line.
+    fig.add_trace(go.Scatter(
+        x=[r['date'] for r in rows], y=[0.0] * len(rows),
+        mode='lines',
+        line=dict(color=_RSI_AUTO_COLORS['al5'], width=3),
+        name='AL5 measured (zero every month)',
+        hovertext=[f"{r['date']:%b %Y}<br>No AL5 band<br>"
+                   f"below the figure's ~{_RSI_AUTO_FLOOR:g}pt floor"
+                   for r in rows],
+        hoverinfo='text'))
 
+    # One bar, two crossings: both rungs are dated against the same level, so
+    # the gap between where the fans meet it is the ladder's step made visible.
     fig.add_hline(
         y=_RSI_AUTO_TARGET, line=dict(color='#e74c3c', width=1.5, dash='dash'),
-        annotation_text=f"{_RSI_AUTO_TARGET:.0f}% — Claude leads all but "
-                        "a tenth of model R&D",
+        annotation_text=f"{_RSI_AUTO_TARGET:.0f}% — of model R&D tasks: "
+                        "led by Claude (AL4+), then unsupervised (AL5)",
         annotation_position="top left",
         annotation_font=dict(size=11, color='#e74c3c'))
     _add_today_vline(fig)
 
     fig.update_layout(
-        height=520, margin=dict(l=50, r=60, t=50, b=40),
+        height=580, margin=dict(l=50, r=60, t=86, b=40),
         font=dict(color='#1a1a2e'),
         xaxis=dict(title="Month rated",
                    range=[rows[0]['date'] - timedelta(days=20),
@@ -6301,21 +6406,24 @@ def _render_rsi_automation():
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         yaxis=dict(title="Share of model R&D tasks at this level or above",
-                   range=[0, 100], ticksuffix='%',
+                   range=[-3, 100], tick0=0, dtick=20, ticksuffix='%',
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         hovermode='closest',
-        legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
-                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+        # Above the plot: nine keys inside it would sit on top of the AL5 fan
+        # whichever corner they took, the chart being full left to right.
+        legend=dict(orientation='h', yanchor='bottom', y=1.02,
+                    xanchor='left', x=0, font=dict(color='#1a1a2e', size=11)),
         plot_bgcolor='white', paper_bgcolor='white')
     st.plotly_chart(fig, width="stretch")
 
     _fn_caption(
         "Cumulative shares on a frozen basket of tasks, judged by a model. "
-        "Only AL4 is projected — the rungs below it are against the "
-        f"ceiling. The bar is this app's, not the post's. Source: [Anthropic "
-        f"R&D Automation Index {_RSI_AUTO_VERSION}]({_RSI_AUTO_SOURCE_URL}); "
-        "AL4 values transcribed from the figure, everything else digitized.",
+        "Only AL4 is fitted — the rungs below it are against the ceiling "
+        "and AL5 is never observed at all. The bar is this app's, not the "
+        f"post's. Source: [Anthropic R&D Automation Index "
+        f"{_RSI_AUTO_VERSION}]({_RSI_AUTO_SOURCE_URL}); AL4 values "
+        "transcribed from the figure, everything else digitized.",
         ("Cumulative shares",
          "Each line is “at this level or above” — the stacked "
          "figure's band boundaries, not a band's own height. Cumulative "
@@ -6328,6 +6436,15 @@ def _render_rsi_automation():
          "moves its log-odds further than a month of progress does — so "
          "those months are charted hollow and dropped before fitting. AL3+ is "
          "the one rung that spans a full climb."),
+        ("AL5 is never observed at all",
+         "So its band carries the AL4 fit's uncertainty and the lag's, and "
+         "not the question of whether a ladder measured inside supervised "
+         "work says anything about the step that removes the supervisor. That "
+         "is the dominant uncertainty here, it is structural rather than "
+         "statistical, and no band can express it: if full autonomy is gated "
+         "by verification and accountability rather than by capability, this "
+         "curve is measuring the wrong thing rather than measuring it "
+         "imprecisely."),
         ("judged by a model",
          "A Claude judge assigned the levels. Against staff who own the work "
          "areas it matched exactly 59% of the time and to within one level "
@@ -6341,234 +6458,10 @@ def _render_rsi_automation():
          "calibration guard on that method: the two agree within ~0.6 points."),
         ("The bar is this app's, not the post's",
          f"The post names no threshold. {_RSI_AUTO_TARGET:.0f}% is the app's "
-         "choice, and a majority would not do: the fitted trend has already "
-         "passed one, so it would date nothing. Even at this bar a human is "
-         "still supervising — AL5, fully autonomous, is zero in every "
-         "month measured."))
-
-
-def _render_rsi_al5():
-    """AL5 projected off the ladder: the rungs' spacing, extended one step.
-
-    The measured rungs are near-parallel in log-odds, so each is roughly the
-    one below it shifted right. This section measures that shift, extends it
-    one rung past the data, and projects AL5 as AL4 shifted by it. AL5 itself
-    is never observed, so the extension is the assumption the section exists
-    to expose, not a result it establishes.
-    """
-    st.subheader("Full autonomy (AL5)")
-    _fn_line(
-        "⚠️ AL5 has **no measurements at all** — it is zero in "
-        "every rated month. What follows extends the spacing of the rungs "
-        "below it by one step, which is an assumption about the step that "
-        "removes the human, not a reading of it.",
-        ("the spacing of the rungs below it",
-         "Each level's curve is close to the one below it shifted right in "
-         "time, so the ladder has a measurable step. AL2+→AL3+ and "
-         "AL3+→AL4+ are the two steps the figure resolves; the AL4+"
-         "→AL5 step is this section's extrapolation of them."),
-        ("the step that removes the human",
-         "Every measured step is the model doing more of a task while a "
-         "person still supervises. AL5 is the person leaving. Nothing in the "
-         "data says a boundary of that kind is spaced like the ones inside "
-         "supervised work — trust, verification and accountability plausibly "
-         "gate it — and the band below does not contain that possibility."))
-
-    rows = load_rsi_automation()
-    lag = _rsi_al5_lag(rows)
-    if lag is None:
-        st.info("Not enough unsaturated months to fit the ladder.")
-        return
-
-    steps = _rsi_auto_ladder(rows)
-    cols = st.columns(len(steps) + 2)
-    for col, (lo, hi, days) in zip(cols, steps):
-        spread = _rsi_auto_lag_spread(rows, lo, hi)
-        with col:
-            st.metric(f"{lo.upper()}+ → {hi.upper()}+",
-                      f"{days / 30.44:.1f} mo",
-                      help="Measured: how far the upper rung's fitted curve "
-                           f"trails the lower one at {_RSI_AUTO_LADDER_REF:.0f}%. "
-                           "The rungs are near-parallel but the higher ones "
-                           "climb slightly faster, so the gap depends a little "
-                           "on where it is read: over "
-                           f"{_RSI_AUTO_REF_SWEEP[0]:.0f}–"
-                           f"{_RSI_AUTO_REF_SWEEP[-1]:.0f}% it runs "
-                           f"{spread[0] / 30.44:.1f}–{spread[1] / 30.44:.1f} "
-                           "months.")
-    with cols[-2]:
-        st.metric("AL4+ → AL5 (assumed)", f"{lag['ladder'] / 30.44:.1f} mo",
-                  help="Not measured. The measured steps continue by about "
-                       f"{(steps[-1][2] - steps[-2][2]) / 30.44:+.1f} months "
-                       "each, and this extends that increment one rung past "
-                       "the data.")
-    with cols[-1]:
-        st.metric("… raised by the zeros to",
-                  f"{lag['censor'] / 30.44:.1f} mo",
-                  help="The absence of an AL5 band is evidence. At the "
-                       "extrapolated lag AL5 would already have been about "
-                       f"{_inv_logit(_rsi_auto_level_fit(rows, 'al4')[1] + _rsi_auto_level_fit(rows, 'al4')[2] * ((rows[-1]['date'] - _rsi_auto_level_fit(rows, 'al4')[0]).days - lag['ladder'])) * 100:.1f}% "
-                       f"in {rows[-1]['date']:%b %Y} — above the figure's "
-                       f"~{_RSI_AUTO_FLOOR:g}pt floor, so it would show. This "
-                       "is the shortest lag that keeps it invisible, and it is "
-                       "the one the projection uses.")
-
-    with st.expander("Assumption: the AL4 → AL5 lag"):
-        lag_mo = _ss_number_input(
-            st, "Months AL5 trails AL4", "rsi_al5_lag_mo",
-            float(round(lag['lag'] / 30.44, 1)),
-            min_value=0.0, max_value=120.0, step=0.5,
-            help="The default is the censored ladder extrapolation. Raise it "
-                 "to price in that removing the supervisor is a harder step "
-                 "than any rung measured inside supervised work; the 80% band "
-                 "already runs to "
-                 f"{_RSI_AL5_TAU_HI_MULT:g}× whatever is set here.")
-    lag_days = max(float(lag_mo) * 30.44, 1.0)
-
-    # Chart A — the evidence for the shift model. Each rung on its own clock:
-    # if the rungs really are one curve shifted, the points coincide.
-    fig = go.Figure()
-    for key in _RSI_AUTO_LADDER:
-        pts = _rsi_auto_collapse(rows, key)
-        if not pts:
-            continue
-        fig.add_trace(go.Scatter(
-            x=[p[0] / 30.44 for p in pts], y=[p[1] for p in pts],
-            mode='markers+lines', name=_RSI_AUTO_LABELS[key],
-            line=dict(color=_RSI_AUTO_COLORS[key], width=2),
-            marker=dict(color=_RSI_AUTO_COLORS[key], size=9,
-                        line=dict(color='white', width=1.5)),
-            hovertext=[f"{_RSI_AUTO_LABELS[key]}<br>{p[1]:.1f}%<br>"
-                       f"{p[0] / 30.44:+.1f} mo from its own "
-                       f"{_RSI_AUTO_LADDER_REF:.0f}% crossing" for p in pts],
-            hoverinfo='text'))
-    fig.update_layout(
-        height=360, margin=dict(l=50, r=60, t=40, b=40),
-        font=dict(color='#1a1a2e'),
-        xaxis=dict(title=f"Months from that rung's own "
-                         f"{_RSI_AUTO_LADDER_REF:.0f}% crossing",
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=True,
-                   zerolinecolor='rgba(0,0,0,0.25)',
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        yaxis=dict(title="Share at this level or above", range=[0, 100],
-                   ticksuffix='%', gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        hovermode='closest',
-        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
-                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
-        plot_bgcolor='white', paper_bgcolor='white')
-    st.plotly_chart(fig, width="stretch")
-    _fn_caption(
-        "The rungs on a common clock: this is the whole basis for projecting "
-        "AL5, and the only place it can be seen to hold or fail.",
-        ("a common clock",
-         "Each rung's months are plotted against its own crossing of "
-         f"{_RSI_AUTO_LADDER_REF:.0f}%. If the levels really were one curve "
-         "shifted in time, every rung would lie on top of the others. They "
-         "nearly do, which is what licenses the shift model — the residual "
-         "fanning is the higher rungs climbing slightly faster, and it is why "
-         "the measured lag depends a little on where it is read."))
-
-    # Chart B — AL5 itself.
-    base, icpt, slope = _rsi_auto_fit(rows)
-    cur = [r for r in rows if r['fitted']][-1]
-    n = N_SAMPLES
-    dt = np.log(2) / slope
-    proj_slope = np.log(2) / np.maximum(
-        _lognormal_from_ci(*_rsi_auto_dt_ci(rows, round(dt)), n=n), 1.0)
-    fitted = icpt + slope * (cur['date'] - base).days
-    start_logit = np.random.normal(fitted, _rsi_auto_pos_sigma(cur), n)
-    taus = _rsi_al5_tau_draws(lag_days, n)
-
-    horizon = max(int(lag_days) + _RSI_AUTO_HORIZON_DAYS, 400)
-    pdays = np.arange(0, horizon + 1, dtype=float)
-    pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
-    # AL5(t) = AL4(t - tau): the same sampled AL4 path, shifted per sample.
-    traj = _inv_logit(start_logit[:, None]
-                      + (pdays[None, :] - taus[:, None]) * proj_slope[:, None]) * 100
-    pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
-
-    fig2 = go.Figure()
-    for lo, hi, color, label in [(5, 95, 'rgba(155,89,182,0.10)', '90% CI'),
-                                 (10, 90, 'rgba(155,89,182,0.18)', '80% CI'),
-                                 (25, 75, 'rgba(155,89,182,0.28)', '50% CI')]:
-        fig2.add_trace(go.Scatter(
-            x=pdates + pdates[::-1],
-            y=list(pct[hi]) + list(pct[lo][::-1]),
-            fill='toself', fillcolor=color, line=dict(width=0),
-            name=label, hoverinfo='skip', showlegend=True))
-    fig2.add_trace(go.Scatter(
-        x=pdates, y=pct[50].tolist(), mode='lines',
-        line=dict(color='#8e44ad', width=2.5, dash='dash'),
-        name='AL5 median (assumed lag)',
-        hovertext=[f"{d.strftime('%b %d, %Y')}<br>AL5 median: {y:.1f}%"
-                   for d, y in zip(pdates, pct[50])],
-        hoverinfo='text'))
-    # The rung it is shifted from, and the zeros it has to stay under.
-    hy = _inv_logit(icpt + slope * np.arange(
-        0, (cur['date'] - base).days + 1, dtype=float)) * 100
-    fig2.add_trace(go.Scatter(
-        x=[base + timedelta(days=int(d)) for d in range(len(hy))],
-        y=hy.tolist(), mode='lines',
-        line=dict(color=_RSI_AUTO_COLORS['al4'], width=2),
-        name='AL4+ fitted trend', hoverinfo='skip'))
-    fig2.add_trace(go.Scatter(
-        x=[r['date'] for r in rows], y=[0.0] * len(rows),
-        mode='markers',
-        marker=dict(color='white', size=9, symbol='circle-open',
-                    line=dict(color='#8e44ad', width=2.5)),
-        name='AL5 measured (zero every month)',
-        hovertext=[f"{r['date']:%b %Y}<br>No AL5 band<br>"
-                   f"below the figure's ~{_RSI_AUTO_FLOOR:g}pt floor"
-                   for r in rows],
-        hoverinfo='text'))
-    # These are the section's most important markers and they sit at exactly
-    # zero, so the axis is floored below it: on a [0, 100] range half of each
-    # marker falls outside the plot and the rest reads as the axis line.
-    fig2.add_hline(
-        y=_RSI_AL5_TARGET, line=dict(color='#e74c3c', width=1.5, dash='dash'),
-        annotation_text=f"{_RSI_AL5_TARGET:.0f}% — half of model R&D with "
-                        "no human in the loop",
-        annotation_position="top left",
-        annotation_font=dict(size=11, color='#e74c3c'))
-    _add_today_vline(fig2)
-    fig2.update_layout(
-        height=480, margin=dict(l=50, r=60, t=50, b=40),
-        font=dict(color='#1a1a2e'),
-        xaxis=dict(title="Month", range=[rows[0]['date'] - timedelta(days=20),
-                                         pdates[-1] + timedelta(days=20)],
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        yaxis=dict(title="Model R&D tasks fully automated (AL5)",
-                   range=[-3, 100], tick0=0, dtick=20, ticksuffix='%',
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        hovermode='closest',
-        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
-                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
-        plot_bgcolor='white', paper_bgcolor='white')
-    st.plotly_chart(fig2, width="stretch")
-
-    _fn_caption(
-        "AL5 is AL4 shifted by an assumed lag, so the band carries the AL4 "
-        "fit's uncertainty and the lag's — not the question of whether "
-        "the ladder survives the autonomy boundary at all. Source: "
-        f"[Anthropic R&D Automation Index {_RSI_AUTO_VERSION}]"
-        f"({_RSI_AUTO_SOURCE_URL}).",
-        ("an assumed lag",
-         f"{lag_days / 30.44:.1f} months, adjustable above. Its 80% band runs "
-         f"from that to {_RSI_AL5_TAU_HI_MULT:g}× it: the fast edge is "
-         "the shortest lag the absent AL5 band allows, and the slow edge is "
-         "the judgement that removing the supervisor could take twice as long "
-         "as any measured rung. Neither edge is fitted — there is nothing "
-         "to fit them against."),
-        ("whether the ladder survives the autonomy boundary at all",
-         "The dominant uncertainty here, and it is structural rather than "
-         "statistical, so no band can express it. If full autonomy is gated "
-         "by verification and accountability rather than by capability, the "
-         "ladder's regular spacing says nothing about when it arrives, and "
-         "this projection is measuring the wrong thing rather than measuring "
-         "it imprecisely."))
+         "choice for both rungs — one level, so the gap between the two "
+         "crossings is the ladder's own step. A majority would not do for "
+         "AL4: the fitted trend has already passed one, so it would date "
+         "nothing."))
 
 
 def _render_rsi_survey():
@@ -14420,7 +14313,7 @@ _PC_RSI_WEIGHTS = {
     # (broad substitution proxies the ladder measures more directly) and from
     # the AL4 card itself, which no longer has to stand in for full autonomy.
     "rdauto_90": 5.0,
-    "al5_50": 15.0,
+    "al5_90": 15.0,
     "nextstep_90": 10.0,
     "rev_1t": 10.0,
 }

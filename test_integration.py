@@ -1040,10 +1040,8 @@ class TestRsiTab:
         start reads as the last data point."""
         import json
         at = self._rsi_app()
-        # Two charts are excluded, both because they are not on a calendar
-        # clock: the blend's CDF starts at today, so a divider would sit on
-        # its own left edge, and the AL-ladder collapse plots months from
-        # each rung's own crossing. Calendar charts are the ones whose
+        # The blend's CDF is excluded: it starts at today, so a divider
+        # would sit on its own left edge. Calendar charts are the ones whose
         # explicit x range is a pair of date strings.
         charts = [json.loads(el.proto.spec)["layout"]
                   for el in at.get("plotly_chart")]
@@ -1053,7 +1051,7 @@ class TestRsiTab:
             return (x.get("title")
                     and len(rng) == 2 and all(isinstance(v, str) for v in rng))
         series = [L for L in charts if _calendar(L)]
-        assert len(series) == 7 and len(charts) == 9
+        assert len(series) == 6 and len(charts) == 7
         for L in series:
             notes = [a for a in L.get("annotations", [])
                      if a.get("text") == "Today"]
@@ -1133,13 +1131,13 @@ class TestRsiTab:
         assert vp._RSI_AUTO_LABELS["al2"] in names
         assert vp._RSI_AUTO_LABELS["al3"] in names
 
-    def test_al5_section_and_blend_row(self):
-        """AL5 gets its own section, the largest blend weight, and a chart
-        whose measured series is flat zero."""
+    def test_al5_rides_the_one_automation_chart(self):
+        """AL5 has no section of its own: its fan, its flat-zero measurements
+        and AL4's all share the single R&D automation chart, under one bar."""
         import json
         import visualize_projection as vp
         at = self._rsi_app()
-        assert "Full autonomy (AL5)" in [str(h.value) for h in at.subheader]
+        assert "Full autonomy (AL5)" not in [str(h.value) for h in at.subheader]
         label = f"AL5: {vp._RSI_AL5_TARGET:.0f}% of R&D fully autonomous"
         assert label in [str(m.label) for m in at.metric]
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
@@ -1148,11 +1146,28 @@ class TestRsiTab:
         figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
         fig = next(f for f in figures if any(
             "AL5 measured" in (tr.get("name") or "") for tr in f["data"]))
+        # ... the same figure that carries the AL4 error bars and both fans.
+        assert any(tr.get("error_y") for tr in fig["data"])
+        names = [tr.get("name") or "" for tr in fig["data"]]
+        assert any("AL5 median" in n for n in names)
+        assert any("AL4+ median" in n for n in names)
         zeros = next(tr for tr in fig["data"]
                      if "AL5 measured" in (tr.get("name") or ""))
         assert set(zeros["y"]) == {0.0}
-        assert any(s.get("y0") == s.get("y1") == vp._RSI_AL5_TARGET
-                   for s in fig["layout"]["shapes"])
+        # One bar, shared: two crossings of the same level, not two thresholds.
+        bars = [s for s in fig["layout"]["shapes"]
+                if s.get("y0") == s.get("y1") == vp._RSI_AL5_TARGET]
+        assert len(bars) == 1
+
+    def test_the_rsi_tab_has_one_automation_chart(self):
+        """The ladder diagnostic and the standalone AL5 chart were folded in;
+        if a third reappears the tab is drifting back apart."""
+        import json
+        at = self._rsi_app()
+        figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+        auto = [f for f in figures if any(
+            "AL" in (tr.get("name") or "") for tr in f["data"])]
+        assert len(auto) == 1
 
     def test_every_milestone_card_carries_its_caveats_on_hover(self):
         """Caveats ride the card they belong to rather than piling into one

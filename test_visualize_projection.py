@@ -3806,7 +3806,7 @@ class TestRsiAutomation:
         assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
         assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 5.0
         al5 = f"al5_{vp._RSI_AL5_TARGET:.0f}"
-        assert al5 == "al5_50"
+        assert al5 == "al5_90"
         assert vp._PC_RSI_WEIGHTS[al5] == max(vp._PC_RSI_WEIGHTS.values())
         assert vp._PC_RSI_W_KEY + al5 in vp._PC_RESET_KEYS
 
@@ -3889,20 +3889,6 @@ class TestRsiAutomationLadder:
             # the gap itself.
             assert spread[1] - spread[0] < 0.5 * days, (lo, hi, spread)
 
-    def test_collapse_puts_every_rung_on_one_clock(self):
-        """The section's diagnostic: each rung against its own reference
-        crossing, which is where the shift model can be seen to hold."""
-        rows = vp.load_rsi_automation()
-        for key in vp._RSI_AUTO_LADDER:
-            pts = vp._rsi_auto_collapse(rows, key)
-            assert len(pts) == len(vp._rsi_auto_points(rows, key))
-            xs = [p[0] for p in pts]
-            assert xs == sorted(xs)
-            # x=0 is that rung's own crossing of the reference share, so the
-            # points must straddle it in value terms.
-            near = min(pts, key=lambda p: abs(p[0]))
-            assert abs(near[1] - vp._RSI_AUTO_LADDER_REF) < 25.0, (key, near)
-
 
 class TestRsiAl5:
     """Full autonomy: projected, never measured."""
@@ -3968,6 +3954,11 @@ class TestRsiAl5:
         assert np.percentile(draws, 10) == pytest.approx(200.0, rel=0.05)
         assert np.percentile(draws, 90) == pytest.approx(
             200.0 * vp._RSI_AL5_TAU_HI_MULT, rel=0.05)
+
+    def test_both_rungs_are_dated_against_the_same_bar(self):
+        """One level, two crossings: the gap between them is the ladder's own
+        step. If these diverge the chart's single bar starts lying."""
+        assert vp._RSI_AL5_TARGET == vp._RSI_AUTO_TARGET == 90.0
 
     def test_al5_lands_later_than_al4_at_the_same_bar(self):
         rows = vp.load_rsi_automation()
