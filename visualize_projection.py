@@ -863,6 +863,14 @@ _RLI_RAW = [
     # leaderboard's embedded JSON payload; date is Google's announced release.
     # Well below Fable 5, so it is not a frontier point.
     {"name": "Gemini 3.7 Flash", "date": "2026-08-13", "rli_score": 5.00},
+    # Added 2026-09-18: two new frontier rows, both flagged isNew on Scale with
+    # createdAt 2026-09-17T23:10Z and both present in the CAIS API. Scores verified
+    # directly against dashboard.safe.ai/api/rli (20.83 / 17.92); dates are Epoch's
+    # catalogued release dates, since neither surface publishes one -- Scale's
+    # createdAt is the leaderboard-entry timestamp and lags release (Gemini 3.7
+    # Flash: released 08-13, createdAt 08-24).
+    {"name": "Fable 5.1",       "date": "2026-09-01", "rli_score": 17.92},
+    {"name": "GPT-6 Astra",     "date": "2026-09-03", "rli_score": 20.83},
     # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
     # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
@@ -896,6 +904,13 @@ _RLI_RAW = [
     # Rechecked 2026-09-10: no new model and no changed score on either surface -- Scale's JSON still
     # tops out at Gemini 3.7 Flash (createdAt 2026-08-24), safe.ai/blog at 2026-07-01. Fable 5.1 /
     # Mythos 5.1, GPT-6 Astra and Gemini 3.8 Flash have no RLI score anywhere.
+    # Rechecked 2026-09-18: the two rows above are the only change -- every other score matches the CAIS
+    # API exactly, and safe.ai/blog is still 2026-07-01. Mythos 5.1, Opus 5, Gemini 3.8 Flash, Grok 4.6,
+    # DeepSeek V4 Pro, Qwen 3.8 Max, GLM-5.3 and Kimi K3 still have no RLI score on either surface.
+    # Naming note, not a change: upstream renders Manus 1.6 as "Manus 1.6 Max"; score 2.92 unchanged.
+    # Scale shows Fable 5 as 15.8 where the API gives 15.83 -- page-payload truncation, not a revision.
+    # Neither surface alone is a complete roster: Grok 4 is in the CAIS API but absent from Scale, while
+    # Gemini 3.7 Flash is on Scale but absent from the API. Check both.
 ]
 
 
@@ -7756,6 +7771,12 @@ _OPENAI_REVENUE = [
     # Rechecked 2026-09-10: TickerTrends' three posts since (09-02 Fable 5.1 launch tracking, 09-07 product
     # feature, 09-09 GitHub activity) carry no company total, and Epoch's revenue CSV still tops out at
     # Bloomberg's $40B. Also excluded: OpenAI's own ChatGPT Ads $1B run rate (08-31) is product-level.
+    # Rechecked 2026-09-18 against the Substack archive API (blog.tickertrends.io/api/v1/archive), which is
+    # authoritative on dates: eleven posts since the 08-14 one behind the 44.3 above, none carrying a
+    # company-wide total. The two that quote dollars are both product-level and excluded -- Claude Code
+    # $15.1B / Codex $8.8B tracked ARR (08-18) and the weekly ChatGPT Ads series (~$1B, from 08-31).
+    # Epoch's ai_companies_revenue_reports.csv is unchanged in value at Bloomberg's $40B, but note it dates
+    # that row 2026-08-13 (publication) where we carry the 2026-07-31 as-of; same observation, not a new one.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -7837,6 +7858,13 @@ _ANTHROPIC_REVENUE = [
     # Rechecked 2026-09-10: still nothing newer. anthropic.com/news' two 09-01 posts carry no run rate,
     # EDGAR still has no Anthropic PBC registrant (press expects a public S-1 late Sep-Oct), and
     # Epoch's newest Anthropic row is unchanged at 65.0 / 2026-07-31.
+    # Rechecked 2026-09-18: still nothing newer. Four anthropic.com/news posts since 09-01 (09-18 Accenture,
+    # 09-17 Life Sciences, 09-10 misuse report, 08-31) and none states a run rate; EDGAR still has no
+    # Anthropic PBC registrant, only third-party SPVs and fund filings that mention the company; Epoch's
+    # newest Anthropic row is unchanged. Excluded: the 2026-09-18 NYT-sourced IPO story, carried by
+    # Bloomberg and Axios as revenue "to top"/"expected to" exceed $100B in 2026 -- a forecast, and its only
+    # observation is the $9B-to-$65B history already here. An S-1, when it lands, will carry audited period
+    # revenue; under this series' rule that yields a point only if it states a run rate explicitly.
 ]
 
 

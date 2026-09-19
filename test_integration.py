@@ -364,19 +364,28 @@ class TestWidgetPropagation:
             f"CI didn't change when switching segments: {dt_lo_2seg} → {dt_lo_1seg}"
 
     def test_eci_segment_change_updates_ci(self):
-        """Switching ECI from 1-segment to 2-segment should change CI
-        (last-segment OLS vs full OLS)."""
+        """Changing the ECI segment count re-derives the +Pts/Yr CI from the new
+        last segment."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Epoch ECI")
-        ppy_lo_1seg = at.number_input(key="eci_custom_ppy_lo").value
-        # Switch to Piecewise first, then change segments
+        ci_1seg = (at.number_input(key="eci_custom_ppy_lo").value,
+                   at.number_input(key="eci_custom_ppy_hi").value)
         at.radio(key="eci_proj_basis").set_value("Piecewise linear").run()
         at.radio(key="eci_piecewise_n_seg").set_value(2).run()
         _assert_no_error(at, "ECI 2-segment")
-        ppy_lo_2seg = at.number_input(key="eci_custom_ppy_lo").value
-        assert ppy_lo_2seg != ppy_lo_1seg, \
-            f"ECI CI didn't change: {ppy_lo_1seg} → {ppy_lo_2seg}"
+        # 3, not 2: the CI is the last segment's slope halved and doubled, rounded
+        # to the widget's 1dp, and the frontier is now near-log-linear over the whole
+        # window -- splitting it at the default midpoint leaves the slope unmoved
+        # (a 2026-09 Epoch pull put both at 7.9-31.6). The third segment is short
+        # enough to still separate. Retarget the segment count if a later pull
+        # collapses this one too; don't drop the inequality.
+        at.radio(key="eci_piecewise_n_seg").set_value(3).run()
+        _assert_no_error(at, "ECI 3-segment")
+        ci_3seg = (at.number_input(key="eci_custom_ppy_lo").value,
+                   at.number_input(key="eci_custom_ppy_hi").value)
+        assert ci_3seg != ci_1seg, \
+            f"ECI CI didn't change: {ci_1seg} → {ci_3seg}"
 
     def test_metr_custom_ci_renders_ok(self):
         """Changing CI values manually should render without error."""
