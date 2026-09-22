@@ -4393,15 +4393,17 @@ class TestDcHiddenCompanies:
     def test_current_roster_is_what_the_tab_says_it_is(self):
         """The calibration guard. The tab's scope caption names who the rule
         adds, so a roster move has to be looked at rather than absorbed
-        silently. Vantage joined on 2026-09-01 with its rows unchanged — its
-        planned 154k-H100e TX1 step (2027-08-31) simply came inside the
-        rolling year. STACK (250k) is the next to qualify, ~6 months out;
-        Oracle is the nearest miss below at ~84k against a 100k bar. When
-        this fails, retarget deliberately (accept the joiner, or move
-        _DC_EXCLUDE_MIN_H100 / _DC_EXCLUDE_HORIZON_DAYS) rather than
+        silently. A company leaves this set two ways: its largest site drops
+        under _DC_EXCLUDE_MIN_H100 inside the rolling horizon, or Epoch
+        re-attributes its capacity to a real tenant so the landlord label
+        stops owning any site at all — DayOne left the second way once Epoch
+        filled Nusajaya's Owner, and now holds no site. STACK (250k) is the
+        next to qualify; Oracle is the nearest miss below at ~84k against a
+        100k bar. When this fails, retarget deliberately (accept the joiner,
+        or move _DC_EXCLUDE_MIN_H100 / _DC_EXCLUDE_HORIZON_DAYS) rather than
         loosening it."""
         charted = vp._DC_EXCLUDE_COMPANIES - vp._dc_hidden_companies(vp.dc_all)
-        assert charted == {'QTS', 'DayOne', 'Microsoft', 'Vantage'}, charted
+        assert charted == {'QTS', 'Microsoft', 'Vantage'}, charted
 
     def test_roster_only_ever_grows_as_the_horizon_rolls(self):
         """Who appears may move as planned buildout comes inside the horizon —
