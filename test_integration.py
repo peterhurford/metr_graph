@@ -364,19 +364,28 @@ class TestWidgetPropagation:
             f"CI didn't change when switching segments: {dt_lo_2seg} → {dt_lo_1seg}"
 
     def test_eci_segment_change_updates_ci(self):
-        """Switching ECI from 1-segment to 2-segment should change CI
-        (last-segment OLS vs full OLS)."""
+        """Changing the ECI segment count re-derives the +Pts/Yr CI from the new
+        last segment."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Epoch ECI")
-        ppy_lo_1seg = at.number_input(key="eci_custom_ppy_lo").value
-        # Switch to Piecewise first, then change segments
+        ci_1seg = (at.number_input(key="eci_custom_ppy_lo").value,
+                   at.number_input(key="eci_custom_ppy_hi").value)
         at.radio(key="eci_proj_basis").set_value("Piecewise linear").run()
         at.radio(key="eci_piecewise_n_seg").set_value(2).run()
         _assert_no_error(at, "ECI 2-segment")
-        ppy_lo_2seg = at.number_input(key="eci_custom_ppy_lo").value
-        assert ppy_lo_2seg != ppy_lo_1seg, \
-            f"ECI CI didn't change: {ppy_lo_1seg} → {ppy_lo_2seg}"
+        # 3, not 2: the CI is the last segment's slope halved and doubled, rounded
+        # to the widget's 1dp, and the frontier is now near-log-linear over the whole
+        # window -- splitting it at the default midpoint leaves the slope unmoved
+        # (a 2026-09 Epoch pull put both at 7.9-31.6). The third segment is short
+        # enough to still separate. Retarget the segment count if a later pull
+        # collapses this one too; don't drop the inequality.
+        at.radio(key="eci_piecewise_n_seg").set_value(3).run()
+        _assert_no_error(at, "ECI 3-segment")
+        ci_3seg = (at.number_input(key="eci_custom_ppy_lo").value,
+                   at.number_input(key="eci_custom_ppy_hi").value)
+        assert ci_3seg != ci_1seg, \
+            f"ECI CI didn't change: {ci_1seg} → {ci_3seg}"
 
     def test_metr_custom_ci_renders_ok(self):
         """Changing CI values manually should render without error."""
@@ -1035,17 +1044,23 @@ class TestRsiTab:
         assert not [m for m in at.markdown if "When does" in str(m.value)]
 
     def test_every_chart_marks_today(self):
-        """All five RSI charts carry the dashed "Today" divider the other
-        tabs' projection charts have — without it the fan's start reads as
-        the last data point."""
+        """Every RSI chart on a calendar x-axis carries the dashed "Today"
+        divider the other tabs' projection charts have — without it the fan's
+        start reads as the last data point."""
         import json
         at = self._rsi_app()
-        # The blend's CDF is excluded: it starts at today, so a divider there
-        # would sit on its own left edge. It is the one chart with no x title.
+        # The blend's CDF is excluded: it starts at today, so a divider
+        # would sit on its own left edge. Calendar charts are the ones whose
+        # explicit x range is a pair of date strings.
         charts = [json.loads(el.proto.spec)["layout"]
                   for el in at.get("plotly_chart")]
-        series = [L for L in charts if (L.get("xaxis") or {}).get("title")]
-        assert len(series) == 5 and len(charts) == 6
+        def _calendar(L):
+            x = L.get("xaxis") or {}
+            rng = x.get("range") or []
+            return (x.get("title")
+                    and len(rng) == 2 and all(isinstance(v, str) for v in rng))
+        series = [L for L in charts if _calendar(L)]
+        assert len(series) == 6 and len(charts) == 7
         for L in series:
             notes = [a for a in L.get("annotations", [])
                      if a.get("text") == "Today"]
@@ -1065,7 +1080,7 @@ class TestRsiTab:
         assert len(row) == 1
         assert row.iloc[0]["Weight"].startswith("10%")
         # Every milestone gets a row, and the weights editor an input each.
-        assert len(t) == 11
+        assert len(t) == 13
 
     def test_merged_code_section_renders(self):
         at = self._rsi_app()
@@ -1081,7 +1096,7 @@ class TestRsiTab:
         assert label in [str(m.label) for m in at.metric]
         table = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = table[table["Milestone"] == label]
-        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("10%")
+        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("5%")
         figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
         fig = next(f for f in figures if any(t.get('name') == 'OpenAI observations'
                                              for t in f['data']))
@@ -1091,13 +1106,77 @@ class TestRsiTab:
         assert any(s.get('y0') == s.get('y1') == 10 for s in fig['layout']['shapes'])
 
     def test_merged_code_row_in_the_blend(self):
+        """Merged code is down to 5%: it and experiment velocity each gave
+        half their weight to the R&D automation index, which rates the work
+        rather than counting the output a coding model inflates directly."""
         at = self._rsi_app()
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = t[t["Milestone"] == "Code per person reaches 30x"]
         assert len(row) == 1
-        assert row.iloc[0]["Weight"].startswith("10%")
+        assert row.iloc[0]["Weight"].startswith("5%")
         staff = t[t["Milestone"].str.contains("acceleration")]
-        assert staff.iloc[0]["Weight"].startswith("10%")
+        assert staff.iloc[0]["Weight"].startswith("5%")
+
+    def test_rd_automation_section_and_blend_row(self):
+        """The index's own section, card and weighted row — and the fitted
+        markers carry the figure's published 90% intervals as error bars."""
+        import json
+        at = self._rsi_app()
+        assert "R&D automation index" in [str(h.value) for h in at.subheader]
+        label = "Claude leads 90% of Anthropic R&D"
+        assert label in [str(m.label) for m in at.metric]
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns)
+        row = t[t["Milestone"] == label]
+        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("5%")
+        figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+        fig = next(f for f in figures
+                   if any(t.get("error_y") for t in f["data"]))
+        obs = next(t for t in fig["data"] if t.get("error_y"))
+        assert len(obs["x"]) == 6 and obs["y"][-1] == 26.0
+        assert any(s.get("y0") == s.get("y1") == 90 for s in fig["layout"]["shapes"])
+        # The rungs below AL4 ride the same chart as measured context.
+        import visualize_projection as vp
+        names = {t.get("name") for t in fig["data"]}
+        assert vp._RSI_AUTO_LABELS["al2"] in names
+        assert vp._RSI_AUTO_LABELS["al3"] in names
+
+    def test_al5_rides_the_one_automation_chart(self):
+        """AL5 has no section of its own: its fan, its flat-zero measurements
+        and AL4's all share the single R&D automation chart, under one bar."""
+        import json
+        import visualize_projection as vp
+        at = self._rsi_app()
+        assert "Full autonomy (AL5)" not in [str(h.value) for h in at.subheader]
+        label = f"AL5: {vp._RSI_AL5_TARGET:.0f}% of R&D fully autonomous"
+        assert label in [str(m.label) for m in at.metric]
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns)
+        row = t[t["Milestone"] == label]
+        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("15%")
+        figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+        fig = next(f for f in figures if any(
+            "AL5 measured" in (tr.get("name") or "") for tr in f["data"]))
+        # ... the same figure that carries the AL4 error bars and both fans.
+        assert any(tr.get("error_y") for tr in fig["data"])
+        names = [tr.get("name") or "" for tr in fig["data"]]
+        assert any("AL5 median" in n for n in names)
+        assert any("AL4+ median" in n for n in names)
+        zeros = next(tr for tr in fig["data"]
+                     if "AL5 measured" in (tr.get("name") or ""))
+        assert set(zeros["y"]) == {0.0}
+        # One bar, shared: two crossings of the same level, not two thresholds.
+        bars = [s for s in fig["layout"]["shapes"]
+                if s.get("y0") == s.get("y1") == vp._RSI_AL5_TARGET]
+        assert len(bars) == 1
+
+    def test_the_rsi_tab_has_one_automation_chart(self):
+        """The ladder diagnostic and the standalone AL5 chart were folded in;
+        if a third reappears the tab is drifting back apart."""
+        import json
+        at = self._rsi_app()
+        figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+        auto = [f for f in figures if any(
+            "AL" in (tr.get("name") or "") for tr in f["data"])]
+        assert len(auto) == 1
 
     def test_every_milestone_card_carries_its_caveats_on_hover(self):
         """Caveats ride the card they belong to rather than piling into one
@@ -1268,6 +1347,14 @@ class TestTakeoffTab:
             assert "Sustained research feedback" not in names
         at.number_input(key="tk_human_floor").set_value(6.0).run()
         _assert_no_error(at, "Takeoff / persistent human bottleneck")
+        # The floor blocks the human-hours definition only; AL5-defined scenarios still arrive.
+        table = next(t.value for t in at.table if "Milestone" in t.value.columns)
+        by = next(c for c in table.columns if c.startswith("By "))
+        arrived = float(table[table["Milestone"] == "Full R&D automation"].iloc[0][by].rstrip("%"))
+        assert 30 < arrived < 60
+        at.number_input(key="tk_ladder_weight").set_value(0.0).run()
+        _assert_no_error(at, "Takeoff / human-hours definition alone")
+        assert not any("Full R&D automation defined by" in t.value.columns for t in at.table)
         table = next(t.value for t in at.table if "Milestone" in t.value.columns)
         for name in ("Full R&D automation", "Superhuman AI research", "Broad superintelligence"):
             assert table[table["Milestone"] == name].iloc[0]["Median"] == "Beyond horizon"
@@ -1276,6 +1363,22 @@ class TestTakeoffTab:
         assert at.query_params["tk_human_floor"] == ["6.0"]
         at.button(key="tk_preset_Central").click().run()
         assert at.number_input(key="tk_human_floor").value == 1.0
+
+    def test_al5_date_is_a_second_definition_of_full_automation(self):
+        at = self._app()
+        split = next(t.value for t in at.table
+                     if "Full R&D automation defined by" in t.value.columns)
+        assert len(split) == 2
+        at.number_input(key="tk_ladder_weight").set_value(100.0).run()
+        _assert_no_error(at, "Takeoff / AL5 definition alone")
+        assert at.query_params["tk_ladder_weight"] == ["100.0"]
+        split = next(t.value for t in at.table
+                     if "Full R&D automation defined by" in t.value.columns)
+        assert list(split["Scenarios"]) == ["100%"]
+        outcomes = next(t.value for t in at.table if "Outcome at" in t.value.columns)
+        row = outcomes[outcomes["Outcome at"] == "Full R&D automation"].iloc[0]
+        assert row["Human hours remaining"] == "Not measured"
+        assert float(row["Scenarios by horizon"].rstrip("%")) > 90
 
     def test_invalid_workflow_start_is_recoverable(self):
         at = self._app()
@@ -1297,13 +1400,17 @@ class TestTakeoffTab:
 
         def capture(*args, **kwargs):
             captured.append(kwargs["onset_years"].copy())
+            ladders.append(kwargs["ladder_years"])
             return original(*args, **kwargs)
 
         monkeypatch.setattr(tk, "simulate", capture)
+        ladders = []
         at = _fresh_app()
+        # Takeoff drops the AL5 card from the blend it inherits (it dates full R&D
+        # automation instead), so the RSI curve it must reproduce is the one without it.
         at.query_params.update(tab="rsi", rsi_atc_penalty="50",
                                rsi_timing=timing, rsi_notyet=condition, rsi_notyet_ramp="180",
-                               pc_rsiw_rli_90="70", tk_seed="9182")
+                               pc_rsiw_rli_90="70", pc_rsiw_al5_90="0", tk_seed="9182")
         at.run()
         _assert_no_error(at, "RSI / inherited configuration")
         curve = json.loads(at.get("plotly_chart")[-1].proto.spec)["data"][-1]
@@ -1313,6 +1420,7 @@ class TestTakeoffTab:
         _switch_tab(at, "Takeoff")
         assert captured
         np.testing.assert_allclose(100 * tk.cdf(captured[-1], grid), curve["y"])
+        assert ladders[-1].shape == captured[-1].shape and np.all(np.diff(ladders[-1]) >= 0)
         assert at.session_state["rsi_atc_penalty"] == 50
         assert at.session_state["pc_rsiw_rli_90"] == 70
         _switch_tab(at, "RSI")

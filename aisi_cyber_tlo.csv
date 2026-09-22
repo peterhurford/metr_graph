@@ -25,7 +25,14 @@
 #   4. GLM-5.2 11.0 == Opus 4.5 11.0; [A] states GLM-5.2 "reaches as far as Opus 4.5".
 #   Derived lags also reproduce [A]'s prose: GLM-5.2 6.7mo ("less than 7 months"), DeepSeek-V4-Pro
 #   6.8mo ("7 months before it").
-# LAST VERIFIED 2026-09-03 (figure-unchanged check, not a re-digitization): re-fetched fig2-ranges.png
+# LAST VERIFIED 2026-09-18: figure byte-identical -- the CDN still serves etag 62f53079...fb13,
+#   content-length 1047349, last-modified 2026-07-17 11:30:14 GMT, and the downloaded PNG's md5 matches
+#   that etag; still 3500x2160. No AISI post since 2026-08-27 and no new model on the range. The one new
+#   item, CAISI's 2026-09-17 GLM-5.3 assessment, contains no cyber-range or TLO measure at all -- see the
+#   note in aisi_cyber_narrow.csv for why it yields no row here either.
+# LAST VERIFIED 2026-09-10: same URL, headers, calibration, endpoints and palette as the 2026-09-03 check
+#   below. No AISI/CAISI post since 08-27; the Fable 5.1 and GPT-6 Astra system cards print no TLO score.
+# 2026-09-03 CHECK (figure-unchanged, not a re-digitization): re-fetched fig2-ranges.png
 #   from the post's current CDN URL (.../6a5a1245efc070dccfb1d56d_fig2-ranges.png). Webflow content-hashes
 #   the filename, so the unchanged URL is itself evidence the asset was not re-uploaded; CDN headers still
 #   report last-modified 2026-07-17 11:30:14 GMT, content-length 1047349, etag 62f53079...fb13.

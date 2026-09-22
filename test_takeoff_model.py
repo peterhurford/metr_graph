@@ -152,9 +152,61 @@ def test_project_completion_is_an_independent_gate():
 
 
 def test_persistent_human_floor_prevents_all_later_milestones():
-    r = tk.simulate(dict(human_floor=6.0), n=30)
+    r = tk.simulate(dict(human_floor=6.0), n=30)  # no ladder dates: the workflow gate alone
     for name in tk.MILESTONES[1:]:
         assert np.isinf(r["events"][name]).all()
+
+
+def test_ladder_date_redefines_full_automation_and_nothing_upstream():
+    onset, ladder = np.linspace(0.2, 3, 40), np.linspace(4, 0.1, 40)
+    base = tk.simulate(dict(years=6), n=40, onset_years=onset)
+    off = tk.simulate(dict(years=6, ladder_weight=0), n=40, onset_years=onset, ladder_years=ladder)
+    on = tk.simulate(dict(years=6, ladder_weight=100), n=40, onset_years=onset, ladder_years=ladder)
+    for name in tk.MILESTONES:
+        np.testing.assert_array_equal(base["events"][name], off["events"][name])
+    assert not base["ladder_defined"].any() and on["ladder_defined"].all()
+    # Same parameter draws: the milestone that does not depend on the gate is untouched.
+    np.testing.assert_array_equal(base["events"][tk.MILESTONES[0]], on["events"][tk.MILESTONES[0]])
+    # The ladder cannot precede the coding date.
+    np.testing.assert_allclose(on["events"][tk.MILESTONES[1]], np.maximum(onset, ladder))
+    measured = on["outcomes"][tk.MILESTONES[1]]
+    assert np.isnan(measured["human_mean"]).all() and np.isfinite(measured["progress_multiple"]).all()
+
+
+def test_ladder_overrides_a_persistent_human_floor_only_where_it_defines_the_milestone():
+    r = tk.simulate(dict(human_floor=6.0, years=4), n=200, onset_years=np.full(200, 0.5),
+                    ladder_years=np.full(200, 1.0))
+    full = r["events"][tk.MILESTONES[1]]
+    assert 0 < r["ladder_defined"].mean() < 1
+    np.testing.assert_allclose(full[r["ladder_defined"]], 1.0)
+    assert np.isinf(full[~r["ladder_defined"]]).all()
+
+
+def test_research_difficulty_is_sampled_with_the_other_rates(monkeypatch):
+    seen = []
+    original = tk.reference_software
+
+    def capture(*args):
+        seen.append(np.asarray(args[-1]))
+        return original(*args)
+
+    monkeypatch.setattr(tk, "reference_software", capture)
+    tk.simulate(dict(years=0.5), n=500)
+    drawn = next(d for d in seen if d.shape == (500,))
+    lo, hi = 0.5 * np.exp(-0.4), 0.5 * np.exp(0.4)
+    assert lo <= drawn.min() < 0.4 and 0.6 < drawn.max() <= hi
+    tk.simulate(dict(years=0.5, difficulty=0), n=5)  # the undiscounted branch still runs
+
+
+def test_runaway_is_unresolved_only_while_a_milestone_could_still_arrive():
+    explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, uncertainty=0, years=12)
+    waiting = tk.simulate(explosive, n=1, onset_years=np.array([20.0]))
+    assert not waiting["numerically_limited"][0]
+    assert np.isinf(waiting["events"][tk.MILESTONES[1]][0])
+    open_ = tk.simulate(explosive, n=1, onset_years=np.array([0.5]))
+    assert open_["numerically_limited"][0]
+    # A diverged state records no further milestones.
+    assert np.isinf(open_["events"][tk.MILESTONES[-1]][0])
 
 
 def test_workflow_halving_time_has_a_measurable_interpretation():
@@ -323,8 +375,15 @@ def test_longer_validation_delays_milestones():
     {"human_direction": -1}, {"human_floor": 50}, {"half_direction": 0},
     {"full_success": 110}, {"project_success": 0}, {"advantage_target": 1},
     {"progress_cycles": 1.5}, {"fast_share": 101}, {"fast_months": 0},
-    {"coding_today": 95},
+    {"coding_today": 95}, {"ladder_weight": 101},
 ])
 def test_invalid_assumptions_rejected(params):
     with pytest.raises(ValueError):
         tk.simulate(params, n=1)
+
+
+def test_ladder_dates_must_match_the_draws():
+    with pytest.raises(ValueError):
+        tk.simulate({}, n=3, ladder_years=np.array([1.0, np.nan, 2.0]))
+    with pytest.raises(ValueError):
+        tk.simulate({}, n=3, ladder_years=np.array([1.0, 2.0]))

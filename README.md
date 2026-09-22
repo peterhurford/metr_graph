@@ -53,8 +53,9 @@ baseline; an explicit initial backlog avoids assuming an empty research pipeline
 
 The tab shows arrival probabilities, coding-relative durations, human hours remaining by
 research stage, useful-project completion, and **validated research acceleration independent
-of autonomy**. Full automation still requires low human involvement in every stage and high
-project completion. Superhuman research additionally requires sustained progress acceleration
+of autonomy**. Full automation is, per scenario, either low human involvement in every stage
+with high project completion or the RSI tab's AL5 date, which leaves the inherited coding
+blend; the tab tabulates both. Superhuman research additionally requires sustained progress acceleration
 and a same-compute advantage. Broad superintelligence retains a speculative capability gap.
 
 **Evidence calibration** uses the local OpenAI experiment-velocity series, with explicit
@@ -74,8 +75,9 @@ fading blend, with compute accounted for once and an explicit useful-effort conv
 
 Calibration inputs round-trip in shared URLs. Downloads include model and calibration
 assumptions, evidence dates, inherited RSI samples, and milestone draws. Dates begin today;
-coding-relative probabilities are censored at the selected calendar horizon. Extreme
-feedback assumptions can exceed numerical range and produce an explicit error.
+coding-relative probabilities are censored at the selected calendar horizon. Scenarios
+whose feedback exceeds numerical range are counted as not arriving and reported; above 1%
+the tab refuses to report.
 
 See [TAKEOFF_MODEL.md](TAKEOFF_MODEL.md) for equations, interpretation, and remaining limits.
 Tests: `pytest test_takeoff_model.py test_integration.py::TestTakeoffTab`.
@@ -160,10 +162,10 @@ the full refresh recipe, including the AISI cyber data that is deliberately *not
 | File / table | Source | Type |
 |---|---|---|
 | `benchmark_results_1_1.yaml` | METR (26 models, 2019–2026; 18 on the frontier) | download |
-| `epoch_capabilities_index.csv` | Epoch AI benchmark data | download (inside a zip) |
-| `data_centers.csv` / `data_center_timelines.csv` | Epoch AI Frontier Data Centers (85 sites) | download |
+| `epoch_capabilities_index.csv` | Epoch AI ECI scores + AI models (training compute) | download, converted by `convert_eci.py` |
+| `data_centers.csv` / `data_center_timelines.csv` | Epoch AI Frontier Data Centers (86 sites) | download |
 | `_RLI_RAW` | Scale Labs Remote Labor Index | hand-edited |
-| `_RSI_RAW` / `_RSI_SURVEY` | Anthropic, Redacted Risk Report §3.4 | hand-edited, read off a figure |
+| `_RSI_RAW` / `_RSI_SURVEY` | Anthropic, Redacted Risk Report §3.4; Fable 5.1 system card (CoBench, rescaled) | hand-edited, read off a figure |
 | `openai_experiment_velocity.csv` | OpenAI, *Research acceleration*, “Experiment velocity has increased” | 32 weekly browser-hover tooltip values; 2025 = 1× |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` | Press reports and company disclosures | hand-edited |
 | `aisi_cyber_narrow.csv` / `aisi_cyber_tlo.csv` | UK AISI cyber blog posts | **digitized from published PNGs** |

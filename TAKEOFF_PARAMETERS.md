@@ -3,7 +3,8 @@
 These are the current Central defaults, not necessarily a browser session's settings.
 Most exact values are illustrative assumptions introduced during development. The
 rationales below explain their intended role, not a claim that evidence identifies them.
-See `checkpoints/takeoff-defaults-2026-09-08.json` for exact machine-readable settings.
+See `checkpoints/takeoff-defaults-2026-09-08.json` for exact machine-readable settings as of
+`takeoff-v4`; v5 adds `ladder_weight` = 50 and varies `difficulty`.
 
 **Varied** means the global parameter-uncertainty control samples that quantity.
 **Fixed** means it stays at the chosen value throughout a simulation ensemble.
@@ -48,7 +49,7 @@ empirical justification. Matched-stage measurements can override them.
 | Research-quality elasticity prior | 0.8 | Sublinear capability-to-quality response before the transfer discount; exact value assumed. Blended with calibration. | Resulting blended elasticity varied |
 | Coding elasticity | 0.8 | Sublinear capability-to-coding response; not fitted. | Fixed |
 | Additional AI research output that transfers | 60% | Discounts gains not applicable to useful research; exact discount arbitrary. | Fixed |
-| Increasing research difficulty | 0.5 | Additional discoveries become harder as efficiency accumulates; positive value is a modeling hypothesis, not a calibrated coefficient. | Fixed |
+| Increasing research difficulty | 0.5 | Additional discoveries become harder as efficiency accumulates; positive value is a modeling hypothesis, not a calibrated coefficient. This is β in semi-endogenous growth models; feedback compounds only while the blended quality elasticity exceeds it. | Varied |
 | Parallelization exponent | 0.5 | Square-root returns to coding labor and experiment compute; a simple coordination/parallelization assumption. | Fixed |
 | Compute growth per year | 2× | Scenario of annual doubling; not inherited from the dashboard's compute projections. | Log growth rate varied |
 | Compute for training | 40% | Illustrative balanced resource allocation. | Fixed |
@@ -60,6 +61,9 @@ an additional algorithmic efficiency doubling increases the effort required for 
 further log progress by about 1.41×, holding inputs constant. This can outweigh resource
 growth in the frozen-AI reference. Sublinear elasticity, transfer discounts, square-root
 resource returns, and difficulty stack together; their combined conservatism is not fitted.
+Difficulty is the most sensitive parameter in the model: holding the rest at Central, broad
+superintelligence by end-2031 runs from 96% at 0.35 to 35% at 0.71 and 3% at 1.0. Varying
+it puts roughly 9% of scenarios below the compounding threshold.
 
 ## Milestone definitions
 
@@ -67,6 +71,7 @@ These mostly define what gets called a milestone rather than estimate its arriva
 
 | Parameter | Default | Meaning and rationale | Uncertainty |
 |---|---:|---|---|
+| Weight on Anthropic's AL5 date | 50% | Share of scenarios whose full R&D automation is the RSI tab's AL5 date rather than the human-hours gate. The two disagree by over a year at the median; equal credence is a judgement. | Fixed; each scenario draws its definition |
 | Maximum human work for full R&D | 5% | Every stage must require very little baseline human labor; chosen to mean near-complete automation. | Fixed |
 | Required useful-project completion | 90% | Avoids declaring unreliable low-human-work systems fully automated; exact threshold is definitional. | Fixed |
 | Required progress acceleration | 12× today | A year of baseline algorithmic progress per month; legible, demanding definition, not a natural boundary. | Fixed |
@@ -101,14 +106,14 @@ multiplicative gains. RSI and calibration partly share evidence, not independent
 ## Exactly how uncertainty is implemented
 
 Global uncertainty defaults to **40**, an illustrative broad spread, not calibrated coverage.
-For each scenario, 15 independent U values are drawn uniformly on [-1, 1]. Multipliers are
+For each scenario, 16 independent U values are drawn uniformly on [-1, 1]. Multipliers are
 F = exp(0.40 * U). Full bounds are about 0.67–1.49×; central-80% bounds are 0.73–1.38×;
 median multiplier is 1. Each draw stays fixed through the scenario, not month-to-month noise.
 
-The 15 varied quantities are: software-progress rate; log compute-growth rate; training time;
+The 16 varied quantities are: software-progress rate; log compute-growth rate; training time;
 validation delay; initial useful-project success; calibrated quality elasticity; the two
-breadth gaps; three human-work halving times; failure halving time; and three initial human
-shares. All other controls are fixed within the ensemble, though users can vary them manually.
+breadth gaps; three human-work halving times; failure halving time; three initial human
+shares; and research difficulty. All other controls are fixed within the ensemble, though users can vary them manually.
 
 The doubling-time input is inverted into a rate before variation: nine months produces
 roughly 6.0–13.4-month doubling times. Compute growth is 2^F, about 1.59–2.81× annually,
@@ -122,7 +127,8 @@ Inherited uncertainty remains separate:
 - The shared RSI experiment fan uses a lognormal doubling time with illustrative central-80%
   bounds at half/twice the fitted value, plus lognormal position uncertainty approximately
   divided/multiplied by 1.3 over the central 80%. Its fixed local seed is 20260907.
-- Setting Takeoff uncertainty to zero removes the 15 parameter variations, not RSI uncertainty.
+- Setting Takeoff uncertainty to zero removes the 16 parameter variations, not RSI uncertainty
+  or the per-scenario choice of full-R&D definition.
 - Takeoff's seed is 20260906 for reproducibility only. Default production sample count is 5,000.
 
 The prior draws are independent, but outputs become correlated through shared capabilities

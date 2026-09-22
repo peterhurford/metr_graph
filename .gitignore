@@ -4,3 +4,6 @@ __pycache__/
 
 # Scratch git worktrees created by Claude Code sessions
 .claude/worktrees/
+
+# Local handoff notes; carries private conversation links, repo is public
+TODO.md

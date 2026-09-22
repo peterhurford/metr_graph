@@ -873,6 +873,14 @@ _RLI_RAW = [
     # leaderboard's embedded JSON payload; date is Google's announced release.
     # Well below Fable 5, so it is not a frontier point.
     {"name": "Gemini 3.7 Flash", "date": "2026-08-13", "rli_score": 5.00},
+    # Added 2026-09-18: two new frontier rows, both flagged isNew on Scale with
+    # createdAt 2026-09-17T23:10Z and both present in the CAIS API. Scores verified
+    # directly against dashboard.safe.ai/api/rli (20.83 / 17.92); dates are Epoch's
+    # catalogued release dates, since neither surface publishes one -- Scale's
+    # createdAt is the leaderboard-entry timestamp and lags release (Gemini 3.7
+    # Flash: released 08-13, createdAt 08-24).
+    {"name": "Fable 5.1",       "date": "2026-09-01", "rli_score": 17.92},
+    {"name": "GPT-6 Astra",     "date": "2026-09-03", "rli_score": 20.83},
     # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
     # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
@@ -903,6 +911,16 @@ _RLI_RAW = [
     # is on Scale but still not in the CAIS API; Grok 4 is in CAIS but not on Scale. Scale
     # stores 2.502/2.501 for gpt-5.2 (medium)/Manus 1.5 -- rank tie-break jitter behind the
     # rendered 2.50, not a score change.
+    # Rechecked 2026-09-10: no new model and no changed score on either surface -- Scale's JSON still
+    # tops out at Gemini 3.7 Flash (createdAt 2026-08-24), safe.ai/blog at 2026-07-01. Fable 5.1 /
+    # Mythos 5.1, GPT-6 Astra and Gemini 3.8 Flash have no RLI score anywhere.
+    # Rechecked 2026-09-18: the two rows above are the only change -- every other score matches the CAIS
+    # API exactly, and safe.ai/blog is still 2026-07-01. Mythos 5.1, Opus 5, Gemini 3.8 Flash, Grok 4.6,
+    # DeepSeek V4 Pro, Qwen 3.8 Max, GLM-5.3 and Kimi K3 still have no RLI score on either surface.
+    # Naming note, not a change: upstream renders Manus 1.6 as "Manus 1.6 Max"; score 2.92 unchanged.
+    # Scale shows Fable 5 as 15.8 where the API gives 15.83 -- page-payload truncation, not a revision.
+    # Neither surface alone is a complete roster: Grok 4 is in the CAIS API but absent from Scale, while
+    # Gemini 3.7 Flash is on Scale but absent from the API. Check both.
 ]
 
 
@@ -955,11 +973,25 @@ _RSI_SOURCE_URL = ("https://www-cdn.anthropic.com/f61d49fa5596956a5dec75fea0e973
 # for its Research Scientists and Engineers would reach.
 _RSI_SUBSTITUTION_BAR = 85.0
 
+# The Fable 5.1 & Mythos 5.1 system card (Sep 2026, Fig 2.3.4.1.A) reruns CoBench
+# on a slightly larger problem set, where Mythos 5 scores 45.6 against the Risk
+# Report's 50.3. Its newer models are carried onto the Risk Report's set by that
+# ratio — an assumption, not a published score, which `note` says on hover.
+_RSI_SYSCARD_URL = ("https://www-cdn.anthropic.com/0339e6a7c5c7b87f5c07798616dc32c215d14235/"
+                    "Claude%20Fable%205.1%20&%20Claude%20Mythos%205.1%20System%20Card.pdf#page=37")
+_RSI_SYSCARD_RESCALE = 50.3 / 45.6
+
 _RSI_RAW = [
     {"name": "Claude Opus 4.6",       "date": "2026-02-05", "cobench": 15.6, "date_known": True},
     {"name": "Claude Mythos Preview", "date": "2026-04-07", "cobench": 54.8, "date_known": False},
     {"name": "Claude Mythos 5",       "date": "2026-06-09", "cobench": 50.3, "date_known": True},
     {"name": "Model 2 (internal)",    "date": "2026-07-06", "cobench": 62.8, "date_known": False},
+    {"name": "Claude Opus 5",         "date": "2026-07-24",
+     "cobench": round(59.6 * _RSI_SYSCARD_RESCALE, 1), "date_known": True,
+     "note": "59.6% on the system card's larger set, rescaled by Mythos 5's 50.3/45.6"},
+    {"name": "Claude Mythos 5.1",     "date": "2026-09-01",
+     "cobench": round(57.6 * _RSI_SYSCARD_RESCALE, 1), "date_known": True,
+     "note": "57.6% on the system card's larger set, rescaled by Mythos 5's 50.3/45.6"},
 ]
 
 
@@ -1161,6 +1193,283 @@ def load_rsi_code():
     return rows
 
 
+# ── R&D automation index (Anthropic's own share of model R&D work) ───────
+# The most direct of the five: not a benchmark score or an output proxy, but
+# the share of Anthropic's own model-R&D tasks a Claude judge rates at AL4
+# ("AI leads") on Epoch's automation scale. Monthly, from
+# `anthropic_rd_automation.csv`, whose header carries the provenance — the
+# six labelled values are transcribed off the figure, the 90% measurement
+# intervals digitized from it.
+#
+# Fitted in logit space like CoBench and the detour study: a share of a fixed
+# basket is bounded, and a score-space line runs through 100%.
+
+_RSI_AUTO_SOURCE_URL = (
+    "https://www.anthropic.com/institute/measuring-pace-of-ai-development")
+_RSI_AUTO_VERSION = "v2026.07"     # the index version the figure names
+
+# The bar. The post names no threshold, so this one is the app's: Claude
+# leading all but a tenth of the work humans were doing. 90% and not a
+# majority because the fitted trend has already passed a majority — a bar
+# today's fit puts in the past dates nothing, as the low ECI card did.
+# Note what it still does not claim: AL4 has a human supervising, and AL5
+# (fully autonomous) is zero in every month measured.
+_RSI_AUTO_TARGET = 90.0
+
+# Same reason the survey and merged-code fans stop short of the tab's
+# horizon: at a ~30-day odds doubling the fan is pinned at 100% within a
+# year, and the remaining years of flat dashed line only squash the six
+# measured months into the left margin.
+_RSI_AUTO_HORIZON_DAYS = 365
+
+
+# A share this close to the ceiling carries no rate information — one pixel of
+# digitisation moves its log-odds further than a month of progress does — and
+# the figure's own floor is about a pixel, ~0.3pt. Points outside the window
+# are dropped before any level is fitted.
+_RSI_AUTO_SAT_HI = 99.0
+_RSI_AUTO_FLOOR = 0.3
+
+# The rungs with enough unsaturated months to fit. AL1+ is already at 95% in
+# the first month and pinned at 100 from December, so it has no rate to
+# measure; it is carried in the CSV for the composition check only.
+_RSI_AUTO_LADDER = ('al2', 'al3', 'al4')
+_RSI_AUTO_LABELS = {'al1': 'AL1+ (minimal AI or better)',
+                    'al2': 'AL2+ (AI assists or better)',
+                    'al3': 'AL3+ (AI collaborates or better)',
+                    'al4': 'AL4+ (AI leads or better)'}
+
+# The reference share the ladder's lag is measured at. The curves are close to
+# parallel but not exactly so — the higher rungs climb slightly faster — so the
+# horizontal gap between two of them depends a little on where it is measured,
+# and the section reports that spread rather than hiding it.
+_RSI_AUTO_LADDER_REF = 50.0
+
+# The lag is swept across these reference shares so the section can quote the
+# spread rather than implying the gap between two rungs is a single number.
+_RSI_AUTO_REF_SWEEP = (10.0, 25.0, 50.0, 75.0, 90.0)
+
+# The ladder's clock: the first rated month, so rungs fitted over different
+# windows are placed on one timeline.
+_RSI_AUTO_EPOCH = datetime(2025, 8, 15)
+
+
+@st.cache_data
+def load_rsi_automation():
+    """Monthly cumulative shares at each automation level, at month midpoints.
+
+    `fitted` is the figure's own printed AL4 label: the unlabelled months sit
+    below its pixel floor and are charted at zero but never fitted, exactly
+    as the pre-2025 code bars are. `al4_dig` is the digitised reading of the
+    same boundary, kept only as the calibration guard on the method that
+    produced the levels the figure prints no numbers for.
+    """
+    rows = []
+    with Path(__file__).with_name('anthropic_rd_automation.csv').open() as f:
+        for r in csv.DictReader(line for line in f if not line.startswith('#')):
+            y, m = (int(v) for v in r['month'].split('-'))
+            rows.append({
+                'month': r['month'],
+                'date': datetime(y, m, 15),
+                'al1': float(r['al1_plus']),
+                'al2': float(r['al2_plus']),
+                'al3': float(r['al3_plus']),
+                'al4': float(r['al4_pct']),
+                'al4_dig': float(r['al4_dig']) if r['al4_dig'] else None,
+                'lo': float(r['lo90']) if r['lo90'] else None,
+                'hi': float(r['hi90']) if r['hi90'] else None,
+                'fitted': r['printed'] == '1'})
+    rows.sort(key=lambda r: r['date'])
+    return rows
+
+
+def _rsi_auto_points(rows, key):
+    """The months of `key` a logit fit can use.
+
+    AL4 is restricted to the months the figure labels — its unlabelled months
+    are charted zeros, not measurements. Every level then drops whatever sits
+    against the floor or the ceiling.
+    """
+    src = [r for r in rows if r['fitted']] if key == 'al4' else rows
+    return [r for r in src
+            if _RSI_AUTO_FLOOR < r[key] < _RSI_AUTO_SAT_HI]
+
+
+def _rsi_auto_level_fit(rows, key):
+    """OLS through one level's usable months in logit space.
+
+    Every rung is a bounded share, so each is fitted on the log-odds the way
+    CoBench is. Returns (base_date, intercept, slope_per_day).
+    """
+    pts = _rsi_auto_points(rows, key)
+    base = pts[0]['date']
+    days = np.array([(r['date'] - base).days for r in pts], dtype=float)
+    ys = _logit(np.array([r[key] for r in pts]) / 100)
+    if len(pts) < 2:
+        return base, float(ys[0]), 0.0
+    icpt, slope = fit_line(days, ys)
+    return base, icpt, slope
+
+
+def _rsi_auto_fit(rows):
+    """The AL4 fit — the series the section's fan and milestone card read."""
+    return _rsi_auto_level_fit(rows, 'al4')
+
+
+def _rsi_auto_dt_ci(rows, fit_dt):
+    """Default 80% CI on the AL4 odds-doubling time, in days."""
+    pts = _rsi_auto_points(rows, 'al4')
+    return _dt_ci_t_widened([(r['date'] - pts[0]['date']).days for r in pts],
+                            _logit(np.array([r['al4'] for r in pts]) / 100),
+                            fit_dt)
+
+
+def _rsi_auto_pos_sigma(row):
+    """Position sigma in log-odds, from the figure's own 90% interval.
+
+    Every other section picks a position CI by convention; this figure
+    publishes one per month, so the latest month's whisker is used directly.
+    The app's fans are quoted at 80%, hence the 1.645 of a 90% interval
+    rather than the 1.282 the other sections divide by.
+    """
+    if row.get('lo') is None or row.get('hi') is None:
+        return 0.0
+    lo = min(max(row['lo'], 0.05), 99.95)
+    hi = min(max(row['hi'], 0.05), 99.95)
+    return max((_logit(hi / 100) - _logit(lo / 100)) / (2 * 1.645), 0.0)
+
+
+def _rsi_auto_reach(rows, key, share, epoch=None):
+    """Days from `epoch` until `key`'s fitted curve reaches `share` percent.
+
+    The ladder is built out of these crossings rather than out of intercepts,
+    because the rungs are fitted over different windows and each one's own
+    first month would put them on different clocks.
+    """
+    base, icpt, slope = _rsi_auto_level_fit(rows, key)
+    if slope <= 0:
+        return None
+    days = (_logit(share / 100) - icpt) / slope
+    return days + (base - (epoch or _RSI_AUTO_EPOCH)).days
+
+
+def _rsi_auto_lag(rows, lower, upper, share=_RSI_AUTO_LADDER_REF):
+    """Days by which `upper` trails `lower` at a given reference share."""
+    a = _rsi_auto_reach(rows, lower, share)
+    b = _rsi_auto_reach(rows, upper, share)
+    if a is None or b is None:
+        return None
+    return b - a
+
+
+def _rsi_auto_ladder(rows, share=_RSI_AUTO_LADDER_REF):
+    """[(lower, upper, lag_days)] for each consecutive measurable pair."""
+    out = []
+    for lo, hi in zip(_RSI_AUTO_LADDER, _RSI_AUTO_LADDER[1:]):
+        lag = _rsi_auto_lag(rows, lo, hi, share)
+        if lag is not None:
+            out.append((lo, hi, lag))
+    return out
+
+
+def _rsi_auto_lag_spread(rows, lower, upper):
+    """(min, max) of a pair's lag over `_RSI_AUTO_REF_SWEEP`.
+
+    The rungs are near-parallel in log-odds but not exactly, so the gap
+    between two of them depends on where it is measured. The sweep is what
+    the section quotes instead of implying the lag is one number.
+    """
+    vals = [_rsi_auto_lag(rows, lower, upper, s) for s in _RSI_AUTO_REF_SWEEP]
+    vals = [v for v in vals if v is not None]
+    return (min(vals), max(vals)) if vals else None
+
+
+# ── AL5: full autonomy, projected off the ladder ─────────────────────────
+# The rungs below are near-parallel in log-odds, so each level's curve is
+# roughly the one below it shifted right by a lag. Measured, that lag is ~6.1
+# months (AL2->AL3) then ~6.6 (AL3->AL4). Extrapolating the step gives an
+# AL4->AL5 lag, and AL5(t) = AL4(t - lag).
+#
+# What makes this an assumption rather than a fit: AL5 has NO observations.
+# Every measured rung is "the model does more of the task while a human still
+# supervises"; AL5 is the removal of the human, which is a different kind of
+# step, and the post reports it at zero for every measured subset. Nothing in
+# the data says the ladder's regular spacing survives that boundary, so the
+# lag is exposed as a control and the caption says the structural uncertainty
+# is not in the band.
+#
+# The zeros are not useless, though: they censor the lag from below. If the
+# AL4->AL5 lag were as short as the extrapolation alone suggests, AL5 would
+# already be a visible band in the last rated month, and it is not.
+
+# Deliberately the same level as `_RSI_AUTO_TARGET`: both rungs are dated
+# against one bar, so the gap between where the two fans cross it is the
+# ladder's own step made visible rather than a comparison of two thresholds.
+_RSI_AL5_TARGET = 90.0
+
+# The slow edge of the lag's 80% interval, as a multiple of the censored
+# central value: the judgement that removing the supervisor could be twice as
+# long a step as any measured rung. It is a stated assumption, not a fitted
+# quantity — there is nothing to fit it against.
+_RSI_AL5_TAU_HI_MULT = 2.0
+
+
+def _rsi_al5_lag(rows):
+    """The AL4->AL5 lag in days: ladder extrapolation, censored by the zeros.
+
+    Returns {'ladder', 'censor', 'lag'} or None if the rungs will not fit.
+    `ladder` continues the measured step-to-step increment; `censor` is the
+    shortest lag under which AL5 would still be invisible in the last rated
+    month (`_RSI_AUTO_FLOOR`, the figure's ~1px floor). The lag used is the
+    larger: the observed absence of any AL5 band is evidence, and where it
+    disagrees with the extrapolation it is the extrapolation that yields.
+    """
+    steps = _rsi_auto_ladder(rows)
+    if len(steps) < 2:
+        return None
+    lags = [s[2] for s in steps]
+    ladder = lags[-1] + (lags[-1] - lags[-2])
+    last = rows[-1]['date']
+    floor_at = _rsi_auto_reach(rows, 'al4', _RSI_AUTO_FLOOR)
+    if floor_at is None:
+        return None
+    censor = (last - _RSI_AUTO_EPOCH).days - floor_at
+    return {'ladder': ladder, 'censor': censor, 'lag': max(ladder, censor)}
+
+
+def _rsi_al5_tau_draws(lag_days, n):
+    """Lognormal draws for the lag, 80% over [lag, lag x `_RSI_AL5_TAU_HI_MULT`].
+
+    Asymmetric on purpose. The fast edge is the censored central value, which
+    is as short as the observed absence of an AL5 band allows; the slow edge
+    is the judgement above. A symmetric band would put mass below what the
+    data already rules out.
+    """
+    return _lognormal_from_ci(lag_days, lag_days * _RSI_AL5_TAU_HI_MULT, n)
+
+
+def _pc_rsi_al5_eta(rows, target_pct=_RSI_AL5_TARGET, lag_days=None, n=None,
+                    samples=False):
+    """(early, median, late) dates for the AL5 share to reach `target_pct`.
+
+    AL5 is the AL4 curve shifted, so this is the AL4 sampler's own draw plus a
+    sampled lag — the two cards cannot disagree about the rung they share.
+    Returns None if AL4's fitted slope is flat or the ladder will not fit.
+    """
+    n = n or N_SAMPLES
+    base = _pc_rsi_auto_eta(rows, target_pct, n=n, samples=True)
+    if base is None:
+        return None
+    anchor, days_to = base
+    if lag_days is None:
+        lag = _rsi_al5_lag(rows)
+        if lag is None:
+            return None
+        lag_days = lag['lag']
+    days_to = days_to + _rsi_al5_tau_draws(float(lag_days), n)
+    return _pc_eta_out(anchor, np.maximum(days_to, 0.0), samples)
+
+
 _RSI_EXPERIMENT_SOURCE_URL = (
     "https://openai.com/index/research-acceleration-view-inside-openai/")
 _RSI_EXPERIMENT_TARGET = 10.0
@@ -1182,6 +1491,7 @@ def load_rsi_data():
         'date': datetime.strptime(r['date'], '%Y-%m-%d'),
         'cobench': r['cobench'],
         'date_known': r['date_known'],
+        'note': r.get('note'),
     } for r in _RSI_RAW]
     models.sort(key=lambda m: m['date'])
 
@@ -5491,7 +5801,7 @@ _RSI_RESET_KEYS = [
     "rsi_end_year", "rsi_timing", "rsi_notyet", "rsi_notyet_ramp",
     "rsi_atc_penalty",
     "rsi_custom_dt_lo", "rsi_custom_dt_hi", "rsi_custom_dt_dist",
-    "rsi_custom_pos_lo", "rsi_custom_pos_hi",
+    "rsi_custom_pos_lo", "rsi_custom_pos_hi", "rsi_al5_lag_mo",
 ]
 
 _RSI_DEFAULTS = {
@@ -5558,11 +5868,10 @@ def _rsi_dt_ci(frontier, fit_dt):
     """Default 80% CI on the odds-doubling time, in days.
 
     Every other tab defaults to the fitted rate halved and doubled, which
-    assumes enough points for the fit to mean something. Three frontier points
-    whose two segments disagree by ~8x do not, so the consecutive-segment rates
+    assumes enough points for the fit to mean something. A handful of frontier
+    points whose segment rates disagree do not, so the consecutive-segment rates
     widen that interval wherever they fall outside it, and the slope's own 80%
-    t-interval (`_dt_t_interval` — one residual dof today, so it reaches the
-    flat-slope cap) widens it further — never narrow it.
+    t-interval (`_dt_t_interval`) widens it further — never narrow it.
     """
     lo, hi = max(5.0, fit_dt / 2), fit_dt * 2
     for a, b in zip(frontier, frontier[1:]):
@@ -5789,7 +6098,8 @@ def render_rsi():
             textposition='top center',
             textfont=dict(size=10, color='#1a1a2e' if _is_fr else '#999999'),
             hovertext=f"{m['name']}<br>{_rsi_date_label(m)}<br>"
-                      f"CoBench: {m['cobench']:.1f}%",
+                      f"CoBench: {m['cobench']:.1f}%"
+                      + (f"<br>{m['note']}" if m['note'] else ""),
             hoverinfo='text', showlegend=False))
 
     fig.add_hline(
@@ -5819,11 +6129,23 @@ def render_rsi():
         plot_bgcolor='white', paper_bgcolor='white')
     st.plotly_chart(fig, width="stretch")
 
-    st.caption(
+    _fn_caption(
         "Source: "
         f"[Anthropic, Redacted Risk Report, August 2026, §3.4.3]({_RSI_SOURCE_URL}); "
-        "scores read off Figure 3.4.3.A.")
+        "scores read off Figure 3.4.3.A. Opus 5 and Mythos 5.1 are from the "
+        f"[Fable 5.1 system card]({_RSI_SYSCARD_URL}), Figure 2.3.4.1.A, rescaled "
+        "onto the Risk Report's problem set.",
+        ("Opus 5 and Mythos 5.1",
+         "“Mythos 5.1 scores slightly worse than Claude Opus 5 in this "
+         "evaluation… The lower performance relative to Opus 5 may be an "
+         "artifact of this particular evaluation, as our qualitative sense is "
+         "that Mythos 5.1 is somewhat more useful for performing this kind of "
+         "work internally than Opus 5 (though not dramatically so); one possible "
+         "explanation for this result is that Mythos 5.1 tends to run somewhat "
+         "shorter investigations for the same token budget on these evaluation "
+         "transcripts.” — Fable 5.1 & Mythos 5.1 system card, p. 37"))
 
+    _render_rsi_automation()
     _render_rsi_survey()
     _render_rsi_code()
     _render_rsi_experiments(rsi_end_year)
@@ -5838,6 +6160,333 @@ def render_rsi():
                               "rsi_notyet_ramp",
                               _RSI_DEFAULTS["rsi_notyet_ramp"]),
                           end_year=rsi_end_year)
+
+
+# The ladder's colours: a light-to-saturated ramp, so the rungs read as one
+# scale rather than as unrelated series. AL4 keeps the app's frontier blue and
+# AL5 — the rung that is projected rather than measured — is the purple the
+# app uses elsewhere for a quantity standing apart from its neighbours.
+_RSI_AUTO_COLORS = {'al2': '#b9c6d8', 'al3': '#7e9dc4', 'al4': '#4F8DFD',
+                    'al5': '#8e44ad'}
+
+
+def _render_rsi_automation():
+    """The automation ladder, and AL5 projected off it — one chart.
+
+    Charts the cumulative share at AL2+, AL3+ and AL4+ (the rungs the figure
+    resolves), projects AL4, and carries AL5 as the AL4 rung shifted by the
+    ladder's own step. Each measured rung is fitted on the log-odds like
+    CoBench; AL5 is not fitted at all, because it is never observed.
+    """
+    st.subheader("R&D automation index")
+    _fn_line(
+        "The other four sections measure how well models score or how much "
+        "they produce. This one rates the work itself: the share of "
+        "Anthropic's model R&D tasks at each rung of Epoch's automation "
+        "scale, from **AI assists** up to **no human in the loop**.",
+        ("rates the work itself",
+         "Anthropic catalogued ~15,000 granular model-R&D tasks from Slack "
+         "and internal docs into a 542-node tree, weighted each node by the "
+         "person-time it took in July 2026, and had a Claude judge assign "
+         "each one an Epoch automation level from the evidence available "
+         "that month or earlier."),
+        ("no human in the loop",
+         "AL5. The rung below it, AL4, is the model “completing most of "
+         "the task end-to-end from a high-level prompt, while the human "
+         "supervises” — so AL4 is not a measure of unsupervised "
+         "research, and AL5 is."))
+
+    rows = load_rsi_automation()
+    fitted_rows = [r for r in rows if r['fitted']]
+    base, icpt, slope = _rsi_auto_fit(rows)
+    cur = fitted_rows[-1]
+    lag = _rsi_al5_lag(rows)
+
+    _fn_line(
+        "⚠️ **AL5 has no measurements at all** — it is zero in "
+        "every rated month. Its curve below is the AL4 rung shifted by the "
+        "spacing of the rungs beneath it, which is an assumption about the "
+        "step that removes the human, not a reading of it.",
+        ("the spacing of the rungs beneath it",
+         "Each level's curve is close to the one below it shifted right in "
+         "time — the rungs are near-parallel in log-odds, within 50% of "
+         "each other's rate, which is what makes the shift meaningful. "
+         "AL2+→AL3+ and AL3+→AL4+ are the two steps the figure "
+         "resolves; AL4+→AL5 is this section's extrapolation of them."),
+        ("the step that removes the human",
+         "Every measured step is the model doing more of a task while a "
+         "person still supervises. AL5 is the person leaving. Nothing in the "
+         "data says a boundary of that kind is spaced like the ones inside "
+         "supervised work — trust, verification and accountability "
+         "plausibly gate it — and the band below does not contain that "
+         "possibility."))
+
+    if lag is not None:
+        steps = _rsi_auto_ladder(rows)
+        cols = st.columns(len(steps) + 2)
+        for col, (lo, hi, days) in zip(cols, steps):
+            spread = _rsi_auto_lag_spread(rows, lo, hi)
+            with col:
+                st.metric(f"{lo.upper()}+ → {hi.upper()}+",
+                          f"{days / 30.44:.1f} mo",
+                          help="Measured: how far the upper rung's fitted "
+                               "curve trails the lower one at "
+                               f"{_RSI_AUTO_LADDER_REF:.0f}%. The rungs are "
+                               "near-parallel but the higher ones climb "
+                               "slightly faster, so the gap depends a little "
+                               "on where it is read: over "
+                               f"{_RSI_AUTO_REF_SWEEP[0]:.0f}–"
+                               f"{_RSI_AUTO_REF_SWEEP[-1]:.0f}% it runs "
+                               f"{spread[0] / 30.44:.1f}–"
+                               f"{spread[1] / 30.44:.1f} months.")
+        with cols[-2]:
+            st.metric("AL4+ → AL5 (assumed)",
+                      f"{lag['ladder'] / 30.44:.1f} mo",
+                      help="Not measured. The measured steps continue by "
+                           f"about {(steps[-1][2] - steps[-2][2]) / 30.44:+.1f} "
+                           "months each, and this extends that increment one "
+                           "rung past the data.")
+        with cols[-1]:
+            _at_ladder = _inv_logit(
+                icpt + slope * ((rows[-1]['date'] - base).days
+                                - lag['ladder'])) * 100
+            st.metric("… raised by the zeros to",
+                      f"{lag['censor'] / 30.44:.1f} mo",
+                      help="The absence of an AL5 band is evidence. At the "
+                           "extrapolated lag AL5 would already have been "
+                           f"about {_at_ladder:.1f}% in "
+                           f"{rows[-1]['date']:%b %Y} — above the "
+                           f"figure's ~{_RSI_AUTO_FLOOR:g}pt floor, so it "
+                           "would show. This is the shortest lag that keeps "
+                           "it invisible, and it is the one the projection "
+                           "uses.")
+
+        with st.expander("Assumption: the AL4 → AL5 lag"):
+            lag_mo = _ss_number_input(
+                st, "Months AL5 trails AL4", "rsi_al5_lag_mo",
+                float(round(lag['lag'] / 30.44, 1)),
+                min_value=0.0, max_value=120.0, step=0.5,
+                help="The default is the censored ladder extrapolation. Raise "
+                     "it to price in that removing the supervisor is a harder "
+                     "step than any rung measured inside supervised work; the "
+                     "80% band already runs to "
+                     f"{_RSI_AL5_TAU_HI_MULT:g}× whatever is set here.")
+        lag_days = max(float(lag_mo) * 30.44, 1.0)
+    else:
+        lag_days = None
+
+    fig = go.Figure()
+    x_end = cur['date']
+
+    if slope > 0:
+        dt = np.log(2) / slope
+        n = N_SAMPLES
+        proj_slope = np.log(2) / np.maximum(
+            _lognormal_from_ci(*_rsi_auto_dt_ci(rows, round(dt)), n=n), 1.0)
+        fitted = icpt + slope * (cur['date'] - base).days
+        start_logit = np.random.normal(fitted, _rsi_auto_pos_sigma(cur), n)
+
+        # The window has to hold the AL5 fan, which is the AL4 one pushed out
+        # by the lag; without that the projected rung runs off the right edge.
+        horizon = _RSI_AUTO_HORIZON_DAYS + int(lag_days or 0)
+        pdays = np.arange(0, horizon + 1, dtype=float)
+        pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
+        x_end = pdates[-1]
+
+        # AL4 and AL5 come off the *same* sampled paths — AL5 is those paths
+        # shifted per sample — so the two fans cannot tell different stories
+        # about the rung they share.
+        shifts = {'al4': np.zeros(n)}
+        if lag_days is not None:
+            shifts['al5'] = _rsi_al5_tau_draws(lag_days, n)
+        bands = {
+            'al4': [(5, 95, 'rgba(52,152,219,0.10)'),
+                    (10, 90, 'rgba(52,152,219,0.18)'),
+                    (25, 75, 'rgba(52,152,219,0.28)')],
+            'al5': [(5, 95, 'rgba(155,89,182,0.10)'),
+                    (10, 90, 'rgba(155,89,182,0.18)'),
+                    (25, 75, 'rgba(155,89,182,0.28)')]}
+        medians = {}
+        for key, shift in shifts.items():
+            traj = _inv_logit(
+                start_logit[:, None]
+                + (pdays[None, :] - shift[:, None]) * proj_slope[:, None]) * 100
+            pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 75, 90, 95)}
+            medians[key] = np.percentile(traj, 50, axis=0)
+            for i, (lo, hi, color) in enumerate(bands[key]):
+                fig.add_trace(go.Scatter(
+                    x=pdates + pdates[::-1],
+                    y=list(pct[hi]) + list(pct[lo][::-1]),
+                    fill='toself', fillcolor=color, line=dict(width=0),
+                    # One entry per fan, not three. Two fans at the app's usual
+                    # three-band legend would be six rows of key for two
+                    # objects, and the legend then covers the fans it labels.
+                    name=f"{key.upper()}{'+' if key == 'al4' else ''} "
+                         "50/80/90% CI",
+                    hoverinfo='skip', showlegend=(i == 0)))
+
+        hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
+        hdates = [base + timedelta(days=int(d)) for d in hdays]
+        hy = _inv_logit(icpt + slope * hdays) * 100
+        fig.add_trace(go.Scatter(
+            x=hdates, y=hy.tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5),
+            name=f"AL4+ fitted trend (2x odds: {dt:.0f}d)",
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
+                       for d, y in zip(hdates, hy)],
+            hoverinfo='text'))
+        for key, med in medians.items():
+            fig.add_trace(go.Scatter(
+                x=pdates, y=med.tolist(), mode='lines',
+                line=dict(color=_RSI_AUTO_COLORS[key], width=2.5, dash='dash'),
+                name=(f"{key.upper()}+ median projection" if key == 'al4'
+                      else "AL5 median (assumed lag)"),
+                hovertext=[f"{d.strftime('%b %d, %Y')}<br>"
+                           f"{key.upper()} median: {y:.1f}%"
+                           for d, y in zip(pdates, med)],
+                hoverinfo='text'))
+
+    # The rungs below AL4, as measured context. Saturated months draw hollow:
+    # they are real readings, but a share pinned against 100 carries no rate,
+    # so they are excluded from that rung's fit.
+    for key in ('al2', 'al3'):
+        usable = {id(r) for r in _rsi_auto_points(rows, key)}
+        fig.add_trace(go.Scatter(
+            x=[r['date'] for r in rows], y=[r[key] for r in rows],
+            mode='lines', line=dict(color=_RSI_AUTO_COLORS[key], width=2),
+            name=_RSI_AUTO_LABELS[key],
+            hovertext=[f"{r['date']:%b %Y}<br>{_RSI_AUTO_LABELS[key]}: "
+                       f"{r[key]:.1f}%"
+                       + ("" if id(r) in usable else
+                          "<br>at the ceiling — charted, not fitted")
+                       for r in rows],
+            hoverinfo='text'))
+        sat = [r for r in rows if id(r) not in usable]
+        if sat:
+            fig.add_trace(go.Scatter(
+                x=[r['date'] for r in sat], y=[r[key] for r in sat],
+                mode='markers',
+                marker=dict(color='white', size=7,
+                            line=dict(color=_RSI_AUTO_COLORS[key], width=2)),
+                hoverinfo='skip', showlegend=False))
+
+    # AL4: the unlabelled months hollow at zero, the labelled ones with the
+    # figure's own 90% whiskers.
+    unfit = [r for r in rows if not r['fitted']]
+    if unfit:
+        fig.add_trace(go.Scatter(
+            x=[r['date'] for r in unfit], y=[r['al4'] for r in unfit],
+            mode='markers',
+            marker=dict(color='#aaaaaa', size=7, symbol='circle-open',
+                        line=dict(color='#777777', width=1.5)),
+            hovertext=[f"{r['date']:%b %Y}<br>No labelled AL4 value<br>"
+                       "below the figure's resolution" for r in unfit],
+            hoverinfo='text', showlegend=False))
+    fig.add_trace(go.Scatter(
+        x=[r['date'] for r in fitted_rows], y=[r['al4'] for r in fitted_rows],
+        mode='markers+lines',
+        line=dict(color=_RSI_AUTO_COLORS['al4'], width=2),
+        marker=dict(color=_RSI_AUTO_COLORS['al4'], size=11,
+                    line=dict(color='white', width=2)),
+        name=_RSI_AUTO_LABELS['al4'],
+        error_y=dict(type='data', symmetric=False,
+                     array=[r['hi'] - r['al4'] for r in fitted_rows],
+                     arrayminus=[r['al4'] - r['lo'] for r in fitted_rows],
+                     color='rgba(79,141,253,0.85)', thickness=1.5, width=5),
+        hovertext=[f"{r['date']:%b %Y}<br>Claude leads {r['al4']:.0f}%<br>"
+                   f"90% measurement interval: {r['lo']:.1f}–{r['hi']:.1f}%"
+                   for r in fitted_rows],
+        hoverinfo='text'))
+    # AL5's own measurements: zero, every month. Drawn as a flat line rather
+    # than markers because AL4's own pre-March zeros occupy the same seven
+    # points — as markers the two series were indistinguishable rings sitting
+    # on each other. The axis is floored below zero so this is not swallowed
+    # by the axis line.
+    fig.add_trace(go.Scatter(
+        x=[r['date'] for r in rows], y=[0.0] * len(rows),
+        mode='lines',
+        line=dict(color=_RSI_AUTO_COLORS['al5'], width=3),
+        name='AL5 measured (zero every month)',
+        hovertext=[f"{r['date']:%b %Y}<br>No AL5 band<br>"
+                   f"below the figure's ~{_RSI_AUTO_FLOOR:g}pt floor"
+                   for r in rows],
+        hoverinfo='text'))
+
+    # One bar, two crossings: both rungs are dated against the same level, so
+    # the gap between where the fans meet it is the ladder's step made visible.
+    fig.add_hline(
+        y=_RSI_AUTO_TARGET, line=dict(color='#e74c3c', width=1.5, dash='dash'),
+        annotation_text=f"{_RSI_AUTO_TARGET:.0f}% — of model R&D tasks: "
+                        "led by Claude (AL4+), then unsupervised (AL5)",
+        annotation_position="top left",
+        annotation_font=dict(size=11, color='#e74c3c'))
+    _add_today_vline(fig)
+
+    fig.update_layout(
+        height=580, margin=dict(l=50, r=60, t=86, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(title="Month rated",
+                   range=[rows[0]['date'] - timedelta(days=20),
+                          max(x_end, rows[-1]['date']) + timedelta(days=20)],
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        yaxis=dict(title="Share of model R&D tasks at this level or above",
+                   range=[-3, 100], tick0=0, dtick=20, ticksuffix='%',
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        hovermode='closest',
+        # Above the plot: nine keys inside it would sit on top of the AL5 fan
+        # whichever corner they took, the chart being full left to right.
+        legend=dict(orientation='h', yanchor='bottom', y=1.02,
+                    xanchor='left', x=0, font=dict(color='#1a1a2e', size=11)),
+        plot_bgcolor='white', paper_bgcolor='white')
+    st.plotly_chart(fig, width="stretch")
+
+    _fn_caption(
+        "Cumulative shares on a frozen basket of tasks, judged by a model. "
+        "Only AL4 is fitted — the rungs below it are against the ceiling "
+        "and AL5 is never observed at all. The bar is this app's, not the "
+        f"post's. Source: [Anthropic R&D Automation Index "
+        f"{_RSI_AUTO_VERSION}]({_RSI_AUTO_SOURCE_URL}); AL4 values "
+        "transcribed from the figure, everything else digitized.",
+        ("Cumulative shares",
+         "Each line is “at this level or above” — the stacked "
+         "figure's band boundaries, not a band's own height. Cumulative "
+         "because that is the monotone quantity a bounded fit wants: a single "
+         "band's height rises and then falls as work moves up past it, which "
+         "is why the AL3 band is shrinking while AL3+ still climbs."),
+        ("the rungs below it are against the ceiling",
+         "AL2+ passes 99% in April 2026 and AL1+ in December 2025. A share "
+         "that close to 100 carries no rate — one pixel of digitization "
+         "moves its log-odds further than a month of progress does — so "
+         "those months are charted hollow and dropped before fitting. AL3+ is "
+         "the one rung that spans a full climb."),
+        ("AL5 is never observed at all",
+         "So its band carries the AL4 fit's uncertainty and the lag's, and "
+         "not the question of whether a ladder measured inside supervised "
+         "work says anything about the step that removes the supervisor. That "
+         "is the dominant uncertainty here, it is structural rather than "
+         "statistical, and no band can express it: if full autonomy is gated "
+         "by verification and accountability rather than by capability, this "
+         "curve is measuring the wrong thing rather than measuring it "
+         "imprecisely."),
+        ("judged by a model",
+         "A Claude judge assigned the levels. Against staff who own the work "
+         "areas it matched exactly 59% of the time and to within one level "
+         "97% of the time, where two humans agreed exactly 35% of the time. "
+         "The post names the AL3/AL4 boundary as where that disagreement "
+         "concentrates, which is the boundary this whole series is drawn at."),
+        ("everything else digitized",
+         "The figure prints a number only for AL4, so AL4 is transcribed and "
+         "the other rungs are read by pixel analysis. Reading AL4's boundary "
+         "the same way and comparing it to the printed label is the "
+         "calibration guard on that method: the two agree within ~0.6 points."),
+        ("The bar is this app's, not the post's",
+         f"The post names no threshold. {_RSI_AUTO_TARGET:.0f}% is the app's "
+         "choice for both rungs — one level, so the gap between the two "
+         "crossings is the ladder's own step. A majority would not do for "
+         "AL4: the fitted trend has already passed one, so it would date "
+         "nothing."))
 
 
 def _render_rsi_survey():
@@ -7132,6 +7781,15 @@ _OPENAI_REVENUE = [
     # ("$1 billion in latest reported ARR"). That is product-level, like Codex ARR, and must not
     # be read as a company total -- it will generate frequent "OpenAI ARR" headlines that do not
     # belong in this table.
+    # Rechecked 2026-09-10: TickerTrends' three posts since (09-02 Fable 5.1 launch tracking, 09-07 product
+    # feature, 09-09 GitHub activity) carry no company total, and Epoch's revenue CSV still tops out at
+    # Bloomberg's $40B. Also excluded: OpenAI's own ChatGPT Ads $1B run rate (08-31) is product-level.
+    # Rechecked 2026-09-18 against the Substack archive API (blog.tickertrends.io/api/v1/archive), which is
+    # authoritative on dates: eleven posts since the 08-14 one behind the 44.3 above, none carrying a
+    # company-wide total. The two that quote dollars are both product-level and excluded -- Claude Code
+    # $15.1B / Codex $8.8B tracked ARR (08-18) and the weekly ChatGPT Ads series (~$1B, from 08-31).
+    # Epoch's ai_companies_revenue_reports.csv is unchanged in value at Bloomberg's $40B, but note it dates
+    # that row 2026-08-13 (publication) where we carry the 2026-07-31 as-of; same observation, not a new one.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -7210,6 +7868,16 @@ _ANTHROPIC_REVENUE = [
     # figure exists. Epoch's newest Anthropic row is unchanged at 65.0 / 2026-07-31, sourced to
     # the same Bloomberg story. All later coverage (Fortune, CNBC, TechCrunch, Axios) is
     # derivative of that one scoop, not an independent read.
+    # Rechecked 2026-09-10: still nothing newer. anthropic.com/news' two 09-01 posts carry no run rate,
+    # EDGAR still has no Anthropic PBC registrant (press expects a public S-1 late Sep-Oct), and
+    # Epoch's newest Anthropic row is unchanged at 65.0 / 2026-07-31.
+    # Rechecked 2026-09-18: still nothing newer. Four anthropic.com/news posts since 09-01 (09-18 Accenture,
+    # 09-17 Life Sciences, 09-10 misuse report, 08-31) and none states a run rate; EDGAR still has no
+    # Anthropic PBC registrant, only third-party SPVs and fund filings that mention the company; Epoch's
+    # newest Anthropic row is unchanged. Excluded: the 2026-09-18 NYT-sourced IPO story, carried by
+    # Bloomberg and Axios as revenue "to top"/"expected to" exceed $100B in 2026 -- a forecast, and its only
+    # observation is the $9B-to-$65B history already here. An S-1, when it lands, will carry audited period
+    # revenue; under this series' rule that yields a point only if it states a run rate explicitly.
 ]
 
 
@@ -10779,11 +11447,13 @@ def _cc_innovation_algo_band(cc_rows, eci_all=None):
     hi = float(top['slope'])
     if eci_all is None:
         eci_all = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
-    fg3 = _cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
-    a_ref = fg3['a_partial'] if fg3 else dec['a_partial']
+    # Margin 3 when it has the rows to fit, else the default margin.
+    fg = (_cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
+          or _cc_frontier_grade_algo(cc_rows, eci_all))
+    a_ref = fg['a_partial'] if fg else dec['a_partial']
     lo = _CC_PRETRAIN_ALGO_OOM * a_ref
-    if fg3:
-        lo = max(lo, fg3['b_time'])
+    if fg:
+        lo = max(lo, fg['b_time'])
     return (min(lo, hi), max(lo, hi))
 
 
@@ -10799,8 +11469,10 @@ def _cc_pure_innovation_band(cc_rows, eci_all=None):
         return None
     if eci_all is None:
         eci_all = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
-    fg3 = _cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
-    a_ref = fg3['a_partial'] if fg3 else dec['a_partial']
+    # Margin 3 when it has the rows to fit, else the default margin.
+    fg = (_cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
+          or _cc_frontier_grade_algo(cc_rows, eci_all))
+    a_ref = fg['a_partial'] if fg else dec['a_partial']
     lo = _CC_PRETRAIN_ALGO_OOM * a_ref
     hi = band[0]
     return (min(lo, hi), max(lo, hi))
@@ -11817,7 +12489,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
 # moves between pulls. Retarget when
 # TestCcCnTargetIsTodaysUsFrontier fails, and re-read the captions that
 # compare this bar with the Pacing pause panel's.
-_CC_CN_TARGET_ECI = 169.0
+_CC_CN_TARGET_ECI = 166.0
 
 
 def _cc_cn_target_years(anchor_eci, target, algo_lo, algo_mid, algo_hi,
@@ -13669,15 +14341,27 @@ _PC_RSI_WEIGHTS = {
     "metr_p80": 10.0,
     "eci_187_5": 5.0,
     "eci_200": 10.0,
-    "rli_90": 15.0,
+    "rli_90": 10.0,
     "cobench_85": 5.0,
-    "staff_10x": 10.0,
-    "code_30x": 10.0,
-    "experiments_10x": 10.0,
+    "staff_10x": 5.0,
+    # The two output-volume proxies give up 5 points each to the automation
+    # index: lines merged and experiments launched are things a coding model
+    # inflates directly, while the index rates the share of the work itself
+    # that the model leads — nearer the question the blend is asking.
+    "code_30x": 5.0,
+    "experiments_10x": 5.0,
+    # The AL4 bar is now an intermediate rung: AL5 is the headline, and takes
+    # the largest single weight. Its 15 comes from RLI-90 and the staff survey
+    # (broad substitution proxies the ladder measures more directly) and from
+    # the AL4 card itself, which no longer has to stand in for full autonomy.
+    "rdauto_90": 5.0,
+    "al5_90": 15.0,
     "nextstep_90": 10.0,
     "rev_1t": 10.0,
 }
 _PC_RSI_W_KEY = "pc_rsiw_"        # session-state prefix, one float per slug
+# Milestone cards wider than this truncate their labels mid-word.
+_PC_CARDS_PER_ROW = 4
 
 
 _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
@@ -13957,8 +14641,14 @@ def _pc_rsi_projection_samples(components, weights, origin, survival, raw_compon
     return mix, blend_days, raw_days
 
 
+# Cards that date full R&D automation itself. Takeoff reads them as a definition
+# of that milestone, so they leave the coding-automation blend it inherits.
+_TK_LADDER_SLUGS = ("al5_90",)
+
+
 def _pc_rsi_onset(today):
-    """Final RSI projection in days from today, retaining the selected clock."""
+    """(coding days, ladder days, settings): the final RSI projection less
+    `_TK_LADDER_SLUGS`, and those cards' own draws, on the selected clock."""
     # Reassign inherited widget keys so Streamlit keeps them on the Takeoff
     # page even though their editors only render on RSI.
     settings = {k: st.session_state.get(k, _RSI_DEFAULTS[k]) for k in
@@ -13971,11 +14661,20 @@ def _pc_rsi_onset(today):
         today, settings["rsi_timing"], settings["rsi_notyet"], settings["rsi_notyet_ramp"])
     weights = {slug: float(settings[_PC_RSI_W_KEY + slug])
                for slug, _, _, _ in components}
+    ladder_weights = {s: w for s, w in weights.items() if s in _TK_LADDER_SLUGS}
+    weights.update(dict.fromkeys(ladder_weights, 0.0))
+    if not any(weights.values()):
+        return None, None, settings  # else the blend falls back to defaults, AL5 included
     _, days, _ = _pc_rsi_projection_samples(components, weights, today, survival, raw)
-    if days is not None:
-        days = _pc_rsi_atc_samples(days, settings["rsi_atc_penalty"])
-        days = np.sort(days)  # stable quantile pairing with takeoff's seeded draws
-    return days, settings
+    ladder = (_pc_rsi_projection_samples(
+        components, dict.fromkeys(ladder_weights, 1.0), today, None, None)[1]
+        if ladder_weights else None)
+
+    def final(d):
+        # Sorted: stable quantile pairing with takeoff's seeded draws.
+        return None if d is None else np.sort(
+            _pc_rsi_atc_samples(d, settings["rsi_atc_penalty"]))
+    return final(days), final(ladder), settings
 
 
 def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
@@ -14173,6 +14872,34 @@ def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_
                  f"CI, position \u00b1{_PC_RSI_POS_CI:g} points. "
                  f"{_RSI_SUBSTITUTION_BAR:.0f}% is Anthropic's own stated "
                  "full-substitution bar, not a benchmark ceiling."))
+    _cap.append((f"rdauto_{_RSI_AUTO_TARGET:.0f}",
+                 f"Claude leads {_RSI_AUTO_TARGET:.0f}% of Anthropic R&D",
+                 _pc_rsi_auto_eta(load_rsi_automation(), samples=True), False,
+                 "The R&D automation fan above, at its defaults: single OLS "
+                 "in logit space over the six labelled months, odds-doubling "
+                 "over that fit's t-widened rate CI, position over the "
+                 "figure's own 90% measurement interval on the latest month. "
+                 f"{_RSI_AUTO_TARGET:.0f}% is this app's bar, not the post's, "
+                 "and it still has a human supervising \u2014 AL5 is zero "
+                 "throughout. Six points on a steep ramp, judged by a model "
+                 "against a basket frozen in July 2026; treat the narrowness "
+                 "as the fit's, not the world's."))
+    _cap.append((f"al5_{_RSI_AL5_TARGET:.0f}",
+                 f"AL5: {_RSI_AL5_TARGET:.0f}% of R&D fully autonomous",
+                 _pc_rsi_al5_eta(
+                     load_rsi_automation(),
+                     lag_days=(st.session_state.get("rsi_al5_lag_mo") or 0) * 30.44
+                     or None,
+                     samples=True), False,
+                 "The AL5 fan above: the AL4 fit shifted by the ladder's own "
+                 "step, extrapolated one rung and raised until AL5 would still "
+                 "be invisible in the last rated month. **AL5 has no "
+                 "measurements — it is zero in every month.** The band "
+                 "carries the AL4 fit and the lag, not the question of whether "
+                 "a ladder measured inside supervised work says anything about "
+                 "the step that removes the supervisor. Treat it as the "
+                 "section's assumption made datable, not as a forecast the "
+                 "data supports."))
     _cap.append((f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x",
                  f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
                  _pc_rsi_survey_eta(load_rsi_survey(), n=n, samples=True), False,
@@ -14263,11 +14990,17 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
         today, timing_label, condition, ramp_days)
     if _cap:
         st.subheader("Capabilities Milestones")
-        # Three rows give the milestone labels room to remain legible.
-        _per_row = -(-len(_cap) // 3)
-        for _start in range(0, len(_cap), _per_row):
-            _chunk = _cap[_start:_start + _per_row]
-            for col, (slug, lab, _anchor, _days) in zip(st.columns(_per_row),
+        # At most `_PC_CARDS_PER_ROW` per row — past that a label truncates
+        # mid-word — then the rows are balanced rather than filled greedily,
+        # so thirteen cards read 4-3-3-3 and not 4-4-4-1.
+        _n_rows = max(-(-len(_cap) // _PC_CARDS_PER_ROW), 1)
+        _sizes = [len(_cap) // _n_rows + (i < len(_cap) % _n_rows)
+                  for i in range(_n_rows)]
+        _start = 0
+        for _size in _sizes:
+            _chunk = _cap[_start:_start + _size]
+            _start += _size
+            for col, (slug, lab, _anchor, _days) in zip(st.columns(_size),
                                                          _chunk):
                 early, med, late = _pc_eta_dates(_anchor, _days)
                 with col:
@@ -14528,6 +15261,33 @@ def _pc_rsi_code_eta(rows, target_x=_RSI_CODE_TARGET, n=None, samples=False):
     fitted = icpt + slope * (cur['date'] - base).days
     start = np.random.normal(fitted, np.log(_RSI_CODE_POS_FACTOR) / 1.282, n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
+    return _pc_eta_out(cur['date'], days_to, samples)
+
+
+# The R&D automation companion: when does Claude lead `_RSI_AUTO_TARGET`% of
+# Anthropic's own model R&D work. Reuses the section's own fit, rate CI and
+# published position interval, so the card and the fan cannot disagree.
+
+
+def _pc_rsi_auto_eta(rows, target_pct=_RSI_AUTO_TARGET, n=None, samples=False):
+    """(early, median, late) dates for the AL4 share to reach `target_pct`.
+
+    The section's fan at its defaults — single OLS in logit space over the
+    labelled months, odds-doubling time lognormal over `_rsi_auto_dt_ci()`,
+    position normal over the figure's own 90% interval on the latest month.
+    Returns None if the fitted slope is flat or negative.
+    """
+    n = n or N_SAMPLES
+    base, icpt, slope = _rsi_auto_fit(rows)
+    if slope <= 0:
+        return None
+    proj_slope = np.log(2) / np.maximum(
+        _lognormal_from_ci(*_rsi_auto_dt_ci(rows, round(np.log(2) / slope)),
+                           n=n), 1.0)
+    cur = [r for r in rows if r['fitted']][-1]
+    fitted = icpt + slope * (cur['date'] - base).days
+    start = np.random.normal(fitted, _rsi_auto_pos_sigma(cur), n)
+    days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
     return _pc_eta_out(cur['date'], days_to, samples)
 
 
@@ -16004,6 +16764,10 @@ _TK_DEFAULTS.update({
 _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
 
 
+# Runaway draws tolerated as unresolved before the tab refuses to report.
+_TK_LIMITED_MAX = 0.01
+
+
 def _tk_apply_preset(name):
     st.session_state.update(_TK_DEFAULTS)
     st.session_state.update({"tk_" + k: v for k, v in takeoff.PRESETS[name].items()})
@@ -16072,10 +16836,10 @@ def _tk_rsi_activity(rows, today, n):
 
 @st.cache_data(show_spinner=False, max_entries=12)
 def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, experiment_slopes,
-                 baseline_yield=1.0):
+                 baseline_yield=1.0, ladder_years=None):
     # The source digest invalidates results when the imported simulator changes.
     result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
-                             experiment_slopes=experiment_slopes)
+                             experiment_slopes=experiment_slopes, ladder_years=ladder_years)
     grid = result["workflow_progress"]["years"]
     paths = np.exp(experiment_starts[:, None] + experiment_slopes[:, None] * grid)
     result["workflow_progress"]["rsi_activity_quantiles"] = np.quantile(
@@ -16175,10 +16939,12 @@ def _tk_outcome_rows(result, horizon):
     for name, measures in result["outcomes"].items():
         dates = (np.zeros_like(result["onset"]) if name == "Today" else
                  result["onset"] if name == "Full coding automation" else result["events"][name])
-        selected = (dates <= horizon) & np.isfinite(measures["human_mean"])
+        selected = (dates <= horizon) & np.isfinite(measures["progress_multiple"])
         def fmt(key, scale, suffix):
-            values = measures[key][selected]
+            # Ladder-defined draws carry no workflow measurement (NaN).
+            values = measures[key][selected & np.isfinite(measures[key])]
             return (f"{np.median(values) * scale:.1f}{suffix}" if len(values) else
+                    "Not measured" if selected.any() else
                     "Not modeled" if np.any(dates < 0) else "Not reached")
         rows.append({
             "Outcome at": name,
@@ -16283,6 +17049,12 @@ def render_takeoff():
             if st.session_state.get("_tk_fit_message"):
                 st.caption(st.session_state["_tk_fit_message"])
         with st.expander("Human work and useful projects", expanded=True):
+            number("Weight on Anthropic’s AL5 date (%)", "ladder_weight", 0.0, 100.0, 5.0,
+                   "Two candidate definitions of full R&D automation, mixed per scenario "
+                   "like the RSI projection: this share of scenarios inherits RSI’s AL5 "
+                   "date, the rest use the human-hours conditions below. AL5 has no "
+                   "observations; its date is the AL4 trend shifted by the ladder’s own "
+                   "spacing. 0 restores the human-hours definition alone.")
             number("Maximum human work for full automation (%)", "full_human", 0.0, 25.0, 1.0,
                    "Every research stage must fall below this share of its baseline human "
                    "hours, at comparable project scope. A strong average cannot hide a bottleneck.")
@@ -16318,7 +17090,9 @@ def render_takeoff():
                    "Discounts coding and judgment gains beyond today. Zero removes "
                    "AI feedback; baseline research and compute can still improve models.")
             number("Increasing research difficulty", "difficulty", 0.0, 2.0, 0.1,
-                   "A larger value means each further software improvement takes more work.")
+                   "A larger value means each further software improvement takes more work. "
+                   "Feedback compounds only while the research-quality elasticity exceeds it; "
+                   "both vary with parameter uncertainty, so some scenarios fizzle.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("Consecutive cycles for sustained feedback", "feedback_cycles", 1, 5, 1)
@@ -16339,19 +17113,21 @@ def render_takeoff():
             number("Parameter uncertainty (%)", "uncertainty", 0, 100, 5,
                    "Independent bounded log-space variation around research rates, compute "
                    "growth, cycle times, workflow human hours, completion rates, "
-                   "workflow learning rates, research-quality slope, and generality gaps. "
+                   "workflow learning rates, research-quality slope, research difficulty, "
+                   "and generality gaps. "
                    "40 means factors between exp(−0.4) and exp(0.4), not a confidence level.")
             number("Simulation seed", "seed", 0, 4294967295, 1)
 
     st.header("Takeoff to superintelligence")
     st.caption("Coding-automation dates inherit the final RSI projection, including "
-               "its weights, conditioning, and all-things-considered penalty. Research "
+               "its weights, conditioning, and all-things-considered penalty — less its AL5 "
+               "card, which dates full R&D automation and is used for that instead. Research "
                "starts today with partial automation and existing AI assistance. Coding "
                "automation is a milestone on that path, not the start of feedback.")
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     end_date = datetime(int(st.session_state["tk_end_year"]), 12, 31)
     horizon = (end_date - today).total_seconds() / (365.25 * 86400)
-    onset_days, rsi_settings = _pc_rsi_onset(today)
+    onset_days, ladder_days, rsi_settings = _pc_rsi_onset(today)
     if onset_days is None:
         st.info("The RSI projection has no available draws. Adjust its settings on the RSI tab.")
         return
@@ -16387,10 +17163,12 @@ def render_takeoff():
         return
     experiment_starts, experiment_slopes = activity
     result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
-                          experiment_starts, experiment_slopes, st.session_state["tk_cal_2025_yield"])
-    if result["numerically_limited"].any():
+                          experiment_starts, experiment_slopes, st.session_state["tk_cal_2025_yield"],
+                          None if ladder_days is None else ladder_days / 365.25)
+    limited = float(np.mean(result["numerically_limited"]))
+    if limited > _TK_LIMITED_MAX:
         st.error("These assumptions exceed the simulation’s numerical range in "
-                 f"{100 * np.mean(result['numerically_limited']):.1f}% of draws. "
+                 f"{100 * limited:.1f}% of draws. "
                  "Milestone probabilities are unavailable for this configuration; "
                  "the unresolved draws have not been counted as slow outcomes.")
         return
@@ -16408,7 +17186,10 @@ def render_takeoff():
              f"{100 * np.mean(arrival > horizon):.0f}%")
     st.caption(f"Coding automation uses RSI’s “{rsi_settings['rsi_timing']}” clock. "
                "Successor milestones follow after the simulated training and deployment "
-               "delays. “Beyond horizon” includes slow or stalled paths; it does not mean never.")
+               "delays. “Beyond horizon” includes slow or stalled paths; it does not mean never."
+               + (f" {100 * limited:.2f}% of scenarios ran away past the simulation’s numerical "
+                  "range and are left unresolved — counted as not arriving, which understates "
+                  "the fast tail by at most that share." if limited else ""))
     st.subheader("Milestone arrival dates")
     st.plotly_chart(_tf(_tk_cdf_fig(result, today, horizon=horizon)), width="stretch")
     rows = []
@@ -16420,6 +17201,28 @@ def render_takeoff():
                      "90%": _tk_date(takeoff.quantile(samples, 0.9, horizon), today),
                      f"By {end_date:%b %Y}": f"{100 * np.mean(samples <= horizon):.1f}%"})
     st.table(rows)
+    ladder_defined = result["ladder_defined"]
+    if ladder_defined.any():
+        full = result["events"][takeoff.MILESTONES[1]]
+        st.table([{"Full R&D automation defined by": name,
+                   "Scenarios": f"{100 * np.mean(mask):.0f}%",
+                   "10%": _tk_date(takeoff.quantile(full[mask], 0.1, horizon), today),
+                   "Median": _tk_date(takeoff.quantile(full[mask], 0.5, horizon), today),
+                   "90%": _tk_date(takeoff.quantile(full[mask], 0.9, horizon), today)}
+                  for name, mask in (("Human hours and project completion", ~ladder_defined),
+                                     ("Anthropic’s AL5 date", ladder_defined)) if mask.any()])
+        _fn_caption(
+            "The two definitions disagree; the milestone above mixes them. Anthropic’s AL5 "
+            "date is an extrapolation, and either definition also waits for the coding "
+            "date. Moving the weight moves this milestone only: later milestones are gated "
+            "on validated progress, and human hours do not feed back into research speed.",
+            ("Anthropic’s AL5 date", "AL5 has no observations. The date is the AL4 trend "
+             "shifted by the automation ladder’s own spacing, so it cannot say whether a "
+             "ladder measured inside supervised work predicts the step that removes the "
+             "supervisor. It carries the RSI tab’s clock, conditioning and penalty."),
+            ("human hours do not feed back", "Research speed comes from coding labor, "
+             "experiment compute and research quality. The human-hours state is a readout "
+             "of capability, so an earlier automation date does not accelerate the path."))
 
     st.subheader("Time from coding automation to superintelligence")
     for col, months in zip(st.columns(3), (6, 12, 24)):
@@ -16441,8 +17244,10 @@ def render_takeoff():
     st.table(_tk_outcome_rows(result, horizon))
     st.caption("Medians among scenarios reaching each milestone by the calendar horizon. "
                "Human hours are relative to comparable baseline projects, not a staffing "
-               "forecast. The average weights direction, experiments, and verification "
-               "25/50/25; the automation trigger checks every stage separately. Progress "
+               "forecast; at full R&D automation they come from the scenarios the "
+               "human-hours definition decided. The average weights direction, experiments, "
+               "and verification 25/50/25; the automation trigger checks every stage "
+               "separately. Progress "
                "counts efficiency gains at fixed quality, after fast validation or successor "
                "deployment. Historical coding dates have no reconstructed outcome measurements. "
                "These are simulated outcomes, not observed measurements.")
@@ -16487,19 +17292,25 @@ def render_takeoff():
 
     with st.expander("What triggers full R&D automation?"):
         st.markdown(
-            "Research feedback starts today. Full automation also requires the inherited coding date to have arrived. "
+            "Research feedback starts today. Full automation requires the inherited coding "
+            "date to have arrived, and then one of two candidate definitions, mixed per "
+            f"scenario: in {params['ladder_weight']:g}% of scenarios, the RSI tab’s date for "
+            "**AL5 work reaching 90% of Anthropic’s model-R&D tasks**; in the rest, "
             f"the available research system must require **at most {params['full_human']:g}% "
             "of baseline human hours in every research stage**, while completing "
             f"**at least {params['full_success']:g}% of useful research projects**.\n\n"
             "The stages are research direction, experiment design and interpretation, "
             "and verification and integration. Progress in an easy stage cannot "
             "compensate for a persistent human bottleneck elsewhere. Human work falls "
-            "toward the floor you set; a floor above the threshold prevents this milestone.\n\n"
+            "toward the floor you set; a floor above the threshold rules out this definition.\n\n"
             "Starting human hours, completion rates, and learning rates are elicited "
             "scenario assumptions. A halving time means months of capability progress "
             "at today’s pace; takeoff acceleration compresses the calendar time. "
             "The new definition is tied to measurable outcomes, but the model is not yet "
-            "fitted to a dataset of complete autonomous research projects.")
+            "fitted to a dataset of complete autonomous research projects.\n\n"
+            "The AL5 date is measured rather than assumed, but only by extrapolation: "
+            "the index has never recorded AL5 work. It is inherited as a calendar date, "
+            "paired by quantile with the coding date.")
     with st.expander("What triggers superhuman AI research?"):
         st.markdown(
             "Full R&D automation must already be satisfied. Then **each of "
@@ -16571,7 +17382,8 @@ def render_takeoff():
             "improvements → better tools and successors → faster research. Humans may "
             "remain involved throughout this feedback loop.\n\n"
             "**Milestones.** Full R&D automation requires low human involvement in every "
-            "research stage and high useful-project completion. Superhuman research "
+            "research stage and high useful-project completion, or the inherited AL5 date. "
+            "Superhuman research "
             "additionally requires sustained validated progress acceleration and a "
             "same-compute advantage. Broad superintelligence adds the two speculative "
             "capability gaps after that milestone. Sustained "

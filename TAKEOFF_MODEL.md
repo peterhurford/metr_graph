@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v4-present-feedback`. Work remains on `codex/grounded-takeoff`;
+Version: `takeoff-v5-al-ladder`. Work remains on `codex/grounded-takeoff`;
 checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
@@ -8,7 +8,9 @@ explicit proxy calibration, not statistically identified probabilities.
 
 Every simulation starts today and ends at the selected calendar horizon (default
 December 31, 2031). The exact final RSI samples remain the coding-automation dates,
-including weights, conditioning, penalty, clock, past dates, and the late tail.
+including weights, conditioning, penalty, clock, past dates, and the late tail — with
+the AL5 card's weight set to zero, since that card dates full R&D automation itself and
+is read as a definition of that milestone instead (below).
 They no longer shift an otherwise identical post-coding simulation forward in time.
 
 Research is partially automated today. Initial human-hour shares (40/30/50% by stage),
@@ -71,8 +73,17 @@ cumulative series. Table crossings refer to 2×/5× 2025 production pace. The in
 three-month delivered-rate and actual/reference diagnostics remain available for model
 analysis and validated milestone definitions; they are not the chart's ongoing pace.
 
-Full R&D automation still requires every research stage to need at most 5% of baseline
-human hours and useful-project completion to reach at least 90%, after the coding milestone.
+Full R&D automation has two candidate definitions, mixed per scenario by *Weight on
+Anthropic's AL5 date* (default 50%). The human-hours definition requires every research
+stage to need at most 5% of baseline human hours and useful-project completion to reach at
+least 90%. The AL5 definition is the RSI tab's AL5 card — the date 90% of Anthropic's
+model-R&D tasks are rated fully autonomous — inherited as calendar draws, rank-paired with
+the coding dates and carrying the same subjective penalty. Either waits for the coding
+milestone. The tab tabulates the two subsets side by side; human hours and project
+completion at full R&D are reported only for scenarios the human-hours definition decided.
+Human hours are a readout, not an input: they never feed back into research speed, so the
+ladder weight moves full R&D automation and nothing downstream of it
+(`test_ladder_date_redefines_full_automation_and_nothing_upstream`).
 The stages are direction, experiment design/interpretation, and verification/integration.
 The 1% floor and stage halving times remain adjustable. Halving times use months of capability
 progress at today's initial growth rate, not calendar months; accelerated capability progress
@@ -138,9 +149,11 @@ plots subtract each draw's coding date and retain unreached draws in the denomin
 Their follow-up ends at the calendar horizon, so late coding dates have less follow-up.
 Workflow plots show monthly medians and middle-80% intervals across scenarios. Marginal
 medians meeting every target do not establish joint automation. Completed paths retain
-last modeled workflow values and last measured rates. Numerically divergent assumptions
-produce an explicit error rather than a fictitious probability of stalling; very strong
-feedback with a late imposed coding milestone can reach this limit.
+last modeled workflow values and last measured rates. A draw whose research runs past
+numerical range records nothing further. It counts as unresolved only while a milestone
+could still arrive inside the horizon — not when every open milestone waits on a coding
+date past it — and the tab reports up to 1% unresolved draws in its caption as not
+arriving, refusing to report above that.
 
 Exports include the version, time origin, effective parameters, calibration assumptions,
 evidence dates, inherited RSI samples, and calendar/coding-relative event times. The source

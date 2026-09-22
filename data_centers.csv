@@ -25,10 +25,6 @@ Google Pryor (North),636685.1945426983,368,13.940576,Google #confident,Google De
 - [Google 2025 Environmental Report](https://sustainability.google/reports/google-2025-environmental-report/) with PUE and water use on pp.109-110
 - [News of a 9 exaflop TPUv4 cluster in the Pryor data center, launched in 2022](https://techcrunch.com/2022/05/11/google-launches-a-9-exaflop-cluster-of-cloud-tpu-v4-pods-into-public-preview/)
 ",https://docs.google.com/spreadsheets/d/1lD_rxcr7NwyAXlJf2TUis1AuMry4jGJNxOFP8zn17zc/edit?usp=sharing,,"TPU v5p,TPU v5e","TPU v5p,TPU v5e",,,,United States,"4581 Webb St, Pryor, OK 74361"
-Google New Albany,550783.2238504295,453,17.160546,Google #confident,Google DeepMind #speculative,"- [Draft basis of air permit for Google Omaha, a similar data center](https://drive.google.com/file/d/1KN7o-wQOyt1UEud8wpM8PymXJF479r0n/view?usp=sharing)
-- Google’s [2025 Environmental Report](https://sustainability.google/reports/google-2025-environmental-report/)
-
-",https://docs.google.com/spreadsheets/d/1b9T05Ze9Kv3Um4C6wv2uVYB0q7KgZ4AQaDPnaoh-ro0/edit?usp=sharing,,"TPU v5e,TPU v5p,TPU v6e","TPU v5e,TPU v5p,TPU v6e",,,,United States,"1101 Beech Rd SW, New Albany, OH 43054"
 OpenAI Stargate Abilene,509348.15563415864,421,15.948322,Oracle #confident,OpenAI #confident,"- [Crusoe 2024 Impact Report, with details on Abilene](https://drive.google.com/file/d/1oHWA9vmpvFOh-LvDy5fgq_wq5ITuxd1r/view?usp=sharing)
 - [Air Permit Application for buildings 1-2, featuring blueprints on p.157](https://drive.google.com/file/d/1FgfX6hqojlBtqNXJHjzJmnwWAMx4_M0b/view?usp=sharing)
 - [Mortensen’s profile of the project, with details of substations](https://www.mortenson.com/projects/abilene-data-center-development)
@@ -42,6 +38,10 @@ Microsoft Fairwater Wisconsin,445679.63617988885,369,13.978458,Microsoft #confid
 Google Columbus,331985.85144012125,303,11.478245999999999,Google #confident,Google DeepMind #speculative,"- [DCD article detailing early work beginning on the site ](https://www.datacenterdynamics.com/en/news/google-breaks-ground-on-columbus-ohio-data-center/)
 - [Transmission line construction notice; details current site capacity, expansion, and maximum future site capacity ](https://www.aeptransmission.com/ohio/docs/Hartman%20Farms%20Extension%20No.%202%20138%20kV%20Transmission%20Line%20Project%20Construction%20Notice.pdf)
 ",https://docs.google.com/spreadsheets/d/17vNqp7jsx3CUwFeUfxIyI3KA0uZ0Bh7BNkrVyH77Ohs/edit?usp=sharing,,"TPU v5e,TPU v5p,TPU v6e,TPU v7","TPU v5e,TPU v5p,TPU v6e,TPU v7",,,,United States,"5076 S High St, Columbus, OH 43207"
+Google New Albany,323900.9600808489,333,12.614706,Google #confident,Google DeepMind #speculative,"- [Draft basis of air permit for Google Omaha, a similar data center](https://drive.google.com/file/d/1KN7o-wQOyt1UEud8wpM8PymXJF479r0n/view?usp=sharing)
+- Google’s [2025 Environmental Report](https://sustainability.google/reports/google-2025-environmental-report/)
+
+",https://docs.google.com/spreadsheets/d/1b9T05Ze9Kv3Um4C6wv2uVYB0q7KgZ4AQaDPnaoh-ro0/edit?usp=sharing,,"TPU v5e,TPU v5p,TPU v6e","TPU v5e,TPU v5p,TPU v6e",,,,United States,"1101 Beech Rd SW, New Albany, OH 43054"
 Google Mesa,289540.17180394137,183,6.932405999999999,Google #confident,,"- [DCD article on the site breaking ground](https://www.datacenterdynamics.com/en/news/google-breaks-ground-on-mesa-data-center-campus-in-arizona/)
 - [DCD article on announcement to build Building 2](https://www.datacenterdynamics.com/en/news/google-files-to-build-second-data-center-at-mesa-campus-in-arizona/)
 ",https://docs.google.com/spreadsheets/d/1A_7rJWFKkspUPlYTmyg5JKL18OIzVgwLdhy3YbLs3eQ/edit?usp=sharing,,"TPU v6e,TPU v5p","TPU v6e,TPU v5p",,,,United States,
@@ -67,7 +67,7 @@ CoreWeave Denton TX,252652.85497726125,262,9.925084,CoreWeave #confident,OpenAI 
 QTS Richmond 1,242546.7407781708,238,9.015915999999999,,,"- [Richmond 1 factsheet](https://qtsdatacenters.com/data-centers/richmond-1/)
 - [Environmental permit detailing power generation](https://www.deq.virginia.gov/home/showpublisheddocument/25650/638627871515730000)
 ",https://docs.google.com/spreadsheets/d/1tCoNEu-EK4B261RUWGlDO_341hPs9hnwBtkGO2dDOcA/edit?usp=sharing,,,,,,Dominion Energy,United States,"6000 Technology Blvd, Sandston, VA 23150"
-Meta Rosemount,215675.08842849924,178,6.742996,Meta #confident,Meta #confident,"- [Official Meta announcement.](https://datacenters.atmeta.com/2024/03/hello-rosemount/)
+Meta Rosemount,215675.11520970188,178,6.742996,Meta #confident,Meta #confident,"- [Official Meta announcement.](https://datacenters.atmeta.com/2024/03/hello-rosemount/)
 - [Air quality permit for initial buildout.](https://drive.google.com/file/d/1i2D0eMp9uc1CfRhymu69Bms5wz9q0Rkc/view?usp=sharing)
 ",https://docs.google.com/spreadsheets/d/11pdqhcJnw3iAwraTho9AW4m7WyBdvTR9sYzK0z5-SC8/edit?usp=sharing,,B200,B200,,,,United States,"1772-2396 145th St, Rosemount, MN 55068, USA"
 Amazon Madison Mega Site,214348.14354550533,284,10.758488,Amazon #confident,Anthropic #speculative,"- [Air Construction Permit](https://drive.google.com/file/d/1lhSF8TBA7fNWsN4Onj-nfL7X_-BN573r/view?usp=sharing)
@@ -117,7 +117,7 @@ Meta Montgomery,174517.43304699342,153,5.795946,Meta #confident,Meta #confident,
 - [Contractor announcement](https://www.henselphelps.com/meta-awards-hensel-phelps-montgomery-data-center/)
 
 ",https://docs.google.com/spreadsheets/d/1gyeamGR5Oifeomj1gHXQqVYTRfGs9PGBq-YD0IGpKK4/edit?gid=2010365208#gid=2010365208,,B300,B300,,Hensel Phelps,,United States,"Co Rd 42, Montgomery, AL 36105, USA"
-Meta Kuna,173319.85851440122,152,5.758064,Meta #confident,Meta #confident,"- [Official Pamphlet from Meta](https://datacenters.atmeta.com/wp-content/uploads/2025/02/Meta_s-Kuna-Data-Center.pdf)
+Meta Kuna,173247.67205659422,152,5.758064,Meta #confident,Meta #confident,"- [Official Pamphlet from Meta](https://datacenters.atmeta.com/wp-content/uploads/2025/02/Meta_s-Kuna-Data-Center.pdf)
 - [Application for Power Purchase Agreement, Pleasant Valley Solar 1 ](https://puc.idaho.gov/Fileroom/PublicFiles/ELEC/IPC/IPCE2229/CaseFiles/20221114Application.pdf)
 - [Application for Power Purchase Agreement, Pleasant Valley Solar 2](https://lf-puc.idaho.gov/WebLink/DocView.aspx?dbid=0&id=73294)
 - [Approval to move start date of Solar 2 to May 31, 2026](https://puc.idaho.gov/Fileroom/PublicFiles/ELEC/IPC/IPCE2420/OrdNotc/20240913Final_Order_No_36322.pdf) and [staff comments](https://lf-puc.idaho.gov/WebLink/DocView.aspx?dbid=0&id=135751)
@@ -142,10 +142,6 @@ Amazon Ridgeland,171298.6356745831,228,8.637096,Amazon #confident,Anthropic #spe
 Meta Huntsville,166760.9903991915,146,5.530772,Meta #confident,Meta #confident,"- [Announcement of expansion completing in 2026 ](https://plateauexcavation.com/projects/huntsville-meta-data-center-meta-project-ferris/)
 - [TVA solar installation announcements](https://www.prnewswire.com/news-releases/tva-announces-largest-valley-solar-installations--built-for-facebook-300743255.html)
 ",https://docs.google.com/spreadsheets/d/1Rk-yikcpmRBm2V9iwBTdad2IILaZEODw1Xzk66GYEJk/edit?gid=2010365208#gid=2010365208,,B300,B300,,,"Tennessee Valley Authority,NextEra Energy Resources,First Solar",United States,"5400 Prosperity Dr NW, Toney, AL"
-Meta Aiken,161697.82718544718,142,5.379244,Meta #confident,Meta #confident,"- [Meta Introduction to the Aiken Project](https://datacenters.atmeta.com/2024/08/hello-south-carolina/)
-- [DPR Construction project page](https://www.dpr.com/projects/meta-aiken-data-center-aiken-sc)
-
-",https://docs.google.com/spreadsheets/d/1AoK8Ky5mZJ_hhsFx16S1ugapGMrlIIcMVWYSWqkJmkU/edit?gid=2010365208#gid=2010365208,,B300,B300,,,,United States,"7601 State Hwy 105, Trenton, SC 29847, USA"
 Coreweave Helios,159551.768236855,132,5.000424000000001,CoreWeave #confident,OpenAI #speculative,"- [Galaxy Q3 financial results with power capacity timeline](https://investor.galaxy.com/news/news-details/2025/Galaxy-Announces-Third-Quarter-2025-Financial-Results/default.aspx)
 - [Permit review with details on backup generators and power capacity](https://records.tceq.texas.gov/cs/idcplg?IdcService=TCEQ_EXTERNAL_SEARCH_GET_FILE&dID=8711478&Rendition=Web#:~:text=Galaxy%20Helios%20I%20LLC%20owns,are%20the%20basis%20of%20the)
 - [3D renderings of Helios Building 1 on Galaxy's website, showing generators and chillers](https://www.galaxy.com/data-centers)
@@ -160,7 +156,7 @@ Meta Eagle Mountain,151354.21930267813,133,5.038306,Meta #confident,Meta #confid
 - [Report on Williams Company gas-fired plant under construction adjacent to data cente](https://ukozvhzgrcnkcatjqfoo.supabase.co/storage/v1/object/public/03-00-air-construction/2026.02.05_Eagle%20Mountain%20Power%20Plant_Application_32a5238b.pdf)r
 
 ",https://docs.google.com/spreadsheets/d/1mVv_XB56SrZcy2jAwoG6lzgeXQHp0G3adhIaChbNh4E/edit?usp=sharing,,B300,B300,,Mortenson,Williams,United States,"1275 N Community Cir, Eagle Mountain, UT 84005"
-Google Midlothian,143506.8216270844,103,3.901846,Google #confident,,"- [Site Map and Permit](https://ecode360.com/MI6405/laws/LF1665983.pdf)
+Google Midlothian,143580.85118746842,103,3.901846,Google #confident,,"- [Site Map and Permit](https://ecode360.com/MI6405/laws/LF1665983.pdf)
 - [City Council Presentation](https://archive-stream.granicus.com/OnDemand/_definst_/mp4:swagitVideo/midlothiantx/eefcd9e0-4c12-41ba-986a-165a20124c72.mp4/playlist.m3u8)
 ",https://docs.google.com/spreadsheets/d/13T5HLjkSCBKhOwSaOnxUcGqeSdfSF67ZSMVltEGywFM/edit?usp=sharing,,"TPU v7,TPU v6e","TPU v7,TPU v6e",,,,United States,"3250 Railport Parkway, Midlothian, TX 76065"
 Google Storey County,133906.01313794847,161,6.0990020000000005,Google #confident,Google DeepMind #speculative,"- [Air quality permit application listing emergency generators and a small ""R&D"" fuel cell plant](https://ndep-onbase.nv.gov/api/Document/AeFo%C3%89pjclbkomJ7CWpPryLOjA6FQT9HFrkSuMWbMXTpKCzSR%C3%81W1f8zzFhGhik1iZCcNSpuTRRqNXD1inrrpBxtA%3D/) (via [Aterio](https://www.aterio.io/))
@@ -229,6 +225,10 @@ CoreWeave Marble NC,78827.6907529055,65,2.46233,CoreWeave #confident,OpenAI #spe
 - [Core Scientific - Q1 2025 Earnings Presentation](https://investors.corescientific.com/sec-filings/all-sec-filings/content/0001628280-25-023161/exhibit992-q12025earning.htm)
 - [Core Scientific - June 2024 Investor and Analyst Day](https://www.sec.gov/Archives/edgar/data/1839341/000162828024027821/corescientificinvestorda.htm)
 ",https://docs.google.com/spreadsheets/d/1_8yOR7DUXGIDghGwUSlVuqiFhbfA40iaxr9HyvslST8/edit?usp=sharing,,B200,B200,,,,United States,"155 Palmer Ln, Marble, NC 28905"
+Meta Aiken,78322.38504295099,69,2.613858,Meta #confident,Meta #confident,"- [Meta Introduction to the Aiken Project](https://datacenters.atmeta.com/2024/08/hello-south-carolina/)
+- [DPR Construction project page](https://www.dpr.com/projects/meta-aiken-data-center-aiken-sc)
+
+",https://docs.google.com/spreadsheets/d/1AoK8Ky5mZJ_hhsFx16S1ugapGMrlIIcMVWYSWqkJmkU/edit?gid=2010365208#gid=2010365208,,B300,B300,,,,United States,"7601 State Hwy 105, Trenton, SC 29847, USA"
 Core42 Lake Mariner,71753.4108135422,58,2.197156,Core42 #confident,G42 #likely,"- [Terawulf press release with details of Core42 lease for Buildings 1-2](https://investors.terawulf.com/news-events/press-releases/detail/99/terawulf-to-deliver-over-70-mw-of-data-center)
 - [Terawulf press release with details and timeline for Buildings 1-5](https://investors.terawulf.com/news-events/press-releases/detail/132/terawulf-reports-fourth-quarter-and-full-year-2025-results)
 - [DCD article suggesting that Fluidstack will deploy Google TPUs at Lake Mariner](https://www.datacenterdynamics.com/en/news/google-offers-its-tpus-to-ai-cloud-providers-report/)

@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v4-present-feedback"
+MODEL_VERSION = "takeoff-v5-al-ladder"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -39,6 +39,7 @@ DEFAULTS = {
     "coding_today": 70.0,
     "pipeline_months": 2.0,
     "rsi_trend_weight": 50.0, "rsi_trend_months": 12.0, "rsi_useful_growth": 100.0,
+    "ladder_weight": 50.0,
 }
 PRESETS = {
     "Central": {},
@@ -101,6 +102,8 @@ def validate(params):
     if not 0 <= p["rsi_trend_weight"] <= 100 or not 0 <= p["rsi_useful_growth"] <= 100 \
             or p["rsi_trend_months"] <= 0:
         raise ValueError("RSI trend weights must be percentages and their half-life positive.")
+    if not 0 <= p["ladder_weight"] <= 100:
+        raise ValueError("The automation-ladder weight must be between 0 and 100%.")
     return p
 
 
@@ -186,11 +189,17 @@ def reference_software(years, rate, compute_rate, parallel, initial_throughput, 
     effort = np.divide(np.expm1(growth * years), growth,
                        out=np.array(years, dtype=float).copy(), where=growth != 0)
     amount = rate * initial_throughput * effort
-    return np.log1p(difficulty * amount) / difficulty if difficulty > 0 else amount
+    return np.log1p(difficulty * amount) / difficulty if np.all(difficulty > 0) else amount
 
 
-def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None):
+def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None,
+             ladder_years=None):
     """Weekly research and successor cycles, with censored milestone draws.
+
+    Full R&D automation has two candidate definitions, mixed per draw like the
+    RSI blend: the workflow gate, or an inherited date for a measured
+    automation ladder's top rung (`ladder_years`, chosen with probability
+    `ladder_weight`). Either also needs the coding date to have arrived.
 
     A run freezes its algorithm snapshot at its start, integrates allocated
     training compute during the run, then waits for validation before deployment.
@@ -217,7 +226,17 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         onset = np.asarray(onset_years, dtype=float).copy()
         if onset.shape != (n,) or np.isnan(onset).any() or np.isneginf(onset).any():
             raise ValueError("Provide one onset date per draw; dates must be finite or +inf.")
-    z = rng.uniform(-1, 1, (15, n))
+    # Rows fill in order, so appending a factor leaves the earlier draws unchanged.
+    z = rng.uniform(-1, 1, (16, n))
+    # Drawn after z, so the parameter draws do not depend on the ladder.
+    use_ladder = rng.uniform(0, 1, n) < p["ladder_weight"] / 100
+    if ladder_years is None:
+        use_ladder[:] = False
+        ladder = np.full(n, np.inf)
+    else:
+        ladder = np.asarray(ladder_years, dtype=float).copy()
+        if ladder.shape != (n,) or np.isnan(ladder).any() or np.isneginf(ladder).any():
+            raise ValueError("Provide one ladder date per draw; dates must be finite or +inf.")
     spread = p["uncertainty"] / 100
     factors = np.exp(spread * z)
     software_rate = np.log(2) * 12 / p["software_months"] * factors[0]
@@ -254,9 +273,19 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     record("Today", np.ones(n, bool), starts, success0, np.ones(n), np.ones(n))
     coding_recorded = onset <= 0
     record("Full coding automation", onset == 0, starts, success0, np.ones(n), np.ones(n))
-    full0 = (onset <= 0) & (starts.max(axis=1) <= p["full_human"] / 100) & (success0 >= p["full_success"] / 100)
+    ladder_full = np.maximum(onset, ladder)
+
+    def record_full(mask, human, success, progress, advantage):
+        record(MILESTONES[1], mask, human, success, progress, advantage)
+        # A ladder-defined draw has no workflow measurement to report.
+        for key in ("human_mean", "human_worst", "project_success"):
+            outcomes[MILESTONES[1]][key][mask & use_ladder] = np.nan
+
+    full0 = np.where(use_ladder, ladder_full <= 0,
+                     (onset <= 0) & (starts.max(axis=1) <= p["full_human"] / 100)
+                     & (success0 >= p["full_success"] / 100))
     events[MILESTONES[1]][full0] = 0
-    record(MILESTONES[1], full0, starts, success0, np.ones(n), np.ones(n))
+    record_full(full0, starts, success0, np.ones(n), np.ones(n))
     # Undeployed discoveries already in progress today. The matched reference
     # receives the identical backlog; it is never a second starting multiplier.
     initial_stock = software_rate * p["pipeline_months"] / 12
@@ -298,7 +327,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     shares = np.array([p["training_share"], p["experiment_share"],
                        100 - p["training_share"] - p["experiment_share"]]) / 100
     transfer = p["transfer"] / 100
-    beta = p["difficulty"]
+    beta = p["difficulty"] * factors[15]
     parallel = p["parallelization"]
     initial_throughput = _harmonic((shares[2] / 0.2) ** parallel,
                                    (shares[1] / 0.4) ** parallel)
@@ -323,6 +352,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         deploy_end = train_end + eval_time
         next_event = np.minimum(np.where(finished, deploy_end, train_end), fast_next)
         next_event = np.minimum(next_event, np.where(onset > t + 1e-12, onset, np.inf))
+        next_event = np.minimum(next_event, np.where(use_ladder & (ladder_full > t + 1e-12), ladder_full, np.inf))
         next_observation = workflow_grid[np.minimum(observation_index, len(workflow_grid) - 1)]
         next_event = np.minimum(next_event, next_observation)
         end = np.minimum(np.minimum(t + step, next_event), p["years"])
@@ -370,7 +400,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                                                 parallel, initial_throughput, beta)
         reference_pace = np.exp(np.minimum(np.log(initial_throughput)
             + parallel * compute_log - beta * reference_progress, 700))
-        if beta > 0:
+        if p["difficulty"] > 0:
             updated = initial_stock + np.logaddexp(
                 beta * (software - initial_stock), np.log(beta) + log_amount) / beta
         else:
@@ -379,7 +409,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # treating a numerical ceiling as a capability plateau. In ordinary
         # scenarios all milestones complete long before this guard is relevant.
         diverged = active & (updated > 1e6)
-        limited |= diverged
+        # Nothing is left unresolved when every open milestone waits on a
+        # coding date past the horizon.
+        limited |= diverged & ~(np.isfinite(events[MILESTONES[0]]) & (onset > p["years"]))
         software = np.minimum(updated, 1e6)
         train_budget = np.exp(compute_rate * t) * np.divide(
             np.expm1(compute_rate * dt), compute_rate,
@@ -407,7 +439,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         fast_deployed[fast_ready] = fast_fraction * fast_snapshot[fast_ready]
         reference_fast[fast_ready] = fast_fraction * (initial_stock[fast_ready] + reference_software(
             np.maximum(0, fast_next[fast_ready] - fast_time), software_rate[fast_ready],
-            compute_rate[fast_ready], parallel, initial_throughput, beta))
+            compute_rate[fast_ready], parallel, initial_throughput, beta[fast_ready]))
         fast_snapshot[fast_ready] = software[fast_ready]
         fast_next[fast_ready] += fast_time
         # For non-ready slow runs, only their already deployed algorithms count.
@@ -445,29 +477,33 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         improved = ready & (snapshot > 0) & (ai_output_log >= previous_ai_output + np.log(1.1))
         cycles[ready] = np.where(improved[ready], cycles[ready] + 1, 0)
         previous_ai_output[ready] = ai_output_log[ready]
+        # A diverged draw's state is a numerical ceiling: record nothing from it.
+        live = active & ~diverged
         feedback = cycles >= p["feedback_cycles"]
         ev = events[MILESTONES[0]]
-        hit = feedback & ~np.isfinite(ev)
+        hit = live & feedback & ~np.isfinite(ev)
         ev[hit] = end[hit]
         human, success = workflow_state(effective, baseline_capability_rate, starts,
                                         halves, floor, success0, success_half)
         coding_hit = active & (end >= onset) & ~coding_recorded
         record("Full coding automation", coding_hit, human, success, delivered_rate, advantage)
         coding_recorded |= coding_hit
-        full = (end >= onset) & (human.max(axis=1) <= p["full_human"] / 100) & (success >= p["full_success"] / 100)
-        hit = full & ~np.isfinite(events[MILESTONES[1]])
+        full = np.where(use_ladder, end >= ladder_full - 1e-12,
+                        (end >= onset) & (human.max(axis=1) <= p["full_human"] / 100)
+                        & (success >= p["full_success"] / 100))
+        hit = live & full & ~np.isfinite(events[MILESTONES[1]])
         events[MILESTONES[1]][hit] = end[hit]
-        record(MILESTONES[1], hit, human, success, delivered_rate, advantage)
+        record_full(hit, human, success, delivered_rate, advantage)
         fast = full & (delivered_rate >= p["progress_target"]) \
             & (advantage >= p["advantage_target"])
         progress_cycles[ready] = np.where(fast[ready], progress_cycles[ready] + 1, 0)
-        hit = (progress_cycles >= p["progress_cycles"]) & ~np.isfinite(events[MILESTONES[2]])
+        hit = live & (progress_cycles >= p["progress_cycles"]) & ~np.isfinite(events[MILESTONES[2]])
         events[MILESTONES[2]][hit] = end[hit]
         record(MILESTONES[2], hit, human, success, delivered_rate, advantage)
         # The breadth bridge remains speculative, now anchored to the actual
         # autonomous progress milestone instead of a 3× taste threshold.
         asi_target[hit] = deployed[hit] + general_gap[hit] + superiority_gap[hit]
-        hit = np.isfinite(asi_target) & (deployed >= asi_target) & ~np.isfinite(events[MILESTONES[3]])
+        hit = live & np.isfinite(asi_target) & (deployed >= asi_target) & ~np.isfinite(events[MILESTONES[3]])
         events[MILESTONES[3]][hit] = end[hit]
         record(MILESTONES[3], hit, human, success, delivered_rate, advantage)
         tracking = events[MILESTONES[-1]] >= end
@@ -531,6 +567,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     return {
         "params": p, "version": MODEL_VERSION, "onset": onset,
         "events": events, "acceleration_events": acceleration_events,
+        "ladder_defined": use_ladder,
         "time_origin": "today",
         "compute_limited": last_experiments <= last_labor,
         "budget": total_budget, "allocated": shares[:, None] * total_budget,

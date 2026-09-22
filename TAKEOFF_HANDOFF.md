@@ -46,13 +46,17 @@ but not a frozen as-of date. Forecasts rerun weeks later use the new current dat
 
 - Keep all model work on this branch. Master was backmerged at `597e1a5`;
   both Takeoff and Frontier Thresholds are preserved.
-- Coding automation inherits the exact final RSI blend, including conditioning,
-  weights, subjective penalty, clock, and late/past dates. It is a milestone,
-  not the point where research feedback suddenly begins.
+- Coding automation inherits the exact final RSI blend less its AL5 card, including
+  conditioning, weights, subjective penalty, clock, and late/past dates. It is a
+  milestone, not the point where research feedback suddenly begins.
 - Research starts today with existing assistance and an assumed undeployed backlog.
   Fast validation and slower successor training receive disjoint shares of discoveries.
 - Research acceleration and research autonomy are separate. Full R&D requires the
-  coding date plus low human hours in every stage and high project completion.
+  coding date plus, per scenario, either low human hours in every stage with high
+  project completion or the RSI tab's AL5 date (`ladder_weight`, default 50%). Human
+  hours never feed back into research speed, so that weight moves full R&D automation
+  and nothing after it.
+- Research difficulty is varied with the other rates, so some scenarios never compound.
 - Sustained research feedback remains an internal diagnostic/table row, not a graph.
 - Default projection horizon is December 31, 2031.
 - All four research-acceleration panels use **2025 units**: experiment activity,
@@ -82,13 +86,13 @@ Streamlit session previously raised `KeyError: workflow_progress` after a schema
 
 Rebase raw draws before computing quantiles. Keep the production/effort curves
 distinct from validated deliveries and the same-compute advantage used in milestone gates.
-The global uncertainty control varies only 15 selected parameters; RSI uncertainty
+The global uncertainty control varies only 16 selected parameters; RSI uncertainty
 persists even when this control is zero. Details are in the parameter guide.
 
 ## Validation and running
 
-The last full suite passed **741 tests** after the 2025-baseline changes. The files
-added for this handoff are documentation and a defaults snapshot.
+The files added for this handoff are documentation and a defaults snapshot; the
+snapshot predates `takeoff-v5-al-ladder`.
 
 Known working interpreter on this machine:
 `/Users/peterwildeford/.pyenv/versions/dev/bin/python`.
@@ -104,15 +108,18 @@ the app defaults to 5,000. `_VP_SAMPLES=5000` runs tests at production sample co
 
 ## Suggested next steps — not yet implemented
 
-1. Review weakly grounded defaults with the user, especially difficulty, the
+1. Review weakly grounded defaults with the user, especially difficulty (the dominant
+   parameter, and the β of the semi-endogenous growth literature, whose central estimates
+   put it near 1 with a quality elasticity near 1.4, not 0.5 and 0.8), the
    workflow starting shares/halving times, transfer, parallelization, and breadth gaps.
 2. Add sensitivity analysis before interpreting the Central scenario as a forecast.
    Several discounts currently compound, and important parameters have fixed values.
 3. Improve calibration with matched research outputs, human intervention/rescue hours,
    compute use, and validated efficiency gains. Activity and code volume are proxies.
-4. Consider correlated uncertainty, uncertain structural assumptions, and explicit
-   bounds for feedback configurations that exceed numerical range. Very aggressive
-   feedback with late imposed coding dates can currently produce an explicit error.
+4. Consider correlated uncertainty and uncertain structural assumptions. The largest
+   open one: human hours are a readout, so an earlier full R&D automation date (the AL5
+   definition) changes no later milestone. Letting remaining human hours gate research
+   speed would connect them.
 5. Add validated assumptions-JSON import and a frozen as-of-date mode if exact replay
    of historical slider configurations becomes a priority.
 
