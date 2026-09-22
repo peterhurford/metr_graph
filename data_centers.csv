@@ -45,7 +45,7 @@ Google New Albany,323900.9600808489,333,12.614706,Google #confident,Google DeepM
 Google Mesa,289540.17180394137,183,6.932405999999999,Google #confident,,"- [DCD article on the site breaking ground](https://www.datacenterdynamics.com/en/news/google-breaks-ground-on-mesa-data-center-campus-in-arizona/)
 - [DCD article on announcement to build Building 2](https://www.datacenterdynamics.com/en/news/google-files-to-build-second-data-center-at-mesa-campus-in-arizona/)
 ",https://docs.google.com/spreadsheets/d/1A_7rJWFKkspUPlYTmyg5JKL18OIzVgwLdhy3YbLs3eQ/edit?usp=sharing,,"TPU v6e,TPU v5p","TPU v6e,TPU v5p",,,,United States,
-DayOne Nusajaya,281670.4396159676,240,9.09168,,,"- [News of Phase 2 operation](https://www.moomoo.com/news/post/41886329/support-ai-computing-deployment-gds-holdings-nusajaya-technology-park-datacenter?level=1&data_ticket=1778269491837872)
+DayOne Nusajaya,281670.4396159676,240,9.09168,"ByteDance #likely, Oracle #likely",,"- [News of Phase 2 operation](https://www.moomoo.com/news/post/41886329/support-ai-computing-deployment-gds-holdings-nusajaya-technology-park-datacenter?level=1&data_ticket=1778269491837872)
 - [Archived DayOne website - ""120 MW in operation"" in Johor](https://web.archive.org/web/20241231165420/https://dayonedc.com/)
 - [Archived DayOne website - 390 MW ""in service"" in Johor](https://web.archive.org/web/20260314134756/https://dayonedc.com/market/johor)
 - [Financial Times report that Alibaba and ByteDance are training AI models in southeast Asia](https://www.ft.com/content/96fe9898-a3a4-4a33-be1d-da06bdb6cb2b)
@@ -178,9 +178,6 @@ VNET Bayin Ulanqab,122789.28751894896,221,8.371922,VNET #confident,ByteDance #sp
 - [Interview with VP Gavin Shen: campus will be AI-driven](https://web.archive.org/web/2/https://www.insidermonkey.com/blog/vnet-group-inc-nasdaqvnet-q3-2024-earnings-call-transcript-1395031/)
 - [ByteDance-VNET 500 MW data center deal (China-wide)](https://www.datacenterdynamics.com/en/news/tiktok-owner-bytedance-signs-500mw-vnet-china-data-center-deal/)
 ",https://docs.google.com/spreadsheets/d/1zHNmd-avKvWoJc_ivOj6u54g9OyIDjM2-ybubuxj2yc/edit?usp=drive_link,10 GW Hyperscale 2.0 #confident,Ascend 910C,Ascend 910C,,,,China,"Bayin, Ulanqab, China"
-Huawei Horinger,117230.92470944922,241.8,9.159867600000002,Huawei #confident,,"- [Press report on the campus launch announcing CloudMatrix384 use](https://web.archive.org/web/20260623185431/https://finance.sina.com.cn/tech/roll/2025-07-14/doc-inffmier6612415.shtml)
-- [News article on construction start date and capacity at full build-out](https://web.archive.org/web/20260624112951/http://nmg.news.cn/20231008/57bb95be6791497db95bc7d2f229a68e/c.html)
-",https://docs.google.com/spreadsheets/d/1pW6fiSVJbzg7TVmMXqILlNe9_58VMBcJY45eSb-swis/edit?gid=2010365208#gid=2010365208,,Ascend 910C,Ascend 910C,,,,China,"Huawei, Horinger, China"
 Google Arcola,108135.42193026781,77,2.9169140000000002,Google #confident,,"- [Google Investing $1B To Improve Northern Virginia Data Centers (via Aterio)](https://www.bisnow.com/national/news/data-center/google-investing-1b-to-improve-northern-virginia-data-centers-124025)
 ",https://docs.google.com/spreadsheets/d/1XNyE95_WdfMangRolxlJQugH_aFGxDyZFHzqAOelLD4/edit?usp=sharing,,"TPU v6e,TPU v7","TPU v6e,TPU v7",,,,United States,"42575 Arcola Blvd, Sterling, VA 20166"
 Google Red Oak,108135.42193026781,77,2.9169140000000002,Google #confident,,"- [Media coverage confirming location, project name, investment size, and some timing](https://www.mysanantonio.com/business/article/google-texas-data-center-21236627.php)
@@ -206,6 +203,9 @@ Meta Sarpy,91965.63921172309,80,3.03056,Meta #confident,Meta #confident,"- [Meta
 
 
 ",https://docs.google.com/spreadsheets/d/1iFwArbo-x0WDxO3mfvZBopGZsd4EvA9HDfjxXKyfy5g/edit?gid=2010365208#gid=2010365208,,B300,B300,,,,United States,"14436-14998 Fairview Rd, Springfield, NE 68059, USA"
+Huawei Horinger,89439.11066195049,184.3,6.9816526,Huawei #confident,,"- [Press report on the campus launch announcing CloudMatrix384 use](https://web.archive.org/web/20260623185431/https://finance.sina.com.cn/tech/roll/2025-07-14/doc-inffmier6612415.shtml)
+- [News article on construction start date and capacity at full build-out](https://web.archive.org/web/20260624112951/http://nmg.news.cn/20231008/57bb95be6791497db95bc7d2f229a68e/c.html)
+",https://docs.google.com/spreadsheets/d/101jEwxBg5tstkmiGAx3fJt2ruTRtT-9Tqs484oKJBoU/edit?usp=sharing,,Ascend 910C,Ascend 910C,,,,China,"Huawei, Horinger, China"
 CoreWeave Chester VA,88428.49924204143,82,3.106324,CoreWeave #confident,OpenAI #speculative,"- [Chirisa secures $200 million loan to fit out VA Data center for CoreWeave](https://www.datacenterdynamics.com/en/news/chirisa-secures-200-million-loan-to-fit-out-virginia-data-center-for-coreweave/)
 - [Blue Owl-led JV secures $750m to build out data centers for CoreWeave](https://www.datacenterdynamics.com/en/news/blue-owl-led-jv-secures-750m-to-build-out-data-centers-for-coreweave/)
 - [Chirisa offers former Capital One data center in Virginia to hyperscalers](https://www.datacenterdynamics.com/en/news/chirisa-offers-former-capital-one-data-center-in-virginia-to-hyperscalers/)
@@ -229,6 +229,10 @@ Meta Aiken,78322.38504295099,69,2.613858,Meta #confident,Meta #confident,"- [Met
 - [DPR Construction project page](https://www.dpr.com/projects/meta-aiken-data-center-aiken-sc)
 
 ",https://docs.google.com/spreadsheets/d/1AoK8Ky5mZJ_hhsFx16S1ugapGMrlIIcMVWYSWqkJmkU/edit?gid=2010365208#gid=2010365208,,B300,B300,,,,United States,"7601 State Hwy 105, Trenton, SC 29847, USA"
+Huawei Wuhu,76326.42748863062,157,5.947474,Huawei #confident,,"- [Official Huawei page for its Wuhu DC](https://activity.huaweicloud.com/events/east-china1.html)
+- [Aerial footage of Jiangbei, one of three zones part of the multi-part campus](https://www.bilibili.com/video/BV1ca4y127pB/)
+- [Environmental report](https://web.archive.org/web/20260729204259/https://sthjj.wuhu.gov.cn/hbyw/hjsp/jsxmhpsp/8404947.html)
+",https://docs.google.com/spreadsheets/d/1LtTROd6CTTzqjI0x9EqOby-EcYytmXsaG35z93W1bDk/edit?usp=drive_link,,Ascend 910C,Ascend 910C,,,,China,"Wuhu, China"
 Core42 Lake Mariner,71753.4108135422,58,2.197156,Core42 #confident,G42 #likely,"- [Terawulf press release with details of Core42 lease for Buildings 1-2](https://investors.terawulf.com/news-events/press-releases/detail/99/terawulf-to-deliver-over-70-mw-of-data-center)
 - [Terawulf press release with details and timeline for Buildings 1-5](https://investors.terawulf.com/news-events/press-releases/detail/132/terawulf-reports-fourth-quarter-and-full-year-2025-results)
 - [DCD article suggesting that Fluidstack will deploy Google TPUs at Lake Mariner](https://www.datacenterdynamics.com/en/news/google-offers-its-tpus-to-ai-cloud-providers-report/)
@@ -326,6 +330,7 @@ Google Fort Wayne,0,0,0,Google #confident,Google DeepMind #speculative,"- [Googl
 Meta Hyperion,0,0,0,Meta #confident,Meta #confident,"- [Data center profile by Meta](https://datacenters.atmeta.com/richland-parish-data-center/)
 - [Entergy's application for generation and transmission resources](https://drive.google.com/file/d/1FLY13apaHy4hI8RNVk9n_nlJpwFHtBrB/view?usp=sharing)
 - [MISO update with 1.8 GW substation plan](https://drive.google.com/file/d/1D4eUHwEuirNi0g3IU_xGOti3PcC8fcXi/view?usp=sharing)
+- [S&P Global ratings research with 2.064 GW campus details](https://www.spglobal.com/ratings/en/regulatory/article/-/view/sourceId/101653176)
 ",https://docs.google.com/spreadsheets/d/1cyXcZ_jIsJDjuPKx6_J1scIWeq0-rfM3-2GcSKN4oA0/edit?usp=sharing,Hyperion #confident,,Rubin,,Mortenson,Entergy,United States,"Holly Ridge, LA 71269"
 Microsoft Narvik Norway,0,0,0,Nscale #likely,Microsoft #likely,"- [Nscale announcing more than 30.000 Rubin GPUs](https://www.nscale.com/press-releases/nscale-microsoft-norway)
 - [NScale announcing 230 initial MW and possibly an additional 290MW, mentioning 100.000 Nvidia GPUs](https://www.nscale.com/blog/stargate-norway-laying-the-foundation-for-the-future-of-ai)

@@ -971,6 +971,20 @@ _RSI_SYSCARD_URL = ("https://www-cdn.anthropic.com/0339e6a7c5c7b87f5c07798616dc3
                     "Claude%20Fable%205.1%20&%20Claude%20Mythos%205.1%20System%20Card.pdf#page=37")
 _RSI_SYSCARD_RESCALE = 50.3 / 45.6
 
+# The Opus 5.5 card (Sep 2026, §2.3.4.1) reruns CoBench again on 500 problems as
+# "CoBench 2.1" and carries no row here. It rescores only Opus 5 (59.6 -> 53.2) and
+# Mythos 5.1 (57.6 -> 53.4), so four of the models below have no 2.1 score and the
+# series cannot move onto that scale. Nor can Opus 5.5 (55.8) be carried onto this
+# one: the card calls all three "not statistically distinguishable" (paired p ~ 0.2,
+# and its run came 13 days later with unmeasured environment changes), and the two
+# scales disagree on their order — 2.1 puts Mythos 5.1 above Opus 5, this set puts
+# it below. A rescale chained through anchors that disagree by ~4% would manufacture
+# a 4-point climb out of a null result. Add a row only when a card supplies a score
+# on a set this series already uses. _RSI_SUBSTITUTION_BAR is unaffected: the card
+# expects the 85% bar "to carry over to CoBench 2.1".
+_RSI_CB21_URL = ("https://www-cdn.anthropic.com/fc1b44717c85dc068bc6ba5024219938094694bd/"
+                 "Claude%20Opus%205.5%20System%20Card.pdf")
+
 _RSI_RAW = [
     {"name": "Claude Opus 4.6",       "date": "2026-02-05", "cobench": 15.6, "date_known": True},
     {"name": "Claude Mythos Preview", "date": "2026-04-07", "cobench": 54.8, "date_known": False},

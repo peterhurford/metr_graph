@@ -21,11 +21,33 @@ Four downloadable feeds, two hardcoded tables, one digitized figure. For downloa
 | `data_center_timelines.csv` | download | `https://epoch.ai/data/data_centers/data_center_timelines.csv` |
 | `_RLI_RAW` (in `visualize_projection.py`) | hardcoded | Scale Labs RLI leaderboard `labs.scale.com/leaderboard/rli` / `remotelabor.ai` |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (in `visualize_projection.py`) | hardcoded | Press reports (The Information, Reuters, Bloomberg, CNBC, etc.) |
-| RSI tables (`_RSI_RAW`, `_RSI_SURVEY`, `_RSI_DIR_RAW`, `_RSI_CODE_RAW`, `openai_experiment_velocity.csv`) | hand-read figures | Sources in CLAUDE.md *Data Sources*. Check new Anthropic system cards for CoBench and survey rounds: a card's CoBench problem set differs from the Risk Report's, so its scores go in via `_RSI_SYSCARD_RESCALE`, never raw |
+| RSI tables (`_RSI_RAW`, `_RSI_SURVEY`, `_RSI_DIR_RAW`, `_RSI_CODE_RAW`, `openai_experiment_velocity.csv`) | hand-read figures | Sources in CLAUDE.md *Data Sources*. Check new Anthropic system cards for CoBench and survey rounds — but see *CoBench: check comparability first* below. A card's problem set differs from the Risk Report's, so a score goes in via a rescale, never raw |
 | `aisi_cyber_narrow.csv` (UK Cyber) | **digitized figure — verify, don't download** | AISI blog post, [open-weight cyber gap](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) |
 | `aisi_cyber_tlo.csv` (UK Cyber cross-check) | **digitized figure + quoted prose** | Same post's Figure 2, plus the [UK AISI/CAISI Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) |
 
 Note: Employment, ECI Company Gap, and Compute vs Capabilities tabs have NO feed of their own — they derive from RLI / ECI / data centers, so updating those feeds updates them automatically. Don't hunt for separate data for them.
+
+### CoBench: check comparability before transcribing
+
+CoBench has been re-cut twice and each re-cut is a **scale break, not a refresh**. A card
+states plainly whether its scores compare to earlier ones; read that sentence before
+reading any number. Two rules follow, and they are what keep a null result out of the fan:
+
+1. **A rescale needs the old and new scale to overlap on models the series already
+   carries.** The Fable/Mythos 5.1 card rescored Mythos 5, so `_RSI_SYSCARD_RESCALE`
+   carries its models over. The Opus 5.5 card's "CoBench 2.1" rescored only Opus 5
+   (59.6 → 53.2) and Mythos 5.1 (57.6 → 53.4), leaving four carried models with no 2.1
+   score — so neither can the series move to 2.1, nor Opus 5.5 (55.8) come back to this
+   one. It gets **no row**; `_RSI_CB21_URL` records why.
+2. **Chained or disagreeing anchors manufacture signal.** Those two anchors imply ratios
+   4% apart and invert the pair's order (2.1 puts Mythos 5.1 above Opus 5; the older set
+   puts it below), while the card calls all three scores "not statistically
+   distinguishable" (paired p ≈ 0.2, and Opus 5.5 ran 13 days later with unmeasured
+   environment changes). Carrying it over on the mean ratio would draw a 4-point climb
+   across a flat quarter. Don't.
+
+`_RSI_SUBSTITUTION_BAR` (85%) is unaffected — the Opus 5.5 card expects it "to carry over
+to CoBench 2.1". Add a row only when a card reports a score on a set the series already uses.
 
 ### Revenue: source-type discipline
 
@@ -76,6 +98,15 @@ The NIST mirror serves figures at full resolution if you strip the `styles/<pres
 3. **Apply downloadable feeds (METR, ECI, data centers).** Download the canonical file to a temp file *in the project directory* (never `/tmp` — the safety classifier flags writes outside the project). Then:
    - Diff by key column against the current file to confirm **no locally-curated rows would be lost** (ECI key = `Model version`; DC metadata key = `Name`; timelines key = `Data center`+`Date`; METR = model keys). If any local-only rows exist, STOP and ask before overwriting.
    - Check drift magnitude on existing rows (Epoch recomputes ECI scores live — small drift is expected and fine).
+   - **Diff existing rows' contents too, not just the key set.** A key-set diff shows added and
+     removed rows and hides the ones that matter most: Epoch re-scopes sites and fills blank
+     cells in place. One pull revised Huawei Horinger down 24% (117k → 89k H100e) by splitting
+     its campuses, and filled DayOne Nusajaya's empty `Owner` with `ByteDance #likely, Oracle
+     #likely` — which re-attributed the site off the landlord label and dropped DayOne from the
+     charted roster, failing `test_current_roster_is_what_the_tab_says_it_is`. Expect that test
+     and the ECI frontier guards to move on a refresh, and retarget them deliberately.
+   - Run the orphan check after overwriting: `set(timelines['Data center']) - set(metadata['Name'])`
+     must be empty (see CLAUDE.md *Timeline rows with no metadata row*).
    - Overwrite the file. Clean up the temp file.
 
 4. **Apply hardcoded tables (RLI, revenue).** Hand-edit new rows in `visualize_projection.py`. Keep each table's existing sort order and formatting/alignment. For revenue and any low-confidence / third-party-estimate figure that materially bends a projection, ASK the user before adding it rather than deciding unilaterally. When you exclude a figure for a reason (forecast, wrong unit, wrong source class), leave a short comment in the table saying so — otherwise the next run re-litigates it.
