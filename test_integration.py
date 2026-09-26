@@ -833,6 +833,17 @@ class TestRevenueDefaults:
         assert at.slider(key="comb_n_recent").value == len(cv)
 
 
+    def test_chinese_labs_chart_renders_every_lab(self):
+        import json
+        import visualize_projection as vp
+        at = self._rev_app()
+        charts = at.get("plotly_chart")
+        assert len(charts) == 2
+        names = {t.get("name") for t in json.loads(charts[1].proto.spec)["data"]}
+        assert set(vp._CN_REVENUE) <= names
+        assert len(at.dataframe[-1].value) == len(vp._CN_REVENUE)
+
+
 # ===========================================================================
 # Compute vs Capabilities tab
 # ===========================================================================
@@ -2125,7 +2136,10 @@ class TestTodayForwardMode:
         at.checkbox(key="today_fwd").set_value(True).run()
         _switch_tab(at, "Revenue")
         assert at.checkbox(key="today_fwd").value is True
-        assert all(self._starts_today(sp) for sp in self._specs(at))
+        # The projection converts; the Chinese-lab chart has no projection
+        # and keeps its history, like the RSI tab's diagnostic charts.
+        proj, china = self._specs(at)
+        assert self._starts_today(proj) and not self._starts_today(china)
 
 
 class TestSectionDeepLinks:
