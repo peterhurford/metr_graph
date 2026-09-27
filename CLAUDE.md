@@ -735,10 +735,15 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    its last entry** — anchoring on the last entry held the US line flat through 2029 off one
    site dated 2030, and the fit window is clipped there too so the under-catalogued tail
    doesn't drag the pace down.
-6. **The default pace is the US trend borrowed** (`_DC_CTY_PACE_OPTIONS`, 'us'), with the
-   cone widened to `|g_own − g_us| / 1.28` so a country's own fit sits at the 80% edge
-   rather than vanishing. Own-trend is one click away and has China overtaking the US
-   inside the window — that is the ramp bias above, not a finding. The US always uses its own fit.
+6. **Past the plans, China runs on the export-control band; everyone else borrows the US
+   trend** (`_dc_cty_pace`, default option 'band'). China's rows use `_CC_CN_COMPUTE_LO/HI`
+   as an 80% interval, so this panel, Pacing and Compute/capabilities share one China pace;
+   the borrowed US pace (~3×/yr in H100e) ran China's largest site past every campus
+   SemiAnalysis's China Datacenter Model names (`test_china_largest_site_stays_inside_the_
+   named_plans`, 1–3 GW at end-2029). Either pace is widened by `|g_own − g_ref| / 1.28` so a
+   country's own fit sits at the 80% edge rather than vanishing. The US-for-everyone and
+   own-trend options are one click away; own-trend has China overtaking the US inside the
+   window — that is the ramp bias above, not a finding. The US always uses its own fit.
 7. **Lag never drops the samples where China leads.** `_dc_cty_lag_months()` floors an
    unresolved sample (the US running max never reaches China's value inside the grid) at
    one month past the grid end and returns the mask; the table prints "ahead in N% of
@@ -1135,8 +1140,9 @@ attribution; the threshold reaches the display through the chart title.
    `ref_steps` (the US country series) since company rosters no longer contain it.
 2. **The projection is the by-country model, unchanged.** `_pc_projection()` calls
    `_dc_cty_fit` (since=`_DC_DEFAULTS["dc_cty_since"]`, plan horizon anchored) and
-   `_dc_cty_trajectories` (plan slip by `_dc_plan_quality`); non-US entities borrow
-   the US pace widened by `|g_own − g_us|/1.282`, short histories re-anchor the US fit
+   `_dc_cty_trajectories` (plan slip by `_dc_plan_quality`); paces come from
+   `_dc_cty_pace` at its default — China's rows on the export-control band, other
+   non-US entities on the US pace — widened by `|g_own − g_ref|/1.282`; short histories re-anchor the US fit
    at their own last step. Don't fork these — drift between the two tabs' cones reads
    as a bug.
 3. **Crossing math is per-sample first-hit.** `_pc_crossing_idx` returns the first
