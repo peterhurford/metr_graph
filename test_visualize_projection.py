@@ -4990,9 +4990,69 @@ class TestDcByCountry:
         assert vp._DC_DEFAULTS["dc_cty_pace"] in vp._DC_CTY_PACE_OPTIONS
         assert vp._DC_DEFAULTS["dc_cty_since"] in vp._DC_CTY_SINCE_YEARS
         # The selectboxes have no index= so their first option must be the
-        # default, and the borrowed-pace reading is the default on purpose.
+        # default, and China-on-the-band is the default on purpose.
         assert list(vp._DC_CTY_PACE_OPTIONS)[0] == vp._DC_DEFAULTS["dc_cty_pace"]
-        assert vp._DC_CTY_PACE_OPTIONS[vp._DC_DEFAULTS["dc_cty_pace"]] == 'us'
+        assert vp._DC_CTY_PACE_OPTIONS[vp._DC_DEFAULTS["dc_cty_pace"]] == 'band'
+
+    def test_china_extrapolates_on_the_export_control_band(self):
+        """Past its plans mainland China runs on _CC_CN_COMPUTE_LO/HI, the
+        pace the Compute/capabilities tab uses, and China-accessible on the
+        offshore buildout's _DC_CTY_CN_ACCESS_PACE; each is widened to keep
+        its own fit in the 80% cone, and every other country still borrows
+        the US trend. The offshore band sits above the export-controlled one
+        and below the US's own pace (CHINA_COMPUTE_JUDGMENTS.md)."""
+        us = {'g': 0.49, 'sigma_g': 0.10, 't0': datetime(2028, 1, 1)}
+        own = {'g': 0.40, 'sigma_g': 0.12}
+        dom = (vp._CC_CN_COMPUTE_LO + vp._CC_CN_COMPUTE_HI) / 2
+        acc = sum(vp._DC_CTY_CN_ACCESS_PACE) / 2
+        assert vp._CC_CN_COMPUTE_LO < vp._DC_CTY_CN_ACCESS_PACE[0] < acc
+        assert dom < acc < vp._DC_CTY_CN_ACCESS_PACE[1] < us['g']
+        for label in vp._DC_CTY_CN_LABELS:
+            mid = acc if label == vp._DC_CTY_CN_ACCESS else dom
+            pace, src = vp._dc_cty_pace(label, own, us)
+            assert src == 'band' and pace['g'] == pytest.approx(mid)
+            assert mid + 1.282 * pace['sigma_g'] >= own['g'] - 1e-12
+            assert vp._dc_cty_pace(label, None, us)[0]['g'] == \
+                pytest.approx(mid)
+            assert vp._dc_cty_pace(label, own, us, 'us')[1] == 'us'
+            assert vp._dc_cty_pace(label, own, us, 'own') == (own, 'own')
+        assert vp._dc_cty_pace("Norway", own, us) == \
+            (dict(us, sigma_g=0.10), 'us')
+        assert vp._dc_cty_pace(vp._DC_CTY_US, us, us) == (us, 'own')
+
+    def test_china_largest_site_stays_inside_the_named_plans(self):
+        """China's median largest site at end-2029, in facility MW, stays
+        within the ~1–3 GW SemiAnalysis's China Datacenter Model (Sep 2026)
+        names for its biggest campuses (ByteDance's Ulanqab and Horinger,
+        ~1 GW planned each through 2029, 2–3 GW upside). If a refresh moves it
+        out, re-check against newer reporting rather than loosening the range."""
+        series = vp._dc_series_for_metric(vp.dc_all, 'power')
+        country_of = {dc['name']: vp._dc_site_country(dc) for dc in vp.dc_all}
+        rows = []
+        for label, country in ((vp._DC_CTY_US, vp._DC_CTY_US),
+                               (vp._DC_CTY_CN_DOMESTIC, vp._DC_CTY_CN)):
+            names = [n for n in series if country_of.get(n) == country]
+            rows.append((label, 'country',
+                         vp._dc_country_steps(series, names, 'site', {}), names))
+        grid, traj = vp._pc_projection(
+            rows, vp.dc_all, datetime(2026, 9, 27),
+            since=vp._DC_DEFAULTS["dc_cty_since"],
+            horizon=datetime(2029, 12, 31))
+        j = grid.index(datetime(2029, 12, 1))
+        assert 1000 < np.nanmedian(traj[vp._DC_CTY_CN_DOMESTIC][:, j]) < 3000
+
+    def test_us_pace_is_above_the_offshore_band_on_live_data(self):
+        """The offshore band is capped below the US's own largest-site pace:
+        Chinese tenants abroad build on US-supplied chips in someone else's
+        halls, so they should not outrun the leader's own buildout."""
+        series = vp._dc_series_for_metric(vp.dc_all, 'train_flop')
+        country_of = {dc['name']: vp._dc_site_country(dc) for dc in vp.dc_all}
+        us = [n for n in series if country_of.get(n) == vp._DC_CTY_US]
+        fit = vp._dc_cty_fit(vp._dc_country_steps(series, us, 'site', {}),
+                             since=vp._DC_DEFAULTS["dc_cty_since"],
+                             t_end=datetime(2026, 9, 27) + timedelta(
+                                 days=vp._DC_CTY_PLAN_HORIZON_DAYS))
+        assert vp._DC_CTY_CN_ACCESS_PACE[1] < fit['g']
 
 
 class TestDcRegionShare:

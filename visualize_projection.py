@@ -2261,10 +2261,32 @@ _DC_PLAN_SOURCED_RE = re.compile(
     r'\]\(http|\bschedul|\bfiling|\bstated\b|\bpermit|\bannounc|\bpress release',
     re.I)
 _DC_CTY_CN_DOMESTIC = "China (domestic only)"
+# Past the plan horizon, China's rows extrapolate on an evidence band rather
+# than the borrowed US pace (see _dc_cty_pace, CHINA_COMPUTE_JUDGMENTS.md).
+# Borrowed, the US pace (~3×/yr in H100e) carries China's largest site to
+# ~3 GW by end-2029 and ~7 GW by 2030, past every campus SemiAnalysis's China
+# Datacenter Model (Sep 2026) names — ByteDance's Ulanqab and Horinger at
+# ~1 GW planned each through 2029, 2–3 GW upside.
+#   • Mainland and domestic-only: _CC_CN_COMPUTE_LO/HI, the export-control
+#     band the Compute/capabilities tab uses (chip- and networking-gated).
+#   • China-accessible: _DC_CTY_CN_ACCESS_PACE below. Its largest site is
+#     offshore (DayOne Johor, Nvidia, not export-gated), so its pace is the
+#     offshore buildout's: SemiAnalysis has Chinese firms' leased power in
+#     APAC ex-China at ~1.45 GW (2026) → ~2.8 (2028) → ~2.9 GW (2029), i.e.
+#     ×1.26–1.39/yr, times ×1.26–1.6/yr compute per watt (the catalogue's US
+#     sites end-2026→2027, and the US 2.3× world-share rate over their power
+#     growth) = ×1.6–2.2/yr. Faster than the domestic band, slower than the
+#     US. It omits GPUs rented from Western clouds (dispersed, so not one
+#     site) and assumes remote access stays legal; Pacing's remote-cut lever
+#     is the downside case.
+_DC_CTY_CN_LABELS = (_DC_CTY_CN, _DC_CTY_CN_ACCESS, _DC_CTY_CN_DOMESTIC)
+_DC_CTY_CN_ACCESS_PACE = (0.20, 0.35)   # OOM/yr as an 80% interval: ×1.6–2.2
 _DC_CTY_PACE_OPTIONS = {
+    "China on its evidence band, others the US trend": 'band',
     "The US trend for every country (a follower tracks the leader)": 'us',
     "Each country's own fitted trend": 'own',
 }
+_DC_CTY_PACE_SOURCE = {'us': "US pace", 'band': "evidence band"}
 _DC_CTY_COLORS = {_DC_CTY_US: "#1F77B4", _DC_CTY_CN: "#D62728",
                   _DC_CTY_CN_ACCESS: "#D62728", _DC_CTY_CN_DOMESTIC: "#E07B00"}
 # Reference countries draw from a palette with no reds or blues, so nothing
@@ -2884,6 +2906,36 @@ def _dc_cty_fit(steps, since=None, t_end=None):
     sigma_g = max(se, spread, _DC_CTY_SIGMA_G_FLOOR)
     return {'t0': t0, 'v0': v0, 'g': g, 'se': se, 'sigma_g': sigma_g,
             'sigma_res': sigma_res, 'n': len(samples), 'windows': windows}
+
+
+def _dc_cty_pace(label, own, us_fit, mode='band'):
+    """(pace, source) a country extrapolates on past its catalogued plans.
+
+    The US, and any country with a fit under mode 'own', use their own fit.
+    Under mode 'band' China's rows (_DC_CTY_CN_LABELS) use an evidence band
+    read as an 80% interval: China-accessible _DC_CTY_CN_ACCESS_PACE, the
+    others the export-control band _CC_CN_COMPUTE_LO/HI, so this tab, Pacing
+    and Compute/capabilities share one domestic China pace; everyone else
+    borrows the US pace. A borrowed pace is widened to keep the country's own fit inside
+    the 80% cone. source is 'own', 'band' or 'us'; pace is None when there
+    is nothing to extrapolate on. `test_china_extrapolates_on_the_export_
+    control_band` and `test_china_largest_site_stays_inside_the_named_plans`
+    guard it.
+    """
+    if label == _DC_CTY_US or (mode == 'own' and own is not None):
+        return own, 'own'
+    if mode == 'band' and label in _DC_CTY_CN_LABELS:
+        lo, hi = (_DC_CTY_CN_ACCESS_PACE if label == _DC_CTY_CN_ACCESS
+                  else (_CC_CN_COMPUTE_LO, _CC_CN_COMPUTE_HI))
+        ref, src = {'g': (lo + hi) / 2, 'sigma_g': (hi - lo) / (2 * 1.282)}, 'band'
+    elif us_fit is None:
+        return None, 'us'
+    else:
+        ref, src = us_fit, 'us'
+    if own is None:
+        return ref, src
+    return dict(ref, sigma_g=max(ref['sigma_g'],
+                                 abs(own['g'] - ref['g']) / 1.282)), src
 
 
 def _dc_cty_trajectories(steps, fit, grid, n, pace=None, today=None,
@@ -9936,7 +9988,7 @@ _DC_DEFAULTS = {
     "dc_start_year": 2025,
     "dc_end_year": 2027,
     "dc_cty_cones": True,
-    "dc_cty_pace": "The US trend for every country (a follower tracks the leader)",
+    "dc_cty_pace": "China on its evidence band, others the US trend",
     "dc_cty_since": 2024,
 }
 
@@ -10007,7 +10059,8 @@ _WC_NOTES = {
     "SEA":
         "Johor has roughly 3 GW approved or building, but most of that is "
         "still pipeline, and its tenants are a mix of US hyperscalers and "
-        "Chinese labs.",
+        "Chinese labs. SemiAnalysis has Chinese firms leasing about 1.45 GW "
+        "in Asia outside China in 2026, flattening near 2.9 GW by 2029.",
     "UAE":
         "Stargate UAE's first 200 MW (about 100k GB300s) lands in 2026, "
         "against a planned 1 GW and an announced 5 GW campus.",
@@ -10026,11 +10079,27 @@ _WC_NOTES = {
 # Only the ratios matter — shares are renormalized at every date.
 #   • US: Epoch has leading-cluster performance doubling every ~9 months
 #     (~2.5×/yr); the catalogue's US sites aggregate to ~1.9×/yr to end-2028.
-#   • China: the catalogue's domestic largest-site fit is ~1.8×/yr, and this
-#     tab's own export-control band (_CC_CN_COMPUTE_LO/HI) is 1.4–2.0×/yr for
-#     a single cluster.
-#   • SEA and the UAE are the fast ones, both from small bases and both mostly
-#     announced rather than built — hence the wider bands. The UAE's top end is
+#   • Rates are power growth times compute per watt (derivations in
+#     CHINA_COMPUTE_JUDGMENTS.md). SemiAnalysis's China Datacenter Model
+#     (Sep 2026) is the power check for China and SEA; the
+#     catalogue's US sites put compute per watt at ~1.3–1.6×/yr.
+#   • China (1.9×, 1.4–2.6×): the catalogue's domestic largest-site fit is
+#     ~1.8×/yr, and this tab's own export-control band (_CC_CN_COMPUTE_LO/HI)
+#     is 1.4–2.0×/yr for a single cluster. SemiAnalysis has the five
+#     hyperscalers' power going ~6 GW (2023) → ~13.5 GW (2026) → ~21 GW
+#     (~2028), ~1.3×/yr; times compute per watt that is 1.6–2.1×, which the
+#     1.9× central sits inside. Capex doubling in 2026 (BATB ~$50B → ~$100B,
+#     about half on chips) supports the top of that range for a year, not
+#     beyond it: SemiAnalysis calls China chip-gated, not power-gated.
+#   • SEA (2.0×, 1.5–3.2×): set below the US on purpose. SemiAnalysis has
+#     Chinese firms' leased power in APAC ex-China, most of it the
+#     Singapore–Johor–Batam hub, at ~0.85 → 1.45 → 2.45 → 2.8 → 2.9 GW over
+#     2025–29: ~1.3×/yr from 2026 and flattening, i.e. 1.6–2.0× in compute.
+#     So SEA's share of world compute drifts down after 2027 instead of
+#     compounding up. The top end stays wide for the US hyperscalers' share
+#     of Johor, which that series omits.
+#   • The UAE is the fast one, from a small base and mostly announced rather
+#     than built — hence the wide band. The UAE's top end is
 #     held at 5×/yr rather than the 6× a from-near-zero lognormal wants: at 6×
 #     it compounds to a quarter of world compute by 2029, which the announced
 #     5 GW campus does not support even if every phase lands early.
@@ -10061,7 +10130,7 @@ _WC_COMMON_LOAD = {
 _WC_GROWTH = (
     ("US domestic", 2.3, 1.8, 3.0),
     ("China domestic", 1.9, 1.4, 2.6),
-    ("SEA", 2.6, 1.8, 4.0),
+    ("SEA", 2.0, 1.5, 3.2),
     ("UAE", 3.5, 2.4, 5.0),
     ("Europe/UK", 2.3, 1.7, 3.2),
     ("Other", 2.2, 1.6, 3.2),
@@ -10430,22 +10499,14 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
     fits = {c: _dc_cty_fit(s, since=since, t_end=plan_end)
             for c, s in steps_by.items()}
     us_fit = fits[_DC_CTY_US]
-    borrowed = set()
+    borrowed = {}     # country → 'us' or 'band', when not on its own fit
 
     def _pace_for(c):
-        """The pace to extrapolate on. A borrowed US pace keeps the country's
-        own fitted pace inside the 80% cone, so the two readings disagreeing
-        shows up as width rather than vanishing."""
-        if c == _DC_CTY_US or (pace_mode == 'own' and fits[c] is not None):
-            return fits[c]
-        borrowed.add(c)
-        if us_fit is None:
-            return None
-        own = fits[c]
-        if own is None:
-            return us_fit
-        return dict(us_fit, sigma_g=max(us_fit['sigma_g'],
-                                        abs(own['g'] - us_fit['g']) / 1.282))
+        """The pace to extrapolate on (see _dc_cty_pace)."""
+        pace, src = _dc_cty_pace(c, fits[c], us_fit, pace_mode)
+        if src != 'own':
+            borrowed[c] = src
+        return pace
 
     def _anchor(c):
         """The fit to anchor on — the country's own, or the US pace re-anchored
@@ -10561,8 +10622,9 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         if p is None:
             return f"{c}: no trend to extrapolate"
         dbl = 12 * np.log10(2) / p['g'] if p['g'] > 0 else float('inf')
-        src = ("US pace, cone widened to its own fit" if c in borrowed and fit
-               else "US pace" if c in borrowed else "own fit")
+        name = _DC_CTY_PACE_SOURCE.get(borrowed.get(c))
+        src = (f"{name}, cone widened to its own fit" if name and fit
+               else name or "own fit")
         win = ", ".join(f"'{y % 100}: ×{10 ** g:.1f}" for y, g in
                         sorted(fit['windows'].items())) if fit else ""
         q = quality.get(c)
@@ -10576,7 +10638,8 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         if p is None:
             return f"**{c}** no trend"
         return (f"**{c}** ×{10 ** p['g']:.1f}/yr"
-                f"{' (US pace)' if c in borrowed else ''}")
+                + (f" ({_DC_CTY_PACE_SOURCE[borrowed[c]]})" if c in borrowed
+                   else ""))
     _fn_caption(
         "Pace \u2014 " + "; ".join(_pace_short(c) for c in cone_for)
         + ". Bands centre on the plan.",
@@ -10780,8 +10843,19 @@ def render_data_centers():
         with st.expander("Country projection"):
             cty_cones = st.checkbox("Show projection cones", key="dc_cty_cones",
                                     value=_DC_DEFAULTS["dc_cty_cones"])
-            pace_label = st.radio("Extrapolate along", list(_DC_CTY_PACE_OPTIONS),
-                                  key="dc_cty_pace")
+            if st.session_state.get("dc_cty_pace") not in _DC_CTY_PACE_OPTIONS:
+                st.session_state.pop("dc_cty_pace", None)
+            pace_label = st.radio(
+                "Extrapolate along", list(_DC_CTY_PACE_OPTIONS),
+                key="dc_cty_pace",
+                help="Past the catalogued plans. The evidence band puts "
+                     "mainland China on the Compute/capabilities tab's "
+                     "export-control pace, "
+                     f"×{10 ** _CC_CN_COMPUTE_LO:.1f}–"
+                     f"×{10 ** _CC_CN_COMPUTE_HI:.1f}/yr, and "
+                     "China-accessible on the offshore buildout's, "
+                     f"×{10 ** _DC_CTY_CN_ACCESS_PACE[0]:.1f}–"
+                     f"×{10 ** _DC_CTY_CN_ACCESS_PACE[1]:.1f}/yr.")
             cty_since = st.radio(
                 "Fit trend since", _DC_CTY_SINCE_YEARS, horizontal=True,
                 index=_DC_CTY_SINCE_YEARS.index(_DC_DEFAULTS["dc_cty_since"]),
@@ -12050,8 +12124,11 @@ _CC_GAP_WINDOWS = [
 # controls on leading-edge chips and, more bindingly, on the networking to fuse
 # dispersed chips into one run. Low end = controls bite / stockpiles deplete;
 # high end = China sustains its most recent disclosed leg (~2×/yr). The band is
-# kept at or below the catalogue's paces — TestCcCnComputeBand pins that against
-# the live data; if a refresh breaks it, retarget these deliberately.
+# kept at or below the catalogue's paces (CHINA_COMPUTE_JUDGMENTS.md records
+# the evidence) — TestCcCnComputeBand pins that against
+# the live data; if a refresh breaks it, retarget these deliberately. It is
+# also mainland China's pace past the catalogued plans on the Data Centers and
+# Pacing tabs (_dc_cty_pace), so moving it moves those projections too.
 _CC_CN_COMPUTE_LO = 0.15   # ~1.4×/yr — export controls bite
 _CC_CN_COMPUTE_HI = 0.30   # ~2×/yr — China's recent disclosed pace holds
 
@@ -14820,10 +14897,11 @@ def _pc_projection(rows, dcs, today, since=None, ref_steps=None,
                    horizon=None):
     """(grid, label → sampled paths) for each entity, projected exactly as the
     by-country panel does it: recorded steps, then catalogued plans under
-    quality-dependent slip, then — past the ~18-month plan horizon — the US
-    trend, widened by any disagreement with the entity's own fitted pace so
-    the two readings show up as range rather than vanishing. The US itself
-    extrapolates on its own fit.
+    quality-dependent slip, then — past the ~18-month plan horizon — the pace
+    _dc_cty_pace gives it at mode 'band': China's rows on their evidence
+    band, everyone else on the US trend, either widened by any disagreement
+    with the entity's own fitted pace so the two readings show up as range
+    rather than vanishing. The US itself extrapolates on its own fit.
     """
     plan_end = today + timedelta(days=_DC_CTY_PLAN_HORIZON_DAYS)
     grid = _dc_cty_month_grid(datetime(today.year, today.month, 1),
@@ -14846,13 +14924,7 @@ def _pc_projection(rows, dcs, today, since=None, ref_steps=None,
             t0 = min(steps[-1][0], plan_end)
             v0 = _dc_val_at([(s[0], s[1]) for s in steps], t0)
             anchor = dict(us_fit, t0=t0, v0=v0) if v0 and v0 > 0 else None
-        if label == _DC_CTY_US or us_fit is None:
-            pace = own
-        elif own is None:
-            pace = us_fit
-        else:
-            pace = dict(us_fit, sigma_g=max(us_fit['sigma_g'],
-                                            abs(own['g'] - us_fit['g']) / 1.282))
+        pace, _ = _dc_cty_pace(label, own, us_fit)
         quality = _dc_plan_quality(dcs, names, today)
         out[label] = _dc_cty_trajectories(
             steps, anchor, grid, N_SAMPLES, pace=pace if anchor else None,
