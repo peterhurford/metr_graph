@@ -28,6 +28,7 @@ Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tes
 - **`benchmark_results_1_1.yaml`** — METR-Horizon-v1.1 data
 - **`epoch_capabilities_index.csv`** — Epoch ECI data, written by **`convert_eci.py`** from Epoch's `eci_scores.csv` + `all_ai_models.csv`
 - **`data_centers.csv`** / **`data_center_timelines.csv`** — Epoch Frontier Data Centers: one metadata row per site, many dated capacity rows per site
+- **`CHINA_COMPUTE_JUDGMENTS.md`** — the record behind every hand-set China/SEA compute pace and share: value, evidence, derivation, revisit triggers
 - **`aisi_cyber_narrow.csv`** / **`aisi_cyber_tlo.csv`** — AISI narrow cyber success rates (12 models); AISI/CAISI cyber-range "The Last Ones" avg steps of 32 (10 models). Both **chart-digitized, not published feeds** — see each file's `#` header
 
 No build system, no CI/CD, no package manager beyond requirements.txt (`streamlit`, `numpy`, `plotly`, `pyyaml`).
@@ -736,10 +737,18 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    its last entry** — anchoring on the last entry held the US line flat through 2029 off one
    site dated 2030, and the fit window is clipped there too so the under-catalogued tail
    doesn't drag the pace down.
-6. **The default pace is the US trend borrowed** (`_DC_CTY_PACE_OPTIONS`, 'us'), with the
-   cone widened to `|g_own − g_us| / 1.28` so a country's own fit sits at the 80% edge
-   rather than vanishing. Own-trend is one click away and has China overtaking the US
-   inside the window — that is the ramp bias above, not a finding. The US always uses its own fit.
+6. **Past the plans, China runs on an evidence band; everyone else borrows the US trend**
+   (`_dc_cty_pace`, default option 'band'). Mainland and domestic-only use
+   `_CC_CN_COMPUTE_LO/HI` (shared with Pacing and Compute/capabilities); China-accessible,
+   whose largest site is offshore Nvidia capacity, uses `_DC_CTY_CN_ACCESS_PACE`, derived from
+   SemiAnalysis's offshore leasing path. Both are read as 80% intervals, widened by
+   `|g_own − g_ref| / 1.28` so a country's own fit sits at the 80% edge. The derivations,
+   sources and revisit triggers live in `CHINA_COMPUTE_JUDGMENTS.md`; update it with any change.
+   Guards: `test_china_extrapolates_on_the_export_control_band`,
+   `test_china_largest_site_stays_inside_the_named_plans` (1–3 GW at end-2029) and
+   `test_us_pace_is_above_the_offshore_band_on_live_data`. The US-for-everyone and own-trend
+   options are one click away; own-trend has China overtaking the US inside the window — that
+   is the ramp bias above, not a finding. The US always uses its own fit.
 7. **Lag never drops the samples where China leads.** `_dc_cty_lag_months()` floors an
    unresolved sample (the US running max never reaches China's value inside the grid) at
    one month past the grid end and returns the mask; the table prints "ahead in N% of
@@ -1136,8 +1145,9 @@ attribution; the threshold reaches the display through the chart title.
    `ref_steps` (the US country series) since company rosters no longer contain it.
 2. **The projection is the by-country model, unchanged.** `_pc_projection()` calls
    `_dc_cty_fit` (since=`_DC_DEFAULTS["dc_cty_since"]`, plan horizon anchored) and
-   `_dc_cty_trajectories` (plan slip by `_dc_plan_quality`); non-US entities borrow
-   the US pace widened by `|g_own − g_us|/1.282`, short histories re-anchor the US fit
+   `_dc_cty_trajectories` (plan slip by `_dc_plan_quality`); paces come from
+   `_dc_cty_pace` at its default — China's rows on their evidence band, other
+   non-US entities on the US pace — widened by `|g_own − g_ref|/1.282`; short histories re-anchor the US fit
    at their own last step. Don't fork these — drift between the two tabs' cones reads
    as a bug.
 3. **Crossing math is per-sample first-hit.** `_pc_crossing_idx` returns the first
