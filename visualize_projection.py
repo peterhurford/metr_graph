@@ -7881,6 +7881,114 @@ _ANTHROPIC_REVENUE = [
     # revenue; under this series' rule that yields a point only if it states a run rate explicitly.
 ]
 
+# Chinese labs: annualized run rate in $B, like the two series above, and only
+# where the number covers selling models and AI products. Each point is
+# (as-of date, $B, basis, source note); basis 'company' = stated by the company
+# (filing or results call, even when read via press), 'press' = press-reported
+# from people familiar or investors. A month-only as-of is dated to month end,
+# capped at the report date. Audited period revenue is deliberately not
+# annualized into this series: it is a different unit, and at these growth rates
+# it reads well below exit ARR. RMB converts at Alibaba's own balance-sheet
+# rates, 6.8980 (2026-03-31) and 6.7851 (2026-06-30).
+_CN_REVENUE = {
+    "MiniMax": {
+        "color": "#e4572e",
+        "scope": "Whole company: open platform/API (63% of H1 2026 revenue) and "
+                 "AI apps (Talkie, Hailuo). Pure-play, no hardware.",
+        "comparable": "Yes",
+        "points": [
+            ("2025-12-31", 0.10, "press",
+             "“roughly $100 million at the end of 2025” (Startup Fortune). "
+             "Consistent with the audited FY2025 total of $79.0M, whose second half "
+             "($48.6M) annualizes to ~$97M."),
+            ("2026-02-28", 0.15, "company",
+             "CEO Yan Junjie told investors ARR had crossed $150M by February "
+             "(Startup Fortune)."),
+            # Excluded: an unattributed "near $400 million" for April (Startup
+            # Fortune), contradicted by the company's own filing a month later.
+            ("2026-05-29", 0.30, "company",
+             "A-share IPO filing: “current ARR exceeds $300 million” "
+             "(KuCoin/MarsBit, 2026-05-30)."),
+            ("2026-08-26", 0.80, "company",
+             "CEO on the H1 2026 results call: ARR “surpassed $800 million in "
+             "August”. The H1 press release itself states no ARR; H1 revenue "
+             "was $116.6M."),
+        ],
+    },
+    "Zhipu (Z.ai)": {
+        "color": "#3a86ff",
+        "scope": "MaaS/API only. Excludes on-premise deployments for government and "
+                 "SOEs, which were 74% of FY2025 revenue but had fallen to 13% "
+                 "(RMB 128.7M, ~$38M annualized) by H1 2026.",
+        "comparable": "Yes, API line (on-prem excluded, small now)",
+        "points": [
+            ("2026-03-31", 0.25, "company",
+             "FY2025 results: MaaS API ARR “about 1.7 billion yuan, equivalent "
+             "to about US$250 million” as of March 2026 (36Kr, 2026-05-29)."),
+            ("2026-07-17", 1.0, "press",
+             "$1B ARR, 36Kr exclusive citing multiple independent sources "
+             "(2026-07-17)."),
+            ("2026-08-31", 1.6, "company",
+             "H1 2026 results call: open-platform ARR “reached USD 1.6 billion, "
+             "calculated on a monthly annualized basis” as of end-August "
+             "(36Kr, 2026-09-02). The weekly-annualized >$2B is not used."),
+        ],
+    },
+    "Alibaba (Qwen MaaS)": {
+        "color": "#ff9f1c",
+        "scope": "Model and application services only: API calls on Bailian/Model "
+                 "Studio and AI software subscriptions, mostly Qwen. Not "
+                 "“AI-related product revenue” (RMB 12.4B in the June 2026 "
+                 "quarter), which includes GPU rental. No Qwen app revenue is "
+                 "disclosed.",
+        "comparable": "Only the MaaS ARR (two points). The headline AI revenue is not",
+        "points": [
+            ("2026-05-13", 8.0 / 6.8980, "company",
+             "Q4 FY26 call: “ARR on the Bailian platform was already above RMB "
+             "8 billion”. A floor, converted at 6.8980."),
+            ("2026-08-27", 16.0 / 6.7851, "company",
+             "CFO Toby Xu, Q1 FY27 call: “ARR of our model and application "
+             "services…surpassed RMB 16 billion”. A floor, converted at "
+             "6.7851."),
+        ],
+    },
+    "Moonshot (Kimi)": {
+        "color": "#8338ec",
+        "scope": "Whole company, API >70% of revenue (mid-June). Private: every "
+                 "figure is press-reported.",
+        "comparable": "Yes, but press-reported only",
+        "points": [
+            ("2026-03-31", 0.10, "press",
+             ">$100M ARR in March, people close to Kimi (China Entrepreneur via 36Kr, "
+             "2026-06-29)."),
+            ("2026-04-30", 0.20, "press", "$200M ARR in April, same report."),
+            ("2026-06-15", 0.30, "press",
+             ">$300M ARR in mid-June, API >70% of revenue (STAR Market Daily, "
+             "sources close to investors)."),
+            ("2026-08-31", 1.0, "press",
+             "Bloomberg (2026-09-11): a $2B year-end target is “double the "
+             "company's reported revenue run rate for August”."),
+        ],
+    },
+    "DeepSeek": {
+        "color": "#2a9d8f",
+        "scope": "Whole company (API and app). Nothing has been disclosed; the "
+                 "prospectus for its planned Shanghai IPO would be the first.",
+        "comparable": "Yes, but press-reported only",
+        "points": [
+            # Excluded: DeepSeek's March 2025 "theoretical" $562k/day, which its own
+            # post says is not actual revenue.
+            ("2026-07-15", 0.45, "press",
+             "“annualized revenue recently reached between $400 million and $500 "
+             "million”, The Information citing three sources (via PYMNTS, "
+             "2026-07-15). Midpoint plotted."),
+            ("2026-09-23", 1.0, "press",
+             "$1B run rate that CEO Liang Wenfeng shared with investors, per The "
+             "Information (2026-09-23), after an August price rise of 2.3–4.5×."),
+        ],
+    },
+}
+
 
 def _parse_revenue(data):
     dates = [datetime.strptime(d, "%Y-%m-%d") for d, _ in data]
@@ -8475,6 +8583,114 @@ def render_revenue():
          "anthropic-openais-share-ai-startup-revenues-rises-89 and "
          "/openai-held-1-billion-revenue-lead-anthropic-first-quarter)."),
         ("projections, not forecasts", PROJ_DISCLAIMER.strip()))
+
+    _render_rev_china([("OpenAI", openai_dates, openai_vals),
+                       ("Anthropic", anthropic_dates, anthropic_vals)], show_labels)
+
+_CN_REV_BASIS_LABEL = {"company": "Company-stated", "press": "Press-reported"}
+
+
+def _cn_rev_rows():
+    """One summary row per Chinese lab: its latest point, what the number
+    counts, and the doubling time between its first and latest point."""
+    rows = []
+    for lab, spec in _CN_REVENUE.items():
+        dates, vals = _parse_revenue([(d, v) for d, v, _, _ in spec["points"]])
+        days = (dates[-1] - dates[0]).days
+        growth = vals[-1] / vals[0]
+        dt = (f"{days * np.log(2) / np.log(growth):.0f} days"
+              if len(vals) > 1 and growth > 1 and days > 0 else "\u2014")
+        rows.append({
+            "Lab": lab,
+            "Latest ARR": _fmt_revenue(vals[-1]),
+            "As of": dates[-1].strftime("%b %Y"),
+            "Basis": _CN_REV_BASIS_LABEL[spec["points"][-1][2]],
+            "Doubling time": dt,
+            "Comparable to OpenAI's ARR?": spec["comparable"],
+            "What it counts": spec["scope"],
+        })
+    return rows
+
+
+def _render_rev_china(ref_series, show_labels):
+    """Chinese labs' ARR on its own log chart, OpenAI and Anthropic greyed in
+    for scale. Data only: two to four points a lab, all from 2026, is too
+    short a history to fit a projection to."""
+    st.subheader("Chinese AI labs")
+    _fn_line(
+        "Run-rate revenue from selling models and AI products, on the same basis "
+        "as the chart above. Filled markers are company-stated; hollow ones are "
+        "press reports.",
+        ("same basis", "Annualized run rate in US$. Audited half-year and "
+                       "full-year revenue exists for MiniMax and Zhipu but is not "
+                       "annualized into these lines: at these growth rates a "
+                       "period total reads well below the run rate at its end."),
+        ("press reports", "Moonshot and DeepSeek are private and have disclosed "
+                          "nothing, so every point for them comes from press "
+                          "citing people familiar or investors."))
+
+    fig = go.Figure()
+    x_start = datetime(2025, 11, 15)
+    for name, dates, vals in ref_series:
+        keep = [(d, v) for d, v in zip(dates, vals) if d >= x_start]
+        fig.add_trace(go.Scatter(
+            x=[d for d, _ in keep], y=[v for _, v in keep],
+            mode='lines+markers', line=dict(color='#c8c8c8', width=1.5),
+            marker=dict(color='#c8c8c8', size=5),
+            name=f"{name} (for scale)",
+            hovertemplate=f"{name}<br>%{{x|%b %d, %Y}}<br>$%{{y:.1f}}B<extra></extra>"))
+    all_vals = []
+    for lab, spec in _CN_REVENUE.items():
+        pts = spec["points"]
+        dates = [datetime.strptime(d, "%Y-%m-%d") for d, _, _, _ in pts]
+        vals = [v for _, v, _, _ in pts]
+        all_vals += vals
+        color = spec["color"]
+        # The key is the line alone: a marker there would copy the first
+        # point's fill and read as that lab's whole basis.
+        fig.add_trace(go.Scatter(
+            x=dates, y=vals, mode='lines', line=dict(color=color, width=2),
+            name=lab, legendgroup=lab, hoverinfo='skip'))
+        fig.add_trace(go.Scatter(
+            x=dates, y=vals,
+            mode='markers' + ('+text' if show_labels else ''),
+            marker=dict(color=[color if b == "company" else 'white'
+                               for _, _, b, _ in pts],
+                        line=dict(color=color, width=2), size=9),
+            text=[_fmt_revenue(v) for v in vals] if show_labels else None,
+            textposition='top left', textfont=dict(size=8, color=color),
+            hovertext=[f"<b>{lab}</b> \u00b7 {d.strftime('%b %d, %Y')}<br>"
+                       f"{_fmt_revenue(v)} ({_CN_REV_BASIS_LABEL[b].lower()})<br>"
+                       + "<br>".join(textwrap.wrap(note, 60))
+                       for d, (_, v, b, note) in zip(dates, pts)],
+            hoverinfo='text', name=lab, legendgroup=lab, showlegend=False))
+    today = _add_today_vline(fig)
+    tickvals = [0.03, 0.1, 0.3, 1, 3, 10, 30, 100]
+    fig.update_layout(
+        yaxis_title="ARR ($ Billions)", yaxis_type="log",
+        xaxis_range=[x_start, today + timedelta(days=20)],
+        height=500, template="plotly_white",
+        legend=dict(orientation='h', x=0, y=1.02, yanchor='bottom'),
+        hovermode='closest')
+    fig.update_yaxes(
+        tickvals=tickvals,
+        ticktext=[_fmt_revenue(v).replace(".0B", "B") for v in tickvals],
+        range=[np.log10(min(all_vals) * 0.6),
+               np.log10(max(v for _, _, vs in ref_series for v in vs) * 1.5)])
+    st.plotly_chart(fig, width="stretch")
+
+    st.dataframe(_cn_rev_rows(), hide_index=True, width="stretch")
+    _fn_caption(
+        "Alibaba's line is its model-and-application-services ARR, not its much "
+        "larger AI-related product revenue. DeepSeek and Moonshot have only "
+        "press-reported numbers.",
+        ("AI-related product revenue",
+         "RMB 12.4B (US$1.8B) in the quarter to June 2026, 35% of Alibaba Cloud's "
+         "external revenue. It includes GPU compute rental, so it is a cloud "
+         "number, not a model-sales one."),
+        ("press-reported numbers",
+         "DeepSeek's only statement of its own, a March 2025 \u201ctheoretical\u201d "
+         "$562k a day, is excluded because the post says it is not actual revenue."))
 
 
 # ── Employment ────────────────────────────────────────────────────────────

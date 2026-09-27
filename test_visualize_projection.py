@@ -6108,6 +6108,40 @@ class TestRevenueCombined:
         assert vp._REV_DEFAULTS["rev_combined"] is False
 
 
+class TestRevenueChina:
+    """The Chinese-lab ARR series: one unit, sourced, in date order."""
+
+    def test_every_point_is_dated_sourced_and_classed(self):
+        for lab, spec in vp._CN_REVENUE.items():
+            dates, vals = vp._parse_revenue([(d, v) for d, v, _, _ in spec["points"]])
+            assert dates == sorted(dates), lab
+            assert all(v > 0 for v in vals), lab
+            for _, _, basis, note in spec["points"]:
+                assert basis in vp._CN_REV_BASIS_LABEL, lab
+                assert note, lab
+            assert spec["scope"] and spec["comparable"], lab
+
+    def test_series_sit_below_both_us_labs(self):
+        """A value in RMB or millions rather than US$ billions would sit
+        orders of magnitude off; every Chinese point is under OpenAI and
+        Anthropic on its date."""
+        for spec in vp._CN_REVENUE.values():
+            for d, v, _, _ in spec["points"]:
+                dt = datetime.strptime(d, "%Y-%m-%d")
+                for ref in (vp._OPENAI_REVENUE, vp._ANTHROPIC_REVENUE):
+                    assert v < vp._rev_value_at(*vp._parse_revenue(ref), dt)
+
+    def test_private_labs_are_press_only(self):
+        """Moonshot and DeepSeek have disclosed nothing; a point marked
+        company-stated for either needs a source that says so."""
+        for lab in ("Moonshot (Kimi)", "DeepSeek"):
+            assert {b for _, _, b, _ in vp._CN_REVENUE[lab]["points"]} == {"press"}
+
+    def test_summary_row_per_lab(self):
+        rows = vp._cn_rev_rows()
+        assert [r["Lab"] for r in rows] == list(vp._CN_REVENUE)
+
+
 class TestMilestoneCardLayout:
     """Thirteen cards have to stay legible: at most four per row, and the
     rows balanced rather than filled greedily."""
