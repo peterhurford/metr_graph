@@ -1,17 +1,17 @@
 ---
-description: Systematically refresh all data sources (METR, ECI, data centers, RLI, revenue, UK Cyber) and report what changed
+description: Systematically refresh all data sources (METR, ECI, data centers, RLI, revenue incl. Chinese labs, UK Cyber) and report what changed
 argument-hint: "[optional: a single source name to update just that one]"
 ---
 
 Update the dashboard's data sources to the latest available values, then report exactly what you found, changed, and left alone.
 
-If `$ARGUMENTS` names a specific source (e.g. `eci`, `metr`, `datacenters`, `rli`, `revenue`, `ukcyber`), update only that one. Otherwise update all of them.
+If `$ARGUMENTS` names a specific source (e.g. `eci`, `metr`, `datacenters`, `rli`, `revenue`, `cnrevenue`, `ukcyber`), update only that one. `revenue` covers both revenue tables; `cnrevenue` is the Chinese labs alone. Otherwise update all of them.
 
 Today's date is authoritative for judging staleness — check the current date, then find each source's newest existing entry so you know what "new" means before researching.
 
 ## The seven sources
 
-Four downloadable feeds, two hardcoded tables, one digitized figure. For downloadable feeds, prefer fetching the canonical file directly over hand-transcribing.
+Four downloadable feeds, three hardcoded tables, one digitized figure. For downloadable feeds, prefer fetching the canonical file directly over hand-transcribing.
 
 | Source | Type | Canonical location |
 |---|---|---|
@@ -21,6 +21,7 @@ Four downloadable feeds, two hardcoded tables, one digitized figure. For downloa
 | `data_center_timelines.csv` | download | `https://epoch.ai/data/data_centers/data_center_timelines.csv` |
 | `_RLI_RAW` (in `visualize_projection.py`) | hardcoded | Scale Labs RLI leaderboard `labs.scale.com/leaderboard/rli` / `remotelabor.ai` |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (in `visualize_projection.py`) | hardcoded | Press reports (The Information, Reuters, Bloomberg, CNBC, etc.) |
+| `_CN_REVENUE` (in `visualize_projection.py`): MiniMax, Zhipu, Alibaba, Moonshot, DeepSeek | hardcoded | Results calls and filings (HKEX for MiniMax 0100 / Zhipu 2513, Alibaba 6-K and earnings call) and press (The Information, Bloomberg, 36Kr, LatePost). See *Chinese labs* below |
 | RSI tables (`_RSI_RAW`, `_RSI_SURVEY`, `_RSI_DIR_RAW`, `_RSI_CODE_RAW`, `openai_experiment_velocity.csv`) | hand-read figures | Sources in CLAUDE.md *Data Sources*. Check new Anthropic system cards for CoBench and survey rounds — but see *CoBench: check comparability first* below. A card's problem set differs from the Risk Report's, so a score goes in via a rescale, never raw |
 | `aisi_cyber_narrow.csv` (UK Cyber) | **digitized figure — verify, don't download** | AISI blog post, [open-weight cyber gap](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) |
 | `aisi_cyber_tlo.csv` (UK Cyber cross-check) | **digitized figure + quoted prose** | Same post's Figure 2, plus the [UK AISI/CAISI Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) |
@@ -56,6 +57,29 @@ The two revenue series follow different conventions on purpose, and mixing them 
 - **Anthropic is company-disclosed only.** Third-party trackers (TickerTrends, YipitData) run well above disclosures — TickerTrends put April 2026 at $35.6B where Anthropic itself disclosed $30B. Do not append a tracker estimate to this series without asking.
 - **OpenAI is TickerTrends-derived** from `2025-12-31` (21.4) onward, and runs far above the press line (~$25B as of Feb 2026 per The Information / Sacra / Epoch). Keep continuing that one series rather than splicing in a press figure.
 - Always classify a candidate figure before using it: company disclosure / press report / third-party alt-data estimate / **forecast**. Forecasts and guidance ("expected to exceed $50B by end of July") are never observations. Quarterly or annual revenue is the wrong unit — these tables are annualized run-rate only.
+
+#### Chinese labs (`_CN_REVENUE`)
+
+One research agent for all five labs. Each point is `(as-of date, $B, basis, note)`: basis
+`company` (stated in a filing or on a results call, even when read via press) or `press`
+(people familiar, investors). The note carries the source and the quoted phrase. A
+month-only as-of goes at month end, capped at the report date. `TestRevenueChina` checks
+the shape.
+
+- **MiniMax, Zhipu:** annual results land ~late March, interims ~late August. The ARR is
+  what management says on the call, not the press release, which states period revenue
+  only. Period revenue is never annualized into the series.
+- **Zhipu is API/MaaS ARR only.** On-prem government/SOE revenue stays out. Take the
+  monthly-annualized figure, not a weekly × 52 one.
+- **Alibaba is the model-and-application-services (Bailian/MaaS) ARR only**, stated on
+  its quarterly calls (~mid-May, ~late Aug, ~mid-Nov, ~late Feb). "AI-related product
+  revenue" includes GPU rental and is never a point, and neither is guidance ("RMB 30B by
+  year-end"). Convert at Alibaba's own period-end RMB/US$ rate from the same release.
+- **Moonshot, DeepSeek** are private, so every point is `press` unless the company itself
+  publishes one. A DeepSeek IPO prospectus would be the first disclosure. If one lands,
+  use it, but if it states only period revenue, it yields no point.
+- Contradicted or unattributed figures stay out, with a comment in the table saying why,
+  as with MiniMax's April "near $400M".
 
 ### UK Cyber (AISI): what "update" means here
 
@@ -93,7 +117,7 @@ The NIST mirror serves figures at full resolution if you strip the `styles/<pres
 
 1. **Scope + baseline.** For each source in scope, find its newest existing entry (tail the file / grep the table) so you can tell what's genuinely new.
 
-2. **Research in parallel.** For the hardcoded tables (RLI, revenue) and to sanity-check the feeds, launch parallel research agents — one per source — that find the canonical source and report only NEW data points beyond the current newest, with exact values, dates, and citations. Instruct them to be factual and to say "no new data" rather than invent.
+2. **Research in parallel.** For the hardcoded tables (RLI, revenue, Chinese-lab revenue) and to sanity-check the feeds, launch parallel research agents — one per source — that find the canonical source and report only NEW data points beyond the current newest, with exact values, dates, and citations. Instruct them to be factual and to say "no new data" rather than invent.
 
 3. **Apply downloadable feeds (METR, ECI, data centers).** Download the canonical file to a temp file *in the project directory* (never `/tmp` — the safety classifier flags writes outside the project). Then:
    - Diff by key column against the current file to confirm **no locally-curated rows would be lost** (ECI key = `Model version`; DC metadata key = `Name`; timelines key = `Data center`+`Date`; METR = model keys). If any local-only rows exist, STOP and ask before overwriting.
@@ -109,7 +133,7 @@ The NIST mirror serves figures at full resolution if you strip the `styles/<pres
      must be empty (see CLAUDE.md *Timeline rows with no metadata row*).
    - Overwrite the file. Clean up the temp file.
 
-4. **Apply hardcoded tables (RLI, revenue).** Hand-edit new rows in `visualize_projection.py`. Keep each table's existing sort order and formatting/alignment. For revenue and any low-confidence / third-party-estimate figure that materially bends a projection, ASK the user before adding it rather than deciding unilaterally. When you exclude a figure for a reason (forecast, wrong unit, wrong source class), leave a short comment in the table saying so — otherwise the next run re-litigates it.
+4. **Apply hardcoded tables (RLI, revenue, `_CN_REVENUE`).** Hand-edit new rows in `visualize_projection.py`. Keep each table's existing sort order and formatting/alignment. For revenue and any low-confidence / third-party-estimate figure that materially bends a projection, ASK the user before adding it rather than deciding unilaterally. When you exclude a figure for a reason (forecast, wrong unit, wrong source class), leave a short comment in the table saying so — otherwise the next run re-litigates it.
 
 5. **Check UK Cyber (AISI).** Follow the verification recipe above. This is a *figure-unchanged* check, not a download — expect "already current" to be the normal outcome, and expect the newest AISI post to often carry no narrow-task data at all. Cheap to run; do it every time.
 
@@ -117,7 +141,7 @@ The NIST mirror serves figures at full resolution if you strip the `styles/<pres
    ```bash
    _VP_TESTING=1 python3 -c "import visualize_projection as v; print(len(v.load_eci_frontier()))"
    ```
-   (use `load_frontier`, `load_data_centers`, `load_rli_data`, `load_ukcyber` as appropriate). Then run `pytest -q`.
+   (use `load_frontier`, `load_data_centers`, `load_rli_data`, `load_ukcyber`, or `_cn_rev_rows()` for the Chinese labs, as appropriate). Then run `pytest -q`.
 
 7. **Report.** Give a per-source table: Updated / Already current / Skipped (with reason). For updates, list the specific new entries (name, value, date). For "already current," state you verified against the canonical source. Surface any judgment calls and anything you deliberately left out.
 
