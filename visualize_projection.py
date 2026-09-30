@@ -911,6 +911,8 @@ _RLI_RAW = [
     # Scale shows Fable 5 as 15.8 where the API gives 15.83 -- page-payload truncation, not a revision.
     # Neither surface alone is a complete roster: Grok 4 is in the CAIS API but absent from Scale, while
     # Gemini 3.7 Flash is on Scale but absent from the API. Check both.
+    # Rechecked 2026-09-29: no new model and no changed score on either surface; Scale's newest createdAt
+    # is still the 2026-09-17 Fable 5.1 / GPT-6 Astra pair, and safe.ai/blog is still 2026-07-01.
 ]
 
 
@@ -7843,6 +7845,13 @@ _OPENAI_REVENUE = [
     # $15.1B / Codex $8.8B tracked ARR (08-18) and the weekly ChatGPT Ads series (~$1B, from 08-31).
     # Epoch's ai_companies_revenue_reports.csv is unchanged in value at Bloomberg's $40B, but note it dates
     # that row 2026-08-13 (publication) where we carry the 2026-07-31 as-of; same observation, not a new one.
+    # TickerTrends' 2026-09-29 post ("OpenAI and Anthropic ARR Tracking"): $50.44B, +13.4% MoM; the chart
+    # card reads "As of Sep 24, 2026" and "company-wide annualized revenue run-rate", so it continues this
+    # series with a real as-of date.
+    ("2026-09-24", 50.44),
+    # Excluded: Axios/FT (2026-09-29) report OpenAI's run rate "nearing"/"about" $70B, now Epoch's newest
+    # OpenAI row. A press report, not this series, and ~39% *above* the 50.44 tracked five days earlier --
+    # the reverse of the usual tracker-above-press gap, so splicing it would draw a fake jump.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -7931,6 +7940,9 @@ _ANTHROPIC_REVENUE = [
     # Bloomberg and Axios as revenue "to top"/"expected to" exceed $100B in 2026 -- a forecast, and its only
     # observation is the $9B-to-$65B history already here. An S-1, when it lands, will carry audited period
     # revenue; under this series' rule that yields a point only if it states a run rate explicitly.
+    # Rechecked 2026-09-29: still nothing newer. anthropic.com/news since 09-18 (09-22 Opus 5.5, 09-22 Situation
+    # Report, 09-23 enzyme discovery, 09-28 Sonnet 5.5) states no run rate; EDGAR has no public S-1. Excluded:
+    # TickerTrends' $76.8B as of 2026-09-24 (tracker estimate).
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -7984,6 +7996,10 @@ _CN_REVENUE = {
              "H1 2026 results call: open-platform ARR “reached USD 1.6 billion, "
              "calculated on a monthly annualized basis” as of end-August "
              "(36Kr, 2026-09-02). The weekly-annualized >$2B is not used."),
+            # Excluded (checked 2026-09-29): the 2026-09-16 investor call's "全业务口径ARR"
+            # of $1.8B is all-business ARR, with no MaaS split or annualization basis, so it
+            # does not continue this API line; the raised $3.0B year-end figure is guidance;
+            # 36Kr's passing "$2 billion in August" (09-23) is unsourced and contradicts the $1.6B.
         ],
     },
     "Alibaba (Qwen MaaS)": {
@@ -7993,7 +8009,7 @@ _CN_REVENUE = {
                  "“AI-related product revenue” (RMB 12.4B in the June 2026 "
                  "quarter), which includes GPU rental. No Qwen app revenue is "
                  "disclosed.",
-        "comparable": "Only the MaaS ARR (two points). The headline AI revenue is not",
+        "comparable": "Only the MaaS ARR (three points). The headline AI revenue is not",
         "points": [
             ("2026-05-13", 8.0 / 6.8980, "company",
              "Q4 FY26 call: “ARR on the Bailian platform was already above RMB "
@@ -8002,6 +8018,10 @@ _CN_REVENUE = {
              "CFO Toby Xu, Q1 FY27 call: “ARR of our model and application "
              "services…surpassed RMB 16 billion”. A floor, converted at "
              "6.7851."),
+            ("2026-08-31", 20.0 / 6.7851, "press",
+             "Goldman Sachs note citing company data (via NetEase/Longbridge, "
+             "~2026-09-24): Qwen MaaS ARR “reached RMB 20 billion by end of "
+             "August”. No public Alibaba statement found; converted at 6.7851."),
         ],
     },
     "Moonshot (Kimi)": {

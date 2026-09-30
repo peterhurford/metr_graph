@@ -17,14 +17,14 @@ Anthropic-Amazon New Carlisle,685912.076806468,910,34.47262,Amazon #confident,An
 - [Announcement of Project Rainier coming online](https://www.aboutamazon.com/news/aws/aws-project-rainier-ai-trainium-chips-compute-cluster)
 - [Air permit for Buildings 19-32, suggesting expansion to 2.3 GW total facility power](https://t.co/HsAO7oyKa2)
 ",https://docs.google.com/spreadsheets/d/1umU-KLAB_6A-lKRCdLuF7SPv74HlqKjDdfDor1bRGuY/edit?usp=sharing,Project Rainier #confident,Trainium2,Trainium2,,,,United States,"55001 Larrison Blvd, New Carlisle, IN 46552"
-Meta Prometheus,679568.3173319859,562,21.289684,Meta #confident,Meta #confident,"- [Meta blog post with details on Prometheus](https://engineering.fb.com/2025/09/29/data-infrastructure/metas-infrastructure-evolution-and-the-advent-of-ai/)
-- [New Albany Business Park land use map](https://drive.google.com/file/d/1Wb_BBVOnhu5UCQ8Q5d6iRIG9K_vigD8A/view?usp=sharing)
-- [Letter on Socrates South Power Generation Project](https://drive.google.com/file/d/1OMbFbdNGPmfSkwVWqOAK-5pOufiKQBu1/view?usp=sharing)
-",https://docs.google.com/spreadsheets/d/1BXuOzOGyQCEgXl6o-zUrXbLvxYzw_hGnN25Rj13z37c/edit?usp=sharing,Prometheus #confident,B200,B200,,,"Williams,American Electric Power",United States,"1 Community Cir, New Albany, OH 43054"
 Google Pryor (North),636685.1945426983,368,13.940576,Google #confident,Google DeepMind #speculative,"- [Google announces expansion of Pryor facility](https://blog.google/inside-google/company-announcements/google-american-innovation-oklahoma/)
 - [Google 2025 Environmental Report](https://sustainability.google/reports/google-2025-environmental-report/) with PUE and water use on pp.109-110
 - [News of a 9 exaflop TPUv4 cluster in the Pryor data center, launched in 2022](https://techcrunch.com/2022/05/11/google-launches-a-9-exaflop-cluster-of-cloud-tpu-v4-pods-into-public-preview/)
 ",https://docs.google.com/spreadsheets/d/1lD_rxcr7NwyAXlJf2TUis1AuMry4jGJNxOFP8zn17zc/edit?usp=sharing,,"TPU v5p,TPU v5e","TPU v5p,TPU v5e",,,,United States,"4581 Webb St, Pryor, OK 74361"
+Meta Prometheus,599845.17433047,496,18.789472,Meta #confident,Meta #confident,"- [Meta blog post with details on Prometheus](https://engineering.fb.com/2025/09/29/data-infrastructure/metas-infrastructure-evolution-and-the-advent-of-ai/)
+- [New Albany Business Park land use map](https://drive.google.com/file/d/1Wb_BBVOnhu5UCQ8Q5d6iRIG9K_vigD8A/view?usp=sharing)
+- [Letter on Socrates South Power Generation Project](https://drive.google.com/file/d/1OMbFbdNGPmfSkwVWqOAK-5pOufiKQBu1/view?usp=sharing)
+",https://docs.google.com/spreadsheets/d/1LOiioZUG696TC3nOAXROvhJBhhN7to-r6KR05Hd0qCk/edit?usp=sharing,Prometheus #confident,B200,"B200,B300",,,"Williams,American Electric Power",United States,"1 Community Cir, New Albany, OH 43054"
 OpenAI Stargate Abilene,509348.15563415864,421,15.948322,Oracle #confident,OpenAI #confident,"- [Crusoe 2024 Impact Report, with details on Abilene](https://drive.google.com/file/d/1oHWA9vmpvFOh-LvDy5fgq_wq5ITuxd1r/view?usp=sharing)
 - [Air Permit Application for buildings 1-2, featuring blueprints on p.157](https://drive.google.com/file/d/1FgfX6hqojlBtqNXJHjzJmnwWAMx4_M0b/view?usp=sharing)
 - [Mortensen’s profile of the project, with details of substations](https://www.mortenson.com/projects/abilene-data-center-development)
@@ -35,6 +35,12 @@ Microsoft Fairwater Wisconsin,445679.63617988885,369,13.978458,Microsoft #confid
 - [Plan for 9-building and 6-building expansions](https://drive.google.com/file/d/1PQKzfauDNzabN7oNviMKTvsZmxlsUVpG/view?usp=sharing)
 - [OpenAI article mentioning they use Microsoft's Fairwater supercomputers](https://openai.com/index/mrc-supercomputer-networking/)
 ",https://docs.google.com/spreadsheets/d/1CRnOKjeb6z5VFPyeA7xaMrbppOD5dCS7TE20kvQyb8E/edit?usp=sharing,Microsoft AI WAN #confident,B200,B200,,,WE Energies,United States,"4800 90th St, Mount Pleasant, WI 53403"
+DayOne Kempas,367547.2460838808,322.470096,12.215812176672001,,,"- [News of Phase 2 operation](https://www.moomoo.com/news/post/41886329/support-ai-computing-deployment-gds-holdings-nusajaya-technology-park-datacenter?level=1&data_ticket=1778269491837872)
+- [Archived DayOne website - ""120 MW in operation"" in Johor](https://web.archive.org/web/20241231165420/https://dayonedc.com/)
+- [Archived DayOne website - 390 MW ""in service"" in Johor](https://web.archive.org/web/20260314134756/https://dayonedc.com/market/johor)
+- [Financial Times report that Alibaba and ByteDance are training AI models in southeast Asia](https://www.ft.com/content/96fe9898-a3a4-4a33-be1d-da06bdb6cb2b)
+
+",https://docs.google.com/spreadsheets/d/1R_LGG2zmZMczforjzOT_qqrBk-683L64lNIoQr5J1CY/edit?usp=sharing,,B300,B300,,,,Malaysia,"HP79+MP, 81300 Johor Bahru, Johor, Malaysia"
 Google Columbus,331985.85144012125,303,11.478245999999999,Google #confident,Google DeepMind #speculative,"- [DCD article detailing early work beginning on the site ](https://www.datacenterdynamics.com/en/news/google-breaks-ground-on-columbus-ohio-data-center/)
 - [Transmission line construction notice; details current site capacity, expansion, and maximum future site capacity ](https://www.aeptransmission.com/ohio/docs/Hartman%20Farms%20Extension%20No.%202%20138%20kV%20Transmission%20Line%20Project%20Construction%20Notice.pdf)
 ",https://docs.google.com/spreadsheets/d/17vNqp7jsx3CUwFeUfxIyI3KA0uZ0Bh7BNkrVyH77Ohs/edit?usp=sharing,,"TPU v5e,TPU v5p,TPU v6e,TPU v7","TPU v5e,TPU v5p,TPU v6e,TPU v7",,,,United States,"5076 S High St, Columbus, OH 43207"
@@ -45,7 +51,7 @@ Google New Albany,323900.9600808489,333,12.614706,Google #confident,Google DeepM
 Google Mesa,289540.17180394137,183,6.932405999999999,Google #confident,,"- [DCD article on the site breaking ground](https://www.datacenterdynamics.com/en/news/google-breaks-ground-on-mesa-data-center-campus-in-arizona/)
 - [DCD article on announcement to build Building 2](https://www.datacenterdynamics.com/en/news/google-files-to-build-second-data-center-at-mesa-campus-in-arizona/)
 ",https://docs.google.com/spreadsheets/d/1A_7rJWFKkspUPlYTmyg5JKL18OIzVgwLdhy3YbLs3eQ/edit?usp=sharing,,"TPU v6e,TPU v5p","TPU v6e,TPU v5p",,,,United States,
-DayOne Nusajaya,281670.4396159676,240,9.09168,"ByteDance #likely, Oracle #likely",,"- [News of Phase 2 operation](https://www.moomoo.com/news/post/41886329/support-ai-computing-deployment-gds-holdings-nusajaya-technology-park-datacenter?level=1&data_ticket=1778269491837872)
+DayOne Nusajaya,281670.4396159676,240,9.09168,,,"- [News of Phase 2 operation](https://www.moomoo.com/news/post/41886329/support-ai-computing-deployment-gds-holdings-nusajaya-technology-park-datacenter?level=1&data_ticket=1778269491837872)
 - [Archived DayOne website - ""120 MW in operation"" in Johor](https://web.archive.org/web/20241231165420/https://dayonedc.com/)
 - [Archived DayOne website - 390 MW ""in service"" in Johor](https://web.archive.org/web/20260314134756/https://dayonedc.com/market/johor)
 - [Financial Times report that Alibaba and ByteDance are training AI models in southeast Asia](https://www.ft.com/content/96fe9898-a3a4-4a33-be1d-da06bdb6cb2b)
@@ -261,6 +267,9 @@ CoreWeave Norway,50773.11773623042,42,1.5910440000000001,CoreWeave #confident,Op
 - [Bulk N01 expansion announcement](https://bulkinfrastructure.com/newsroom/bulk-data-centers-unveils-plan-for-data-center-expansion-following-unprecedented-demand)
 - [Bulk N01 campus brochure with 5-data-center plan](https://bulkinfrastructure.com/uploads/N01-Campus_Brochure_May24.pdf)
 ",https://docs.google.com/spreadsheets/d/1FRJgBDYY-e4bGkkHh54hBNz_b1baQjVwgWCXZnv22eg/edit?usp=sharing,,B200,B200,,,,Norway,"Stølevegen 39, 4715 Øvrebø, Norway"
+Nebius Mantsala,48527.92066700354,75,2.84115,Nebius #confident,Microsoft #speculative,"- [Nebius to triple capacity of Mantsala campus to 75 MW](https://nebius.com/newsroom/nebius-to-triple-capacity-at-finland-data-center-to-75-mw)
+- [Nebius announcing deployment of first GB300 NVL72 systems in Europe](https://nebius.com/blog/posts/first-live-nvidia-gb300-nvl72-deployment-in-europe)
+",https://docs.google.com/spreadsheets/d/1DcKmWfHZdahF2yfzmUprURMkEiCiluypSrobnkxz-wQ/edit?usp=sharing,,"H100,B300,H200","H100,B300,H200",,,,Finland,
 Southgate Melbourne,46488.12531581607,41,1.553162,Firmus #confident,,"- [Firmus Expands Project Southgate Across Australia](https://firmus.co/newsroom/southgate-expansion) (the CDC partnership, Melbourne location and timing all point to the CDC Brooklyn campus)
 - [Firmus Signs Multi-Year Agreement with Global Hyperscale Customer at Project Southgate](https://firmus.co/newsroom/firmus-signs-multi-year-agreement-with-global-hyperscale-customer-at-project-southgate) (mentions 18,400 GB300 GPUs to be deployed at the Melbourne facility)
 - [CDC Melbourne](https://cdc.com/locations/melbourne/)
@@ -296,6 +305,11 @@ xAI QTS Atlanta,11470.43961596766,17.32971,0.6564840742199999,SpaceXAI #confiden
 - [Business Insider: Elon Musk's new Atlanta data center for xAI has $700 million in AI equipment](https://www.businessinsider.com/xai-elon-musk-x-new-atlanta-data-center-2025-2)
 - [Fortune: Elon Musk's xAI is sharing X's equipment at its Atlanta data center (Jan 24, 2025)](https://fortune.com/2025/01/24/elon-musk-xai-sharing-x-equipment-gpus-datacenter-georgia-tax-breaks-documents/)
 ",https://docs.google.com/spreadsheets/d/1i9MM0gKZOoc4UXpuMBHhy2qu_y64TlXeD8JUpgiLaWE/edit,,"H100,A100","H100,A100",,,,United States,"1025 Jefferson Street NW, Atlanta, GA 30318"
+Nscale Keflavik,5821.121778676099,5.11,0.19357702,Nscale #confident,,"- [Nscale / Verne 15 MW deployment announcement](https://www.nscale.com/press-releases/nscale-and-verne)
+- [Nscale GB300 NVL72 production cluster confirmation](https://www.nscale.com/blog/nscale-achieves-nvidia-exemplar-cloud-status-on-nvidia-gb300-nvl72)
+- [Verne Keflavík campus specifications](https://www.verne.co/iceland)
+- [Lenovo Nscale Iceland AI infrastructure case study](https://www.lenovo.com/content/dam/lenovo/iso/customer-references-coe/global/en/case-studies/nscale-nvidia/lenovo_nscale_casestudy.pdf)
+",https://docs.google.com/spreadsheets/d/1rNRBrYaKirxSa_mO-Q5PdcGy5ilOnRkDFOwRSHPF9So/edit?usp=sharing,,B300,B300,,,,Iceland,"Valhallarbraut 868, 262 Reykjanesbær, Iceland"
 Anthropic Barber Lake,0,0,0,Cipher Mining #confident,Anthropic #confident,"- [Cipher signs 168 MW AI hosting deal with Fluidstack, Google backs it (Sep 2025)](https://www.globenewswire.com/news-release/2025/09/25/3156107/0/en/Cipher-Mining-Signs-168-MW-10-Year-AI-Hosting-Agreement-with-Fluidstack.html)
 - [Cipher adds 56 MW gross to reach 300 MW at Barber Lake (Nov 2025)](https://www.globenewswire.com/news-release/2025/11/20/3191801/0/en/Cipher-Mining-Signs-Additional-56-MW-10-Year-AI-Hosting-Agreement-with-Fluidstack.html)
 - [Cipher 8-K exhibit: 207 MW total critical IT load (SEC, Nov 2025)](https://www.sec.gov/Archives/edgar/data/1819989/000095010325015073/dp237633_ex9901.htm)
@@ -304,6 +318,10 @@ Anthropic Barber Lake,0,0,0,Cipher Mining #confident,Anthropic #confident,"- [Ci
 - [DCD: Cipher secures Fluidstack as customer, Google as investor](https://www.datacenterdynamics.com/en/news/cipher-mining-secures-fluidstack-as-a-customer-and-google-as-an-investor/)
 - [Air quality permit listing 60 x 3 MW plus 60 x 3.1MW backup generators](https://drive.google.com/file/d/1hzNlH8549ppuCwvKfMo--3PsD-hYBJDa/view?usp=sharing)
 ",https://docs.google.com/spreadsheets/d/1sGialfBa0kKKX7Vm8qL_R6Ce3PSzt7NawpAnWolnTVc/edit,,,TPU v7,,,,United States,
+CoreWeave Lancaster Greenfield site,0,0,0,CoreWeave #confident,OpenAI #speculative,"- [CoreWeave announces plans to spend $6 billion on Lancaster data centers](https://investors.coreweave.com/news/news-details/2025/CoreWeave-Announces-Multi-Billion-Dollar-Commitment-to-AI-Infrastructure-in-Pennsylvania/default.aspx)
+- [Machine Investment Group purchases two former printing press sites in Lancaster, Pennsylvania](https://www.datacenterdynamics.com/en/news/machine-investment-acquires-two-printing-press-sites-in-pennsylvania-plans-data-center-redevelopment/?utm_source=datacentermap.com)
+",https://docs.google.com/spreadsheets/d/1eg37hTqVXt4hHVHSgpc1Z95W8uDgpGW9j9IbrmNbJsM/edit?usp=sharing,,,Rubin,Blue Owl Capital,,,United States,"216 Greenfield Rd, Lancaster, PA 
+"
 CoreWeave Muskogee OK,0,0,0,CoreWeave #confident,OpenAI #speculative,"- [Core Scientific ground breaking announcement](https://investors.corescientific.com/news-events/press-releases/detail/99/core-scientific-and-port-muskogee-break-ground-on-100-mw-hpc-data-center)
 - [Port Muskogee ground breaking announcement](https://www.portmuskogee.com/core-scientific-and-port-muskogee-break-ground-on-100-mw-hpc-data-center/)
 - [Air quality permit application](https://applications.deq.ok.gov/permitspublic/storedpermits/9138.pdf)
@@ -313,6 +331,11 @@ Crusoe Abilene Expansion,0,0,0,Microsoft #confident,Microsoft #likely,"- [Bloomb
 - [Partnership Announcement with Microsoft](https://x.com/mustafasuleyman/status/2037547756320141587)
 
 ",https://docs.google.com/spreadsheets/d/1FpTJoXhLRzKTX8S3kSnPlT8V66ad_htJPuvaYPiHAsE/edit?usp=sharing,,,Rubin,NVIDIA,,,United States,"5502 Spinks Rd, Abilene, TX 79601"
+EcoDataCenter 2,0,0,0,Mistral AI #confident,Mistral AI #confident,"- [EcoDataCenter 2 campus overview](https://ecodatacenter.tech/data-center/ecodatacenter2)
+- [EcoDataCenter 2025 Annual Report](https://ecodatacenter.tech/hubfs/Annual%20Report%202025_EcoDC%20Holding%20AB_ENG.pdf)
+- [EcoDataCenter groundbreaking announcement](https://ecodatacenter.tech/press/ecodatacenter-breaks-ground-on-mega-campus-in-borlnge-3406556)
+- [Mistral AI partnership announcement](https://ecodatacenter.tech/press/mistral-ai-and-ecodatacenter-partner-to-build-ai-focused-data-center-in-sweden-3431886)
+",https://docs.google.com/spreadsheets/d/1JqKpYvy0REqpg30GweXlCKhUQ1D0mHLH_yI9erMoeEM/edit?usp=sharing,,,Rubin,,,,Sweden,"Kvarnsvedsvägen 420, 784 66 Borlänge, Sweden"
 Goodnight,0,0,0,Google #speculative,Google DeepMind #speculative,"- [Amended tax abatement agreement, with updated blueprints on p.46](https://www.co.armstrong.tx.us/upload/page/5361/Amended_Restated_Consolidated%20Second%20Property%20Tax%20Abatement%20Agreement%20%20GNDC1_ArmstrongCounty.pdf)
 - [Original tax abatement agreement, with original blueprints and specs on the last page](https://drive.google.com/file/d/1ky5HhuhU8_JADNB2GziWa4WDRbTU4qtO/view?usp=sharing)
 - [TABS database, with ""Llano"" data centers in the city of Claude](https://www.tdlr.texas.gov/TABS/Search/)
@@ -327,6 +350,11 @@ Google Fort Wayne,0,0,0,Google #confident,Google DeepMind #speculative,"- [Googl
 - [Project's history and tax abatement](https://www.thelocalfw.com/data-centers-secrecy-and-tax-abatements/)
 - [City Council approval](https://citycouncildocuments.acfw.net/documents/download/2023-12-19/R-23-12-02.pdf)
 ",https://docs.google.com/spreadsheets/d/1a3GgdEIeJqMwhqrfreQlnJM4GERZukdtP5QFg4xTtNo/edit?usp=sharing,,,,Google,,,United States,"6015 Adams Center Road, Fort Wayne, IN 46806"
+Meta Bowling Green,0,0,0,Meta #confident,Meta #confident,"- [Meta letter to Middleton Township](https://drive.google.com/drive/folders/12Cz7AlZt4fJfWevNAWTfq8IyLfNHpajz)
+- [Construction notice for new transmission lines to data center substation](https://drive.google.com/file/d/1YBuaFsslxCAZxlJtSI0rXfNsFqddwaHN/view?usp=sharing)
+- [Ohio Power Siting Board announcement](https://archive.ph/lqgZw)
+- [Apollo Power Generation Project Letter of Notice Appendix A, with a project timeline](https://drive.google.com/file/d/1L154XKyiHqRzeZj36zqMRkjdG7QIFL41/view?usp=drive_link)
+",https://docs.google.com/spreadsheets/d/1DH2kCU99fLYUj28VDjHWoGbx3IahwltzXqcbBEa-pOc/edit?gid=2010365208#gid=2010365208,,,"B300,Rubin",,,Williams,United States,"12356 Middleton Pike, Bowling Green, OH 43402"
 Meta Hyperion,0,0,0,Meta #confident,Meta #confident,"- [Data center profile by Meta](https://datacenters.atmeta.com/richland-parish-data-center/)
 - [Entergy's application for generation and transmission resources](https://drive.google.com/file/d/1FLY13apaHy4hI8RNVk9n_nlJpwFHtBrB/view?usp=sharing)
 - [MISO update with 1.8 GW substation plan](https://drive.google.com/file/d/1D4eUHwEuirNi0g3IU_xGOti3PcC8fcXi/view?usp=sharing)
@@ -371,6 +399,6 @@ QTS Cedar Rapids,0,0,0,,,"- [MISO new load announcements](https://cdn.misoenergy
 - [Article by Corridor Business Journal ](https://corridorbusiness.com/scope-of-qts-data-project-in-cedar-rapids-continuing-to-grow/)featuring a rendering of Buildings 1-3.
 - [Post by GLD Commercial ](https://www.gldcommercial.com/google-and-qts-data/)featuring a map with land assigned to QTS in Big Cedar Industrial Center.
 ",https://docs.google.com/spreadsheets/d/1zXqoogyqGbmgvdu4vSTepZG3Cy8kMoJjp0n3KaZPkd4/edit?usp=sharing,,,Rubin,,,Alliant Energy,United States,"6200 76th Ave SW, Fairfax, IA 52228"
-QTS Eagle Mountain,0,0,0,,Meta #speculative,"- [QTS Eagle Mountain website](https://q.com/data-centers/eagle-mountain/)
+QTS Eagle Mountain,0,0,0,Meta #speculative,Meta #speculative,"- [QTS Eagle Mountain website](https://q.com/data-centers/eagle-mountain/)
 - [DEQ Approval listing emergency generators](https://daqpermitting.utah.gov/DocViewer?IntDocID=155764&contentType=application/pdf)
 ",https://docs.google.com/spreadsheets/d/1pWiTKivojS1IY4tiv0aHM06FugKbLA2qjLJ-5DFoRF4/edit?usp=sharing,,,B300,,,,United States,"652 E Hyperscale Way, Eagle Mountain, UT 84013"
