@@ -1,5 +1,5 @@
 Model version,ECI Score,Release date,Organization,Country,Model accessibility,Training compute (FLOP),Confidence,Model name,Description,Display name
-GPT-6 Astra,166.6,2026-09-03,OpenAI,United States of America,API access,,Confident,GPT-6 Astra,,GPT-6 Astra
+GPT-6 Astra,166.6,2026-09-03,OpenAI,United States of America,API access,1.0001e+27,Likely,GPT-6 Astra,,GPT-6 Astra
 Claude Fable 5.1,165.0,2026-09-01,Anthropic,United States of America,API access,,Confident,Claude Fable 5.1,,Claude Fable 5.1
 Claude Fable 5,163.6,2026-06-09,Anthropic,United States of America,API access,,Confident,Claude Fable 5,,Claude Fable 5
 Claude Opus 5,162.67,2026-07-24,Anthropic,United States of America,API access,,Confident,Claude Opus 5,,Claude Opus 5

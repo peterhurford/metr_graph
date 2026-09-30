@@ -104,10 +104,8 @@ timeline name Epoch never catalogues materializes a site with no owner and no co
 duplicates a catalogued one, it double-counts it. Check
 `set(timelines['Data center']) - set(metadata['Name'])` on every refresh.
 
-Empty as of the 2026-08-29 pull. It previously held `Fluidstack Lake Mariner`, stale rows covering
-the whole site after Epoch re-scoped it to `Anthropic Lake Mariner` (CB3–5); those were deleted
-locally until Epoch fixed the export by splitting out `Core42 Lake Mariner` (CB1–2). The same pull
-dropped `EdgeCore Mesa PH03` and `DayOne Kempas`, which had been legitimate timeline-only names.
+Empty as of the 2026-09-29 pull. If a re-scoped site leaves stale timeline rows covering capacity
+now catalogued under a new name, delete them locally until Epoch fixes the export.
 
 ### Key Sections of visualize_projection.py
 
@@ -647,7 +645,7 @@ guard it.
 `_dc_render_region_share()` stacks each region's share of the selected metric,
 summed over every site, on a monthly grid. It reads the **unfiltered,
 geography-only** series the country panel does — capacity in a country is
-capacity whoever trains in it — so DayOne Johor sits in *SEA* here while the
+capacity whoever trains in it — so DayOne Nusajaya sits in *SEA* here while the
 panel above also reads it as China-accessible. Four things are load-bearing:
 
 1. **The buckets partition the catalogue.** `_DC_REGIONS` names US, China, SEA,
@@ -687,13 +685,15 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    site list — `_dc_hidden_companies()` is not applied, because a landlord's hall in a
    country is capacity in that country whoever trains in it. `test_country_fallback_only_
    names_sites_epoch_left_blank` retires a fallback the moment Epoch fills the cell.
-2. **"China-accessible" = China + `_DC_CN_ACCESS_ABROAD`** (DayOne Johor). Epoch's own
+2. **"China-accessible" = China + `_DC_CN_ACCESS_ABROAD`** (DayOne Nusajaya only). Epoch's own
    source notes on Nusajaya cite the FT on Alibaba and ByteDance training in Southeast Asia.
    Both lines are always drawn and projected — mainland alone and accessible — with no
    selector (one was tried and removed as redundant); the sites are *moved* out of Malaysia
    rather than copied, and the caption says the campus has other tenants. Assuming tenancy is the
    strong claim here, same as for the networked-clusters `'plausible'` level; don't add
-   sites to the tuple without a citation of the same standard.
+   sites to the tuple without a citation of the same standard. DayOne Kempas, the other
+   Johor campus, stays in Malaysia for want of one (`test_abroad_scope_moves_sites_rather_
+   than_copying_them` pins it).
 3. **Pooling follows the sidebar's one networking selector** (`dc_pool_n`), shared with
    the networked-sites chart so the China line reads in that chart's units: `'site'` mode
    when nothing pools, else the largest networked group per company. `_dc_country_steps()`
