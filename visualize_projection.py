@@ -6,6 +6,9 @@ Run: streamlit run visualize_projection.py
 import streamlit as st
 import frontier_thresholds as thresholds
 import numpy as np
+# Imported eagerly, under the import lock: plotly reads pandas from sys.modules
+# without importing it, so it can see another session thread's half-finished import.
+import pandas  # noqa: F401
 import plotly.graph_objects as go
 import yaml
 import csv
