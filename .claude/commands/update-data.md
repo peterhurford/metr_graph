@@ -1,11 +1,11 @@
 ---
-description: Systematically refresh all data sources (METR, ECI, data centers, RLI, revenue incl. Chinese labs, UK Cyber) and report what changed
+description: Systematically refresh all data sources (METR, ECI, data centers, RLI, revenue incl. Chinese labs, RSI, UK Cyber) and report what changed
 argument-hint: "[optional: a single source name to update just that one]"
 ---
 
 Update the dashboard's data sources to the latest available values, then report exactly what you found, changed, and left alone.
 
-If `$ARGUMENTS` names a specific source (e.g. `eci`, `metr`, `datacenters`, `rli`, `revenue`, `cnrevenue`, `ukcyber`), update only that one. `revenue` covers both revenue tables; `cnrevenue` is the Chinese labs alone. Otherwise update all of them.
+If `$ARGUMENTS` names a specific source (e.g. `eci`, `metr`, `datacenters`, `rli`, `revenue`, `cnrevenue`, `rsi`, `ukcyber`), update only that one. `revenue` covers both revenue tables; `cnrevenue` is the Chinese labs alone. Otherwise update all of them.
 
 Today's date is authoritative for judging staleness — check the current date, then find each source's newest existing entry so you know what "new" means before researching.
 
@@ -111,7 +111,7 @@ The NIST mirror serves figures at full resolution if you strip the `styles/<pres
 - **Cost figures (prose only).** Per-task at 100% reliability: Opus 4.6 $15.17 vs GLM-5.2 $6.12; Opus 4.5 $12.50 vs DeepSeek-V4-Pro $0.28. Per 100M-token range run: ~$85 Opus 4.5/4.6, ~$46 GLM-5.2, $1.19 DeepSeek-V4-Pro.
 - **GPT-5.3-Codex is absent by AISI's choice**, not by oversight — the Figure 1 footnote says it was "omitted for legibility; released same day as Opus 4.6 with similar performance." It has no plottable value. Don't hunt for it.
 
-**Kimi K3 status:** released 2026-07-16, open weights slated for 2026-07-27. Evaluated on ExploitBench and TLO only, so it yields **no narrow-task row**. If AISI later runs the 70-task suite on it, that *would* be a genuine new CSV row — check for that specifically. Note it will be the first open-weight model to enter the CSV from a post other than the original.
+**Kimi K3:** released 2026-07-16 (Epoch now lists it as open weights, non-commercial). Evaluated on ExploitBench and TLO only, so it yields **no narrow-task row**. If AISI later runs the 70-task suite on it, that *would* be a genuine new CSV row — check for that specifically. Note it will be the first open-weight model to enter the CSV from a post other than the original.
 
 ## Workflow
 

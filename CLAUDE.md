@@ -65,7 +65,7 @@ has no main-column headings, so it has no section to link to.
 | METR Horizon | `render_metr()` | `benchmark_results_1_1.yaml` → `load_frontier()` | log₂(minutes) |
 | Epoch ECI | `render_eci()` | `epoch_capabilities_index.csv` → `load_eci_frontier()` | linear score |
 | Remote Labor Index | `render_rli()` | `_RLI_RAW` → `load_rli_data()` | logit-transformed score |
-| RSI | `render_rsi()` | `_RSI_RAW` → `load_rsi_data()`; `anthropic_rd_automation.csv` → `load_rsi_automation()`; `_RSI_SURVEY`; `_RSI_CODE_RAW` → `load_rsi_code()`; `_RSI_DIR_RAW` → `load_rsi_direction()` | CoBench score % (logit-projected), AL2+/AL3+/AL4+ shares of R&D tasks % (logit-projected) plus AL5 shifted off their lag ladder, all on one chart, staff speedup ×, merged code per contributor ×, next-step win rate % |
+| RSI | `render_rsi()` | `_RSI_RAW` → `load_rsi_data()`; `anthropic_rd_automation.csv` → `load_rsi_automation()`; `_RSI_SURVEY`; `_RSI_CODE_RAW` → `load_rsi_code()`; `_RSI_DIR_RAW` → `load_rsi_direction()`; `openai_experiment_velocity.csv` → `load_rsi_experiments()` | CoBench score % (logit-projected), AL2+/AL3+/AL4+ shares of R&D tasks % (logit-projected) plus AL5 shifted off their lag ladder, all on one chart, staff speedup ×, merged code per contributor ×, OpenAI experiments per experimenter ×, next-step win rate % |
 | UK Cyber | `render_ukcyber()` | `aisi_cyber_narrow.csv` → `load_ukcyber()`; `aisi_cyber_tlo.csv` → `load_ukcyber_tlo()` | success rate % + open-weight lag in months; plus a TLO cyber-range cross-check in steps (`_render_ukcyber_tlo()`) and a callout for models only the range has measured (`_render_ukcyber_newest_open()`) |
 | Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE`; `_CN_REVENUE` | ARR in billions; optional summed line (`rev_combined`, off by default) via `_rev_combined_series()`; then a data-only Chinese-lab chart (`_render_rev_china()`: MiniMax, Zhipu API, Alibaba MaaS, Moonshot, DeepSeek), run rates only, each point classed company-stated or press-reported (`TestRevenueChina`) |
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
@@ -73,6 +73,7 @@ has no main-column headings, so it has no section to link to.
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`) and ends with the region-share stack (`_dc_render_region_share()`) |
 | Compute/capabilities/diffusion (slug `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; carries China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) and ends with the global compute distribution, today and projected (`_render_cc_world_shares()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
+| Frontier Thresholds | `frontier_thresholds.render(st)` | `frontier_thresholds.json` | dated threshold events per lab and risk category; no projection (see *Frontier Thresholds* below) |
 
 ### Data Sources and How to Update
 
@@ -90,6 +91,7 @@ recipe, including the AISI cyber data deliberately *not* ingested.
 | `_RSI_DIR_RAW` (hardcoded) | Anthropic, [*When AI builds itself*](https://www.anthropic.com/institute/recursive-self-improvement) (`_RSI_DIR_SOURCE_URL`) | **Not downloadable** — the figure prints its own bar values, so the rows are read off the labels, not pixel-digitized. Dates are the models' Epoch-catalogued release dates (`test_dates_are_the_published_release_dates`), not the figure's row order, which is not chronological. Hand-edit rows |
 | `_RSI_CODE_RAW` (hardcoded) | Same post's *Code contributed per person, by quarter* figure (`_RSI_CODE_SOURCE_URL`) | **Not downloadable** — the figure labels its bars only from 2025Q1 on; the earlier ones are read off the axis. Their mean must come back at ~1 (`test_pre_2025_bars_average_to_the_baseline_they_define`) and the post states the 2026Q2 figure in prose, which pins the other end. Hand-edit rows |
 | `anthropic_rd_automation.csv` | Anthropic, [*Measuring the pace of AI development*](https://www.anthropic.com/institute/measuring-pace-of-ai-development) (`_RSI_AUTO_SOURCE_URL`) | **Not downloadable** — the R&D Automation Index, as **cumulative** shares (`al3_plus` = “rated AL3 or above”, the stacked figure's band boundary). The six AL4 months the figure labels are *transcribed*; every other number is pixel-digitized from the chart asset the page serves. Two calibration guards: each 90% interval brackets its own printed label, and `al4_dig` — the AL4 boundary read the same way as the unlabelled rungs — matches the printed `al4_pct` within ~0.6pt (`test_digitised_al4_reproduces_the_printed_labels`), which is what validates the method on the rungs that have no printed truth. **AL5 has no column**: it is absent in every month, and that absence is used as a censoring bound, not as a zero to fit. Refreshing is a re-read of the figure when Anthropic re-versions the index — the version is in `_RSI_AUTO_VERSION` and the file's `#` header. Hand-edit rows |
+| `openai_experiment_velocity.csv` | OpenAI research-acceleration [post](https://openai.com/index/research-acceleration-view-inside-openai/) (`_RSI_EXPERIMENT_SOURCE_URL`) | **Not downloadable**: the *Experiment velocity* chart's tooltip values, transcribed by hand (four-week trailing experiments per active experimenter, 2025 = 1x); method and caveats in the file's `#` header. Hand-edit rows |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | Press reports | Hand-edit `(date, ARR_in_billions)` tuples |
 | `_CN_REVENUE` (hardcoded) | Company results calls/filings and press | Hand-edit `(date, $B, basis, note)` points. Run rates only: never annualize audited period revenue into it, and for Alibaba take the MaaS ARR, not "AI-related product revenue" (includes GPU rental) |
 | `aisi_cyber_tlo.csv` | UK AISI Figure 2 + [Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) | **Not downloadable** — 9 rows digitized from `fig2-ranges.png`, one value quoted from prose. Calibration and validation checks are in the file's `#` header, guarded by `TestUkCyberTlo`. Dates are **published release dates**; the figure's x-axis is tokens |
@@ -161,14 +163,12 @@ Widget defaults live in per-tab `_<TAB>_DEFAULTS` (e.g. `_METR_DEFAULTS`); each 
 Epoch labels that are one company for presentation — currently just `Google DeepMind` →
 `Google`. It applies to the derived label only; the CSVs keep Epoch's spellings.
 
-Google is why it exists. Every Google site is `Owner="Google"`, but only some also carry
-`Users="Google DeepMind #speculative"`, so a user-first rule split one TPU fleet in two on
-nothing but whether Epoch filled an optional cell (Lancaster, `Users` blank, lists the same
-TPU v5e/v5p/v6e/v7 as the tagged sites). That split drew two Google lines with Google blue on
-the smaller one, left the pooled Columbus cluster dependent on both its Google sites
-happening to share a tag, and had the quarterly table reporting the minority series, contradicting the chart directly above it. The rest of the app already merged
-them: `_cc_lab_for_site()` maps owner `Google*` to `Google`, and the ECI tabs substring-match
-`"Google"` for the same reason.
+Every Google site is `Owner="Google"`, but only some also carry
+`Users="Google DeepMind #speculative"`, so without the alias a user-first rule splits one TPU
+fleet in two on whether Epoch filled an optional cell: two Google lines, a pooled cluster that
+depends on its sites sharing a tag, and a quarterly table that disagrees with the chart above
+it. The rest of the app merges them the same way: `_cc_lab_for_site()` maps owner `Google*` to
+`Google`, and the ECI tabs substring-match `"Google"`.
 
 ### Tenant vs operator, and shared tenancy
 
@@ -209,12 +209,11 @@ and that no label is a qualified form of another — the guard that would catch 
 ### Who appears on the Data Centers tab
 
 `_DC_EXCLUDE_COMPANIES` lists companies that aren't AI labs — colocation and neutral-host
-operators whose recorded "company" is the landlord, not whoever trains on the hardware. The
-list is no longer an unconditional hide. `_dc_hidden_companies()` drops a listed company
+operators whose recorded "company" is the landlord, not whoever trains on the hardware. `_dc_hidden_companies()` drops a listed company
 only while its largest single site stays under `_DC_EXCLUDE_MIN_H100` within
-`_DC_EXCLUDE_HORIZON_DAYS`. Hiding them all was wrong once one got big: QTS
-Cedar Rapids is the largest single site in Epoch's data, so the tab's headline chart was
-naming a smaller site as the record holder. The roster the rule currently produces is
+`_DC_EXCLUDE_HORIZON_DAYS`, because one can grow into the record holder: QTS
+Cedar Rapids is the largest single site in Epoch's data, and an unconditional hide would
+have the headline chart name a smaller site as the record. The roster the rule currently produces is
 pinned by `test_current_roster_is_what_the_tab_says_it_is`.
 
 Four things are load-bearing:
@@ -342,8 +341,7 @@ Three mechanisms, in order of preference:
 1. **`st.metric(..., help=…)`** where a metric exists. Native tooltip, no raw
    HTML. The *Capabilities Milestones* row is the worked example: thirteen cards,
    each with its own note (`_notes` by slug, plus `_pc_clock_note()` for the
-   release-vs-internal split that used to be a sentence naming every milestone on
-   both sides), and a two-line caption under them. Widget `help=` does the same
+   release-vs-internal split), and a two-line caption under them. Widget `help=` does the same
    for controls, which is why every sidebar control has one.
 2. **`_fn_caption(text, *notes)`** for prose qualifying a chart, where there is no
    widget to hang `help=` on. Each note is a `(phrase, note)` pair, and **the
@@ -352,8 +350,8 @@ Three mechanisms, in order of preference:
    of the sentence. So write the line to contain the phrase; a phrase that isn't
    there falls back to a trailing `?`, which is the exception, not the design
    (`test_footnotes_anchor_to_their_phrase` holds the live app at zero
-   fallbacks). Matching is whole-word: a bare `find` once wrapped "check" inside
-   "Cross-checked", splitting the word across a tag. It stays an `st.caption`, not
+   fallbacks). Matching is whole-word, since a substring match would wrap "check" inside
+   "Cross-checked" and split the word across a tag. It stays an `st.caption`, not
    an `st.markdown` — the element type is what tells fine print from body text, to
    the reader and to the tests that address one and not the other.
 3. **`_fn_line(...)`** for a body-prominent line that must not read as fine print
@@ -373,7 +371,7 @@ caption stays short.
 
 **Editing these blocks by script:** a naive paren-counter will not do — an
 f-string like `.split(' (')` puts an unbalanced paren inside a literal, and a
-scan that counts it swallowed 5,500 lines once. Tokenize, or edit by hand.
+scan that counts it runs on through thousands of lines. Tokenize, or edit by hand.
 
 ### RSI tab
 
@@ -415,9 +413,8 @@ once in three tries) and run at a 300k-token budget, so scores don't compare to
 public AI R&D suites — the fine print has to keep saying so.
 
 **The sections chart; the cards date.** Each of the four draws its bar and stops
-there — the per-section "when does it reach X" ETA pair and the ECI-style row of
-projected values both used to sit under every fan, restating what the milestone
-card below already says. Every bar is now dated once, on its card
+there, with no per-section ETA or row of projected values under the fan: that would
+restate what the milestone card below already says. Every bar is dated once, on its card
 (`test_the_sections_chart_and_the_cards_date`); that each card still reproduces
 its own section's fit is pinned unit-side, per section, by
 `test_eta_reproduces_the_section_defaults`. Don't re-add an in-section ETA.
@@ -517,9 +514,8 @@ rule-out threshold, and a bound is not a point on a trend. Model 2 (internal)
 has an `estimated` point carried over from Mythos Preview — no round was run for it —
 which draws hollow as an assumed value but is **included in the fit and the
 anchor**: with only three surveyed rounds, ignoring the one flat reading
-available overstates the slope, so the flattening is the point, not a bug (it
-was excluded once, on the opposite reasoning; the flag now governs styling
-only). The rounds do not
+available overstates the slope, so the flattening is the point, not a bug (the
+flag governs styling only). The rounds do not
 report the same statistic on the same sample (medians on superusers, then on a
 broader sample, then a geometric mean on an opt-in poll), so each point carries
 its `note` on hover and the caption says the rounds differ — and the survey is
@@ -631,9 +627,8 @@ CSV, plus tab-to-tab set equality, the Google spellings, and slug round-tripping
 
 **One frontier point per release date.** `_best_per_date()` reduces a date's models to
 its best-scoring one *before* the running max, so a same-day pair puts only the flagship
-on the frontier (GPT-5.4 Pro, not GPT-5.4). Both used to clear the max, planting a
-vertical pair in the OLS whose membership fell out of CSV row order — reverse the two
-rows and the frontier changed. Every ECI frontier goes through it: `load_eci_frontier`,
+on the frontier (GPT-5.4 Pro, not GPT-5.4). Otherwise both clear the max, planting a
+vertical pair in the OLS whose membership depends on CSV row order. Every ECI frontier goes through it: `load_eci_frontier`,
 `load_eci_compute`, `_cc_country_frontier` and `_cc_company_frontier_models`.
 `test_one_frontier_model_per_date` and `test_frontier_does_not_depend_on_row_order`
 guard it.
@@ -764,10 +759,9 @@ and `TestDataCentersByCountry` (integration).
 `_cc_company_buildout()` (bottom of the Data Centers tab) is a **pure timing test**: each
 capacity step of a lab's largest single data center, shifted forward `_CC_RELEASE_LAG_DAYS`
 (90d = 60d training + 30d release prep), against when that lab's models actually shipped.
-Capability is never compared. Two directions with two different clocks — both now read out
+Capability is never compared. Two directions with two different clocks — both read out
 through the one timeline chart (forward in the predicted-row hovers, backward in the
-connectors and the headline median; the two date tables that used to sit under it were
-removed as redundant) — so they must not contradict each other:
+connectors and the headline median) — so they must not contradict each other:
 
 - **Backward** (release → cluster), `_responsible_cluster`: the latest step online at least
   one training run (`_CC_TRAIN_FLOOR_DAYS`, 60d) before the release. The extra ~1mo release
@@ -788,14 +782,14 @@ Load-bearing:
    exactly one pre-existing match, moving it *into* agreement with the backward match.
 2. **Tier 3 exists because "frontier release" is a running max while Epoch recomputes ECI
    live.** A real flagship can be rescored under its own predecessor and vanish from the
-   series without its release date changing — it has happened, leaving a cluster matching
+   series without its release date changing, leaving a cluster matching
    nothing. That's a fact about rescoring, not about when the lab shipped, and this panel
    compares dates only. Tier-3 matches draw hollow, are marked †, and are **excluded from
    the headline median**, which is a claim about record-setting releases.
 3. **`_CC_TRAINED_ON` pins a release to its site.** The backward rule reads the
    lab's *largest* record step, so a model trained on a smaller site lands on
-   whichever record happened last (GPT-6 Astra fell on Fairwater Atlanta though
-   Abilene's step already forward-matched it). A pin, keyed `(lab, Model name)`,
+   whichever record happened last (the one pin today sends GPT-6 Astra to Stargate
+   Abilene rather than Fairwater Atlanta). A pin, keyed `(lab, Model name)`,
    takes the named site's latest record step online a training run before the
    release and falls back to the rule when it has none; the release hover says
    the site was pinned. `TestCcResponsibleCluster` checks each pin binds against
@@ -967,13 +961,13 @@ date distribution rather than the gap metrics above it. Three things are load-be
    refits on frontier-grade models — within 5 ECI of the running frontier **and** trained
    within `_CC_FG_FLOP_MARGIN` of the running-max training run, against the
    **full-window** frontier (`load_eci_frontier(full_window=True)`). Both criteria are
-   load-bearing: the ECI tab's Feb-2024 cutoff used to auto-admit every earlier model as
+   load-bearing: against the ECI tab's Feb-2024 cutoff every earlier model would pass as
    "near-frontier", and without the compute screen the subset admits
    the models nearest the frontier at the least compute — the heaviest distillers
    (DeepSeek/Qwen/Kimi). The surviving fingerprint is one-way: the refit's b_time runs
    below pooled (followers ride a teacher); a_partial does **not** rise —
-   reasoning-era models reach the frontier at sub-frontier compute — so the old two-way
-   gradient claim is dead. The refit's pair still replaces the pooled one for every
+   reasoning-era models reach the frontier at sub-frontier compute — so there is no
+   two-way gradient. The refit's pair still replaces the pooled one for every
    frontier-facing projection (US-vs-China slopes, the pause bar mapping and climb, the
    compute terms), with pooled as fallback; `TestCcFrontierGradeAlgo` pins the b_time
    drop, the screen's bite and the coverage guard. Its n counts models (~12 at margin 5),
@@ -1088,8 +1082,7 @@ probability: the Weight column reads prior → effective share, and the CDF
 carries a dotted ghost of the unconditioned blend (`raw_days` through
 `_pc_rsi_dist_fig`; its height at today is the mass the update removed — the
 grid start widens to the ghost's 0.5th percentile so that stays visible). A
-fully-crossed component drops out, generalizing the by-hand removal METR
-p50 once got at the old, lower bar. A companion number input (`rsi_notyet_ramp`,
+fully-crossed component drops out. A companion number input (`rsi_notyet_ramp`,
 default 90d, 0 = off) extends the update into the near future as a soft
 likelihood, not a wider hard cut: a sample t days out is kept w.p. t/N inside
 the window — the closer a crossing, the more visible its run-up would already
@@ -1136,8 +1129,7 @@ attribution; the threshold reaches the display through the chart title.
    'Country' races **every** country instead via `_dc_country_steps` (mode `'site'`
    when nothing pools, else `'company'`) on the **unfiltered** site list, China
    listed twice (China-accessible and domestic-only, never plain "China"). Countries
-   used to be appended after the companies; that read as the US being a tenant, so
-   they were split out. The US reference pace for the borrowed trend is passed as
+   are never mixed into a company roster, where the US would read as a tenant. The US reference pace for the borrowed trend is passed as
    `ref_steps` (the US country series) since company rosters no longer contain it.
 2. **The projection is the by-country model, unchanged.** `_pc_projection()` calls
    `_dc_cty_fit` (since=`_DC_DEFAULTS["dc_cty_since"]`, plan horizon anchored) and
