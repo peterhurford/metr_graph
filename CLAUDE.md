@@ -114,8 +114,9 @@ Roughly in file order: shared helpers (`pretty()`, `fit_line()`, distribution sa
 (`_backtest_*`); loaders (`load_frontier()`, `load_eci_frontier()` / `load_eci_compute()`,
 `load_rli_data()`, `load_data_centers()`, `load_ukcyber()`); data-center aggregation
 (`_dc_envelope()`, `_dc_company_series()`, `_dc_company_networked_series()`); UK Cyber lag
-(`_ukc_*`, `ukc_*`); compute-vs-capabilities (`_cc_*`); data init and tab selector; the ten
-`render_*()` functions (grep `^def render_`); dispatch at end of file (skipped when `_VP_TESTING=1`).
+(`_ukc_*`, `ukc_*`); compute-vs-capabilities (`_cc_*`); data init and tab selector; the
+`render_*()` functions (grep `^def render_`; Frontier Thresholds lives in `frontier_thresholds.py`);
+dispatch at end of file (skipped when `_VP_TESTING=1`).
 
 ### Projection Engine (repeated per tab)
 
@@ -123,7 +124,7 @@ Three bases: **Linear** (single OLS), **Piecewise linear** (multi-segment OLS, l
 
 ### Session State and Reset
 
-Widget defaults live in per-tab `_RESET_DEFAULTS`; each tab's `_RESET_KEYS` lists its session state keys. The reset button pops all keys and calls `st.rerun()`. Custom number inputs use `_ss_number_input()` to persist via session state.
+Widget defaults live in per-tab `_<TAB>_DEFAULTS` (e.g. `_METR_DEFAULTS`); each tab's `_<TAB>_RESET_KEYS` lists its session state keys. The reset button pops all keys and calls `st.rerun()`. Custom number inputs use `_ss_number_input()` to persist via session state.
 
 ### Backtesting
 
@@ -146,10 +147,8 @@ Widget defaults live in per-tab `_RESET_DEFAULTS`; each tab's `_RESET_KEYS` list
 - **Data-center axis labels**: every metric is stored, plotted, hovered and tabulated in
   raw units, and `_dc_axis_ticks(y_range, log_scale, kind)` is the single place a tick gets
   its text — `_dc_tick_label` (k/M suffixes for `h100`), `_dc_logop_ticks` (`flop`) or
-  `_dc_duration_ticks` (`traintime`). Don't reintroduce a per-metric axis divisor: the H100
-  metric used to be called "Compute (x1M H100-equiv)" and divide its ticks by a million
-  while `_dc_fmt_value` kept the bar text, hovers and the quarterly table in raw counts, so
-  a bar reading "1.11M" sat under a tick reading "1". And route the snapshot bar chart's
+  `_dc_duration_ticks` (`traintime`). Don't reintroduce a per-metric axis divisor: ticks
+  would then disagree with `_dc_fmt_value`'s raw-unit bar text, hovers and table. And route the snapshot bar chart's
   x-axis through the same dispatcher — it builds its own axis instead of calling
   `_dc_layout()`, and when it hand-rolled the branching it silently lacked the `flop` case.
   `TestDcAxisTicks` guards both halves
@@ -423,8 +422,8 @@ card below already says. Every bar is now dated once, on its card
 its own section's fit is pinned unit-side, per section, by
 `test_eta_reproduces_the_section_defaults`. Don't re-add an in-section ETA.
 
-The tab's second section (`_render_rsi_automation()`) is the most direct of the
-five: not a score or an output count but the share of Anthropic's own model-R&D
+The tab's second section (`_render_rsi_automation()`) is the most direct of its
+series: not a score or an output count but the share of Anthropic's own model-R&D
 tasks a Claude judge rates at each rung of Epoch's automation scale, from
 `anthropic_rd_automation.csv` via `load_rsi_automation()`. **One chart carries
 all of it** — the three measured rungs (AL2+, AL3+, AL4+), the AL4 projection,
@@ -491,7 +490,7 @@ Nine things are load-bearing.
    it, and a zero lag reproduces the AL4 card exactly
    (`test_al5_is_the_al4_curve_shifted`).
 
-Two chart details that were bugs once. The two fans share **one legend entry
+Two chart details are deliberate. The two fans share **one legend entry
 each** rather than the app's usual three-per-fan: six keys for two objects
 covered the fans they labelled, so the legend moved above the plot too. And
 AL5's measured zeros are drawn as a **flat line, not markers** — AL4's own
@@ -615,10 +614,9 @@ Country and openness are perfectly confounded (no US open-weight, no Chinese clo
 The Epoch ECI tab and the ECI Company Gap tab read the same CSV and **must resolve
 organizations identically**, both by *substring* match on Epoch's `Organization` field: the
 ECI tab via `load_eci_frontier(orgs=…)` / `_ECI_ENTITY_SPECS`, the gap tab via
-`_ecg_org_display()` / `_ECG_ORG_MAP`. Don't turn either back into an exact-key lookup — the
-gap tab used to, and the tabs silently disagreed: Epoch spells Google several different
-ways, so a map keyed only on `Google DeepMind` dropped models and drew a different
-frontier point. Google's *current* gap was unaffected, which is why it went unnoticed.
+`_ecg_org_display()` / `_ECG_ORG_MAP`. Don't make either an exact-key lookup: Epoch spells
+Google several different ways, so a map keyed on one spelling drops models and draws a
+different frontier point, and the tabs disagree without any visible error.
 
 **Adding a company is one row in `_ECI_COMPANIES`**, the single source of truth for both
 tabs. `_ECG_ORG_MAP`, `_ECG_COLORS`, `_ECG_COUNTRY`, `_ECI_ENTITY_SPECS` and
@@ -1013,11 +1011,11 @@ the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_
 for the METR frontier reaching `_PC_METR_TARGET_HRS` — about one work-month — at each
 of `_PC_METR_LEVELS` (at the month-scale bar p50's earlier firing is its own card and
 weight rather than the exclusion it got at the old 40h bar), `_pc_eci_eta()` for the
-US-best ECI frontier reaching each of `_PC_ECI_TARGETS` (today's frontier plus **two
-and three more jumps the size of GPT-5 → the current frontier**, `_PC_ECI_JUMP_FROM`
-being the near end; each card's footnote counts its own jumps off the live scores, and
-`test_eci_target_is_two_more_frontier_jumps` pins both against the live CSV since
-Epoch rescores live; well above anything that tab draws, and a lower card sat close
+US-best ECI frontier reaching each of `_PC_ECI_TARGETS` (`_PC_ECI_JUMP_TO` plus **two
+and three more jumps the size of the pinned `_PC_ECI_JUMP_FROM` → `_PC_ECI_JUMP_TO` pair**,
+measured off those constants rather than the live frontier, since a floating anchor
+recedes exactly when capability arrives; `test_eci_target_is_two_more_pinned_jumps`
+checks the arithmetic and that both ends still name a model on the live frontier; well above anything that tab draws, and a lower card sat close
 enough to today's frontier that it dated model releases, not RSI, so its weight
 moved here). The cards are labelled *ECI reaches …*, not *US ECI* — the US-best
 frontier is stated in the hover. The 187.5 slug keeps the half-point
@@ -1066,9 +1064,7 @@ on nothing measured) and re-anchors both to the later of the two series'
 last dates, since they end on different days. `test_metr_eta_reproduces_the_metr_tab_defaults`,
 `test_eci_eta_reproduces_the_eci_tab_defaults`,
 `test_rli_eta_reproduces_the_rli_tab_defaults` and
-`test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that; the cross-tab
-`test_pacing_quotes_the_same_milestone` compares the two CoBench dates with a
-tolerance, since both are Monte Carlo medians off an unseeded RNG.
+`test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that.
 
 Seven of the thirteen are dated off *released* models (METR, ECI, RLI and the detour
 study — publicly benchmarked or run on shipped models — and revenue, since ARR is

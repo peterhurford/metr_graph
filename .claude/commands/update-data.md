@@ -9,9 +9,9 @@ If `$ARGUMENTS` names a specific source (e.g. `eci`, `metr`, `datacenters`, `rli
 
 Today's date is authoritative for judging staleness — check the current date, then find each source's newest existing entry so you know what "new" means before researching.
 
-## The seven sources
+## The sources
 
-Four downloadable feeds, three hardcoded tables, one digitized figure. For downloadable feeds, prefer fetching the canonical file directly over hand-transcribing.
+Four downloadable feeds, three hardcoded tables, and hand-read or digitized figures (RSI, UK Cyber). For downloadable feeds, prefer fetching the canonical file directly over hand-transcribing.
 
 | Source | Type | Canonical location |
 |---|---|---|
@@ -101,7 +101,7 @@ Hand-editing a row is fine **only** if AISI states a number in prose. Never tran
 
 The NIST mirror serves figures at full resolution if you strip the `styles/<preset>/` path segment from the `<img src>` — and unlike the AISI post, **its figures have printed numbers**, so they need no digitization.
 
-**Cyber ranges (TLO) is now ingested** as `aisi_cyber_tlo.csv` — 9 rows digitized from `fig2-ranges.png` plus Kimi K3 quoted from the CAISI post. Refresh it the same way as the narrow file: verify the figure is unchanged (y-axis calibration: **row 1715 = 0 steps, row 498 = 32 steps** on the 3500×2160 image; endpoint = the *solid* trace at the right edge, since the two dotted traces reaching 32 are "best attempt" runs). New models are more likely to arrive as printed prose in a follow-up post than as a redrawn figure — check the prose first, it needs no digitization. `TestUkCyberTlo` holds four published-number guards; they must keep passing.
+**Cyber ranges (TLO)** is `aisi_cyber_tlo.csv`: 9 rows digitized from `fig2-ranges.png` plus Kimi K3 quoted from the CAISI post. Refresh it the same way as the narrow file: verify the figure is unchanged (y-axis calibration: **row 1715 = 0 steps, row 498 = 32 steps** on the 3500×2160 image; endpoint = the *solid* trace at the right edge, since the two dotted traces reaching 32 are "best attempt" runs). New models are more likely to arrive as printed prose in a follow-up post than as a redrawn figure — check the prose first, it needs no digitization. `TestUkCyberTlo` holds four published-number guards; they must keep passing.
 
 **Known-available AISI/CAISI cyber data that is NOT ingested** (current as of the 2026-07-23 post — don't re-discover it each run and don't mistake it for staleness):
 
