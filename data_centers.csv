@@ -95,6 +95,10 @@ Meta Jeffersonville,203132.89540171804,178,6.742996,Meta #confident,Meta #confid
 Google Kansas City East,202627.5896917635,105,3.9776099999999994,Google #confident,,"- [Hunt Midwest Business Center press release linking data center with Google](https://huntmidwest.com/2024/03/google-announces-1-billion-data-center-at-hunt-midwest-business-center/)
 - [DCD article on the site](https://www.datacenterdynamics.com/en/news/google-files-project-plan-for-data-center-in-kansas-city-missouri/)
 ",https://docs.google.com/spreadsheets/d/12x1HahypL5ZlDEbpMrF9ZWB95DSWXztFLL6AwkvU408/edit?usp=sharing,,,,,,,United States,
+Meta Temple,202472.98777125112,178,6.742996,Meta #confident,Meta #confident,"- [JE Dunn project page](https://jedunn.com/projects/meta-temple-data-center/) mentioning a 152 MW power capacity
+- [TDLR filing](https://www.tdlr.texas.gov/TABS/Search/Project/TABS2022017728) reporting the start and end date, square footage of Building 1 and 2
+- [TDLR filing](https://www.tdlr.texas.gov/TABS/Search/Project/TABS2026008019) for Building 3
+",https://docs.google.com/spreadsheets/d/1SwdruUu3hHAs6hd0m3SvZY22bGBCO7-9aiLSCiJl6-k/edit?usp=sharing,,B300,B300,,JE Dunn,,United States,"2310 Eberhardt Rd, Temple, TX 76504"
 AWS New Albany,201111.67256189996,213,8.068866,Amazon #confident,,"- [City of New Albany Project Updates](https://newalbanyohio.org/community-development/project-updates/)
 - [New Albany Community Development Report - Dec. 2024](https://newalbanyohio.org/wp-content/uploads/2025/01/CD-2024-12.pdf)
 - [New Albany Community Development Report - Aug. 2025](https://newalbanyohio.org/wp-content/uploads/2025/09/CD-2025-08.pdf)
@@ -131,10 +135,6 @@ Meta Kuna,173247.67205659422,152,5.758064,Meta #confident,Meta #confident,"- [Of
 - [Idaho Statesman: Peak construction reached in March 2025](https://www.idahostatesman.com/news/business/article304464416.html)
 - [Idaho Statesman: Expected water usage reported in 2022](https://www.idahostatesman.com/opinion/from-the-opinion-editor/article259250030.html)
 ",https://docs.google.com/spreadsheets/d/1I4oCviRN5Es3njqhSlm3WD7Hxfitb29eVJEGOaTbiTc/edit?usp=sharing,,B300,B300,,,Idaho Power Company,United States,"601 Kuna Mora Rd,  Kuna ID 83634"
-Meta Temple,173247.6719844078,152,5.758064,Meta #confident,Meta #confident,"- [JE Dunn project page](https://jedunn.com/projects/meta-temple-data-center/) mentioning a 152 MW power capacity
-- [TDLR filing](https://www.tdlr.texas.gov/TABS/Search/Project/TABS2022017728) reporting the start and end date, square footage of Building 1 and 2
-- [TDLR filing](https://www.tdlr.texas.gov/TABS/Search/Project/TABS2026008019) for Building 3
-",https://docs.google.com/spreadsheets/d/1SwdruUu3hHAs6hd0m3SvZY22bGBCO7-9aiLSCiJl6-k/edit?usp=sharing,,B300,B300,,JE Dunn,,United States,"2310 Eberhardt Rd, Temple, TX 76504"
 Meta Cheyenne,172814.5528044467,152,5.758064,Meta #confident,Meta #confident,"- [Meta Introduction to the Cheyenne Project](https://datacenters.atmeta.com/2024/07/hello-cheyenne/)
 - [Fortis Construction announcement](https://fortisconstruction.com/news/fortis-building-metas-cheyenne-campus/)
 - [Press announcement suggesting a 2027 operational date](https://cheyenneleads.org/meta-announces-new-data-center-a-major-investment-in-cheyenne-wyoming/)

@@ -986,7 +986,8 @@ _RSI_SYSCARD_RESCALE = 50.3 / 45.6
 # it below. A rescale chained through anchors that disagree by ~4% would manufacture
 # a 4-point climb out of a null result. Add a row only when a card supplies a score
 # on a set this series already uses. _RSI_SUBSTITUTION_BAR is unaffected: the card
-# expects the 85% bar "to carry over to CoBench 2.1".
+# expects the 85% bar "to carry over to CoBench 2.1". The Sonnet 5.5 card
+# (2026-09-28) reports no CoBench at all; its §2.3 defers to Opus 5.5's.
 _RSI_CB21_URL = ("https://www-cdn.anthropic.com/fc1b44717c85dc068bc6ba5024219938094694bd/"
                  "Claude%20Opus%205.5%20System%20Card.pdf")
 
@@ -7943,7 +7944,7 @@ _ANTHROPIC_REVENUE = [
     # Bloomberg and Axios as revenue "to top"/"expected to" exceed $100B in 2026 -- a forecast, and its only
     # observation is the $9B-to-$65B history already here. An S-1, when it lands, will carry audited period
     # revenue; under this series' rule that yields a point only if it states a run rate explicitly.
-    # Rechecked 2026-09-29: still nothing newer. anthropic.com/news since 09-18 (09-22 Opus 5.5, 09-22 Situation
+    # Rechecked 2026-09-30: still nothing newer. anthropic.com/news since 09-18 (09-22 Opus 5.5, 09-22 Situation
     # Report, 09-23 enzyme discovery, 09-28 Sonnet 5.5) states no run rate; EDGAR has no public S-1. Excluded:
     # TickerTrends' $76.8B as of 2026-09-24 (tracker estimate).
 ]
@@ -15357,10 +15358,12 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
 # by X, moving a two-jump bar by 3X. GPT-6 Astra did exactly that once, and
 # the ECI cards moved ~13 months *later* on a refresh that made every fixed
 # bar arrive earlier. Move these deliberately when the bar should mean
-# something new — not on every rescore.
+# something new — not on every rescore. The names only have to identify a
+# frontier model near each score: when a rescore drops one off the frontier,
+# re-name it to a neighbour, don't re-number.
 _PC_ECI_TARGETS = (187.5, 200.0)
 _PC_ECI_JUMP_FROM = ("GPT-5", 150.0)
-_PC_ECI_JUMP_TO = ("Claude Fable 5", 162.5)
+_PC_ECI_JUMP_TO = ("GPT-5.5 Pro", 162.5)
 _PC_ECI_POS_CI = 2.0     # the ECI tab's default position CI, fitted score +/- 2
 
 

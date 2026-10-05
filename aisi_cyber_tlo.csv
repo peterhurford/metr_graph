@@ -25,7 +25,8 @@
 #   4. GLM-5.2 11.0 == Opus 4.5 11.0; [A] states GLM-5.2 "reaches as far as Opus 4.5".
 #   Derived lags also reproduce [A]'s prose: GLM-5.2 6.7mo ("less than 7 months"), DeepSeek-V4-Pro
 #   6.8mo ("7 months before it").
-# LAST VERIFIED 2026-09-22: figure byte-identical -- the CDN still serves etag 62f53079...fb13,
+# LAST VERIFIED 2026-09-30 (md5 re-checked; AISI's 2026-09-28 GPT-6 Astra post is a behaviour
+#   study with no narrow or range scores): figure byte-identical -- the CDN still serves etag 62f53079...fb13,
 #   content-length 1047349, last-modified 2026-07-17 11:30:14 GMT, and the downloaded PNG's md5 equals
 #   that etag; still 3500x2160. No AISI post since 2026-08-27 and no new model on the range. CAISI's
 #   2026-09-17 GLM-5.3 assessment contains no cyber-range or TLO measure at all -- see the note in

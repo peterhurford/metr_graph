@@ -5489,7 +5489,7 @@ class TestPacing:
         assert min(vp._PC_ECI_TARGETS) > top
 
     def test_eci_target_is_two_more_pinned_jumps(self):
-        """The bars are two and three jumps the size of GPT-5 → Fable 5, off
+        """The bars are two and three jumps the size of GPT-5 → GPT-5.5 Pro, off
         the *pinned* pair — not off the live frontier.
 
         Floating the far end is self-defeating: a model that beats the
