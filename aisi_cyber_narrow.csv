@@ -7,16 +7,18 @@
 # VALIDATION: derived dates match known releases (GPT-5 2025-08-07 exact; Opus 3 off by 1d; o3 off by 1d).
 #   Derived lags reproduce AISI's printed annotations: GLM-5.2 vs Opus 4.6 = 4.30mo (chart "4.3 mo");
 #   DeepSeek-V4-Pro vs Opus 4.5 = 5.06mo (chart "5.0 mo").
-# LAST VERIFIED 2026-09-30 (md5 re-checked; AISI's 2026-09-28 GPT-6 Astra post is a behaviour
-#   study with no narrow or range scores): figure byte-identical -- the CDN still serves etag 08de3a27...0632,
+# LAST VERIFIED 2026-10-04: figure byte-identical -- the CDN still serves etag 08de3a27...0632,
 #   content-length 609388, last-modified 2026-07-17 11:27:23 GMT, and the downloaded PNG's md5 equals
 #   that etag. Pixel-verified anyway: still 2840x2160, the x-tick fit still returns 0.45080 days/px
 #   (residuals <=0.114 days) and all 12 rows still land on a marker off the recorded 547/1760 y-axis
 #   calibration -- the five OpenAI rows only *look* like misses to a probe that rejects greys, per the
-#   palette note in the 2026-09-03 check below. UK AISI has published nothing since 2026-08-27 (its blog
-#   index is server-rendered with abbreviated months, "Aug 27, 2026", so a naive scrape reads empty;
-#   aisi.gov.uk/sitemap.xml also lags by weeks -- use the index). Kimi K3 still has no narrow-task score,
-#   and Claude Opus 5.5 (released 2026-09-22) has no AISI cyber evaluation of any kind.
+#   palette note in the 2026-09-03 check below. AISI posts since 07-23 (08-04, 08-27, 09-28 GPT-6 Astra
+#   behaviour study, 10-01 secure evaluation environment) carry no narrow or range scores. The blog index
+#   is server-rendered with abbreviated months ("Oct 1, 2026"), so a naive scrape reads empty;
+#   aisi.gov.uk/sitemap.xml lags by weeks -- use the index. The 10-01 post says AISI paused its
+#   highest-risk cyber evals, is now resuming most of them, and has "disabled internet access for future
+#   agentic cyber evaluations": check whether later results state comparability with this figure.
+#   Kimi K3 still has no narrow-task score; Opus 5.5 and Sonnet 5.5 have no AISI cyber evaluation.
 # NOT INGESTIBLE HERE, flagged 2026-09-18 and still true: CAISI published "CAISI's Assessment of
 #   Z.ai's GLM-5.3 Cyber Capabilities" (2026-09-17, NIST only, not mirrored on the AISI blog). It reports
 #   a *different construct* -- a 1PL IRT "cyber capability index" on an Elo-style scale (+400 = 10x the

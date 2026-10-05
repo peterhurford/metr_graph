@@ -874,6 +874,9 @@ _RLI_RAW = [
     # Flash: released 08-13, createdAt 08-24).
     {"name": "Fable 5.1",       "date": "2026-09-01", "rli_score": 17.92},
     {"name": "GPT-6 Astra",     "date": "2026-09-03", "rli_score": 20.83},
+    # Added 2026-10-04: Scale only (isNew, createdAt 2026-10-01T01:17Z); not yet in the CAIS API.
+    # Date is Epoch's catalogued release. Below the frontier.
+    {"name": "Gemini 3.8 Flash", "date": "2026-09-02", "rli_score": 5.83},
     # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
     # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
@@ -916,6 +919,8 @@ _RLI_RAW = [
     # Gemini 3.7 Flash is on Scale but absent from the API. Check both.
     # Rechecked 2026-09-29: no new model and no changed score on either surface; Scale's newest createdAt
     # is still the 2026-09-17 Fable 5.1 / GPT-6 Astra pair, and safe.ai/blog is still 2026-07-01.
+    # Rechecked 2026-10-04: Gemini 3.8 Flash above is the only change; Opus 5.5 and Sonnet 5.5 have no
+    # score on either surface.
 ]
 
 
@@ -7856,6 +7861,7 @@ _OPENAI_REVENUE = [
     # Excluded: Axios/FT (2026-09-29) report OpenAI's run rate "nearing"/"about" $70B, now Epoch's newest
     # OpenAI row. A press report, not this series, and ~39% *above* the 50.44 tracked five days earlier --
     # the reverse of the usual tracker-above-press gap, so splicing it would draw a fake jump.
+    # Rechecked 2026-10-04: TickerTrends' only post since (09-30, AI agent use) carries no company total.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -7947,6 +7953,9 @@ _ANTHROPIC_REVENUE = [
     # Rechecked 2026-09-30: still nothing newer. anthropic.com/news since 09-18 (09-22 Opus 5.5, 09-22 Situation
     # Report, 09-23 enzyme discovery, 09-28 Sonnet 5.5) states no run rate; EDGAR has no public S-1. Excluded:
     # TickerTrends' $76.8B as of 2026-09-24 (tracker estimate).
+    # Rechecked 2026-10-04: still nothing newer. anthropic.com/news since 09-28 (Infosys, Barclays, Frontier
+    # Academy) states no run rate; EDGAR has no S-1 (Reuters' 09-28 story is on a confidential draft, and
+    # gives audited annual revenue only).
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
