@@ -7996,7 +7996,9 @@ _CN_REVENUE = {
             ("2026-08-26", 0.80, "company",
              "CEO on the H1 2026 results call: ARR “surpassed $800 million in "
              "August”. The H1 press release itself states no ARR; H1 revenue "
-             "was $116.6M."),
+             "was $116.6M. SCMP (2026-09-03, one person familiar) reports the "
+             "CEO later said it was one August week × 52, which would make it "
+             "weekly-annualized, unlike Zhipu's monthly $1.6B."),
         ],
     },
     "Zhipu (Z.ai)": {
