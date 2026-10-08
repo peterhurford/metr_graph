@@ -7813,6 +7813,12 @@ _OPENAI_REVENUE = [
     # Rechecked 2026-10-04: TickerTrends' only post since (09-30, AI agent use) carries no company total.
     # Rechecked 2026-10-07: TickerTrends' only post since (10-07, B2B Software Spend Panel) counts observed
     # purchases, not ARR. Epoch's newest OpenAI row is still the $70B press report of 09-29.
+    # Rechecked 2026-10-08: the FT (10-08) reviewed an OpenAI investor presentation showing ARR "approaching
+    # $50bn" in September and "close to $30bn" in July, on OpenAI's own basis, which excludes cloud-partner
+    # sales that Anthropic's figures include. The $70B was investors' grossed-up ~$40B July base times OpenAI's
+    # ">70 per cent since July". Not added: the September figure confirms the 50.44 above, and the July one sits
+    # ~30% *below* this series' 42.6 at 07-29, so the tracker's Jul-Sep growth (+18%) disagrees with OpenAI's
+    # own (+70%) even though the endpoints agree. TickerTrends' 10-08 post restates the 50.44 and adds no point.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -7909,6 +7915,9 @@ _ANTHROPIC_REVENUE = [
     # gives audited annual revenue only).
     # Rechecked 2026-10-07: still nothing newer. anthropic.com/news since 10-04 (10-06 Cyber Verification
     # Program) states no run rate; EDGAR full-text search finds no Anthropic S-1/F-1; Epoch's newest row is unchanged.
+    # Rechecked 2026-10-08: still nothing newer. Per the FT (10-08), this series counts sales through cloud partners
+    # (AWS, Google Cloud) and OpenAI's does not, so the two lines' levels are not like-for-like; no source states
+    # Anthropic's run rate net of them.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -7990,6 +7999,8 @@ _CN_REVENUE = {
              "Goldman Sachs note citing company data (via NetEase/Longbridge, "
              "~2026-09-24): Qwen MaaS ARR “reached RMB 20 billion by end of "
              "August”. No public Alibaba statement found; converted at 6.7851."),
+            # Excluded (checked 2026-10-08): Rhodium's ~$2.4B for August (via ifeng,
+            # 2026-09-21), a third-party estimate for a month already carried.
         ],
     },
     "Moonshot (Kimi)": {
@@ -8200,7 +8211,9 @@ def render_revenue():
             help="Add OpenAI + Anthropic as one series, fitted and projected "
                  "like the other two. The two companies report on different "
                  "days, so each is interpolated to the other's dates (held "
-                 "flat past its own last report) before summing.")
+                 "flat past its own last report) before summing. The sum "
+                 "mixes bases: Anthropic's figures include cloud-partner "
+                 "sales and OpenAI's do not.")
 
         with st.expander("Projection range"):
             st.selectbox(
@@ -8615,7 +8628,13 @@ def render_revenue():
 
     _fn_caption(
         "Figures are approximate ARR compiled from public reports and media "
-        "sources. These are projections, not forecasts.",
+        "sources, each on its company's own basis. These are projections, not "
+        "forecasts.",
+        ("its company's own basis",
+         "Anthropic counts sales through cloud partners (AWS, Google Cloud) "
+         "in its run rate; OpenAI does not (FT, 2026-10-08). The two lines' "
+         "levels are therefore not like-for-like, and no source states either "
+         "on the other's basis. Each line's growth rate is unaffected."),
         ("public reports and media sources",
          "Anthropic's Dec 2025 figure is averaged from a reported $8\u201310B "
          "range. May 2026 figures from The Information "
@@ -15165,7 +15184,9 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                  "\u03c3 \u2014 then whichever company crosses first. That "
                  "fit is a near-perfect 3.7-year exponential, so this is "
                  "much the tightest card here; treat the narrowness as the "
-                 "fit's, not the world's."))
+                 "fit's, not the world's. Anthropic's run rate counts "
+                 "cloud-partner sales that OpenAI's omits, so where it leads "
+                 "the date may read about a month early."))
     # Revenue is release-dated because ARR is earned by *shipped* models, so
     # a crossing sits on the release clock exactly as a benchmark score does.
     _notes = {slug: note + _pc_clock_note(rel, timing_label)
