@@ -877,6 +877,9 @@ _RLI_RAW = [
     # Added 2026-10-04: Scale only (isNew, createdAt 2026-10-01T01:17Z); not yet in the CAIS API.
     # Date is Epoch's catalogued release. Below the frontier.
     {"name": "Gemini 3.8 Flash", "date": "2026-09-02", "rli_score": 5.83},
+    # Added 2026-10-07: Scale only (isNew, createdAt 2026-10-07T21:54Z); not yet in the CAIS API.
+    # Date is Epoch's catalogued release. New frontier point, above GPT-6 Astra.
+    {"name": "Opus 5.5",        "date": "2026-09-22", "rli_score": 21.25},
     # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
     # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
@@ -992,7 +995,7 @@ _RSI_SYSCARD_RESCALE = 50.3 / 45.6
 # a 4-point climb out of a null result. Add a row only when a card supplies a score
 # on a set this series already uses. _RSI_SUBSTITUTION_BAR is unaffected: the card
 # expects the 85% bar "to carry over to CoBench 2.1". The Sonnet 5.5 card
-# (2026-09-28) reports no CoBench at all; its §2.3 defers to Opus 5.5's.
+# (2026-09-28) and Haiku 5.5 (2026-10-07) cards report no CoBench at all; both defer to Opus 5.5's.
 _RSI_CB21_URL = ("https://www-cdn.anthropic.com/fc1b44717c85dc068bc6ba5024219938094694bd/"
                  "Claude%20Opus%205.5%20System%20Card.pdf")
 
@@ -7862,6 +7865,8 @@ _OPENAI_REVENUE = [
     # OpenAI row. A press report, not this series, and ~39% *above* the 50.44 tracked five days earlier --
     # the reverse of the usual tracker-above-press gap, so splicing it would draw a fake jump.
     # Rechecked 2026-10-04: TickerTrends' only post since (09-30, AI agent use) carries no company total.
+    # Rechecked 2026-10-07: TickerTrends' only post since (10-07, B2B Software Spend Panel) counts observed
+    # purchases, not ARR. Epoch's newest OpenAI row is still the $70B press report of 09-29.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -7956,6 +7961,8 @@ _ANTHROPIC_REVENUE = [
     # Rechecked 2026-10-04: still nothing newer. anthropic.com/news since 09-28 (Infosys, Barclays, Frontier
     # Academy) states no run rate; EDGAR has no S-1 (Reuters' 09-28 story is on a confidential draft, and
     # gives audited annual revenue only).
+    # Rechecked 2026-10-07: still nothing newer. anthropic.com/news since 10-04 (10-06 Cyber Verification
+    # Program) states no run rate; EDGAR full-text search finds no Anthropic S-1/F-1; Epoch's newest row is unchanged.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
