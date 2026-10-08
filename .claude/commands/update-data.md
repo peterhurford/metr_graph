@@ -39,7 +39,7 @@ reading any number. Two rules follow, and they are what keep a null result out o
    carries its models over. The Opus 5.5 card's "CoBench 2.1" rescored only Opus 5
    (59.6 → 53.2) and Mythos 5.1 (57.6 → 53.4), leaving four carried models with no 2.1
    score — so neither can the series move to 2.1, nor Opus 5.5 (55.8) come back to this
-   one. It gets **no row**; `_RSI_CB21_URL` records why.
+   one. It gets **no row**; the comment above `_RSI_RAW` records why.
 2. **Chained or disagreeing anchors manufacture signal.** Those two anchors imply ratios
    4% apart and invert the pair's order (2.1 puts Mythos 5.1 above Opus 5; the older set
    puts it below), while the card calls all three scores "not statistically

@@ -1180,7 +1180,6 @@ class TestDefaultProjectionMatchesFit:
         if K <= 0:
             pytest.skip("K <= 0, can't test superexp")
         d_last = days[-1]
-        fitted_pos = A + K * 2 ** (d_last / halflife)
         fitted_dt = halflife / (K * np.log(2) * 2 ** (d_last / halflife))
         # Data-driven center
         lo = max(10, int(round(fitted_dt / 2)))
@@ -1201,7 +1200,6 @@ class TestDefaultProjectionMatchesFit:
         """ECI projection slope should match OLS slope under data-driven defaults."""
         _, _, params = _load_eci_fit()
         ols_ppy = params[1] * 365.25 if params[1] > 0 else 16.9
-        ols_dpp = 365.25 / ols_ppy  # days per point
         # Data-driven defaults
         ppy = round(ols_ppy, 1)
         lo = round(ppy / 2, 1)

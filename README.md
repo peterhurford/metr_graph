@@ -58,7 +58,7 @@ actual models by which CI band they landed in (`_backtest_stats()`).
 ## Repository layout
 
 ```
-visualize_projection.py   the whole app — loaders, engine, all eleven render functions (~14k lines)
+visualize_projection.py   the whole app — loaders, engine, all eleven render functions (~17k lines)
 test_visualize_projection.py   unit tests against a fake Streamlit module
 test_integration.py            integration tests through Streamlit's AppTest runtime
 conftest.py               test-speed setup (see below)

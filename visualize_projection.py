@@ -996,8 +996,7 @@ _RSI_SYSCARD_RESCALE = 50.3 / 45.6
 # on a set this series already uses. _RSI_SUBSTITUTION_BAR is unaffected: the card
 # expects the 85% bar "to carry over to CoBench 2.1". The Sonnet 5.5 card
 # (2026-09-28) and Haiku 5.5 (2026-10-07) cards report no CoBench at all; both defer to Opus 5.5's.
-_RSI_CB21_URL = ("https://www-cdn.anthropic.com/fc1b44717c85dc068bc6ba5024219938094694bd/"
-                 "Claude%20Opus%205.5%20System%20Card.pdf")
+# Opus 5.5 card: https://www-cdn.anthropic.com/fc1b44717c85dc068bc6ba5024219938094694bd/Claude%20Opus%205.5%20System%20Card.pdf
 
 _RSI_RAW = [
     {"name": "Claude Opus 4.6",       "date": "2026-02-05", "cobench": 15.6, "date_known": True},
@@ -3054,7 +3053,6 @@ frontier_names = [pretty(m['name']) for m in frontier_all]
 
 eci_all = load_eci_frontier(_mtime=_eci_mtime())
 eci_frontier_all = [m for m in eci_all if m['is_frontier']]
-eci_frontier_names = [m['display_name'] for m in eci_frontier_all]
 
 rli_all = load_rli_data()
 rli_frontier_all = [m for m in rli_all if m['is_frontier']]
@@ -3138,7 +3136,7 @@ _METR_RESET_KEYS = [
     "custom_pos_hi_p50", "custom_pos_hi_p80",
     "piecewise_n_seg", "bp1_select", "bp2_select",
     "custom_dt_dist", "custom_pos_dist",
-    "superexp_dt_init", "superexp_halflife",
+    "superexp_halflife",
     "superexp_dt_floor", "superexp_dt_ci_lo",
     "superexp_dt_ci_hi", "superexp_pos_lo_p50",
     "superexp_pos_lo_p80", "superexp_pos_hi_p50",
@@ -3303,23 +3301,13 @@ def render_metr():
                          "Log-log: fat right tail.")
 
         # --- Superexponential controls ---
-        superexp_dt_initial = superexp_halflife = None
+        superexp_halflife = None
         superexp_dt_ci_lo = superexp_dt_ci_hi = None
         superexp_pos_lo = superexp_pos_hi = None
         superexp_dt_floor = 30
         is_superexp = False
         if proj_basis == "Superexponential":
             is_superexp = True
-            _default_dt_init = 150
-            if gpt4o_idx <= proj_as_of_idx:
-                _sb_base = frontier_all[0]['date']
-                _sb_fr = frontier_all[gpt4o_idx:proj_as_of_idx + 1]
-                _sb_days = np.array([(m['date'] - _sb_base).days for m in _sb_fr], dtype=float)
-                _sb_log2 = np.array([np.log2(m['p50_min']) for m in _sb_fr])
-                _sb_params = fit_line(_sb_days, _sb_log2)
-                if _sb_params[1] > 0:
-                    _default_dt_init = int(round(1.0 / _sb_params[1]))
-
             # Pre-compute superexp fit at default halflife to get implied DT for CI defaults
             _pre_se_halflife = 365
             _pre_se_z = 2 ** (_pre_days / _pre_se_halflife)
@@ -3336,11 +3324,7 @@ def render_metr():
             with st.expander("Advanced options"):
                 st.button("Reset to defaults", key="reset_superexp",
                           on_click=lambda: st.session_state.update(_reset_metr=True))
-                _se_col1, _se_col2 = st.columns(2)
-                superexp_dt_initial = _ss_number_input(_se_col1,
-                    "Initial DT (days)", "superexp_dt_init", _default_dt_init,
-                    min_value=10, max_value=2000, step=5)
-                superexp_halflife = _ss_number_input(_se_col2,
+                superexp_halflife = _ss_number_input(st,
                     "DT half-life (days)", "superexp_halflife", 365,
                     min_value=30, max_value=5000, step=30,
                     help="How quickly DT shrinks. Lower = faster.")
@@ -3502,7 +3486,6 @@ def render_metr():
     # ── Current SOTA (selected "as of" model) ────────────────────────────────
 
     current = frontier_used[-1]
-    current_log2 = np.log2(current[_val_key])
     current_hrs = current[_val_key] / 60
 
     # ── Plotly chart ─────────────────────────────────────────────────────────
@@ -3513,7 +3496,6 @@ def render_metr():
     proj_dates = [current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
 
     # Build all trajectories with correlated (dt, start) pairs
-    n_samples = len(proj_dt)
     if is_superexp:
         all_trajectories = proj_start[:, None] + superexp_trajectory(
             proj_days_arr, proj_dt, superexp_halflife, superexp_dt_floor)
@@ -3530,7 +3512,6 @@ def render_metr():
     pct5 = _yconv(np.percentile(all_trajectories, 5, axis=0))
     pct10 = _yconv(np.percentile(all_trajectories, 10, axis=0))
     pct25 = _yconv(np.percentile(all_trajectories, 25, axis=0))
-    pct50 = _yconv(np.percentile(all_trajectories, 50, axis=0))
     pct75 = _yconv(np.percentile(all_trajectories, 75, axis=0))
     pct90 = _yconv(np.percentile(all_trajectories, 90, axis=0))
     pct95 = _yconv(np.percentile(all_trajectories, 95, axis=0))
@@ -3705,7 +3686,7 @@ def render_metr():
                 showarrow=False, xanchor='left', yanchor='middle',
                 font=dict(size=10, color=color))
 
-    today = _add_today_vline(fig)
+    _add_today_vline(fig)
 
     # --- Backtesting ---
     is_backtesting = proj_as_of_idx < len(frontier_all) - 1
@@ -3873,7 +3854,6 @@ def render_metr():
     # ── Projections ───────────────────────────────────────────────────────────
 
     start_hrs_samples = 2**proj_start / 60
-    med_dt = np.median(proj_dt)
     p10_dt, p90_dt = np.percentile(proj_dt, [10, 90])
     current_label = pretty(current['name'])
 
@@ -3984,7 +3964,7 @@ def _eci_tab_reset_keys(p):
         f"{p}_piecewise_n_seg", f"{p}_bp1_select",
         f"{p}_bp2_select", f"{p}_custom_dpp_dist",
         f"{p}_custom_pos_dist",
-        f"{p}_superexp_ppy_init", f"{p}_superexp_halflife",
+        f"{p}_superexp_halflife",
         f"{p}_superexp_ppy_ceiling", f"{p}_superexp_ppy_ci_lo",
         f"{p}_superexp_ppy_ci_hi", f"{p}_superexp_pos_lo",
         f"{p}_superexp_pos_hi",
@@ -4161,24 +4141,13 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     help="Normal: symmetric. Lognormal: symmetric in log-space.")
 
         # --- Superexponential controls ---
-        eci_superexp_dpp_initial = eci_superexp_halflife = None
+        eci_superexp_halflife = None
         eci_superexp_dpp_ci_lo = eci_superexp_dpp_ci_hi = None
         eci_superexp_pos_lo = eci_superexp_pos_hi = None
         eci_superexp_dpp_floor = 10
         eci_is_superexp = False
         if eci_proj_basis == "Superexponential":
             eci_is_superexp = True
-            _eci_default_ppy_init = 10.0
-            # Estimate from recent frontier
-            if len(tab_frontier_all[:eci_proj_as_of_idx + 1]) >= 2:
-                _eci_base = tab_frontier_all[0]['date']
-                _eci_fr = tab_frontier_all[:eci_proj_as_of_idx + 1]
-                _eci_fd = np.array([(m['date'] - _eci_base).days for m in _eci_fr], dtype=float)
-                _eci_fs = np.array([m['eci_score'] for m in _eci_fr])
-                _eci_fp = fit_line(_eci_fd, _eci_fs)
-                if _eci_fp[1] > 0:
-                    _eci_default_ppy_init = round(365.25 * _eci_fp[1], 1)
-
             # Pre-compute superexp fit at default halflife to get implied PPY for CI defaults
             _eci_pre_se_halflife = 365
             _eci_pre_se_z = 2 ** (_eci_pre_days / _eci_pre_se_halflife)
@@ -4196,12 +4165,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             with st.expander("Advanced options"):
                 st.button("Reset to defaults", key=f"reset_{p}_superexp",
                           on_click=lambda: st.session_state.update({f"_reset_{p}": True}))
-                _eci_se_col1, _eci_se_col2 = st.columns(2)
-                eci_superexp_ppy_initial = _ss_number_input(_eci_se_col1,
-                    "Initial +Pts/Yr", f"{p}_superexp_ppy_init", _eci_default_ppy_init,
-                    min_value=0.5, max_value=365.0, step=0.5)
-                eci_superexp_dpp_initial = 365.25 / eci_superexp_ppy_initial
-                eci_superexp_halflife = _ss_number_input(_eci_se_col2,
+                eci_superexp_halflife = _ss_number_input(st,
                     "Rate half-life (days)", f"{p}_superexp_halflife", 365,
                     min_value=30, max_value=5000, step=30,
                     help="How quickly rate grows. Lower = faster.")
@@ -4252,7 +4216,6 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
     # ── Build data arrays ────────────────────────────────────────────────────
     eci_frontier_used = tab_frontier_all[:eci_proj_as_of_idx + 1]
-    eci_frontier_plot = list(tab_all)  # show all models (frontier + non-frontier)
 
     base_date = tab_frontier_all[0]['date']
     days_all_eci = np.array([(m['date'] - base_date).days for m in tab_frontier_all], dtype=float)
@@ -4346,7 +4309,6 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [eci_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
 
-    n_samples = len(eci_proj_dpp)
     if eci_is_superexp:
         all_trajectories = eci_proj_start[:, None] + superexp_trajectory(
             proj_days_arr, eci_proj_dpp, eci_superexp_halflife, eci_superexp_dpp_floor)
@@ -4621,7 +4583,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             hoverinfo='skip',
         ))
 
-    today = _add_today_vline(fig)
+    _add_today_vline(fig)
 
     # --- Backtesting ---
     eci_is_backtesting = eci_proj_as_of_idx < len(tab_frontier_all) - 1
@@ -5084,7 +5046,7 @@ _RLI_RESET_KEYS = [
     "rli_piecewise_n_seg", "rli_bp1_select",
     "rli_bp2_select", "rli_custom_dt_dist",
     "rli_custom_pos_dist",
-    "rli_superexp_dt_init", "rli_superexp_halflife",
+    "rli_superexp_halflife",
     "rli_superexp_dt_floor", "rli_superexp_dt_ci_lo",
     "rli_superexp_dt_ci_hi", "rli_superexp_pos_lo",
     "rli_superexp_pos_hi",
@@ -5240,23 +5202,13 @@ def render_rli():
                     horizontal=True, key="rli_custom_pos_dist")
 
         # --- Superexponential controls ---
-        rli_superexp_dt_initial = rli_superexp_halflife = None
+        rli_superexp_halflife = None
         rli_superexp_dt_ci_lo = rli_superexp_dt_ci_hi = None
         rli_superexp_pos_lo = rli_superexp_pos_hi = None
         rli_superexp_dt_floor = 10
         rli_is_superexp = False
         if rli_proj_basis == "Superexponential (logit)":
             rli_is_superexp = True
-            _rli_default_dt_init = 100.0
-            if len(rli_frontier_all[:rli_proj_as_of_idx + 1]) >= 2:
-                _rli_base = rli_frontier_all[0]['date']
-                _rli_fr = rli_frontier_all[:rli_proj_as_of_idx + 1]
-                _rli_fd = np.array([(m['date'] - _rli_base).days for m in _rli_fr], dtype=float)
-                _rli_flogit = _logit(np.array([m['rli_score'] / 100 for m in _rli_fr]))
-                _rli_fp = fit_line(_rli_fd, _rli_flogit)
-                if _rli_fp[1] > 0:
-                    _rli_default_dt_init = round(np.log(2) / _rli_fp[1], 0)
-
             # Pre-compute superexp fit at default halflife for CI defaults
             _rli_pre_se_halflife = 365
             _rli_pre_se_z = 2 ** (_rli_pre_days / _rli_pre_se_halflife)
@@ -5274,11 +5226,7 @@ def render_rli():
             with st.expander("Advanced options"):
                 st.button("Reset to defaults", key="reset_rli_superexp",
                           on_click=lambda: st.session_state.update(_reset_rli=True))
-                _rli_se_col1, _rli_se_col2 = st.columns(2)
-                rli_superexp_dt_initial = _ss_number_input(_rli_se_col1,
-                    "Initial odds 2x time (days)", "rli_superexp_dt_init", _rli_default_dt_init,
-                    min_value=5.0, max_value=2000.0, step=5.0)
-                rli_superexp_halflife = _ss_number_input(_rli_se_col2,
+                rli_superexp_halflife = _ss_number_input(st,
                     "Rate half-life (days)", "rli_superexp_halflife", 365,
                     min_value=30, max_value=5000, step=30,
                     help="How quickly rate grows. Lower = faster.")
@@ -5429,7 +5377,6 @@ def render_rli():
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [rli_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
 
-    n_samples = len(rli_proj_dt)
     if rli_is_superexp:
         all_logit_traj = rli_proj_start_logit[:, None] + np.log(2) * superexp_trajectory(
             proj_days_arr, rli_proj_dt, rli_superexp_halflife, rli_superexp_dt_floor)
@@ -5442,7 +5389,6 @@ def render_rli():
     pct5 = np.percentile(all_trajectories, 5, axis=0)
     pct10 = np.percentile(all_trajectories, 10, axis=0)
     pct25 = np.percentile(all_trajectories, 25, axis=0)
-    pct50 = np.percentile(all_trajectories, 50, axis=0)
     pct75 = np.percentile(all_trajectories, 75, axis=0)
     pct90 = np.percentile(all_trajectories, 90, axis=0)
     pct95 = np.percentile(all_trajectories, 95, axis=0)
@@ -5618,7 +5564,7 @@ def render_rli():
                 font=dict(size=10, color=color))
 
 
-    today = _add_today_vline(fig)
+    _add_today_vline(fig)
 
     # --- Backtesting ---
     rli_is_backtesting = rli_proj_as_of_idx < len(rli_frontier_all) - 1
@@ -8547,7 +8493,7 @@ def render_revenue():
                     hoverinfo='skip', showlegend=False,
                 ))
 
-    today = _add_today_vline(fig)
+    _add_today_vline(fig)
 
     # --- Layout ---
     yaxis_type = "log" if log_scale else "linear"
@@ -8794,7 +8740,7 @@ _EMP_RESET_KEYS = [
     "emp_custom_pos_lo", "emp_custom_pos_hi",
     "emp_piecewise_n_seg", "emp_bp1_select", "emp_bp2_select",
     "emp_custom_dt_dist", "emp_custom_pos_dist",
-    "emp_superexp_dt_init", "emp_superexp_halflife",
+    "emp_superexp_halflife",
     "emp_superexp_dt_floor", "emp_superexp_dt_ci_lo",
     "emp_superexp_dt_ci_hi", "emp_superexp_pos_lo",
     "emp_superexp_pos_hi",
@@ -8961,23 +8907,13 @@ def render_employment():
                     horizontal=True, key="emp_custom_pos_dist")
 
         # --- Superexponential controls ---
-        emp_superexp_dt_initial = emp_superexp_halflife = None
+        emp_superexp_halflife = None
         emp_superexp_dt_ci_lo = emp_superexp_dt_ci_hi = None
         emp_superexp_pos_lo = emp_superexp_pos_hi = None
         emp_superexp_dt_floor = 10
         emp_is_superexp = False
         if emp_proj_basis == "Superexponential (logit)":
             emp_is_superexp = True
-            _emp_default_dt_init = 100.0
-            if len(rli_frontier_all[:emp_proj_as_of_idx + 1]) >= 2:
-                _emp_base = rli_frontier_all[0]['date']
-                _emp_fr = rli_frontier_all[:emp_proj_as_of_idx + 1]
-                _emp_fd = np.array([(m['date'] - _emp_base).days for m in _emp_fr], dtype=float)
-                _emp_flogit = _logit(np.array([m['rli_score'] / 100 for m in _emp_fr]))
-                _emp_fp = fit_line(_emp_fd, _emp_flogit)
-                if _emp_fp[1] > 0:
-                    _emp_default_dt_init = round(np.log(2) / _emp_fp[1], 0)
-
             _emp_pre_se_halflife = 365
             _emp_pre_se_z = 2 ** (_emp_pre_days / _emp_pre_se_halflife)
             _emp_pre_se_X = np.column_stack([np.ones_like(_emp_pre_se_z), _emp_pre_se_z])
@@ -8994,11 +8930,7 @@ def render_employment():
             with st.expander("RLI advanced options"):
                 st.button("Reset to defaults", key="reset_emp_superexp",
                           on_click=lambda: st.session_state.update(_reset_emp=True))
-                _emp_se_col1, _emp_se_col2 = st.columns(2)
-                emp_superexp_dt_initial = _ss_number_input(_emp_se_col1,
-                    "Initial odds 2x time (days)", "emp_superexp_dt_init", _emp_default_dt_init,
-                    min_value=5.0, max_value=2000.0, step=5.0)
-                emp_superexp_halflife = _ss_number_input(_emp_se_col2,
+                emp_superexp_halflife = _ss_number_input(st,
                     "Rate half-life (days)", "emp_superexp_halflife", 365,
                     min_value=30, max_value=5000, step=30)
                 emp_superexp_dt_floor = _ss_number_input(st,
@@ -9389,7 +9321,7 @@ def render_employment():
                     showarrow=False, xanchor='left', yanchor='middle',
                     font=dict(size=10, color=color))
 
-    today = _add_today_vline(fig)
+    _add_today_vline(fig)
 
     if _is_jobs_mode:
         y_max = max(_chart_hi95[-1], 1) + 1
@@ -9854,9 +9786,6 @@ def render_eci_gap():
             f"{h_info['date'].strftime('%b %Y')}). {gap_desc}")
 
         fig_h = go.Figure()
-
-        x_start = h_pts[0]['date'] - timedelta(days=30)
-        x_end = _today + timedelta(days=30)
 
         h_dates = [p['date'] for p in h_pts]
         h_gaps = [p['gap_months'] for p in h_pts]
@@ -10650,7 +10579,6 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         p = _pace_for(c)
         if p is None:
             return f"{c}: no trend to extrapolate"
-        dbl = 12 * np.log10(2) / p['g'] if p['g'] > 0 else float('inf')
         name = _DC_CTY_PACE_SOURCE.get(borrowed.get(c))
         src = (f"{name}, cone widened to its own fit" if name and fit
                else name or "own fit")
@@ -11875,7 +11803,6 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     eci_all = load_eci_frontier(_mtime=_eci_mtime())
     anchor = max(eci_all, key=lambda m: m['eci_score']) if eci_all \
         else max(cc_rows, key=lambda m: m['eci'])
-    anchor_name = anchor.get('display_name') or anchor.get('name', '')
     eci_now = anchor.get('eci_score', anchor.get('eci'))
 
     # Projected compute path: interpolate the running-max FLOP frontier in log
@@ -12301,8 +12228,6 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     d_yrs = (today - cn_cap_d).days / 365.25
     cn_cap_lo_lf = cn_cap_apex_lo + g_cn_lo * d_yrs     # capacity range at today
     cn_cap_hi_lf = cn_cap_apex_hi + g_cn_hi * d_yrs
-    cn_cap_lf = 0.5 * (cn_cap_lo_lf + cn_cap_hi_lf)
-    cap_gap_oom = us_cap_lf - cn_cap_lf
 
     # ECI projection: derived from compute (Chart A growth) + shared algorithmic
     # progress. a_partial = ECI per ×10 compute; b_algo = shared ECI/yr at fixed
