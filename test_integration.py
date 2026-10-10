@@ -1671,27 +1671,44 @@ class TestPacingTab:
         assert mid < base + 0.3      # a moderate stretch pays
         assert long_run > mid + 1    # a year of wall clock does not
 
-    def test_duvi_ban_compounds_with_the_domestic_slider(self):
-        """The ban's cut is derived from the CTS table and stacks
-        multiplicatively with the slider: 1 - (1 - slider)(1 - ban)."""
+    def test_duvi_levers_compound_with_the_domestic_slider(self):
+        """Each DUVi lever is named on the Assumes line even when its cut
+        rounds to zero, and the cuts stack multiplicatively with the slider:
+        1 - (1 - slider)(1 - duv)."""
         at = self._app()
-        cb = at.checkbox(key="pc_duv_ban")
-        assert cb.value is False
-        cb.check().run()
-        _assert_no_error(at, "Pacing / DUVi ban")
+        assert at.checkbox(key="pc_duv_ban").value is False
+        assert at.checkbox(key="pc_duv_service").value is False
+        assert at.slider(key="pc_duv_decay").disabled
+        assert at.slider(key="pc_duv_growth").disabled
 
-        def _slowed(at):
+        def _slowed(at, names):
             md = " ".join(str(m.value) for m in at.markdown)
-            m = re.search(r"domestic buildout slowed (\d+)% incl\. the DUVi ban",
-                          md)
-            assert m, "the Assumes line names the ban"
+            m = re.search(r"domestic buildout slowed (\d+)% incl\. the DUVi "
+                          + names, md)
+            assert m, f"the Assumes line names the {names}"
             return int(m.group(1))
 
-        ban = _slowed(at)
-        assert 10 <= ban <= 40
+        at.checkbox(key="pc_duv_ban").check().run()
+        _assert_no_error(at, "Pacing / DUVi import ban")
+        imp = _slowed(at, "import ban")
+        assert imp <= 8               # binds mostly next decade
+        assert not at.slider(key="pc_duv_growth").disabled
+        at.slider(key="pc_duv_growth").set_value(5.0).run()
+        assert _slowed(at, "import ban") > imp
+        at.slider(key="pc_duv_growth").set_value(2.4).run()
+
+        at.checkbox(key="pc_duv_service").check().run()
+        _assert_no_error(at, "Pacing / DUVi import and servicing bans")
+        assert not at.slider(key="pc_duv_decay").disabled
+        both = _slowed(at, "import and servicing bans")
+        assert 15 <= both <= 45
+        at.slider(key="pc_duv_decay").set_value(40).run()
+        assert _slowed(at, "import and servicing bans") > both
+
+        at.slider(key="pc_duv_decay").set_value(15).run()
         at.slider(key="pc_dom_slow").set_value(50).run()
-        both = _slowed(at)
-        assert abs(both - round(100 * (1 - 0.5 * (1 - ban / 100)))) <= 1
+        stacked = _slowed(at, "import and servicing bans")
+        assert abs(stacked - round(100 * (1 - 0.5 * (1 - both / 100)))) <= 1
 
     def test_domestic_slowdown_lever_delays_the_crossing(self):
         """The 0-90% domestic-growth lever comes off the domestic share of

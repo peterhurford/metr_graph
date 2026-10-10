@@ -78,15 +78,17 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 - **Supported:** SemiAnalysis names DayOne among ByteDance's core offshore landlords.
 - **Not added:** Oracle Batam, though it sits in the hub SemiAnalysis names. No source ties a Chinese tenant to that specific site, and the tuple requires a site-level citation.
 
-### 5. DUVi ban lever (`pc_duv_ban`, `_duv_ban_cut`)
+### 5. DUVi import and servicing levers (`pc_duv_ban`, `pc_duv_service`, `_duv_policy_cut`)
 
-- **Source:** Brown & Khan, CTS, *DUV Immersion Lithography* (Sep 2026), Table 45, in `cts_duv_production.csv`.
-- **What it is:** a ceiling on China's AI chips made per year if lithography were the only limit. Imports continuing (the report's "Robust" path) vs banned from 2027.
-- **How it is used:** only the ratio of the two P50 growth rates, at the AI-push allocation, over today → the Pacing horizon. That fraction comes off China's domestic compute growth, the same lever as `pc_dom_slow`. Live: ~18% to 2028, ~24% to 2031, ~28% to 2035.
-- **Why the ratio and not the levels:** the levels assume every other bottleneck solved (2035 P50 spans 33M to 532M H100e/yr across allocations). The ratio is roughly scale-free, and growth in chips made per year is the right proxy for growth of the largest new cluster.
-- **Why AI push:** the Pacing panel's China is a state-directed catch-up. Today's allocation gives a noisier, similar cut (~18% to 2031); the physical ceiling gives ~35%.
-- **What it omits:** the report notes a servicing ban would bite harder than an import ban; that is not modelled. Near term, China's real output sits far below the ceiling (IFP: 62k–160k B300e in 2026), so a ceiling-growth cut may overstate the near-term effect.
-- **Revisit when:** CTS re-versions the table, or a ban or servicing control is actually enacted.
+- **Source:** Brown & Khan, CTS, *DUV Immersion Lithography* (Sep 2026): Table 45 (in `cts_duv_production.csv`) and Figure 9's IFP estimate of China's 2026 output.
+- **The ceiling:** China's AI chips made per year if lithography were the only limit, imports continuing (the report's "Robust" path) or banned from 2027. Its levels assume every other bottleneck solved, so they are never China's path.
+- **China's path:** IFP's 62k–160k B300e for 2026 (×2.52 H100e per B300e, the report's TrendForce conversion, so ~0.16–0.40M H100e), growing at `_DUV_CN_OUTPUT_GROWTH` (median 2.4×/yr, 10th–90th 1.5–3.8×), capped at the ceiling. The cut is 1 − (growth under the policy ÷ growth with neither ban) over today → the Pacing horizon, averaged over a quantile grid of start level and rate, at the AI-push allocation.
+- **Why its own growth rate:** this is chip *output*, not installed compute, so it does not borrow `_WC_GROWTH` (1.9×). Ascend units go ~0.8M (2025) → ~1.5M (2026, Epoch, ×1.9); SemiAnalysis's 2027 median is 2M Ascend 950s (×1.3), its high case 4M (×2.7); per-chip performance rises on top, by an amount not pinned down here. Epoch's slow case keeps output near 1% of Nvidia's through 2028 on domestic HBM alone. The 2.4× median is a judgment across those.
+- **Import ban result, and what it hinges on:** China's path starts ~16× under even the banned ceiling, so the ban binds only once output grows into it. At the default: ~4% less growth to 2031, ~12% to 2035, a crossing moved by about a day. The cut is driven almost entirely by the growth rate: 0.5% to 2031 at 1.5×/yr, ~11% at 4×. The Pacing `pc_duv_growth` slider exposes it; don't quote "the ban barely matters near term" without the rate.
+- **Servicing ban:** advanced-fab DUVi capacity falls `pc_duv_decay` per year from 2027 (default 15%, 0–50%), multiplying China's path whether or not the ceiling binds. ~27% cut to 2031 at the defaults; about +1 month on the crossing.
+- **The decay rate is a judgment with no source.** The report says servicing controls would degrade the fleet "though there is some uncertainty as to the magnitude". Low values assume China self-services and cannibalizes its ~190 legacy-fab scanners for parts; high ones that lasers, stages and optics fail without foreign consumables. Not checked against any measured attrition rate.
+- **Why AI push:** the Pacing panel's China is a state-directed catch-up. With the ceiling rarely binding before 2031, the allocation matters little to the import-ban cut.
+- **Revisit when:** CTS re-versions the table; better estimates of China's realized output or its growth (IFP, Epoch, SemiAnalysis 2027 numbers) arrive; any evidence on scanner attrition without servicing; or a ban or servicing control is enacted.
 
 ## Checked and deliberately left alone
 

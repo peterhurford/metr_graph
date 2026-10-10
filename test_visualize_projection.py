@@ -5148,22 +5148,44 @@ class TestDuvProduction:
             assert c[0] == b[0]
             assert all(bb[2] <= cc[2] for cc, bb in zip(c, b))
 
-    def test_ban_cut_is_a_fraction_that_deepens_with_the_horizon(self):
+    def test_import_ban_waits_for_output_to_reach_the_ceiling(self):
+        """China's real output is far under the banned ceiling, so an import
+        ban alone barely moves growth this decade and bites later."""
         t0 = datetime(2026, 10, 1)
-        cuts = [vp._duv_ban_cut(t0, datetime(y, 12, 31))
-                for y in (2028, 2030, 2031, 2035)]
-        assert all(0.1 < c < 0.4 for c in cuts)
-        assert cuts == sorted(cuts)
-        assert vp._duv_ban_cut(t0, t0) is None
+        near = vp._duv_policy_cut(t0, datetime(2031, 12, 31))
+        far = vp._duv_policy_cut(t0, datetime(2035, 12, 31))
+        assert 0.0 <= near < 0.08
+        assert far > near + 0.04
+        assert vp._duv_policy_cut(t0, t0) is None
+        assert vp._duv_policy_cut(t0, datetime(2031, 12, 31),
+                                  ban_imports=False) == 0.0
 
-    def test_ban_cut_is_scale_free(self):
-        """Only the ratio is used, so scaling every level cancels."""
-        d = self._data()
-        k = {key: [(y, lo * 7, m * 7, hi * 7) for y, lo, m, hi in rows]
-             for key, rows in d.items()}
+    def test_faster_output_growth_reaches_the_ceiling_sooner(self):
+        """The import-ban cut is driven by how fast China's real output
+        grows into the banned ceiling, so it rises with that rate."""
         t0, t1 = datetime(2026, 10, 1), datetime(2031, 12, 31)
-        assert vp._duv_ban_cut(t0, t1, data=k) == pytest.approx(
-            vp._duv_ban_cut(t0, t1, data=d), abs=1e-3)
+        lo, hi = vp._DUV_CN_OUTPUT_GROWTH_RANGE
+        cuts = [vp._duv_policy_cut(t0, t1, growth=g)
+                for g in (lo, vp._DUV_CN_OUTPUT_GROWTH, hi)]
+        assert cuts == sorted(cuts) and cuts[-1] > cuts[0] + 0.05
+
+    def test_servicing_ban_bites_now_and_rises_with_the_decay(self):
+        t0, t1 = datetime(2026, 10, 1), datetime(2028, 12, 31)
+        cuts = [vp._duv_policy_cut(t0, t1, ban_imports=False, decay=d)
+                for d in (0.05, 0.15, 0.30)]
+        assert 0.05 < cuts[0] < cuts[1] < cuts[2] <= 1.0
+        # Stacking the import ban on top never helps China.
+        both = vp._duv_policy_cut(t0, datetime(2035, 12, 31), decay=0.15)
+        svc = vp._duv_policy_cut(t0, datetime(2035, 12, 31),
+                                 ban_imports=False, decay=0.15)
+        assert both >= svc
+
+    def test_realized_start_is_the_reports_ifp_range(self):
+        """The 2026 grid spans IFP's 62k-160k B300e at 2.5 H100e each."""
+        lv = sorted({a for a, _b in vp._duv_realized_grid()})
+        mid = 10 ** lv[len(lv) // 2]
+        assert 0.2 < mid < 0.3
+        assert vp._DUV_H100E_PER_B300E == pytest.approx(2.52, abs=0.01)
 
 
 class TestCcWorldShares:

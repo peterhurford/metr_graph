@@ -924,23 +924,37 @@ No controls: an editable-centrals expander was tried and removed. Guarded by
 `_render_cc_duv_ceiling()` charts `cts_duv_production.csv` as published: US-and-allied
 AI chips made per year against China's **lithography-bounded ceiling**, with DUVi imports
 continuing or banned from 2027, at the report's AI-push allocation (the other two in the
-hover). Two things are load-bearing:
+hover). Under them it draws China's actual 2026 output (IFP) and its own trend. Three
+things are load-bearing:
 
 1. **The China levels are ceilings, never China's path.** The report assumes every
    non-lithography bottleneck solved and TSMC-grade yields by 2031, and calls its own
    numbers unrealistic near term. They also count chips made per year, not the largest
-   single run every other chart here tracks. So nothing reads the levels.
-2. **What the app consumes is the ratio.** `_duv_ban_cut(start, end)` = 1 −
-   (banned OOM/yr ÷ continuing OOM/yr) on the P50, the scale-free policy contrast
-   (`test_ban_cut_is_scale_free`). The Pacing tab's `pc_duv_ban` checkbox takes that cut
-   over today → its *Projection range* and compounds it with `pc_dom_slow`:
-   effective slowdown = 1 − (1 − slider)(1 − cut), applied through the existing
-   domestic-growth machinery. ~24% to 2031 live; it deepens with the horizon because the
-   banned stockpile flattens after ~2031. The cut applies from today though the ban
-   starts in 2027, which the averaging window absorbs.
+   single run every other chart here tracks.
+2. **China's path is its own trend, capped by the ceiling.** `_duv_policy_cut()` grows
+   IFP's 2026 output (`_DUV_CN_2026_B300E` × `_DUV_H100E_PER_B300E`) at
+   `_DUV_CN_OUTPUT_GROWTH` over a deterministic quantile grid (`_duv_realized_grid()`),
+   takes min(trend, ceiling), and returns 1 − (growth under the policy ÷ growth with
+   neither ban) over today → the Pacing horizon. That path starts ~16× under even the
+   banned ceiling, so an import ban binds only once output grows into it: ~4% to 2031
+   at the default. **That number is set almost entirely by the output growth rate**
+   (0.5% at 1.5×/yr, ~11% at 4×), which is chip output, not installed compute, so it is
+   its own constant rather than `_WC_GROWTH`, and Pacing exposes it as `pc_duv_growth`
+   (`test_faster_output_growth_reaches_the_ceiling_sooner`). Don't revert to the
+   ceiling-to-ceiling ratio; it charged the ban ~24% for a limit China hasn't reached.
+3. **A servicing ban erodes the fleet in use, so it bites from 2027.**
+   `pc_duv_service` multiplies the path by (1 − `pc_duv_decay`) per year from
+   `_DUV_POLICY_YEAR`. The rate (`_DUV_SERVICE_DECAY_PCT`, default 15%) is a judgment the
+   report does not give; it sits under the pause panel's *Advanced* beside
+   `pc_duv_growth`, and
+   `CHINA_COMPUTE_JUDGMENTS.md` §5 records it.
+
+On the Pacing tab the cut compounds with `pc_dom_slow`: effective slowdown =
+1 − (1 − slider)(1 − cut), through the existing domestic-growth machinery. The
+*Assumes* line names each active DUVi lever even when its cut rounds to 0%.
 
 Guarded by `TestDuvProduction` (unit), `TestCcDuvCeilingTab` and
-`test_duvi_ban_compounds_with_the_domestic_slider` (integration).
+`test_duvi_levers_compound_with_the_domestic_slider` (integration).
 
 ### Compute/capabilities/diffusion — China's ETA to a target ECI
 
@@ -1219,8 +1233,8 @@ biggest domestic cluster, the compute term is dead until the domestic buildout r
 the lost OOMs at its catalogued pace, domestic band thereafter (also suppresses the
 China-accessible sensitivity, whose premise it removes). The pace band deliberately
 stays on the default compute band — it is shared with the CC crossing.
-Above the slider, `pc_duv_ban` (default off) compounds the CTS-derived DUVi-ban cut into
-it (see *lithography ceiling* above). Alongside them, `pc_dom_slow` (0–90%, default 0) slows China's *own* buildout —
+Above the slider, `pc_duv_ban` and `pc_duv_service` (default off) compound the CTS-derived
+DUVi import and servicing cuts into it (see *lithography ceiling* above). Alongside them, `pc_dom_slow` (0–90%, default 0) slows China's *own* buildout —
 equipment/fab controls rather than access controls. The cut comes off the **domestic
 component** of each band, not the band itself: `g_hi_eff -= g_dom_hi·p`, likewise for
 `lo`, so the export-control band keeps whatever access abroad adds on top while a run

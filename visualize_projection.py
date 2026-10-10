@@ -12,6 +12,7 @@ import pandas  # noqa: F401
 import plotly.graph_objects as go
 import yaml
 import csv
+import statistics
 import re
 import html
 import textwrap
@@ -10116,14 +10117,34 @@ _WC_GROWTH = (
 # CTS lithography report (Brown & Khan, Sep 2026): US AI chip output against
 # China's *lithography-bounded ceiling*, with DUVi imports continuing or banned
 # from 2027. The China rows assume every other bottleneck solved, so their
-# levels are never China's path here: the app uses them only as a ceiling
-# chart and as the ban-vs-continue *ratio* of growth (`_duv_ban_cut`).
+# levels are never China's path: China's realized output follows its own
+# trend and the ceiling only caps it (`_duv_policy_cut`).
 _DUV_FILE = 'cts_duv_production.csv'
 _DUV_SOURCE_URL = "https://techstatecraft.org/duv"
 _DUV_ALLOCS = (("trend", "today's allocation"),
                ("push", "AI push"),
                ("ceiling", "every DUVi on AI"))
 _DUV_BAN_ALLOC = "push"   # the allocation the Pacing lever reads
+# China's realized 2026 AI chip output, the report's Figure 9 (IFP): 62k–160k
+# B300e, read as a 10th–90th range. To H100e at the report's own conversion,
+# TrendForce's 13.9M GB300e ≈ 35M H100e (dense FP16).
+_DUV_CN_2026_B300E = (0.062, 0.160)   # millions
+_DUV_H100E_PER_B300E = 35.0 / 13.9
+_DUV_POLICY_YEAR = 2027.0             # the ban and the servicing cut both bite
+# Growth of that output in H100e, ×/yr: median, with the 10th–90th spread at
+# ÷/× _DUV_CN_OUTPUT_SPREAD. Chip output, not installed compute (`_WC_GROWTH`):
+# Epoch has Ascend units ~0.8M (2025) → ~1.5M (2026, ×1.9); SemiAnalysis's 2027
+# median is 2M Ascend 950s (×1.3), its high case 4M (×2.7); per-chip
+# performance rises on top. The import-ban cut is most sensitive to this, so
+# Pacing exposes it (`pc_duv_growth`).
+_DUV_CN_OUTPUT_GROWTH = 2.4
+_DUV_CN_OUTPUT_SPREAD = 1.6
+_DUV_CN_OUTPUT_GROWTH_RANGE = (1.2, 5.0)
+# Advanced-fab DUVi capacity lost per year once foreign servicing stops. The
+# report gives no number ("some uncertainty as to the magnitude"), so this is
+# a judgment, exposed as a slider: see CHINA_COMPUTE_JUDGMENTS.md §5.
+_DUV_SERVICE_DECAY_PCT = 15
+_DUV_SERVICE_DECAY_MAX = 50
 
 
 def _duv_mtime():
@@ -10157,25 +10178,70 @@ def _duv_log_p50(rows, t):
     return float(np.interp(t, xs, ys))
 
 
-def _duv_ban_cut(start, end, alloc=_DUV_BAN_ALLOC, data=None):
-    """Share of China's ceiling growth a DUVi ban removes over [start, end].
+def _duv_frac_year(d):
+    return d.year + (d.timetuple().tm_yday - 1) / 365.25
 
-    1 − (OOM/yr banned) / (OOM/yr continuing), on the P50 annual output. A
-    ratio of two ceilings, so the report's unrealistic levels cancel and only
-    the policy contrast is carried. Growth in chips *made per year*, which is
-    what a new largest cluster is built from. None when the window is empty.
+
+def _duv_realized_grid(n=15, growth=_DUV_CN_OUTPUT_GROWTH):
+    """Quantile grid of (log10 2026 output in M H100e, log10 growth ×/yr).
+
+    China's output absent any lithography limit: the IFP 2026 range, growing
+    at `growth` ×/yr (median, spread ÷/× `_DUV_CN_OUTPUT_SPREAD`), both
+    lognormal from their 10th/90th. Deterministic, so reruns agree.
+    """
+    z = [statistics.NormalDist().inv_cdf((k + 0.5) / n) for k in range(n)]
+
+    def _ln(lo, hi):
+        mu, sd = (np.log10(lo) + np.log10(hi)) / 2, (np.log10(hi / lo)) / 2.5631
+        return [mu + sd * q for q in z]
+
+    lo, hi = _DUV_CN_2026_B300E
+    lv = _ln(lo * _DUV_H100E_PER_B300E, hi * _DUV_H100E_PER_B300E)
+    return [(a, b) for a in lv
+            for b in _ln(growth / _DUV_CN_OUTPUT_SPREAD,
+                         growth * _DUV_CN_OUTPUT_SPREAD)]
+
+
+def _duv_log_output(t, lv0, lg, rows, decay=0.0):
+    """log10 China output at year `t`: its own trend, capped by the ceiling,
+    times the fleet that survives `decay`/yr without servicing."""
+    v = min(lv0 + lg * (t - 2026.5), _duv_log_p50(rows, t))
+    if decay > 0:
+        v += np.log10(1.0 - decay) * max(t - _DUV_POLICY_YEAR, 0.0)
+    return v
+
+
+def _duv_policy_cut(start, end, ban_imports=True, decay=0.0,
+                    alloc=_DUV_BAN_ALLOC, data=None,
+                    growth=_DUV_CN_OUTPUT_GROWTH):
+    """Share of China's chip-output growth the DUVi policies remove, start→end.
+
+    1 − (OOM/yr under the policy) / (OOM/yr with imports and servicing
+    continuing), averaged over `_duv_realized_grid`. China's output is its own
+    trend capped by the report's ceiling, so an import ban bites only once
+    the banned ceiling binds, which today's low output puts years out.
+    `decay` (fraction/yr) is the servicing ban: it erodes the fleet that makes
+    the chips, so it bites from 2027 whether or not the ceiling binds. None
+    when the window is empty.
     """
     data = data or load_duv_production(_duv_mtime())
-    t0 = start.year + (start.timetuple().tm_yday - 1) / 365.25
-    t1 = end.year + (end.timetuple().tm_yday - 1) / 365.25
+    t0, t1 = _duv_frac_year(start), _duv_frac_year(end)
     if t1 - t0 < 0.25:
         return None
-    g = {imp: (_duv_log_p50(data[f"{imp}_{alloc}"], t1)
-               - _duv_log_p50(data[f"{imp}_{alloc}"], t0)) / (t1 - t0)
-         for imp in ("continue", "banned")}
-    if g["continue"] <= 0:
-        return None
-    return float(min(max(1.0 - g["banned"] / g["continue"], 0.0), 1.0))
+    if not ban_imports and decay <= 0:
+        return 0.0
+    cont = data[f"continue_{alloc}"]
+    pol = data[f"banned_{alloc}"] if ban_imports else cont
+    cuts = []
+    for lv0, lg in _duv_realized_grid(growth=growth):
+        g_c = (_duv_log_output(t1, lv0, lg, cont)
+               - _duv_log_output(t0, lv0, lg, cont)) / (t1 - t0)
+        g_p = (_duv_log_output(t1, lv0, lg, pol, decay)
+               - _duv_log_output(t0, lv0, lg, pol, decay)) / (t1 - t0)
+        if g_c > 0:
+            cuts.append(min(max(1.0 - g_p / g_c, 0.0), 1.0))
+    return float(np.mean(cuts)) if cuts else None
+
 
 # Compute/capabilities/diffusion tab
 _CC_RESET_KEYS = ["cc_future", "cc_run", "cc_end_year", "cc_bd_anchor",
@@ -14065,8 +14131,9 @@ def _render_cc_duv_ceiling(today):
     The report's own numbers (`load_duv_production`), charted as published.
     China's rows are a ceiling on chips made per year with every non-lithography
     bottleneck assumed away, so this section says so up front and never feeds
-    the levels anywhere: the Pacing tab's DUVi lever reads only the
-    ban-vs-continue ratio (`_duv_ban_cut`).
+    the levels anywhere. China's own output trend is drawn under them, since
+    where it meets a ceiling is when that ceiling, and a ban on it, starts to
+    bind (`_duv_policy_cut`).
     """
     st.subheader("Lithography ceiling on China's chip output")
     data = load_duv_production(_duv_mtime())
@@ -14122,35 +14189,79 @@ def _render_cc_duv_ceiling(today):
             marker=dict(size=5), customdata=cd,
             hovertemplate="%{x|%Y}: <b>%{y:,.0f}M</b> H100e/yr<br>"
                           "%{customdata}<extra>" + name + "</extra>"))
+    # China's realized output and its own trend, absent any lithography cap:
+    # the same grid `_duv_policy_cut` averages over.
+    grid = _duv_realized_grid()
+    yrs = [y for y, *_ in us]
+    paths = np.array([[10 ** (lv0 + lg * (y + 0.5 - 2026.5)) for y in yrs]
+                      for lv0, lg in grid])
+    p10, p50, p90 = (np.percentile(paths, q, axis=0) for q in (10, 50, 90))
+    xs = [_x(y) for y in yrs]
+    trend_name = f"China's own trend (\u00d7{_DUV_CN_OUTPUT_GROWTH:g}/yr)"
+    fig.add_trace(go.Scatter(
+        x=xs, y=list(p50), name=trend_name, mode='lines',
+        line=dict(color='#7F7F7F', width=2, dash='dot'),
+        customdata=[f"{a:,.1f}\u2013{b:,.0f}M" for a, b in zip(p10, p90)],
+        hovertemplate="%{x|%Y}: <b>%{y:,.1f}M</b> H100e/yr (P10\u2013P90 "
+                      "%{customdata})<br>if output kept its own pace with "
+                      "no lithography cap<extra>" + trend_name
+                      + "</extra>"))
+    lo, hi = (v * _DUV_H100E_PER_B300E for v in _DUV_CN_2026_B300E)
+    mid = float(np.sqrt(lo * hi))
+    fig.add_trace(go.Scatter(
+        x=[_x(yrs[0])], y=[mid], name="China actual, 2026 (IFP)",
+        mode='markers', marker=dict(color='#222222', size=8, symbol='diamond'),
+        error_y=dict(type='data', symmetric=False, array=[hi - mid],
+                     arrayminus=[mid - lo], color='#222222', width=5),
+        hovertemplate=f"2026: {lo:.2f}\u2013{hi:.2f}M H100e "
+                      f"({_DUV_CN_2026_B300E[0] * 1000:.0f}k\u2013"
+                      f"{_DUV_CN_2026_B300E[1] * 1000:.0f}k B300e)"
+                      "<extra>China actual (IFP)</extra>"))
     layout = _dc_layout(True, "AI chips made per year (M H100e)",
                         datetime(us[0][0], 1, 1),
                         datetime(last, 12, 31), show_legend=True, height=400)
     layout['legend'] = dict(layout['legend'], orientation='h', y=-0.15)
+    layout['margin'] = dict(layout['margin'], t=28)
     fig.update_layout(**layout)
     fig.add_vline(x=today, line=dict(color='#999999', width=1.5, dash='dot'))
     fig.add_annotation(x=today, yref='paper', y=1.0, text='Today',
                        showarrow=False, xanchor='right', yanchor='bottom',
                        font=dict(size=10, color='#777777'))
     st.plotly_chart(fig, use_container_width=True)
-    cut = _duv_ban_cut(today, datetime(_PC_END_YEARS[-1], 12, 31))
+    end = datetime(_PC_END_YEARS[-1], 12, 31)
+    c_imp = _duv_policy_cut(today, end)
+    c_svc = _duv_policy_cut(today, end, ban_imports=True,
+                            decay=_DUV_SERVICE_DECAY_PCT / 100.0)
     _fn_caption(
-        "Bands are P10–P90 for China and the low–high range for the "
+        "Bands are P10\u2013P90 for China and the low\u2013high range for the "
         "US. China is drawn at the AI-push allocation; hover for the "
         "others. Chips made per year, not the largest single training run "
-        "the rest of this tab tracks. The Pacing tab's DUVi ban lever uses "
-        f"only the ratio: the ban slows this ceiling's growth by ~{cut:.0%} "
-        f"to {_PC_END_YEARS[-1]}. Source: Brown & Khan, Center for Technology "
+        "the rest of this tab tracks. China's actual output is far under "
+        "both ceilings, so an import ban binds only once its own trend "
+        "reaches the banned line: the Pacing tab's lever puts that at "
+        f"~{c_imp:.0%} less growth to {end.year}, or ~{c_svc:.0%} with "
+        "servicing banned too. Source: Brown & Khan, Center for Technology "
         f"& Statecraft, [*DUV Immersion Lithography*]({_DUV_SOURCE_URL}) "
-        "(Sep 2026), Table 45.",
+        "(Sep 2026), Table 45 and Figure 9.",
         ("AI-push allocation", "China moves its DUVi fleet to AI chips in "
                                "the same share the US ecosystem does, "
                                "evading controls where it must. Today's "
                                "allocation is far lower; the physical ceiling "
                                "puts every machine on AI."),
-        ("the ratio",
-         "Growth of the P50 ceiling, banned over continuing, at the AI-push "
-         "allocation; the levels cancel. The cut deepens with the horizon, "
-         "since the stockpile alone flattens out after ~2031."))
+        ("its own trend",
+         "IFP's 2026 estimate of Huawei's output (62k\u2013160k B300e, at the "
+         "report's 2.5 H100e per B300e), growing "
+         f"\u00d7{_DUV_CN_OUTPUT_GROWTH:g}/yr (10th\u201390th "
+         f"\u00d7{_DUV_CN_OUTPUT_GROWTH / _DUV_CN_OUTPUT_SPREAD:.1f}\u2013"
+         f"{_DUV_CN_OUTPUT_GROWTH * _DUV_CN_OUTPUT_SPREAD:.1f}): Epoch and "
+         "SemiAnalysis put Ascend unit growth at \u00d71.3\u20132.7/yr, with "
+         "faster chips on top. The lever caps this trend at each ceiling "
+         "and compares growth with and without the policy. The import-ban "
+         "cut is sensitive to this rate; Pacing exposes it."),
+        ("with servicing banned too",
+         f"At the default {_DUV_SERVICE_DECAY_PCT}%/yr loss of advanced-fab "
+         "DUVi capacity from 2027. The report gives no rate; it is the "
+         "Pacing tab's judgment, set under Advanced."))
 
 
 def render_compute_capabilities():
@@ -14809,6 +14920,7 @@ _PC_CARDS_PER_ROW = 4
 _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_pause_mo", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
+                  "pc_duv_service", "pc_duv_decay", "pc_duv_growth",
                   "pc_dist_when", "pc_remote_when", "pc_cn_run"] + \
                  [_PC_RSI_W_KEY + s for s in _PC_RSI_WEIGHTS]
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
@@ -14838,6 +14950,9 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_pause_mo": _pc_pause_default_mo(),
                 "pc_stop_dist": False, "pc_stop_remote": False,
                 "pc_withhold": True, "pc_dom_slow": 0, "pc_duv_ban": False,
+                "pc_duv_service": False,
+                "pc_duv_decay": _DUV_SERVICE_DECAY_PCT,
+                "pc_duv_growth": _DUV_CN_OUTPUT_GROWTH,
                 "pc_dist_when": _PC_WHEN_NOW,
                 "pc_remote_when": _PC_WHEN_NOW,
                 "pc_cn_run": 2,
@@ -16137,19 +16252,31 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              "first regrow), and grows at the domestic catalogued pace "
              "thereafter.")
     _duv_end = horizon if horizon is not None else _PC_HORIZON
-    duv_cut = _duv_ban_cut(today, _duv_end) or 0.0
-    duv_ban = st.checkbox(
+    # The growth slider sits under Advanced, below this help text, so read it
+    # a rerun early, as the blend weights are.
+    _imp_cut = _duv_policy_cut(
+        today, _duv_end, growth=st.session_state.get(
+            "pc_duv_growth", _PC_DEFAULTS["pc_duv_growth"])) or 0.0
+    db1, db2 = st.columns(2)
+    duv_ban = db1.checkbox(
         "Ban DUV immersion lithography exports to China from 2027",
         key="pc_duv_ban",
-        help="The China-wide DUVi ban CTS proposes (Brown & Khan, "
-             f"[report]({_DUV_SOURCE_URL})). Their lithography ceiling on "
-             "China's AI chip output, at the AI-push allocation, grows "
-             f"**{duv_cut:.0%}** slower to {_duv_end.year} with the ban than "
-             "with imports continuing; that ratio comes off China's domestic "
-             "compute growth, on top of the slider below. Only the ratio is "
-             "used: the report's China levels assume every other tool "
-             "shortage solved, so they are ceilings, not China's path. See "
-             "the Compute/capabilities tab's lithography chart.")
+        help="The China-wide DUVi import ban CTS proposes (Brown & Khan, "
+             f"[report]({_DUV_SOURCE_URL})). It lowers the report's ceiling "
+             "on China's AI chip output, but China's real output today sits "
+             "far below even the banned ceiling, so the ban bites only once "
+             f"output grows into it: **{_imp_cut:.0%}** less growth to "
+             f"{_duv_end.year}. That cut comes off China's domestic compute "
+             "growth, on top of the slider below. See the "
+             "Compute/capabilities tab's lithography chart.")
+    duv_service = db2.checkbox(
+        "Ban servicing of DUVi at China's advanced fabs from 2027",
+        key="pc_duv_service",
+        help="No foreign servicing, spare parts or field upgrades for the "
+             "scanners making China's AI chips, so that fleet erodes at the "
+             "rate set under *Advanced*. Unlike the import ban it bites "
+             "straight away, because it hits the machines in use rather "
+             "than a ceiling China has not reached yet.")
     dom_slow_user = st.slider(
         "Slow China's domestic compute growth by", 0, _PC_DOM_SLOW_MAX,
         value=_PC_DEFAULTS["pc_dom_slow"], step=1, format="%d%%",
@@ -16161,9 +16288,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              "access is cut \u2014 and a slower domestic pace also makes the "
              "remote-access setback take longer to regrow. 0% = the "
              "catalogued buildout.")
-    # The ban and the slider are independent levers, so they compound.
-    dom_slow_pct = int(round(100 * (1 - (1 - dom_slow_user / 100.0)
-                                    * (1 - (duv_cut if duv_ban else 0.0)))))
     with st.expander("Advanced"):
         st.markdown("**When the controls bite**")
         _opts = _pc_when_options(today)
@@ -16190,6 +16314,29 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                    "their own mean. Moving a slider right buys China more "
                    "time on that channel before it closes.")
         st.divider()
+        st.markdown("**DUVi fleet without servicing**")
+        duv_decay = st.slider(
+            "Advanced-fab DUVi capacity lost per year", 0,
+            _DUV_SERVICE_DECAY_MAX, value=_PC_DEFAULTS["pc_duv_decay"],
+            step=1, format="%d%%", key="pc_duv_decay",
+            disabled=not duv_service,
+            help="A judgment, not the report's: CTS says a servicing ban "
+                 "would degrade the fleet but gives no rate. Low values "
+                 "assume China self-services and cannibalizes its legacy "
+                 "fleet for parts; high ones that lasers and stages go down "
+                 "without foreign consumables. Needs the checkbox above.")
+        duv_growth = st.slider(
+            "Growth of China's AI chip output (\u00d7/yr, median)",
+            *_DUV_CN_OUTPUT_GROWTH_RANGE,
+            value=_PC_DEFAULTS["pc_duv_growth"], step=0.1, format="\u00d7%.1f",
+            key="pc_duv_growth", disabled=not (duv_ban or duv_service),
+            help="How fast China's real output, in H100e, grows toward the "
+                 "lithography ceiling. The import ban bites only once output "
+                 "reaches the banned ceiling, so this rate decides how soon "
+                 "it matters. Epoch and SemiAnalysis put Ascend unit growth "
+                 "at \u00d71.3\u20132.7/yr for 2026\u201327, with per-chip "
+                 "performance rising on top. Needs a DUVi checkbox above.")
+        st.divider()
         st.markdown("**Length of Chinese training run**")
         us_run_mo = max(int(round(run_days / 30)), 1)
         if not (us_run_mo <= st.session_state.get("pc_cn_run", us_run_mo)
@@ -16211,6 +16358,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              f"An L-month run carries \u00d7L/{us_run_mo} the compute of the "
              f"{us_run_mo}-month bar: China's whole path lifts by what that buys "
              f"and shifts right by L\u2212{us_run_mo} months."))
+    # The DUVi policies and the slider are independent levers: they compound.
+    duv_cut = (_duv_policy_cut(today, _duv_end, ban_imports=duv_ban,
+                               decay=(duv_decay / 100.0 if duv_service
+                                      else 0.0), growth=duv_growth) or 0.0)
+    dom_slow_pct = int(round(100 * (1 - (1 - dom_slow_user / 100.0)
+                                    * (1 - duv_cut))))
+    duv_names = " and ".join(n for n, on in (("import", duv_ban),
+                                             ("servicing", duv_service)) if on)
     d_dist = _pc_when_date(dist_when, today)
     d_remote = _pc_when_date(remote_when, today)
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
@@ -16556,8 +16711,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _dom_hi = g_hi_eff if g_dom_hi is None else g_dom_hi
     _dom_lo = g_lo_eff if g_dom_hi is None else g_dom_lo
     _slow = (f"; domestic buildout slowed {dom_slow_pct}%"
-             + (" incl. the DUVi ban" if duv_ban else "")
-             if dom_slow_pct else "")
+             + (f" incl. the DUVi {duv_names} ban"
+                + ("s" if duv_ban and duv_service else "")
+                if duv_names else "")
+             if dom_slow_pct or duv_names else "")
     if comp_dead is not None:
         _asm_comp = (f"compute — from {_when_r}, falls back "
                      f"**{dlvl_oom:.1f} OOM** to the largest domestic "
@@ -16744,11 +16901,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             f"while the {dlvl_oom:.1f} OOM setback is regrown.")
     elif stop_remote:
         _notes.append("Compute runs at the domestic pace only.")
-    if dom_slow_pct:
+    if dom_slow_pct or duv_names:
         _notes.append(
             f"China's own clusters grow {dom_slow_pct}% slower than the "
             "catalogued domestic pace"
-            + (f" ({duv_cut:.0%} of it the DUVi ban)" if duv_ban else "")
+            + (f" ({duv_cut:.0%} of it the DUVi {duv_names} ban"
+               + ("s)" if duv_ban and duv_service else ")")
+               if duv_names else "")
             + ", which lowers both compute rows.")
     _notes.append(f"Every row is scaled by the pace band "
                   f"(×{pace_lo:.2f}–{pace_hi:.2f}), the reality check "
