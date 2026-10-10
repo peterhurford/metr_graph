@@ -968,7 +968,7 @@ class TestComputeVsCapabilities:
 # ===========================================================================
 
 class TestCcWorldSharesTab:
-    """The global compute distribution, last section of the CC tab."""
+    """The global compute distribution, second-to-last section of the CC tab."""
 
     def _app(self):
         at = _fresh_app()
@@ -981,7 +981,8 @@ class TestCcWorldSharesTab:
     def test_renders_last_with_both_charts(self):
         at = self._app()
         _assert_no_error(at, "CC / world shares")
-        assert [str(h.value) for h in at.subheader][-1] == self._HEAD
+        assert [str(h.value) for h in at.subheader][-2:] == [
+            self._HEAD, TestCcDuvCeilingTab._HEAD]
         text = " ".join(str(m.value) for m in at.markdown)
         assert "of the world's AI compute is in the US" in text
         assert "Where it is heading" in text
@@ -999,6 +1000,24 @@ class TestCcWorldSharesTab:
         assert len(pct) == 4
         us_guess, cn_guess, us_tracked, cn_tracked = pct
         assert us_tracked > us_guess + 15 and cn_guess > cn_tracked
+
+
+class TestCcDuvCeilingTab:
+    """The CTS lithography ceiling, last section of the CC tab."""
+
+    _HEAD = "Lithography ceiling on China's chip output"
+
+    def test_renders_last_and_says_it_is_a_ceiling(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Compute/capabilities/diffusion")
+        _assert_no_error(at, "CC / DUV ceiling")
+        assert [str(h.value) for h in at.subheader][-1] == self._HEAD
+        text = " ".join(str(m.value) for m in at.markdown)
+        assert "974M" in text and "378M" in text and "110M" in text
+        assert "not a forecast" in text
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "techstatecraft.org/duv" in caps
 
 
 class TestRsiTab:
@@ -1651,6 +1670,28 @@ class TestPacingTab:
         # the right arm is ~4 mo and stays strict.
         assert mid < base + 0.3      # a moderate stretch pays
         assert long_run > mid + 1    # a year of wall clock does not
+
+    def test_duvi_ban_compounds_with_the_domestic_slider(self):
+        """The ban's cut is derived from the CTS table and stacks
+        multiplicatively with the slider: 1 - (1 - slider)(1 - ban)."""
+        at = self._app()
+        cb = at.checkbox(key="pc_duv_ban")
+        assert cb.value is False
+        cb.check().run()
+        _assert_no_error(at, "Pacing / DUVi ban")
+
+        def _slowed(at):
+            md = " ".join(str(m.value) for m in at.markdown)
+            m = re.search(r"domestic buildout slowed (\d+)% incl\. the DUVi ban",
+                          md)
+            assert m, "the Assumes line names the ban"
+            return int(m.group(1))
+
+        ban = _slowed(at)
+        assert 10 <= ban <= 40
+        at.slider(key="pc_dom_slow").set_value(50).run()
+        both = _slowed(at)
+        assert abs(both - round(100 * (1 - 0.5 * (1 - ban / 100)))) <= 1
 
     def test_domestic_slowdown_lever_delays_the_crossing(self):
         """The 0-90% domestic-growth lever comes off the domestic share of

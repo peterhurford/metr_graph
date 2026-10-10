@@ -25,8 +25,9 @@ Four downloadable feeds, three hardcoded tables, and hand-read or digitized figu
 | RSI tables (`_RSI_RAW`, `_RSI_SURVEY`, `_RSI_DIR_RAW`, `_RSI_CODE_RAW`, `openai_experiment_velocity.csv`) | hand-read figures | Sources in CLAUDE.md *Data Sources*. Check new Anthropic system cards for CoBench and survey rounds — but see *CoBench: check comparability first* below. A card's problem set differs from the Risk Report's, so a score goes in via a rescale, never raw |
 | `aisi_cyber_narrow.csv` (UK Cyber) | **digitized figure — verify, don't download** | AISI blog post, [open-weight cyber gap](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) |
 | `aisi_cyber_tlo.csv` (UK Cyber cross-check) | **digitized figure + quoted prose** | Same post's Figure 2, plus the [UK AISI/CAISI Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) |
+| `cts_duv_production.csv` (Compute/capabilities, Pacing DUVi lever) | **transcribed from the page's chart script** | CTS, [*DUV Immersion Lithography*](https://techstatecraft.org/duv), Table 45. The values sit base64-encoded in the `<script>` after Figure 1 (`const US = …`, `CHINA = {continue, banned}`); decode and diff. A one-off report: expect "already current" unless CTS re-versions it |
 
-Note: Employment, ECI Company Gap, and Compute vs Capabilities tabs have NO feed of their own — they derive from RLI / ECI / data centers, so updating those feeds updates them automatically. Don't hunt for separate data for them.
+Note: Employment and ECI Company Gap have NO feed of their own, and Compute vs Capabilities has only the static CTS table above — they derive from RLI / ECI / data centers, so updating those feeds updates them automatically. Don't hunt for separate data for them.
 
 ### CoBench: check comparability before transcribing
 

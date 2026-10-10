@@ -78,6 +78,16 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 - **Supported:** SemiAnalysis names DayOne among ByteDance's core offshore landlords.
 - **Not added:** Oracle Batam, though it sits in the hub SemiAnalysis names. No source ties a Chinese tenant to that specific site, and the tuple requires a site-level citation.
 
+### 5. DUVi ban lever (`pc_duv_ban`, `_duv_ban_cut`)
+
+- **Source:** Brown & Khan, CTS, *DUV Immersion Lithography* (Sep 2026), Table 45, in `cts_duv_production.csv`.
+- **What it is:** a ceiling on China's AI chips made per year if lithography were the only limit. Imports continuing (the report's "Robust" path) vs banned from 2027.
+- **How it is used:** only the ratio of the two P50 growth rates, at the AI-push allocation, over today → the Pacing horizon. That fraction comes off China's domestic compute growth, the same lever as `pc_dom_slow`. Live: ~18% to 2028, ~24% to 2031, ~28% to 2035.
+- **Why the ratio and not the levels:** the levels assume every other bottleneck solved (2035 P50 spans 33M to 532M H100e/yr across allocations). The ratio is roughly scale-free, and growth in chips made per year is the right proxy for growth of the largest new cluster.
+- **Why AI push:** the Pacing panel's China is a state-directed catch-up. Today's allocation gives a noisier, similar cut (~18% to 2031); the physical ceiling gives ~35%.
+- **What it omits:** the report notes a servicing ban would bite harder than an import ban; that is not modelled. Near term, China's real output sits far below the ceiling (IFP: 62k–160k B300e in 2026), so a ceiling-growth cut may overstate the near-term effect.
+- **Revisit when:** CTS re-versions the table, or a ban or servicing control is actually enacted.
+
 ## Checked and deliberately left alone
 
 - **Catalogue coverage.** It holds ~0.94 GW of IT power in China at end-2026, against SemiAnalysis's 24 GW national fleet (~4%; the US is ~25%). That is irrelevant to largest-site views as long as the largest sites are present.

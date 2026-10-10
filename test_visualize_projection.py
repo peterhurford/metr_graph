@@ -5116,6 +5116,56 @@ class TestNoDuplicateDefinitions:
         assert not dupes, dupes
 
 
+class TestDuvProduction:
+    """The CTS lithography table and the ban ratio the Pacing lever reads."""
+
+    def _data(self):
+        return vp.load_duv_production(vp._duv_mtime())
+
+    def test_transcription_matches_the_reports_own_2035_labels(self):
+        """The figure's aria-labels state the 2035 values in prose; the
+        table must reproduce them."""
+        d = self._data()
+        assert d["us"][-1] == (2035, 422, 974, 3566)
+        assert d["continue_ceiling"][-1][1:] == (306, 532, 1071)
+        assert d["continue_push"][-1][1:] == (204, 378, 784)
+        assert d["continue_trend"][-1][1:] == (56, 114, 251)
+        assert d["banned_ceiling"][-1][1:] == (87, 153, 321)
+        assert d["banned_push"][-1][1:] == (58, 110, 235)
+        assert d["banned_trend"][-1][1:] == (17, 33, 72)
+
+    def test_table_is_complete_and_ordered(self):
+        d = self._data()
+        assert set(d) == {"us"} | {f"{i}_{a}" for i in ("continue", "banned")
+                                   for a, _ in vp._DUV_ALLOCS}
+        for key, rows in d.items():
+            assert [r[0] for r in rows] == list(range(2026, 2036)), key
+            for y, lo, mid, hi in rows:
+                assert lo <= mid <= hi, (key, y)
+        # A ban never raises the ceiling, and bites only from 2027.
+        for a, _ in vp._DUV_ALLOCS:
+            c, b = d[f"continue_{a}"], d[f"banned_{a}"]
+            assert c[0] == b[0]
+            assert all(bb[2] <= cc[2] for cc, bb in zip(c, b))
+
+    def test_ban_cut_is_a_fraction_that_deepens_with_the_horizon(self):
+        t0 = datetime(2026, 10, 1)
+        cuts = [vp._duv_ban_cut(t0, datetime(y, 12, 31))
+                for y in (2028, 2030, 2031, 2035)]
+        assert all(0.1 < c < 0.4 for c in cuts)
+        assert cuts == sorted(cuts)
+        assert vp._duv_ban_cut(t0, t0) is None
+
+    def test_ban_cut_is_scale_free(self):
+        """Only the ratio is used, so scaling every level cancels."""
+        d = self._data()
+        k = {key: [(y, lo * 7, m * 7, hi * 7) for y, lo, m, hi in rows]
+             for key, rows in d.items()}
+        t0, t1 = datetime(2026, 10, 1), datetime(2031, 12, 31)
+        assert vp._duv_ban_cut(t0, t1, data=k) == pytest.approx(
+            vp._duv_ban_cut(t0, t1, data=d), abs=1e-3)
+
+
 class TestCcWorldShares:
     """The global compute distribution at the bottom of the CC tab."""
 

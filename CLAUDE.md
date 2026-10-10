@@ -29,6 +29,7 @@ Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tes
 - **`epoch_capabilities_index.csv`** — Epoch ECI data, written by **`convert_eci.py`** from Epoch's `eci_scores.csv` + `all_ai_models.csv`
 - **`data_centers.csv`** / **`data_center_timelines.csv`** — Epoch Frontier Data Centers: one metadata row per site, many dated capacity rows per site
 - **`CHINA_COMPUTE_JUDGMENTS.md`** — the record behind every hand-set China/SEA compute pace and share: value, evidence, derivation, revisit triggers
+- **`cts_duv_production.csv`** — CTS lithography report's Table 45: US AI chip output vs China's lithography-bounded ceiling, DUVi imports continuing or banned (see *Compute/capabilities/diffusion — lithography ceiling*)
 - **`aisi_cyber_narrow.csv`** / **`aisi_cyber_tlo.csv`** — AISI narrow cyber success rates (12 models); AISI/CAISI cyber-range "The Last Ones" avg steps of 32 (10 models). Both **chart-digitized, not published feeds** — see each file's `#` header
 
 No build system, no CI/CD, no package manager beyond requirements.txt (`streamlit`, `numpy`, `plotly`, `pyyaml`).
@@ -71,7 +72,7 @@ has no main-column headings, so it has no section to link to.
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`) and ends with the region-share stack (`_dc_render_region_share()`) |
-| Compute/capabilities/diffusion (slug `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; carries China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`) and ends with the global compute distribution, today and projected (`_render_cc_world_shares()`) |
+| Compute/capabilities/diffusion (slug `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; carries China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`), then the global compute distribution, today and projected (`_render_cc_world_shares()`), and ends with the CTS lithography ceiling (`_render_cc_duv_ceiling()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
 | Frontier Thresholds | `frontier_thresholds.render(st)` | `frontier_thresholds.json` | dated threshold events per lab and risk category; no projection (see *Frontier Thresholds* below) |
 
@@ -94,6 +95,7 @@ recipe, including the AISI cyber data deliberately *not* ingested.
 | `openai_experiment_velocity.csv` | OpenAI research-acceleration [post](https://openai.com/index/research-acceleration-view-inside-openai/) (`_RSI_EXPERIMENT_SOURCE_URL`) | **Not downloadable**: the *Experiment velocity* chart's tooltip values, transcribed by hand (four-week trailing experiments per active experimenter, 2025 = 1x); method and caveats in the file's `#` header. Hand-edit rows |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | Press reports | Hand-edit `(date, ARR_in_billions)` tuples |
 | `_CN_REVENUE` (hardcoded) | Company results calls/filings and press | Hand-edit `(date, $B, basis, note)` points. Run rates only: never annualize audited period revenue into it, and for Alibaba take the MaaS ARR, not "AI-related product revenue" (includes GPU rental) |
+| `cts_duv_production.csv` | CTS, [*DUV Immersion Lithography*](https://techstatecraft.org/duv) (`_DUV_SOURCE_URL`) | **Not downloadable** as a file, but exact: the values are transcribed from the base64 chart script the page embeds after Figure 1, not digitized. `test_transcription_matches_the_reports_own_2035_labels` checks them against the figure's aria-label prose. Hand-edit rows |
 | `aisi_cyber_tlo.csv` | UK AISI Figure 2 + [Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) | **Not downloadable** — 9 rows digitized from `fig2-ranges.png`, one value quoted from prose. Calibration and validation checks are in the file's `#` header, guarded by `TestUkCyberTlo`. Dates are **published release dates**; the figure's x-axis is tokens |
 | `aisi_cyber_narrow.csv` | UK AISI [open-weight cyber gap post](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) | **Not downloadable** — AISI publishes no numbers; values digitized from `fig1-narrow.png` by pixel analysis. Refreshing is a *figure-unchanged check*: re-fetch the PNG, confirm gridline rows and marker colours still match, re-digitize only if the figure changed. `test_digitized_dates_match_known_releases` and `test_optimistic_bracket_reproduces_aisi_published_lags` are the calibration guards. Hand-editing a row is fine if AISI states a number in prose |
 
@@ -917,6 +919,29 @@ not a reading of the CSVs. Six things are load-bearing:
 No controls: an editable-centrals expander was tried and removed. Guarded by
 `TestCcWorldShares` (unit) and `TestCcWorldSharesTab` (integration).
 
+### Compute/capabilities/diffusion — lithography ceiling (last section)
+
+`_render_cc_duv_ceiling()` charts `cts_duv_production.csv` as published: US-and-allied
+AI chips made per year against China's **lithography-bounded ceiling**, with DUVi imports
+continuing or banned from 2027, at the report's AI-push allocation (the other two in the
+hover). Two things are load-bearing:
+
+1. **The China levels are ceilings, never China's path.** The report assumes every
+   non-lithography bottleneck solved and TSMC-grade yields by 2031, and calls its own
+   numbers unrealistic near term. They also count chips made per year, not the largest
+   single run every other chart here tracks. So nothing reads the levels.
+2. **What the app consumes is the ratio.** `_duv_ban_cut(start, end)` = 1 −
+   (banned OOM/yr ÷ continuing OOM/yr) on the P50, the scale-free policy contrast
+   (`test_ban_cut_is_scale_free`). The Pacing tab's `pc_duv_ban` checkbox takes that cut
+   over today → its *Projection range* and compounds it with `pc_dom_slow`:
+   effective slowdown = 1 − (1 − slider)(1 − cut), applied through the existing
+   domestic-growth machinery. ~24% to 2031 live; it deepens with the horizon because the
+   banned stockpile flattens after ~2031. The cut applies from today though the ban
+   starts in 2027, which the averaging window absorbs.
+
+Guarded by `TestDuvProduction` (unit), `TestCcDuvCeilingTab` and
+`test_duvi_ban_compounds_with_the_domestic_slider` (integration).
+
 ### Compute/capabilities/diffusion — China's ETA to a target ECI
 
 `_render_cc_china_target()` answers "when does China cross `_CC_CN_TARGET_ECI`" with a
@@ -1194,7 +1219,8 @@ biggest domestic cluster, the compute term is dead until the domestic buildout r
 the lost OOMs at its catalogued pace, domestic band thereafter (also suppresses the
 China-accessible sensitivity, whose premise it removes). The pace band deliberately
 stays on the default compute band — it is shared with the CC crossing.
-Alongside them, `pc_dom_slow` (0–90%, default 0) slows China's *own* buildout —
+Above the slider, `pc_duv_ban` (default off) compounds the CTS-derived DUVi-ban cut into
+it (see *lithography ceiling* above). Alongside them, `pc_dom_slow` (0–90%, default 0) slows China's *own* buildout —
 equipment/fab controls rather than access controls. The cut comes off the **domestic
 component** of each band, not the band itself: `g_hi_eff -= g_dom_hi·p`, likewise for
 `lo`, so the export-control band keeps whatever access abroad adds on top while a run
