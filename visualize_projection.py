@@ -1244,11 +1244,6 @@ _RSI_AUTO_VERSION = "v2026.07"     # the index version the figure names
 # (fully autonomous) is zero in every month measured.
 _RSI_AUTO_TARGET = 90.0
 
-# Same reason the survey and merged-code fans stop short of the tab's
-# horizon: at a ~30-day odds doubling the fan is pinned at 100% within a
-# year, and the remaining years of flat dashed line only squash the six
-# measured months into the left margin.
-_RSI_AUTO_HORIZON_DAYS = 365
 
 
 # A share this close to the ceiling carries no rate information — one pixel of
@@ -1344,12 +1339,38 @@ def _rsi_auto_fit(rows):
     return _rsi_auto_level_fit(rows, 'al4')
 
 
+# The AL4 ramp bends: the labelled months since May climb at about half the
+# full fit's rate, and the latest sits below the fitted line, outside its own
+# 90% interval. The uncertainty is widened to hold the reading off just these
+# months alongside the full fit, rather than refitting on four points.
+_RSI_AUTO_RECENT_N = 4
+
+
+def _rsi_auto_recent_rows(rows):
+    """`rows` with only the last `_RSI_AUTO_RECENT_N` labelled AL4 months
+    fitted; the other rungs are untouched."""
+    keep = {id(r) for r in [r for r in rows if r['fitted']][-_RSI_AUTO_RECENT_N:]}
+    return [dict(r, fitted=id(r) in keep) for r in rows]
+
+
 def _rsi_auto_dt_ci(rows, fit_dt):
-    """Default 80% CI on the AL4 odds-doubling time, in days."""
-    pts = _rsi_auto_points(rows, 'al4')
-    return _dt_ci_t_widened([(r['date'] - pts[0]['date']).days for r in pts],
-                            _logit(np.array([r['al4'] for r in pts]) / 100),
-                            fit_dt)
+    """Default 80% CI on the AL4 odds-doubling time, in days.
+
+    The full fit's t-widened interval, its slow edge stretched to the slow
+    edge of the recent months' own 80% t-interval.
+    """
+    def _pts_xy(pts):
+        return ([(r['date'] - pts[0]['date']).days for r in pts],
+                _logit(np.array([r['al4'] for r in pts]) / 100))
+    lo, hi = _dt_ci_t_widened(*_pts_xy(_rsi_auto_points(rows, 'al4')), fit_dt)
+    recent = _rsi_auto_points(_rsi_auto_recent_rows(rows), 'al4')
+    if len(recent) >= 3:
+        x, y = _pts_xy(recent)
+        icpt, slope = fit_line(np.asarray(x, dtype=float), y)
+        tband = _dt_t_interval(x, y, icpt, slope)
+        if tband:
+            hi = max(hi, float(round(tband[1])))
+    return lo, hi
 
 
 def _rsi_auto_pos_sigma(row):
@@ -1365,6 +1386,23 @@ def _rsi_auto_pos_sigma(row):
     lo = min(max(row['lo'], 0.05), 99.95)
     hi = min(max(row['hi'], 0.05), 99.95)
     return max((_logit(hi / 100) - _logit(lo / 100)) / (2 * 1.645), 0.0)
+
+
+def _rsi_auto_start(rows):
+    """(latest labelled row, centre, sigma) for the projection's start, in
+    log-odds.
+
+    Centred midway between the fitted line and the latest reading, with the
+    figure's own measurement sigma widened so the 80% band reaches both: when
+    the latest month sits off the trend, neither alone is the place to start.
+    """
+    base, icpt, slope = _rsi_auto_fit(rows)
+    cur = [r for r in rows if r['fitted']][-1]
+    fitted = icpt + slope * (cur['date'] - base).days
+    observed = _logit(min(max(cur['al4'], 0.05), 99.95) / 100)
+    half_gap = abs(fitted - observed) / 2
+    sigma = float(np.hypot(_rsi_auto_pos_sigma(cur), half_gap / 1.282))
+    return cur, (fitted + observed) / 2, sigma
 
 
 def _rsi_auto_reach(rows, key, share, epoch=None):
@@ -1445,39 +1483,49 @@ _RSI_AL5_TAU_HI_MULT = 2.0
 def _rsi_al5_lag(rows):
     """The AL4->AL5 lag in days: ladder extrapolation, censored by the zeros.
 
-    Returns {'ladder', 'censor', 'lag'} or None if the rungs will not fit.
+    Returns {'ladder', 'censor', 'lag', 'slow'} or None if the rungs will not
+    fit. `slow` is the same censored lag read off the recent AL4 months alone
+    (see `_RSI_AUTO_RECENT_N`), never below `lag`; the band's slow edge is
+    `_RSI_AL5_TAU_HI_MULT` times it.
     `ladder` continues the measured step-to-step increment; `censor` is the
     shortest lag under which AL5 would still be invisible in the last rated
     month (`_RSI_AUTO_FLOOR`, the figure's ~1px floor). The lag used is the
     larger: the observed absence of any AL5 band is evidence, and where it
     disagrees with the extrapolation it is the extrapolation that yields.
     """
-    steps = _rsi_auto_ladder(rows)
-    if len(steps) < 2:
+    def _censored(rws):
+        steps = _rsi_auto_ladder(rws)
+        floor_at = _rsi_auto_reach(rws, 'al4', _RSI_AUTO_FLOOR)
+        if len(steps) < 2 or floor_at is None:
+            return None
+        lags = [s[2] for s in steps]
+        ladder = lags[-1] + (lags[-1] - lags[-2])
+        censor = (rws[-1]['date'] - _RSI_AUTO_EPOCH).days - floor_at
+        return ladder, censor, max(ladder, censor)
+    full = _censored(rows)
+    if full is None:
         return None
-    lags = [s[2] for s in steps]
-    ladder = lags[-1] + (lags[-1] - lags[-2])
-    last = rows[-1]['date']
-    floor_at = _rsi_auto_reach(rows, 'al4', _RSI_AUTO_FLOOR)
-    if floor_at is None:
-        return None
-    censor = (last - _RSI_AUTO_EPOCH).days - floor_at
-    return {'ladder': ladder, 'censor': censor, 'lag': max(ladder, censor)}
+    recent = _censored(_rsi_auto_recent_rows(rows))
+    return {'ladder': full[0], 'censor': full[1], 'lag': full[2],
+            'slow': max(full[2], recent[2] if recent else full[2])}
 
 
-def _rsi_al5_tau_draws(lag_days, n):
-    """Lognormal draws for the lag, 80% over [lag, lag x `_RSI_AL5_TAU_HI_MULT`].
+def _rsi_al5_tau_draws(lag_days, n, slow_days=None):
+    """Lognormal draws for the lag, 80% over
+    [lag, `_RSI_AL5_TAU_HI_MULT` x max(lag, slow_days)].
 
     Asymmetric on purpose. The fast edge is the censored central value, which
     is as short as the observed absence of an AL5 band allows; the slow edge
-    is the judgement above. A symmetric band would put mass below what the
-    data already rules out.
+    is the judgement above, applied to the slower reading of the ladder when
+    one is given. A symmetric band would put mass below what the data
+    already rules out.
     """
-    return _lognormal_from_ci(lag_days, lag_days * _RSI_AL5_TAU_HI_MULT, n)
+    hi = max(lag_days, slow_days or 0.0) * _RSI_AL5_TAU_HI_MULT
+    return _lognormal_from_ci(lag_days, hi, n)
 
 
 def _pc_rsi_al5_eta(rows, target_pct=_RSI_AL5_TARGET, lag_days=None, n=None,
-                    samples=False):
+                    samples=False, slow_days=None):
     """(early, median, late) dates for the AL5 share to reach `target_pct`.
 
     AL5 is the AL4 curve shifted, so this is the AL4 sampler's own draw plus a
@@ -1493,8 +1541,8 @@ def _pc_rsi_al5_eta(rows, target_pct=_RSI_AL5_TARGET, lag_days=None, n=None,
         lag = _rsi_al5_lag(rows)
         if lag is None:
             return None
-        lag_days = lag['lag']
-    days_to = days_to + _rsi_al5_tau_draws(float(lag_days), n)
+        lag_days, slow_days = lag['lag'], lag['slow']
+    days_to = days_to + _rsi_al5_tau_draws(float(lag_days), n, slow_days)
     return _pc_eta_out(anchor, np.maximum(days_to, 0.0), samples)
 
 
@@ -5849,7 +5897,7 @@ _RSI_RESET_KEYS = [
 ]
 
 _RSI_DEFAULTS = {
-    "rsi_end_year": 2028,
+    "rsi_end_year": 2029,
     "rsi_timing": "Training run finished",
     "rsi_notyet": True,
     "rsi_notyet_ramp": 90.0,
@@ -6189,7 +6237,7 @@ def render_rsi():
          "shorter investigations for the same token budget on these evaluation "
          "transcripts.” — Fable 5.1 & Mythos 5.1 system card, p. 37"))
 
-    _render_rsi_automation()
+    _render_rsi_automation(rsi_end_year)
     _render_rsi_survey()
     _render_rsi_code()
     _render_rsi_experiments(rsi_end_year)
@@ -6214,7 +6262,7 @@ _RSI_AUTO_COLORS = {'al2': '#b9c6d8', 'al3': '#7e9dc4', 'al4': '#4F8DFD',
                     'al5': '#8e44ad'}
 
 
-def _render_rsi_automation():
+def _render_rsi_automation(end_year):
     """The automation ladder, and AL5 projected off it — one chart.
 
     Charts the cumulative share at AL2+, AL3+ and AL4+ (the rungs the figure
@@ -6314,7 +6362,10 @@ def _render_rsi_automation():
                      "it to price in that removing the supervisor is a harder "
                      "step than any rung measured inside supervised work; the "
                      "80% band already runs to "
-                     f"{_RSI_AL5_TAU_HI_MULT:g}× whatever is set here.")
+                     f"{_RSI_AL5_TAU_HI_MULT:g}× whatever is set here, and "
+                     f"never below {lag['slow'] * _RSI_AL5_TAU_HI_MULT / 30.44:.0f} "
+                     "months: twice the lag read off the AL4 months since "
+                     "May alone.")
         lag_days = max(float(lag_mo) * 30.44, 1.0)
     else:
         lag_days = None
@@ -6327,12 +6378,10 @@ def _render_rsi_automation():
         n = N_SAMPLES
         proj_slope = np.log(2) / np.maximum(
             _lognormal_from_ci(*_rsi_auto_dt_ci(rows, round(dt)), n=n), 1.0)
-        fitted = icpt + slope * (cur['date'] - base).days
-        start_logit = np.random.normal(fitted, _rsi_auto_pos_sigma(cur), n)
+        _cur, centre, sigma = _rsi_auto_start(rows)
+        start_logit = np.random.normal(centre, sigma, n)
 
-        # The window has to hold the AL5 fan, which is the AL4 one pushed out
-        # by the lag; without that the projected rung runs off the right edge.
-        horizon = _RSI_AUTO_HORIZON_DAYS + int(lag_days or 0)
+        horizon = max((datetime(end_year, 12, 31) - cur['date']).days, 1)
         pdays = np.arange(0, horizon + 1, dtype=float)
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
         x_end = pdates[-1]
@@ -6342,7 +6391,7 @@ def _render_rsi_automation():
         # about the rung they share.
         shifts = {'al4': np.zeros(n)}
         if lag_days is not None:
-            shifts['al5'] = _rsi_al5_tau_draws(lag_days, n)
+            shifts['al5'] = _rsi_al5_tau_draws(lag_days, n, lag['slow'])
         bands = {
             'al4': [(5, 95, 'rgba(52,152,219,0.10)'),
                     (10, 90, 'rgba(52,152,219,0.18)'),
@@ -15464,8 +15513,9 @@ def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_
                  _pc_rsi_auto_eta(load_rsi_automation(), samples=True), False,
                  "The R&D automation fan above, at its defaults: single OLS "
                  "in logit space over the six labelled months, odds-doubling "
-                 "over that fit's t-widened rate CI, position over the "
-                 "figure's own 90% measurement interval on the latest month. "
+                 "over that fit's t-widened rate CI, stretched to the "
+                 "slower climb since May; position between the fitted line "
+                 "and the latest reading, which sits below it. "
                  f"{_RSI_AUTO_TARGET:.0f}% is this app's bar, not the post's, "
                  "and it still has a human supervising \u2014 AL5 is zero "
                  "throughout. Six points on a steep ramp, judged by a model "
@@ -15865,7 +15915,7 @@ def _pc_rsi_auto_eta(rows, target_pct=_RSI_AUTO_TARGET, n=None, samples=False):
 
     The section's fan at its defaults — single OLS in logit space over the
     labelled months, odds-doubling time lognormal over `_rsi_auto_dt_ci()`,
-    position normal over the figure's own 90% interval on the latest month.
+    position normal over `_rsi_auto_start()`.
     Returns None if the fitted slope is flat or negative.
     """
     n = n or N_SAMPLES
@@ -15875,9 +15925,8 @@ def _pc_rsi_auto_eta(rows, target_pct=_RSI_AUTO_TARGET, n=None, samples=False):
     proj_slope = np.log(2) / np.maximum(
         _lognormal_from_ci(*_rsi_auto_dt_ci(rows, round(np.log(2) / slope)),
                            n=n), 1.0)
-    cur = [r for r in rows if r['fitted']][-1]
-    fitted = icpt + slope * (cur['date'] - base).days
-    start = np.random.normal(fitted, _rsi_auto_pos_sigma(cur), n)
+    cur, centre, sigma = _rsi_auto_start(rows)
+    start = np.random.normal(centre, sigma, n)
     days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
     return _pc_eta_out(cur['date'], days_to, samples)
 

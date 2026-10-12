@@ -3780,9 +3780,34 @@ class TestRsiAutomation:
         lo, hi = vp._rsi_auto_dt_ci(rows, round(dt))
         assert lo <= round(dt / 2) and hi >= round(dt * 2)
         fitted = [r for r in rows if r['fitted']]
-        assert (lo, hi) == vp._dt_ci_t_widened(
+        full = vp._dt_ci_t_widened(
             [(r['date'] - fitted[0]['date']).days for r in fitted],
             vp._logit(np.array([r['al4'] for r in fitted]) / 100), round(dt))
+        assert lo == full[0] and hi >= full[1]
+
+    def test_rate_ci_reaches_the_recent_months_slow_edge(self):
+        """The slow edge holds the climb since the bend, not just the full
+        fit's: it is at least the recent months' own fitted doubling time."""
+        rows = vp.load_rsi_automation()
+        recent = vp._rsi_auto_points(vp._rsi_auto_recent_rows(rows), 'al4')
+        assert len(recent) == vp._RSI_AUTO_RECENT_N
+        x = np.array([(r['date'] - recent[0]['date']).days for r in recent], float)
+        _icpt, slope = vp.fit_line(x, vp._logit(
+            np.array([r['al4'] for r in recent]) / 100))
+        dt = np.log(2) / vp._rsi_auto_fit(rows)[2]
+        assert vp._rsi_auto_dt_ci(rows, round(dt))[1] >= np.log(2) / slope
+
+    def test_start_spans_the_fit_and_the_latest_reading(self):
+        """The projection starts between the fitted line and the latest
+        month, and its 80% band reaches both."""
+        rows = vp.load_rsi_automation()
+        cur, centre, sigma = vp._rsi_auto_start(rows)
+        base, icpt, slope = vp._rsi_auto_fit(rows)
+        fitted = icpt + slope * (cur['date'] - base).days
+        observed = vp._logit(cur['al4'] / 100)
+        assert centre == pytest.approx((fitted + observed) / 2)
+        assert sigma >= vp._rsi_auto_pos_sigma(cur)
+        assert 1.282 * sigma >= abs(fitted - observed) / 2
 
     def test_position_ci_is_the_figures_own_published_interval(self):
         """Every other section picks a position CI by convention; this figure
@@ -3976,6 +4001,17 @@ class TestRsiAl5:
         assert med == sorted(med)
         # Doubling the lag moves the median by about the lag, not by more.
         assert 0.7 < (med[2] - med[1]) / (12 * 30.44) < 1.6
+
+    def test_lag_slow_edge_reads_the_recent_al4_months(self):
+        """The slower AL4 climb since the bend puts AL4 further behind AL3
+        and its floor crossing earlier, so the lag read off those months is
+        longer, and the band's slow edge is set off it."""
+        lag = vp._rsi_al5_lag(vp.load_rsi_automation())
+        assert lag['slow'] > lag['lag']
+        draws = vp._rsi_al5_tau_draws(lag['lag'], 20000, lag['slow'])
+        assert np.percentile(draws, 10) == pytest.approx(lag['lag'], rel=0.05)
+        assert np.percentile(draws, 90) == pytest.approx(
+            lag['slow'] * vp._RSI_AL5_TAU_HI_MULT, rel=0.05)
 
     def test_lag_band_never_runs_faster_than_the_data_allows(self):
         """The fast edge is the censored lag itself: a symmetric band would

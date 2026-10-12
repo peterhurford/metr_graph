@@ -524,10 +524,14 @@ Nine things are load-bearing.
 4. **AL4's unlabelled months are charted at zero and never fitted.** Aug
    2025–Feb 2026 carry no label and no readable band; a logit fit cannot take
    0 anyway, and the post says only that February was “under 1%”.
-5. **The position CI is the figure's own published interval**
-   (`_rsi_auto_pos_sigma`), not a convention — the only section here whose
-   source publishes one. It is quoted at 90% where the fans read 80%, hence the
-   1.645.
+5. **The position CI starts from the figure's own published interval**
+   (`_rsi_auto_pos_sigma`, quoted at 90%, hence the 1.645), widened for the
+   bend. The labelled months since May (`_RSI_AUTO_RECENT_N`) climb at about
+   half the full fit's rate and the latest sits below the line, so
+   `_rsi_auto_start` centres midway between fit and reading with an 80% band
+   reaching both, and `_rsi_auto_dt_ci` stretches the slow edge to the recent
+   months' own 80% t-interval. Widened, not refitted: four points can't tell a
+   bend from noise.
 6. **AL5 has no observations at all.** It is absent in every rated month and the
    post says Claude “is not operating fully autonomously for any measured
    subset”. Its curve is the AL4 rung shifted, so the band carries the AL4
@@ -556,7 +560,10 @@ Nine things are load-bearing.
    runs from the censored value to `_RSI_AL5_TAU_HI_MULT`x it — asymmetric
    because the fast edge is what the data allows and the slow edge is a stated
    judgement, and a symmetric band would put mass below what is already ruled
-   out. `rsi_al5_lag_mo` exposes it, since it is the whole answer.
+   out. The slow edge is `_RSI_AL5_TAU_HI_MULT`x the larger of that lag and
+   `slow`, the same censored lag read off the recent AL4 months alone
+   (`test_lag_slow_edge_reads_the_recent_al4_months`). `rsi_al5_lag_mo`
+   exposes the fast edge, since it is the whole answer.
 9. **Both fans come off the same sampled AL4 paths**, AL5's being those paths
    shifted per sample, so the two cannot tell different stories about the rung
    they share; `_pc_rsi_al5_eta` likewise calls `_pc_rsi_auto_eta` and shifts

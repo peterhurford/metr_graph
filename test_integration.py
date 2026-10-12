@@ -11,6 +11,7 @@ Run: pytest test_integration.py -v
 import numpy as np
 import pytest
 from datetime import datetime
+import json
 import re
 from visualize_projection import (_pc_add_months, _pc_pause_default_mo,
                                    _SLUG_FOR_TAB)
@@ -1284,8 +1285,18 @@ class TestRsiTab:
 
     def test_horizon_selector(self):
         at = self._rsi_app()
+        assert at.selectbox(key="rsi_end_year").value == 2029
+
+        def _al5_end(at):
+            [trace] = [t for el in at.get("plotly_chart")
+                       for t in json.loads(el.proto.spec)["data"]
+                       if t.get("name") == "AL5 median (assumed lag)"]
+            return max(trace["x"])[:4]
+
+        assert _al5_end(at) == "2029"
         at.selectbox(key="rsi_end_year").set_value(2031).run()
         _assert_no_error(at, "RSI / project through 2031")
+        assert _al5_end(at) == "2031"
 
 
 class TestTakeoffTab:
