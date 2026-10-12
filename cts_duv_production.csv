@@ -1,0 +1,91 @@
+# Annual AI chip production, million H100-equivalents (dense FP16), P10/P50/P90.
+# Source: Brown & Khan, "DUV Immersion Lithography: The Foundation of the US AI
+# Advantage", Center for Technology & Statecraft, 2026-09-26,
+# https://techstatecraft.org/duv — Table 45 / Figures 1 and 19.
+# Not downloadable as a file: these are the exact values the page's own chart
+# script embeds (base64 JS after Figure 1), transcribed, not pixel-digitized.
+# Its aria-labels state the 2035 values, which the tests check against.
+#
+# us: US-and-allied production (market forecasts to 2028, then the mean of a
+#   demand model and an EUV-supply model). Low/central/high, not quantiles.
+# china: a LITHOGRAPHY-BOUNDED CEILING, not a forecast. It assumes every other
+#   bottleneck (etch, deposition, HBM, packaging) is solved and Chinese fabs
+#   reach TSMC/SK hynix yields by 2031. The authors call it unrealistic in the
+#   near term.
+#   scenario = <imports>_<allocation>
+#   imports: continue = the report's "Robust" path (~90+/yr, rising);
+#            banned = no DUVi imports from 2027 (stockpile + indigenous only).
+#   allocation: trend = today's advanced/legacy split ("current trend");
+#               push = the US ecosystem's AI allocation ("AI push" / Mobilization);
+#               ceiling = every in-country DUVi on AI chips ("physical ceiling").
+year,region,scenario,p10,p50,p90
+2026,us,,32,35,38
+2026,china,continue_trend,0,1,2
+2026,china,continue_push,2,4,7
+2026,china,continue_ceiling,14,24,41
+2026,china,banned_trend,0,1,2
+2026,china,banned_push,2,4,7
+2026,china,banned_ceiling,14,24,41
+2027,us,,67,74,81
+2027,china,continue_trend,1,2,3
+2027,china,continue_push,6,11,19
+2027,china,continue_ceiling,21,37,63
+2027,china,banned_trend,1,1,2
+2027,china,banned_push,6,10,17
+2027,china,banned_ceiling,19,33,56
+2028,us,,118,147,176
+2028,china,continue_trend,3,6,11
+2028,china,continue_push,18,30,51
+2028,china,continue_ceiling,40,67,112
+2028,china,banned_trend,2,5,8
+2028,china,banned_push,13,22,37
+2028,china,banned_ceiling,30,50,82
+2029,us,,157,193,252
+2029,china,continue_trend,9,15,28
+2029,china,continue_push,35,56,93
+2029,china,continue_ceiling,75,120,197
+2029,china,banned_trend,6,9,17
+2029,china,banned_push,21,35,57
+2029,china,banned_ceiling,46,74,121
+2030,us,,195,262,399
+2030,china,continue_trend,17,29,53
+2030,china,continue_push,62,99,167
+2030,china,continue_ceiling,122,193,322
+2030,china,banned_trend,10,15,27
+2030,china,banned_push,32,52,88
+2030,china,banned_ceiling,64,101,168
+2031,us,,235,349,626
+2031,china,continue_trend,24,43,81
+2031,china,continue_push,88,145,253
+2031,china,continue_ceiling,163,262,449
+2031,china,banned_trend,11,19,35
+2031,china,banned_push,41,66,115
+2031,china,banned_ceiling,74,119,203
+2032,us,,278,457,975
+2032,china,continue_trend,30,55,108
+2032,china,continue_push,109,185,338
+2032,china,continue_ceiling,192,314,559
+2032,china,banned_trend,12,22,41
+2032,china,banned_push,43,73,133
+2032,china,banned_ceiling,76,124,221
+2033,us,,323,592,1509
+2033,china,continue_trend,37,71,144
+2033,china,continue_push,135,236,448
+2033,china,continue_ceiling,225,375,693
+2033,china,banned_trend,13,24,49
+2033,china,banned_push,47,82,158
+2033,china,banned_ceiling,79,131,243
+2034,us,,371,762,2324
+2034,china,continue_trend,46,90,190
+2034,china,continue_push,166,299,593
+2034,china,continue_ceiling,263,446,860
+2034,china,banned_trend,14,28,59
+2034,china,banned_push,52,95,189
+2034,china,banned_ceiling,82,141,274
+2035,us,,422,974,3566
+2035,china,continue_trend,56,114,251
+2035,china,continue_push,204,378,784
+2035,china,continue_ceiling,306,532,1071
+2035,china,banned_trend,17,33,72
+2035,china,banned_push,58,110,235
+2035,china,banned_ceiling,87,153,321

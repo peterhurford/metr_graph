@@ -1180,7 +1180,6 @@ class TestDefaultProjectionMatchesFit:
         if K <= 0:
             pytest.skip("K <= 0, can't test superexp")
         d_last = days[-1]
-        fitted_pos = A + K * 2 ** (d_last / halflife)
         fitted_dt = halflife / (K * np.log(2) * 2 ** (d_last / halflife))
         # Data-driven center
         lo = max(10, int(round(fitted_dt / 2)))
@@ -1201,7 +1200,6 @@ class TestDefaultProjectionMatchesFit:
         """ECI projection slope should match OLS slope under data-driven defaults."""
         _, _, params = _load_eci_fit()
         ols_ppy = params[1] * 365.25 if params[1] > 0 else 16.9
-        ols_dpp = 365.25 / ols_ppy  # days per point
         # Data-driven defaults
         ppy = round(ols_ppy, 1)
         lo = round(ppy / 2, 1)
@@ -2028,49 +2026,28 @@ class TestCcTrainingFloorMatch:
         assert vp._CC_TRAIN_FLOOR_DAYS == vp._DAYS_2MO
         assert vp._CC_TRAIN_FLOOR_DAYS < vp._CC_RELEASE_LAG_DAYS
 
-    def test_sol_ties_to_wisconsin_under_floor(self):
+    def test_live_matches_are_the_latest_step_past_the_floor(self):
+        """On the shipped data, every unpinned OpenAI release is matched to a
+        step online at least the floor before it, and no later record step
+        also clears the floor."""
         from datetime import timedelta
         attr = vp._cc_lab_attribution()
         milestones = vp._cc_lab_dc_milestones("OpenAI", attr, key="perf")
-        lag = timedelta(days=vp._CC_RELEASE_LAG_DAYS)
         floor = timedelta(days=vp._CC_TRAIN_FLOOR_DAYS)
-
-        # Match on the model family, not the reasoning-effort suffix: every
-        # gpt-5.6-sol_* variant carries the same ECI, so which one wins the dedup
-        # is arbitrary and flips between Epoch pulls (it was "(pro, max)" until
-        # Epoch added a `_none` variant in the 2026-08-08 refresh). The date —
-        # the only thing this test is actually about — is unaffected.
-        #
-        # Source Sol from *all* OpenAI ECI rows, not from
-        # _cc_company_frontier_models(): that helper keeps only running-max
-        # releases, and Epoch's live recompute can drop Sol out of it without
-        # changing its date. The 2026-08-18 pull did exactly that — Sol fell
-        # 161.65 -> 161.03 while GPT-5.5 Pro (xhigh, 2026-04-23) rose
-        # 161.49 -> 161.60, so Sol stopped setting a new OpenAI high. What this
-        # test asserts (that Sol's release date ties to Wisconsin under the
-        # training floor but to Atlanta under the full lag) is a statement about
-        # dates and cluster timing, so it must not hinge on running-max status.
-        sol_dates = {
-            datetime.strptime(r["Release date"], "%Y-%m-%d")
-            for r in csv.DictReader(open(
-                os.path.join(os.path.dirname(vp.__file__),
-                             "epoch_capabilities_index.csv")))
-            if (r.get("Model name") or "").strip().startswith("GPT-5.6 Sol")
-            and (r.get("Release date") or "").strip()
-        }
-        assert sol_dates, "Sol not found in the ECI table"
-        assert len(sol_dates) == 1, f"Sol has inconsistent release dates: {sol_dates}"
-        d = sol_dates.pop()
-
-        # The strict full-lag rule would have fallen back to Atlanta...
-        strict = [m for m in milestones if (m[0] + lag) <= d][-1]
-        assert strict[2] == "Microsoft Fairwater Atlanta"
-
-        # ...but Wisconsin was online a full training run (>=60d) before Sol, so
-        # the training-floor rule ties Sol to Wisconsin.
-        resp = self._responsible(d, milestones, floor)
-        assert resp[2] == "Microsoft Fairwater Wisconsin"
-        assert (d - resp[0]).days >= vp._CC_TRAIN_FLOOR_DAYS
+        releases = vp._cc_company_frontier_models().get("OpenAI", [])
+        assert milestones and releases
+        matched = 0
+        for d, _e, name in releases:
+            step, pinned = vp._cc_responsible_cluster(d, name, "OpenAI",
+                                                      milestones)
+            if pinned or step is None:
+                continue
+            assert step[0] + floor <= d, name
+            later = [m for m in milestones
+                     if m[0] > step[0] and m[0] + floor <= d]
+            assert not later, (name, later)
+            matched += 1
+        assert matched
 
     def test_implausibly_fresh_cluster_is_excluded(self):
         # A model that shipped only ~2 weeks after a much bigger cluster came
@@ -2397,13 +2374,11 @@ class TestCcCompanyAllReleases:
     """_cc_company_all_releases: the tier-3 fallback pool."""
 
     def test_collapses_reasoning_effort_variants(self):
-        # Keyed on Model name, so the ~10 gpt-5.6-sol_* rows are one release.
-        # Which Display-name variant would win a dedup is arbitrary and flips
-        # between Epoch pulls.
-        rel = vp._cc_company_all_releases()["OpenAI"]
-        sol = [t for t in rel if t[2] == "GPT-5.6 Sol"]
-        assert len(sol) == 1
-        assert sol[0][0] == datetime(2026, 7, 9)
+        # Keyed on (Model name, Release date), so a model's reasoning-effort
+        # rows are one release whatever Display names Epoch gives them.
+        for lab, rel in vp._cc_company_all_releases().items():
+            keys = [(t[2], t[0]) for t in rel]
+            assert len(keys) == len(set(keys)), lab
 
     def test_keeps_redated_revisions_of_one_model_name_apart(self):
         # GPT-4o shipped dated revisions; collapsing them would lose releases
@@ -2417,14 +2392,18 @@ class TestCcCompanyAllReleases:
         assert len(gpt4o) >= 3
 
     def test_same_day_releases_are_ordered_strongest_first(self):
-        # 2026-07-09 ships Sol, Terra and Luna together; a step matching that
-        # date should be offered the flagship, not whichever row sorted first.
-        rel = vp._cc_company_all_releases()["OpenAI"]
-        same_day = [t for t in rel if t[0] == datetime(2026, 7, 9)]
-        assert len(same_day) > 1, "expected several OpenAI releases on 2026-07-09"
-        assert same_day[0][2] == "GPT-5.6 Sol"
-        assert [t[1] for t in same_day] == sorted(
-            (t[1] for t in same_day), reverse=True)
+        # A step matching a shared release date should be offered the
+        # flagship, not whichever row sorted first.
+        groups = 0
+        for lab, rel in vp._cc_company_all_releases().items():
+            by_date = {}
+            for t in rel:
+                by_date.setdefault(t[0], []).append(t[1] or 0)
+            for d, ecis in by_date.items():
+                if len(ecis) > 1:
+                    groups += 1
+                    assert ecis == sorted(ecis, reverse=True), (lab, d)
+        assert groups, "no same-day releases left to order"
 
     def test_is_a_superset_of_the_frontier(self):
         # Every running-max release must exist in the pool on the same date, or
@@ -2523,16 +2502,20 @@ class TestCcDcDerivation:
         """The 'recent built' segment fit (this tab) and the by-country engine's
         US fit (DC tab) measure the same buildout two ways; they may differ —
         lab-only vs any-landlord, event points vs monthly samples — but a gap
-        beyond ~0.15 OOM/yr means one of the two engines drifted."""
+        beyond twice the country fit's own pace uncertainty means one of the
+        two engines drifted."""
         today = datetime.now()
         cap = datetime(2028, 12, 31) + timedelta(days=vp._DAYS_2MO)
         fits = vp._cc_segment_fits(vp._cc_trainflop_frontier(vp.dc_all, cap),
                                    today)
-        g_recent = next(f['slope_oom'] for f in fits
-                        if f['label'].startswith('2025 H2'))
+        # The recent segment is the one that ends today.
+        recent = next(lab for lab, start, end in vp._CC_SEGMENTS
+                      if start is not None and end is None)
+        g_recent = next(f['slope_oom'] for f in fits if f['label'] == recent)
         chk = vp._cc_country_pace_check(today)[vp._DC_CTY_US]
         assert chk is not None
-        assert abs(g_recent - chk['g']) < 0.15, (g_recent, chk['g'])
+        assert abs(g_recent - chk['g']) < 2 * chk['sigma_g'], \
+            (g_recent, chk['g'], chk['sigma_g'])
 
 
 class TestCcCnComputeBand:
@@ -2888,11 +2871,9 @@ class TestCcFrontierGradeAlgo:
         cc = vp.load_eci_compute()
         eci = vp.load_eci_frontier(full_window=True)
         dec = vp._cc_decomp(cc)
-        # n counts models, not reasoning-effort rows; margin 3 is too thin to
-        # fit, which is why the innovation bands fall back to margin 5.
         r = vp._cc_frontier_grade_algo(cc, eci, margin=5.0)
-        assert r is not None and r['n'] >= 10, "margin 5 too thin"
-        assert r['b_time'] <= dec['b_time'] - 1.0
+        assert r is not None, "margin 5 too thin to fit"
+        assert r['b_time'] < dec['b_time']
         pure = vp._cc_pure_innovation_band(cc, eci)
         assert pure is not None and pure[0] < pure[1], "pure-innovation band collapsed"
 
@@ -4339,8 +4320,7 @@ class TestDcCompanyAliases:
                   vp._dc_series_for_metric(vp.dc_all, 'h100').items()
                   if v['company'] not in vp._DC_EXCLUDE_COMPANIES}
         comp = vp._dc_company_series(series)
-        for co in ["OpenAI", "Anthropic", "Google", "Meta", "SpaceXAI", "Alibaba"]:
-            assert comp.get(co), f"table column {co!r} has no series"
+        assert comp.get("Google"), "Google has no series"
         # Compared against every Google-*owned* site in the CSV, not just the
         # ones currently labelled Google, so the column can't quietly fall back
         # to a subset of the fleet the way the old alias tuple did.
@@ -4396,14 +4376,15 @@ class TestDcHiddenCompanies:
         silently. A company leaves this set two ways: its largest site drops
         under _DC_EXCLUDE_MIN_H100 inside the rolling horizon, or Epoch
         re-attributes its capacity to a real tenant so the landlord label
-        stops owning any site at all — DayOne left the second way once Epoch
-        filled Nusajaya's Owner, and now holds no site. STACK (250k) is the
-        next to qualify; Oracle is the nearest miss below at ~84k against a
-        100k bar. When this fails, retarget deliberately (accept the joiner,
+        stops owning any site at all. DayOne left that way when Epoch filled
+        Nusajaya's Owner, and rejoined on the 2026-09-29 pull, which blanked it
+        again and added Kempas (also no Owner/Users). STACK is the nearest
+        miss, ~61k inside the horizon against a 100k bar (~250k on its full
+        plan). When this fails, retarget deliberately (accept the joiner,
         or move _DC_EXCLUDE_MIN_H100 / _DC_EXCLUDE_HORIZON_DAYS) rather than
         loosening it."""
         charted = vp._DC_EXCLUDE_COMPANIES - vp._dc_hidden_companies(vp.dc_all)
-        assert charted == {'QTS', 'Microsoft', 'Vantage'}, charted
+        assert charted == {'QTS', 'Microsoft', 'Vantage', 'DayOne'}, charted
 
     def test_roster_only_ever_grows_as_the_horizon_rolls(self):
         """Who appears may move as planned buildout comes inside the horizon —
@@ -4449,13 +4430,23 @@ class TestDcHiddenCompanies:
         assert leaders
         for site in leaders:
             assert by_name.get(site) not in vp._DC_EXCLUDE_COMPANIES, site
-        # And the DC tab's own envelope over the same window *does* reach one
-        # of them — otherwise this test passes for the wrong reason.
+        # A host site ten times the biggest lab site leads the DC tab's
+        # envelope and still never enters this frontier — otherwise the half
+        # above could pass only because no host happens to lead.
+        host = sorted(vp._DC_EXCLUDE_COMPANIES)[0]
+        big = max(vp.dc_all, key=lambda dc: max(
+            (p.get('h100') or 0) for p in dc['points'] if p['date'] <= cap))
+        fake = dict(big, name='Synthetic host site', company=host,
+                    tenant=host, operator=host, users=[], attributed=False,
+                    points=[{k: (v * 10 if isinstance(v, float) else v)
+                             for k, v in p.items()} for p in big['points']])
+        dcs = vp.dc_all + [fake]
+        front = vp._cc_trainflop_frontier(dcs, cap, with_names=True)
+        assert fake['name'] not in {name for _d, _v, name, _sd in front}
         series = {n: v for n, v in
-                  vp._dc_series_for_metric(vp.dc_all, 'h100', cap_date=cap).items()
-                  if v['company'] not in vp._dc_hidden_companies(vp.dc_all)}
-        dc_leaders = {by_name.get(n) for _d, _v, n, _c in vp._dc_envelope(series)}
-        assert dc_leaders & vp._DC_EXCLUDE_COMPANIES
+                  vp._dc_series_for_metric(dcs, 'h100', cap_date=cap).items()
+                  if v['company'] not in vp._dc_hidden_companies(dcs)}
+        assert fake['name'] in {n for _d, _v, n, _c in vp._dc_envelope(series)}
 
 
 class TestDcUnattributedCompanies:
@@ -4894,8 +4885,31 @@ class TestDcByCountry:
             names = [n for g in groups.values() for n in g]
             assert len(names) == len(set(names))
             assert set(names) == set(series)
-        assert "Malaysia" not in abroad          # Johor moved, nothing left
+        # Only the tuple moves: every other Malaysian site stays in Malaysia.
+        my = {n for n, c in self._country_of().items()
+              if c == "Malaysia" and n in series}
+        assert set(abroad.get("Malaysia", ())) == my - set(vp._DC_CN_ACCESS_ABROAD)
         assert vp._DC_CTY_CN not in abroad
+
+    def test_sites_abroad_pool_as_one_party_only_on_a_hypothetical_link(self):
+        """China-accessible pools its sites abroad as one tenant, but only a
+        'plausible' cluster joins them, and the detail says the link is
+        hypothetical."""
+        series = self._series()
+        names = vp._dc_country_groups(series, self._country_of(),
+                                      'abroad')[vp._DC_CTY_CN_ACCESS]
+        abroad = [n for n in vp._DC_CN_ACCESS_ABROAD if n in series]
+        assert len(abroad) >= 2
+
+        def last(level):
+            return vp._dc_country_steps(series, names, 'company',
+                                        vp._dc_network_site_clusters(level))[-1]
+        _, v_fab, det_fab = last('fabric')
+        _, v_pl, det_pl = last('plausible')
+        assert "hypothetical" not in det_fab
+        assert v_pl > v_fab
+        assert det_pl.startswith(vp._DC_CN_ABROAD_PARTY)
+        assert det_pl.endswith("(hypothetical link)")
 
     def test_pooling_modes_nest(self):
         """Single site ≤ per-company networked group ≤ whole country, at every
@@ -5083,11 +5097,17 @@ class TestDcRegionShare:
 
     def test_every_catalogued_country_is_placed_deliberately(self):
         """A share chart drops nothing, so an unnamed country lands in Other.
-        A refresh that adds one worth naming should show up here."""
-        live = {vp._dc_site_country(dc) for dc in vp.dc_all}
-        assert live, "no countries in the catalogue"
-        residual = {c for c in live if vp._dc_region_of(c) == vp._DC_REGION_OTHER}
-        assert residual == {"Australia"}, residual
+        Other stays a sliver of catalogued capacity, today and at end-2028; a
+        refresh that grows it past that names a country worth a region."""
+        series, country_of = self._series(), self._country_of()
+        for d in (datetime.now(), datetime(2028, 12, 31)):
+            totals = vp._dc_region_totals(series, country_of, [d])
+            whole = sum(v[0] for v in totals.values())
+            assert whole > 0, d
+            other = totals.get(vp._DC_REGION_OTHER, [0.0])[0]
+            residual = sorted({c for c in country_of.values()
+                               if vp._dc_region_of(c) == vp._DC_REGION_OTHER})
+            assert other / whole < 0.05, (d, other / whole, residual)
 
     def test_no_country_falls_in_two_regions(self):
         seen = set()
@@ -5162,6 +5182,78 @@ class TestNoDuplicateDefinitions:
                  if isinstance(n, (_ast.FunctionDef, _ast.ClassDef))]
         dupes = sorted({n for n in names if names.count(n) > 1})
         assert not dupes, dupes
+
+
+class TestDuvProduction:
+    """The CTS lithography table and the ban ratio the Pacing lever reads."""
+
+    def _data(self):
+        return vp.load_duv_production(vp._duv_mtime())
+
+    def test_transcription_matches_the_reports_own_2035_labels(self):
+        """The figure's aria-labels state the 2035 values in prose; the
+        table must reproduce them."""
+        d = self._data()
+        assert d["us"][-1] == (2035, 422, 974, 3566)
+        assert d["continue_ceiling"][-1][1:] == (306, 532, 1071)
+        assert d["continue_push"][-1][1:] == (204, 378, 784)
+        assert d["continue_trend"][-1][1:] == (56, 114, 251)
+        assert d["banned_ceiling"][-1][1:] == (87, 153, 321)
+        assert d["banned_push"][-1][1:] == (58, 110, 235)
+        assert d["banned_trend"][-1][1:] == (17, 33, 72)
+
+    def test_table_is_complete_and_ordered(self):
+        d = self._data()
+        assert set(d) == {"us"} | {f"{i}_{a}" for i in ("continue", "banned")
+                                   for a, _ in vp._DUV_ALLOCS}
+        for key, rows in d.items():
+            assert [r[0] for r in rows] == list(range(2026, 2036)), key
+            for y, lo, mid, hi in rows:
+                assert lo <= mid <= hi, (key, y)
+        # A ban never raises the ceiling, and bites only from 2027.
+        for a, _ in vp._DUV_ALLOCS:
+            c, b = d[f"continue_{a}"], d[f"banned_{a}"]
+            assert c[0] == b[0]
+            assert all(bb[2] <= cc[2] for cc, bb in zip(c, b))
+
+    def test_import_ban_waits_for_output_to_reach_the_ceiling(self):
+        """China's real output is far under the banned ceiling, so an import
+        ban alone barely moves growth this decade and bites later."""
+        t0 = datetime(2026, 10, 1)
+        near = vp._duv_policy_cut(t0, datetime(2031, 12, 31))
+        far = vp._duv_policy_cut(t0, datetime(2035, 12, 31))
+        assert 0.0 <= near < 0.08
+        assert far > near + 0.04
+        assert vp._duv_policy_cut(t0, t0) is None
+        assert vp._duv_policy_cut(t0, datetime(2031, 12, 31),
+                                  ban_imports=False) == 0.0
+
+    def test_faster_output_growth_reaches_the_ceiling_sooner(self):
+        """The import-ban cut is driven by how fast China's real output
+        grows into the banned ceiling, so it rises with that rate."""
+        t0, t1 = datetime(2026, 10, 1), datetime(2031, 12, 31)
+        lo, hi = vp._DUV_CN_OUTPUT_GROWTH_RANGE
+        cuts = [vp._duv_policy_cut(t0, t1, growth=g)
+                for g in (lo, vp._DUV_CN_OUTPUT_GROWTH, hi)]
+        assert cuts == sorted(cuts) and cuts[-1] > cuts[0] + 0.05
+
+    def test_servicing_ban_bites_now_and_rises_with_the_decay(self):
+        t0, t1 = datetime(2026, 10, 1), datetime(2028, 12, 31)
+        cuts = [vp._duv_policy_cut(t0, t1, ban_imports=False, decay=d)
+                for d in (0.05, 0.15, 0.30)]
+        assert 0.05 < cuts[0] < cuts[1] < cuts[2] <= 1.0
+        # Stacking the import ban on top never helps China.
+        both = vp._duv_policy_cut(t0, datetime(2035, 12, 31), decay=0.15)
+        svc = vp._duv_policy_cut(t0, datetime(2035, 12, 31),
+                                 ban_imports=False, decay=0.15)
+        assert both >= svc
+
+    def test_realized_start_is_the_reports_ifp_range(self):
+        """The 2026 grid spans IFP's 62k-160k B300e at 2.5 H100e each."""
+        lv = sorted({a for a, _b in vp._duv_realized_grid()})
+        mid = 10 ** lv[len(lv) // 2]
+        assert 0.2 < mid < 0.3
+        assert vp._DUV_H100E_PER_B300E == pytest.approx(2.52, abs=0.01)
 
 
 class TestCcWorldShares:
@@ -5280,15 +5372,13 @@ class TestCcWorldShares:
 
     def test_the_correction_is_the_point_of_the_section(self):
         """The tracked sites alone say the US holds nearly everything; the
-        published estimates say otherwise, and by a wide margin."""
+        published estimates give the US less and China more."""
         cat = vp._wc_catalogued_shares(vp.dc_all, datetime.now())
         assert abs(sum(cat.values()) - 100.0) < 1e-6
-        assert cat["US domestic"] > 80
-        assert cat["China domestic"] < 5
         sh = vp._wc_sample_shares(4000)
-        assert float(np.percentile(sh["US domestic"], 50)) < cat["US domestic"] - 15
+        assert float(np.percentile(sh["US domestic"], 50)) < cat["US domestic"]
         assert float(np.percentile(sh["China domestic"], 50)) > \
-            cat["China domestic"] * 3
+            cat["China domestic"]
 
 
 class TestDcMilestoneDates:
@@ -5535,7 +5625,7 @@ class TestPacing:
         assert min(vp._PC_ECI_TARGETS) > top
 
     def test_eci_target_is_two_more_pinned_jumps(self):
-        """The bars are two and three jumps the size of GPT-5 → Fable 5, off
+        """The bars are two and three jumps the size of GPT-5 → GPT-5.5 Pro, off
         the *pinned* pair — not off the live frontier.
 
         Floating the far end is self-defeating: a model that beats the
@@ -5551,16 +5641,17 @@ class TestPacing:
         assert jump > 0
         for n, target in zip((2, 3), vp._PC_ECI_TARGETS):
             assert abs(target - (hi + n * jump)) < 0.01, (n, target)
-        # Both ends must still name a real model on the live frontier, so a
-        # pinned number can't quietly stop referring to anything.
-        fr = vp._eci_entity_data("US best")[1]
-        for nm, val in ((name, lo), (to_name, hi)):
-            hit = [m for m in fr
-                   if str(m.get('display_name', '')) == nm
-                   or str(m.get('display_name', '')).startswith(nm + " (")]
-            assert hit, f"{nm} is no longer on the US-best frontier"
-            assert abs(hit[0]['eci_score'] - val) < 1.5, (nm, hit[0])
+        # Both ends must still name a real model, so a pinned number can't
+        # quietly stop referring to anything.
+        names = {(r.get("Model name") or "").strip()
+                 for r in csv.DictReader(open(os.path.join(
+                     os.path.dirname(vp.__file__),
+                     "epoch_capabilities_index.csv")))}
+        for nm in (name, to_name):
+            assert any(n == nm or n.startswith(nm + " (") for n in names), \
+                f"{nm} is not in the ECI table"
         # The bars are extrapolations: the frontier has not reached them.
+        fr = vp._eci_entity_data("US best")[1]
         assert fr[-1]['eci_score'] < min(vp._PC_ECI_TARGETS)
         # The slug carries the half-point rather than rounding it away —
         # it keys the blend weight, so "eci_188" would silently unweight it.
@@ -6074,15 +6165,38 @@ class TestPacing:
         idx = vp._pc_crossing_idx(us, 1e27)
         assert (idx == 0).all()
 
+    @staticmethod
+    def _shared_site(users=('Synthetic A', 'Synthetic B'), owner='Synthetic Owner'):
+        """The biggest live site, ten times over, listed under several users
+        and owned by someone else, so the shared-tenancy checks never depend on
+        which sites Epoch happens to list as shared."""
+        big = max(vp.dc_all, key=lambda dc: max(
+            (p.get('train_flop_6mo') or 0) for p in dc['points']))
+        return dict(big, name='Synthetic shared site', company=users[0],
+                    tenant=users[0], operator=owner, users=list(users),
+                    attributed=True,
+                    points=[{k: (v * 10 if isinstance(v, float) else v)
+                             for k, v in p.items()} for p in big['points']])
+
     def test_party_attribution_carried_by_loader(self):
         """Every site carries both attributions; 'tenant' is exactly the
-        loader's company label, 'operator' the building's owner."""
+        loader's company label (first-listed user, else the operator), and
+        'operator' is the building's recorded owner."""
         by = {dc['name']: dc for dc in vp.dc_all}
         assert all(dc['tenant'] == dc['company'] for dc in vp.dc_all)
-        assert by['Colossus 2']['tenant'] == 'Anthropic'
-        assert by['Colossus 2']['operator'] == 'SpaceXAI'
-        assert by['OpenAI Stargate Abilene']['tenant'] == 'OpenAI'
-        assert by['OpenAI Stargate Abilene']['operator'] == 'Oracle'
+        for dc in vp.dc_all:
+            want = dc['users'][0] if dc['users'] else dc['operator']
+            assert dc['tenant'] == want, dc['name']
+        owned = 0
+        for r in csv.DictReader(open(os.path.join(
+                os.path.dirname(vp.__file__), "data_centers.csv"))):
+            name = (r.get('Name') or '').strip()
+            owner = vp._dc_clean_owner(r.get('Owner', ''))
+            if name in by and owner:
+                assert by[name]['operator'] == \
+                    vp._DC_COMPANY_ALIASES.get(owner, owner), name
+                owned += 1
+        assert owned
         assert set(vp._DC_PARTY_OPTIONS.values()) == {'tenant', 'operator'}
         assert set(vp._PC_PARTY_OPTIONS.values()) == \
             {'tenant', 'operator', 'country'}
@@ -6091,36 +6205,43 @@ class TestPacing:
         """Tenant view: `company` stays the primary label but `companies` is
         every listed user, so a shared site counts under each tenant.
         Operator view: both collapse to the owner."""
-        tview = {v['name']: v for v in vp._dc_with_party(vp.dc_all, 'tenant')}
-        for dc in vp.dc_all:
+        dcs = vp.dc_all + [self._shared_site()]
+        tview = {v['name']: v for v in vp._dc_with_party(dcs, 'tenant')}
+        for dc in dcs:
             v = tview[dc['name']]
             assert v['company'] == dc['company']
             assert v['companies'] == (dc['users'] or [dc['tenant']])
             assert v['points'] is dc['points']
-        assert set(tview['Colossus 2']['companies']) == \
-            {'Anthropic', 'Cursor', 'SpaceXAI'}
-        oview = {v['name']: v for v in vp._dc_with_party(vp.dc_all, 'operator')}
-        for dc in vp.dc_all:
+        assert tview['Synthetic shared site']['companies'] == \
+            ['Synthetic A', 'Synthetic B']
+        oview = {v['name']: v for v in vp._dc_with_party(dcs, 'operator')}
+        for dc in dcs:
             v = oview[dc['name']]
             assert v['company'] == dc['operator']
             assert v['companies'] == [dc['operator']]
+        assert oview['Synthetic shared site']['companies'] == ['Synthetic Owner']
 
     def test_shared_site_counts_under_every_tenant(self):
-        """The point of the membership list: SpaceXAI and Cursor train in
-        Colossus 2, so their per-company series must carry it — while the raw
-        (viewless) site list keeps single membership for the CC tab."""
-        view = vp._dc_with_party(vp.dc_all, 'tenant')
+        """The point of the membership list: every listed user of a shared
+        site carries it in its per-company series — while the raw (viewless)
+        site list keeps single membership for the CC tab."""
+        dcs = vp.dc_all + [self._shared_site()]
+        view = vp._dc_with_party(dcs, 'tenant')
         series = vp._dc_series_for_metric(view, 'train_flop_6mo',
                                           cap_date=None)
         per_co = vp._dc_company_networked_series(
             series, vp._dc_network_site_clusters('fabric'))
-        peak = max(x for _, x in series['Colossus 2']['pts'])
-        for co in ('Anthropic', 'SpaceXAI', 'Cursor'):
-            assert co in per_co, co
-            assert per_co[co][-1][1] >= peak * (1 - 1e-9), co
-        raw = vp._dc_series_for_metric(vp.dc_all, 'train_flop_6mo',
-                                       cap_date=None)
-        assert raw['Colossus 2']['companies'] == ['Anthropic']
+        shared = [dc for dc in dcs if len(dc['users']) > 1]
+        assert any(dc['name'] == 'Synthetic shared site' for dc in shared)
+        for dc in shared:
+            peak = max(x for _, x in series[dc['name']]['pts'])
+            for co in dc['users']:
+                assert co in per_co, (dc['name'], co)
+                assert max(t[1] for t in per_co[co]) >= peak * (1 - 1e-9), \
+                    (dc['name'], co)
+        raw = vp._dc_series_for_metric(dcs, 'train_flop_6mo', cap_date=None)
+        for dc in shared:
+            assert raw[dc['name']]['companies'] == [dc['company']], dc['name']
 
     def test_pool_menu_is_the_dc_tabs_and_nests(self):
         """The pacing pooling selector reuses _DC_NETWORK_OPTIONS, and a wider

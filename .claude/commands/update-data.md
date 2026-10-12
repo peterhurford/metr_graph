@@ -1,17 +1,17 @@
 ---
-description: Systematically refresh all data sources (METR, ECI, data centers, RLI, revenue incl. Chinese labs, UK Cyber) and report what changed
+description: Systematically refresh all data sources (METR, ECI, data centers, RLI, revenue incl. Chinese labs, RSI, UK Cyber) and report what changed
 argument-hint: "[optional: a single source name to update just that one]"
 ---
 
 Update the dashboard's data sources to the latest available values, then report exactly what you found, changed, and left alone.
 
-If `$ARGUMENTS` names a specific source (e.g. `eci`, `metr`, `datacenters`, `rli`, `revenue`, `cnrevenue`, `ukcyber`), update only that one. `revenue` covers both revenue tables; `cnrevenue` is the Chinese labs alone. Otherwise update all of them.
+If `$ARGUMENTS` names a specific source (e.g. `eci`, `metr`, `datacenters`, `rli`, `revenue`, `cnrevenue`, `rsi`, `ukcyber`), update only that one. `revenue` covers both revenue tables; `cnrevenue` is the Chinese labs alone. Otherwise update all of them.
 
 Today's date is authoritative for judging staleness — check the current date, then find each source's newest existing entry so you know what "new" means before researching.
 
-## The seven sources
+## The sources
 
-Four downloadable feeds, three hardcoded tables, one digitized figure. For downloadable feeds, prefer fetching the canonical file directly over hand-transcribing.
+Four downloadable feeds, three hardcoded tables, and hand-read or digitized figures (RSI, UK Cyber). For downloadable feeds, prefer fetching the canonical file directly over hand-transcribing.
 
 | Source | Type | Canonical location |
 |---|---|---|
@@ -25,8 +25,9 @@ Four downloadable feeds, three hardcoded tables, one digitized figure. For downl
 | RSI tables (`_RSI_RAW`, `_RSI_SURVEY`, `_RSI_DIR_RAW`, `_RSI_CODE_RAW`, `openai_experiment_velocity.csv`) | hand-read figures | Sources in CLAUDE.md *Data Sources*. Check new Anthropic system cards for CoBench and survey rounds — but see *CoBench: check comparability first* below. A card's problem set differs from the Risk Report's, so a score goes in via a rescale, never raw |
 | `aisi_cyber_narrow.csv` (UK Cyber) | **digitized figure — verify, don't download** | AISI blog post, [open-weight cyber gap](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) |
 | `aisi_cyber_tlo.csv` (UK Cyber cross-check) | **digitized figure + quoted prose** | Same post's Figure 2, plus the [UK AISI/CAISI Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) |
+| `cts_duv_production.csv` (Compute/capabilities, Pacing DUVi lever) | **transcribed from the page's chart script** | CTS, [*DUV Immersion Lithography*](https://techstatecraft.org/duv), Table 45. The values sit base64-encoded in the `<script>` after Figure 1 (`const US = …`, `CHINA = {continue, banned}`); decode and diff. A one-off report: expect "already current" unless CTS re-versions it |
 
-Note: Employment, ECI Company Gap, and Compute vs Capabilities tabs have NO feed of their own — they derive from RLI / ECI / data centers, so updating those feeds updates them automatically. Don't hunt for separate data for them.
+Note: Employment and ECI Company Gap have NO feed of their own, and Compute vs Capabilities has only the static CTS table above — they derive from RLI / ECI / data centers, so updating those feeds updates them automatically. Don't hunt for separate data for them.
 
 ### CoBench: check comparability before transcribing
 
@@ -39,7 +40,7 @@ reading any number. Two rules follow, and they are what keep a null result out o
    carries its models over. The Opus 5.5 card's "CoBench 2.1" rescored only Opus 5
    (59.6 → 53.2) and Mythos 5.1 (57.6 → 53.4), leaving four carried models with no 2.1
    score — so neither can the series move to 2.1, nor Opus 5.5 (55.8) come back to this
-   one. It gets **no row**; `_RSI_CB21_URL` records why.
+   one. It gets **no row**; the comment above `_RSI_RAW` records why.
 2. **Chained or disagreeing anchors manufacture signal.** Those two anchors imply ratios
    4% apart and invert the pair's order (2.1 puts Mythos 5.1 above Opus 5; the older set
    puts it below), while the card calls all three scores "not statistically
@@ -101,7 +102,7 @@ Hand-editing a row is fine **only** if AISI states a number in prose. Never tran
 
 The NIST mirror serves figures at full resolution if you strip the `styles/<preset>/` path segment from the `<img src>` — and unlike the AISI post, **its figures have printed numbers**, so they need no digitization.
 
-**Cyber ranges (TLO) is now ingested** as `aisi_cyber_tlo.csv` — 9 rows digitized from `fig2-ranges.png` plus Kimi K3 quoted from the CAISI post. Refresh it the same way as the narrow file: verify the figure is unchanged (y-axis calibration: **row 1715 = 0 steps, row 498 = 32 steps** on the 3500×2160 image; endpoint = the *solid* trace at the right edge, since the two dotted traces reaching 32 are "best attempt" runs). New models are more likely to arrive as printed prose in a follow-up post than as a redrawn figure — check the prose first, it needs no digitization. `TestUkCyberTlo` holds four published-number guards; they must keep passing.
+**Cyber ranges (TLO)** is `aisi_cyber_tlo.csv`: 9 rows digitized from `fig2-ranges.png` plus Kimi K3 quoted from the CAISI post. Refresh it the same way as the narrow file: verify the figure is unchanged (y-axis calibration: **row 1715 = 0 steps, row 498 = 32 steps** on the 3500×2160 image; endpoint = the *solid* trace at the right edge, since the two dotted traces reaching 32 are "best attempt" runs). New models are more likely to arrive as printed prose in a follow-up post than as a redrawn figure — check the prose first, it needs no digitization. `TestUkCyberTlo` holds four published-number guards; they must keep passing.
 
 **Known-available AISI/CAISI cyber data that is NOT ingested** (current as of the 2026-07-23 post — don't re-discover it each run and don't mistake it for staleness):
 
@@ -111,7 +112,7 @@ The NIST mirror serves figures at full resolution if you strip the `styles/<pres
 - **Cost figures (prose only).** Per-task at 100% reliability: Opus 4.6 $15.17 vs GLM-5.2 $6.12; Opus 4.5 $12.50 vs DeepSeek-V4-Pro $0.28. Per 100M-token range run: ~$85 Opus 4.5/4.6, ~$46 GLM-5.2, $1.19 DeepSeek-V4-Pro.
 - **GPT-5.3-Codex is absent by AISI's choice**, not by oversight — the Figure 1 footnote says it was "omitted for legibility; released same day as Opus 4.6 with similar performance." It has no plottable value. Don't hunt for it.
 
-**Kimi K3 status:** released 2026-07-16, open weights slated for 2026-07-27. Evaluated on ExploitBench and TLO only, so it yields **no narrow-task row**. If AISI later runs the 70-task suite on it, that *would* be a genuine new CSV row — check for that specifically. Note it will be the first open-weight model to enter the CSV from a post other than the original.
+**Kimi K3:** released 2026-07-16 (Epoch now lists it as open weights, non-commercial). Evaluated on ExploitBench and TLO only, so it yields **no narrow-task row**. If AISI later runs the 70-task suite on it, that *would* be a genuine new CSV row — check for that specifically. Note it will be the first open-weight model to enter the CSV from a post other than the original.
 
 ## Workflow
 

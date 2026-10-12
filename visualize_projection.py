@@ -6,9 +6,13 @@ Run: streamlit run visualize_projection.py
 import streamlit as st
 import frontier_thresholds as thresholds
 import numpy as np
+# Imported eagerly, under the import lock: plotly reads pandas from sys.modules
+# without importing it, so it can see another session thread's half-finished import.
+import pandas  # noqa: F401
 import plotly.graph_objects as go
 import yaml
 import csv
+import statistics
 import re
 import html
 import textwrap
@@ -881,6 +885,12 @@ _RLI_RAW = [
     # Flash: released 08-13, createdAt 08-24).
     {"name": "Fable 5.1",       "date": "2026-09-01", "rli_score": 17.92},
     {"name": "GPT-6 Astra",     "date": "2026-09-03", "rli_score": 20.83},
+    # Added 2026-10-04: Scale only (isNew, createdAt 2026-10-01T01:17Z); not yet in the CAIS API.
+    # Date is Epoch's catalogued release. Below the frontier.
+    {"name": "Gemini 3.8 Flash", "date": "2026-09-02", "rli_score": 5.83},
+    # Added 2026-10-07: Scale only (isNew, createdAt 2026-10-07T21:54Z); not yet in the CAIS API.
+    # Date is Epoch's catalogued release. New frontier point, above GPT-6 Astra.
+    {"name": "Opus 5.5",        "date": "2026-09-22", "rli_score": 21.25},
     # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
     # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
@@ -921,6 +931,10 @@ _RLI_RAW = [
     # Scale shows Fable 5 as 15.8 where the API gives 15.83 -- page-payload truncation, not a revision.
     # Neither surface alone is a complete roster: Grok 4 is in the CAIS API but absent from Scale, while
     # Gemini 3.7 Flash is on Scale but absent from the API. Check both.
+    # Rechecked 2026-09-29: no new model and no changed score on either surface; Scale's newest createdAt
+    # is still the 2026-09-17 Fable 5.1 / GPT-6 Astra pair, and safe.ai/blog is still 2026-07-01.
+    # Rechecked 2026-10-04: Gemini 3.8 Flash above is the only change; Opus 5.5 and Sonnet 5.5 have no
+    # score on either surface.
 ]
 
 
@@ -991,9 +1005,9 @@ _RSI_SYSCARD_RESCALE = 50.3 / 45.6
 # it below. A rescale chained through anchors that disagree by ~4% would manufacture
 # a 4-point climb out of a null result. Add a row only when a card supplies a score
 # on a set this series already uses. _RSI_SUBSTITUTION_BAR is unaffected: the card
-# expects the 85% bar "to carry over to CoBench 2.1".
-_RSI_CB21_URL = ("https://www-cdn.anthropic.com/fc1b44717c85dc068bc6ba5024219938094694bd/"
-                 "Claude%20Opus%205.5%20System%20Card.pdf")
+# expects the 85% bar "to carry over to CoBench 2.1". The Sonnet 5.5 card
+# (2026-09-28) and Haiku 5.5 (2026-10-07) cards report no CoBench at all; both defer to Opus 5.5's.
+# Opus 5.5 card: https://www-cdn.anthropic.com/fc1b44717c85dc068bc6ba5024219938094694bd/Claude%20Opus%205.5%20System%20Card.pdf
 
 _RSI_RAW = [
     {"name": "Claude Opus 4.6",       "date": "2026-02-05", "cobench": 15.6, "date_known": True},
@@ -2206,10 +2220,17 @@ _DC_NETWORK_CLUSTERS = (
     ("Pacific Northwest", 'plausible', ("Google The Dalles",
                                         "Google Storey County",
                                         "Meta-QTS Hillsboro 2")),
+    # Every pair within ~40 km. Two sites are China-accessible, which
+    # _dc_country_steps pools as one party, so this binds there.
+    ("Johor", 'plausible', ("DayOne Nusajaya", "DayOne Kempas",
+                            "Bridge Data Centres MY06")),
 )
 
 # The cluster bases, weakest first; each level admits every basis before it.
 _DC_NETWORK_LEVELS = ('proximity', 'fabric', 'plausible')
+# Labels of groups with no announced link; a pooled detail naming one says so.
+_DC_HYPOTHETICAL_CLUSTERS = frozenset(
+    lab for lab, b, _ in _DC_NETWORK_CLUSTERS if b == 'plausible')
 
 
 # ── Buildout by country ──────────────────────────────────────────────────
@@ -2225,8 +2246,12 @@ _DC_CTY_CN = "China"
 # DayOne Nusajaya cite the FT reporting Alibaba and ByteDance training models
 # in Southeast Asia, and DayOne is the GDS Holdings spin-off. Counting the
 # whole campus as Chinese-accessible is an upper-bound reading — DayOne has
-# other tenants — so it is a selector, and its label says what it assumes.
-_DC_CN_ACCESS_ABROAD = ("DayOne Nusajaya",)
+# other tenants — so its label says what it assumes. Bridge Data Centres MY06
+# (Sedenak, Johor) is the one Epoch itself attributes, to ByteDance (#likely).
+_DC_CN_ACCESS_ABROAD = ("DayOne Nusajaya", "Bridge Data Centres MY06")
+# In mode 'company', the China-accessible group pools its sites abroad as one
+# tenant: the premise of the group is that Chinese labs can use all of them.
+_DC_CN_ABROAD_PARTY = "Chinese labs abroad"
 _DC_CTY_CN_ACCESS = "China-accessible"
 # Extrapolation: log-linear OLS on monthly samples of a country's step series
 # since this year (the tab's earliest chart start), pace uncertainty as the
@@ -2297,8 +2322,8 @@ _DC_CTY_OTHER_COLORS = ("#2CA02C", "#9467BD", "#8C564B", "#7F7F7F", "#17BECF",
 # ── Share of catalogued capacity by region ───────────────────────────────
 # Buckets for the share chart at the bottom of the tab, in stack order, keyed
 # on Epoch's `Country` column. Geography only: a site counts where it stands,
-# whoever trains in it — so DayOne Johor sits in SEA here while the country
-# panel above also reads it as China-accessible. Anything unmatched, and any
+# whoever trains in it — so the Johor sites sit in SEA here while the country
+# panel above also reads them as China-accessible. Anything unmatched, and any
 # site Epoch leaves without a country, falls to the residual bucket.
 _DC_REGION_OTHER = "Other"
 _DC_REGION_SEA = "SEA"
@@ -2791,6 +2816,9 @@ def _dc_country_steps(series, names, mode, cluster_of):
     if mode == 'site':
         return [(d, v, n) for d, v, n, _ in _dc_envelope(sub)]
     if mode == 'company':
+        sub = {n: (dict(v, companies=[_DC_CN_ABROAD_PARTY])
+                   if n in _DC_CN_ACCESS_ABROAD else v)
+               for n, v in sub.items()}
         per_co = _dc_company_networked_series(sub, cluster_of)
         dates = sorted({d for steps in per_co.values() for d, *_ in steps})
         out = []
@@ -2802,7 +2830,10 @@ def _dc_country_steps(series, names, mode, cluster_of):
                     continue
                 if best is None or val > best[0]:
                     last = next(s for s in reversed(steps) if s[0] <= d)
-                    best = (val, f"{co} — {last[3]}" if last[3] else
+                    grp = last[3]
+                    if grp in _DC_HYPOTHETICAL_CLUSTERS:
+                        grp += " (hypothetical link)"
+                    best = (val, f"{co} — {grp}" if grp else
                             f"{co} — {last[2][0]}")
             if best is not None:
                 out.append((d, best[0], best[1]))
@@ -3050,7 +3081,6 @@ frontier_names = [pretty(m['name']) for m in frontier_all]
 
 eci_all = load_eci_frontier(_mtime=_eci_mtime())
 eci_frontier_all = [m for m in eci_all if m['is_frontier']]
-eci_frontier_names = [m['display_name'] for m in eci_frontier_all]
 
 rli_all = load_rli_data()
 rli_frontier_all = [m for m in rli_all if m['is_frontier']]
@@ -3134,7 +3164,7 @@ _METR_RESET_KEYS = [
     "custom_pos_hi_p50", "custom_pos_hi_p80",
     "piecewise_n_seg", "bp1_select", "bp2_select",
     "custom_dt_dist", "custom_pos_dist",
-    "superexp_dt_init", "superexp_halflife",
+    "superexp_halflife",
     "superexp_dt_floor", "superexp_dt_ci_lo",
     "superexp_dt_ci_hi", "superexp_pos_lo_p50",
     "superexp_pos_lo_p80", "superexp_pos_hi_p50",
@@ -3299,23 +3329,13 @@ def render_metr():
                          "Log-log: fat right tail.")
 
         # --- Superexponential controls ---
-        superexp_dt_initial = superexp_halflife = None
+        superexp_halflife = None
         superexp_dt_ci_lo = superexp_dt_ci_hi = None
         superexp_pos_lo = superexp_pos_hi = None
         superexp_dt_floor = 30
         is_superexp = False
         if proj_basis == "Superexponential":
             is_superexp = True
-            _default_dt_init = 150
-            if gpt4o_idx <= proj_as_of_idx:
-                _sb_base = frontier_all[0]['date']
-                _sb_fr = frontier_all[gpt4o_idx:proj_as_of_idx + 1]
-                _sb_days = np.array([(m['date'] - _sb_base).days for m in _sb_fr], dtype=float)
-                _sb_log2 = np.array([np.log2(m['p50_min']) for m in _sb_fr])
-                _sb_params = fit_line(_sb_days, _sb_log2)
-                if _sb_params[1] > 0:
-                    _default_dt_init = int(round(1.0 / _sb_params[1]))
-
             # Pre-compute superexp fit at default halflife to get implied DT for CI defaults
             _pre_se_halflife = 365
             _pre_se_z = 2 ** (_pre_days / _pre_se_halflife)
@@ -3332,11 +3352,7 @@ def render_metr():
             with st.expander("Advanced options"):
                 st.button("Reset to defaults", key="reset_superexp",
                           on_click=lambda: st.session_state.update(_reset_metr=True))
-                _se_col1, _se_col2 = st.columns(2)
-                superexp_dt_initial = _ss_number_input(_se_col1,
-                    "Initial DT (days)", "superexp_dt_init", _default_dt_init,
-                    min_value=10, max_value=2000, step=5)
-                superexp_halflife = _ss_number_input(_se_col2,
+                superexp_halflife = _ss_number_input(st,
                     "DT half-life (days)", "superexp_halflife", 365,
                     min_value=30, max_value=5000, step=30,
                     help="How quickly DT shrinks. Lower = faster.")
@@ -3498,7 +3514,6 @@ def render_metr():
     # ── Current SOTA (selected "as of" model) ────────────────────────────────
 
     current = frontier_used[-1]
-    current_log2 = np.log2(current[_val_key])
     current_hrs = current[_val_key] / 60
 
     # ── Plotly chart ─────────────────────────────────────────────────────────
@@ -3509,7 +3524,6 @@ def render_metr():
     proj_dates = [current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
 
     # Build all trajectories with correlated (dt, start) pairs
-    n_samples = len(proj_dt)
     if is_superexp:
         all_trajectories = proj_start[:, None] + superexp_trajectory(
             proj_days_arr, proj_dt, superexp_halflife, superexp_dt_floor)
@@ -3526,7 +3540,6 @@ def render_metr():
     pct5 = _yconv(np.percentile(all_trajectories, 5, axis=0))
     pct10 = _yconv(np.percentile(all_trajectories, 10, axis=0))
     pct25 = _yconv(np.percentile(all_trajectories, 25, axis=0))
-    pct50 = _yconv(np.percentile(all_trajectories, 50, axis=0))
     pct75 = _yconv(np.percentile(all_trajectories, 75, axis=0))
     pct90 = _yconv(np.percentile(all_trajectories, 90, axis=0))
     pct95 = _yconv(np.percentile(all_trajectories, 95, axis=0))
@@ -3701,7 +3714,7 @@ def render_metr():
                 showarrow=False, xanchor='left', yanchor='middle',
                 font=dict(size=10, color=color))
 
-    today = _add_today_vline(fig)
+    _add_today_vline(fig)
 
     # --- Backtesting ---
     is_backtesting = proj_as_of_idx < len(frontier_all) - 1
@@ -3869,7 +3882,6 @@ def render_metr():
     # ── Projections ───────────────────────────────────────────────────────────
 
     start_hrs_samples = 2**proj_start / 60
-    med_dt = np.median(proj_dt)
     p10_dt, p90_dt = np.percentile(proj_dt, [10, 90])
     current_label = pretty(current['name'])
 
@@ -3980,7 +3992,7 @@ def _eci_tab_reset_keys(p):
         f"{p}_piecewise_n_seg", f"{p}_bp1_select",
         f"{p}_bp2_select", f"{p}_custom_dpp_dist",
         f"{p}_custom_pos_dist",
-        f"{p}_superexp_ppy_init", f"{p}_superexp_halflife",
+        f"{p}_superexp_halflife",
         f"{p}_superexp_ppy_ceiling", f"{p}_superexp_ppy_ci_lo",
         f"{p}_superexp_ppy_ci_hi", f"{p}_superexp_pos_lo",
         f"{p}_superexp_pos_hi",
@@ -4157,24 +4169,13 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     help="Normal: symmetric. Lognormal: symmetric in log-space.")
 
         # --- Superexponential controls ---
-        eci_superexp_dpp_initial = eci_superexp_halflife = None
+        eci_superexp_halflife = None
         eci_superexp_dpp_ci_lo = eci_superexp_dpp_ci_hi = None
         eci_superexp_pos_lo = eci_superexp_pos_hi = None
         eci_superexp_dpp_floor = 10
         eci_is_superexp = False
         if eci_proj_basis == "Superexponential":
             eci_is_superexp = True
-            _eci_default_ppy_init = 10.0
-            # Estimate from recent frontier
-            if len(tab_frontier_all[:eci_proj_as_of_idx + 1]) >= 2:
-                _eci_base = tab_frontier_all[0]['date']
-                _eci_fr = tab_frontier_all[:eci_proj_as_of_idx + 1]
-                _eci_fd = np.array([(m['date'] - _eci_base).days for m in _eci_fr], dtype=float)
-                _eci_fs = np.array([m['eci_score'] for m in _eci_fr])
-                _eci_fp = fit_line(_eci_fd, _eci_fs)
-                if _eci_fp[1] > 0:
-                    _eci_default_ppy_init = round(365.25 * _eci_fp[1], 1)
-
             # Pre-compute superexp fit at default halflife to get implied PPY for CI defaults
             _eci_pre_se_halflife = 365
             _eci_pre_se_z = 2 ** (_eci_pre_days / _eci_pre_se_halflife)
@@ -4192,12 +4193,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             with st.expander("Advanced options"):
                 st.button("Reset to defaults", key=f"reset_{p}_superexp",
                           on_click=lambda: st.session_state.update({f"_reset_{p}": True}))
-                _eci_se_col1, _eci_se_col2 = st.columns(2)
-                eci_superexp_ppy_initial = _ss_number_input(_eci_se_col1,
-                    "Initial +Pts/Yr", f"{p}_superexp_ppy_init", _eci_default_ppy_init,
-                    min_value=0.5, max_value=365.0, step=0.5)
-                eci_superexp_dpp_initial = 365.25 / eci_superexp_ppy_initial
-                eci_superexp_halflife = _ss_number_input(_eci_se_col2,
+                eci_superexp_halflife = _ss_number_input(st,
                     "Rate half-life (days)", f"{p}_superexp_halflife", 365,
                     min_value=30, max_value=5000, step=30,
                     help="How quickly rate grows. Lower = faster.")
@@ -4248,7 +4244,6 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
     # ── Build data arrays ────────────────────────────────────────────────────
     eci_frontier_used = tab_frontier_all[:eci_proj_as_of_idx + 1]
-    eci_frontier_plot = list(tab_all)  # show all models (frontier + non-frontier)
 
     base_date = tab_frontier_all[0]['date']
     days_all_eci = np.array([(m['date'] - base_date).days for m in tab_frontier_all], dtype=float)
@@ -4342,7 +4337,6 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [eci_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
 
-    n_samples = len(eci_proj_dpp)
     if eci_is_superexp:
         all_trajectories = eci_proj_start[:, None] + superexp_trajectory(
             proj_days_arr, eci_proj_dpp, eci_superexp_halflife, eci_superexp_dpp_floor)
@@ -4617,7 +4611,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             hoverinfo='skip',
         ))
 
-    today = _add_today_vline(fig)
+    _add_today_vline(fig)
 
     # --- Backtesting ---
     eci_is_backtesting = eci_proj_as_of_idx < len(tab_frontier_all) - 1
@@ -5080,7 +5074,7 @@ _RLI_RESET_KEYS = [
     "rli_piecewise_n_seg", "rli_bp1_select",
     "rli_bp2_select", "rli_custom_dt_dist",
     "rli_custom_pos_dist",
-    "rli_superexp_dt_init", "rli_superexp_halflife",
+    "rli_superexp_halflife",
     "rli_superexp_dt_floor", "rli_superexp_dt_ci_lo",
     "rli_superexp_dt_ci_hi", "rli_superexp_pos_lo",
     "rli_superexp_pos_hi",
@@ -5236,23 +5230,13 @@ def render_rli():
                     horizontal=True, key="rli_custom_pos_dist")
 
         # --- Superexponential controls ---
-        rli_superexp_dt_initial = rli_superexp_halflife = None
+        rli_superexp_halflife = None
         rli_superexp_dt_ci_lo = rli_superexp_dt_ci_hi = None
         rli_superexp_pos_lo = rli_superexp_pos_hi = None
         rli_superexp_dt_floor = 10
         rli_is_superexp = False
         if rli_proj_basis == "Superexponential (logit)":
             rli_is_superexp = True
-            _rli_default_dt_init = 100.0
-            if len(rli_frontier_all[:rli_proj_as_of_idx + 1]) >= 2:
-                _rli_base = rli_frontier_all[0]['date']
-                _rli_fr = rli_frontier_all[:rli_proj_as_of_idx + 1]
-                _rli_fd = np.array([(m['date'] - _rli_base).days for m in _rli_fr], dtype=float)
-                _rli_flogit = _logit(np.array([m['rli_score'] / 100 for m in _rli_fr]))
-                _rli_fp = fit_line(_rli_fd, _rli_flogit)
-                if _rli_fp[1] > 0:
-                    _rli_default_dt_init = round(np.log(2) / _rli_fp[1], 0)
-
             # Pre-compute superexp fit at default halflife for CI defaults
             _rli_pre_se_halflife = 365
             _rli_pre_se_z = 2 ** (_rli_pre_days / _rli_pre_se_halflife)
@@ -5270,11 +5254,7 @@ def render_rli():
             with st.expander("Advanced options"):
                 st.button("Reset to defaults", key="reset_rli_superexp",
                           on_click=lambda: st.session_state.update(_reset_rli=True))
-                _rli_se_col1, _rli_se_col2 = st.columns(2)
-                rli_superexp_dt_initial = _ss_number_input(_rli_se_col1,
-                    "Initial odds 2x time (days)", "rli_superexp_dt_init", _rli_default_dt_init,
-                    min_value=5.0, max_value=2000.0, step=5.0)
-                rli_superexp_halflife = _ss_number_input(_rli_se_col2,
+                rli_superexp_halflife = _ss_number_input(st,
                     "Rate half-life (days)", "rli_superexp_halflife", 365,
                     min_value=30, max_value=5000, step=30,
                     help="How quickly rate grows. Lower = faster.")
@@ -5425,7 +5405,6 @@ def render_rli():
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [rli_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
 
-    n_samples = len(rli_proj_dt)
     if rli_is_superexp:
         all_logit_traj = rli_proj_start_logit[:, None] + np.log(2) * superexp_trajectory(
             proj_days_arr, rli_proj_dt, rli_superexp_halflife, rli_superexp_dt_floor)
@@ -5438,7 +5417,6 @@ def render_rli():
     pct5 = np.percentile(all_trajectories, 5, axis=0)
     pct10 = np.percentile(all_trajectories, 10, axis=0)
     pct25 = np.percentile(all_trajectories, 25, axis=0)
-    pct50 = np.percentile(all_trajectories, 50, axis=0)
     pct75 = np.percentile(all_trajectories, 75, axis=0)
     pct90 = np.percentile(all_trajectories, 90, axis=0)
     pct95 = np.percentile(all_trajectories, 95, axis=0)
@@ -5614,7 +5592,7 @@ def render_rli():
                 font=dict(size=10, color=color))
 
 
-    today = _add_today_vline(fig)
+    _add_today_vline(fig)
 
     # --- Backtesting ---
     rli_is_backtesting = rli_proj_as_of_idx < len(rli_frontier_all) - 1
@@ -7856,6 +7834,23 @@ _OPENAI_REVENUE = [
     # $15.1B / Codex $8.8B tracked ARR (08-18) and the weekly ChatGPT Ads series (~$1B, from 08-31).
     # Epoch's ai_companies_revenue_reports.csv is unchanged in value at Bloomberg's $40B, but note it dates
     # that row 2026-08-13 (publication) where we carry the 2026-07-31 as-of; same observation, not a new one.
+    # TickerTrends' 2026-09-29 post ("OpenAI and Anthropic ARR Tracking"): $50.44B, +13.4% MoM; the chart
+    # card reads "As of Sep 24, 2026" and "company-wide annualized revenue run-rate", so it continues this
+    # series. Dated 09-28, per TickerTrends' 10-08 post ("tracked $50.44B on September 28"), which
+    # supersedes the chart card's Sep 24.
+    ("2026-09-28", 50.44),
+    # Excluded: Axios/FT (2026-09-29) report OpenAI's run rate "nearing"/"about" $70B, now Epoch's newest
+    # OpenAI row. A press report, not this series, and ~39% *above* the 50.44 tracked five days earlier --
+    # the reverse of the usual tracker-above-press gap, so splicing it would draw a fake jump.
+    # Rechecked 2026-10-04: TickerTrends' only post since (09-30, AI agent use) carries no company total.
+    # Rechecked 2026-10-07: TickerTrends' only post since (10-07, B2B Software Spend Panel) counts observed
+    # purchases, not ARR. Epoch's newest OpenAI row is still the $70B press report of 09-29.
+    # Rechecked 2026-10-08: the FT (10-08) reviewed an OpenAI investor presentation showing ARR "approaching
+    # $50bn" in September and "close to $30bn" in July, on OpenAI's own basis, which excludes cloud-partner
+    # sales that Anthropic's figures include. The $70B was investors' grossed-up ~$40B July base times OpenAI's
+    # ">70 per cent since July". Not added: the September figure confirms the 50.44 above, and the July one sits
+    # ~30% *below* this series' 42.6 at 07-29, so the tracker's Jul-Sep growth (+18%) disagrees with OpenAI's
+    # own (+70%) even though the endpoints agree. TickerTrends' 10-08 post restates the 50.44 and adds no point.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -7944,6 +7939,17 @@ _ANTHROPIC_REVENUE = [
     # Bloomberg and Axios as revenue "to top"/"expected to" exceed $100B in 2026 -- a forecast, and its only
     # observation is the $9B-to-$65B history already here. An S-1, when it lands, will carry audited period
     # revenue; under this series' rule that yields a point only if it states a run rate explicitly.
+    # Rechecked 2026-09-30: still nothing newer. anthropic.com/news since 09-18 (09-22 Opus 5.5, 09-22 Situation
+    # Report, 09-23 enzyme discovery, 09-28 Sonnet 5.5) states no run rate; EDGAR has no public S-1. Excluded:
+    # TickerTrends' $76.8B as of 2026-09-24 (tracker estimate).
+    # Rechecked 2026-10-04: still nothing newer. anthropic.com/news since 09-28 (Infosys, Barclays, Frontier
+    # Academy) states no run rate; EDGAR has no S-1 (Reuters' 09-28 story is on a confidential draft, and
+    # gives audited annual revenue only).
+    # Rechecked 2026-10-07: still nothing newer. anthropic.com/news since 10-04 (10-06 Cyber Verification
+    # Program) states no run rate; EDGAR full-text search finds no Anthropic S-1/F-1; Epoch's newest row is unchanged.
+    # Rechecked 2026-10-08: still nothing newer. Per the FT (10-08), this series counts sales through cloud partners
+    # (AWS, Google Cloud) and OpenAI's does not, so the two lines' levels are not like-for-like; no source states
+    # Anthropic's run rate net of them.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -7977,7 +7983,9 @@ _CN_REVENUE = {
             ("2026-08-26", 0.80, "company",
              "CEO on the H1 2026 results call: ARR “surpassed $800 million in "
              "August”. The H1 press release itself states no ARR; H1 revenue "
-             "was $116.6M."),
+             "was $116.6M. SCMP (2026-09-03, one person familiar) reports the "
+             "CEO later said it was one August week × 52, which would make it "
+             "weekly-annualized, unlike Zhipu's monthly $1.6B."),
         ],
     },
     "Zhipu (Z.ai)": {
@@ -7997,6 +8005,10 @@ _CN_REVENUE = {
              "H1 2026 results call: open-platform ARR “reached USD 1.6 billion, "
              "calculated on a monthly annualized basis” as of end-August "
              "(36Kr, 2026-09-02). The weekly-annualized >$2B is not used."),
+            # Excluded (checked 2026-09-29): the 2026-09-16 investor call's "全业务口径ARR"
+            # of $1.8B is all-business ARR, with no MaaS split or annualization basis, so it
+            # does not continue this API line; the raised $3.0B year-end figure is guidance;
+            # 36Kr's passing "$2 billion in August" (09-23) is unsourced and contradicts the $1.6B.
         ],
     },
     "Alibaba (Qwen MaaS)": {
@@ -8006,7 +8018,7 @@ _CN_REVENUE = {
                  "“AI-related product revenue” (RMB 12.4B in the June 2026 "
                  "quarter), which includes GPU rental. No Qwen app revenue is "
                  "disclosed.",
-        "comparable": "Only the MaaS ARR (two points). The headline AI revenue is not",
+        "comparable": "Only the MaaS ARR (three points). The headline AI revenue is not",
         "points": [
             ("2026-05-13", 8.0 / 6.8980, "company",
              "Q4 FY26 call: “ARR on the Bailian platform was already above RMB "
@@ -8015,6 +8027,14 @@ _CN_REVENUE = {
              "CFO Toby Xu, Q1 FY27 call: “ARR of our model and application "
              "services…surpassed RMB 16 billion”. A floor, converted at "
              "6.7851."),
+            ("2026-09-22", 20.0 / 6.7851, "company",
+             "Disclosed at the Yunqi conference (09-22), per Zhongtai Securities "
+             "(2026-10-01): Bailian platform ARR “近期突破200亿元（2026年8月为160亿）” "
+             "(recently passed RMB 20B; RMB 16B in August). Converted at 6.7851. "
+             "Supersedes a Goldman note (~09-24) dating RMB 20B to end of August, "
+             "which contradicts the company's own RMB 16B for August."),
+            # Excluded (checked 2026-10-08): Rhodium's ~$2.4B for August (via ifeng,
+            # 2026-09-21), a third-party estimate for a month already carried.
         ],
     },
     "Moonshot (Kimi)": {
@@ -8225,7 +8245,9 @@ def render_revenue():
             help="Add OpenAI + Anthropic as one series, fitted and projected "
                  "like the other two. The two companies report on different "
                  "days, so each is interpolated to the other's dates (held "
-                 "flat past its own last report) before summing.")
+                 "flat past its own last report) before summing. The sum "
+                 "mixes bases: Anthropic's figures include cloud-partner "
+                 "sales and OpenAI's do not.")
 
         with st.expander("Projection range"):
             st.selectbox(
@@ -8518,7 +8540,7 @@ def render_revenue():
                     hoverinfo='skip', showlegend=False,
                 ))
 
-    today = _add_today_vline(fig)
+    _add_today_vline(fig)
 
     # --- Layout ---
     yaxis_type = "log" if log_scale else "linear"
@@ -8640,7 +8662,13 @@ def render_revenue():
 
     _fn_caption(
         "Figures are approximate ARR compiled from public reports and media "
-        "sources. These are projections, not forecasts.",
+        "sources, each on its company's own basis. These are projections, not "
+        "forecasts.",
+        ("its company's own basis",
+         "Anthropic counts sales through cloud partners (AWS, Google Cloud) "
+         "in its run rate; OpenAI does not (FT, 2026-10-08). The two lines' "
+         "levels are therefore not like-for-like, and no source states either "
+         "on the other's basis. Each line's growth rate is unaffected."),
         ("public reports and media sources",
          "Anthropic's Dec 2025 figure is averaged from a reported $8\u201310B "
          "range. May 2026 figures from The Information "
@@ -8765,7 +8793,7 @@ _EMP_RESET_KEYS = [
     "emp_custom_pos_lo", "emp_custom_pos_hi",
     "emp_piecewise_n_seg", "emp_bp1_select", "emp_bp2_select",
     "emp_custom_dt_dist", "emp_custom_pos_dist",
-    "emp_superexp_dt_init", "emp_superexp_halflife",
+    "emp_superexp_halflife",
     "emp_superexp_dt_floor", "emp_superexp_dt_ci_lo",
     "emp_superexp_dt_ci_hi", "emp_superexp_pos_lo",
     "emp_superexp_pos_hi",
@@ -8932,23 +8960,13 @@ def render_employment():
                     horizontal=True, key="emp_custom_pos_dist")
 
         # --- Superexponential controls ---
-        emp_superexp_dt_initial = emp_superexp_halflife = None
+        emp_superexp_halflife = None
         emp_superexp_dt_ci_lo = emp_superexp_dt_ci_hi = None
         emp_superexp_pos_lo = emp_superexp_pos_hi = None
         emp_superexp_dt_floor = 10
         emp_is_superexp = False
         if emp_proj_basis == "Superexponential (logit)":
             emp_is_superexp = True
-            _emp_default_dt_init = 100.0
-            if len(rli_frontier_all[:emp_proj_as_of_idx + 1]) >= 2:
-                _emp_base = rli_frontier_all[0]['date']
-                _emp_fr = rli_frontier_all[:emp_proj_as_of_idx + 1]
-                _emp_fd = np.array([(m['date'] - _emp_base).days for m in _emp_fr], dtype=float)
-                _emp_flogit = _logit(np.array([m['rli_score'] / 100 for m in _emp_fr]))
-                _emp_fp = fit_line(_emp_fd, _emp_flogit)
-                if _emp_fp[1] > 0:
-                    _emp_default_dt_init = round(np.log(2) / _emp_fp[1], 0)
-
             _emp_pre_se_halflife = 365
             _emp_pre_se_z = 2 ** (_emp_pre_days / _emp_pre_se_halflife)
             _emp_pre_se_X = np.column_stack([np.ones_like(_emp_pre_se_z), _emp_pre_se_z])
@@ -8965,11 +8983,7 @@ def render_employment():
             with st.expander("RLI advanced options"):
                 st.button("Reset to defaults", key="reset_emp_superexp",
                           on_click=lambda: st.session_state.update(_reset_emp=True))
-                _emp_se_col1, _emp_se_col2 = st.columns(2)
-                emp_superexp_dt_initial = _ss_number_input(_emp_se_col1,
-                    "Initial odds 2x time (days)", "emp_superexp_dt_init", _emp_default_dt_init,
-                    min_value=5.0, max_value=2000.0, step=5.0)
-                emp_superexp_halflife = _ss_number_input(_emp_se_col2,
+                emp_superexp_halflife = _ss_number_input(st,
                     "Rate half-life (days)", "emp_superexp_halflife", 365,
                     min_value=30, max_value=5000, step=30)
                 emp_superexp_dt_floor = _ss_number_input(st,
@@ -9360,7 +9374,7 @@ def render_employment():
                     showarrow=False, xanchor='left', yanchor='middle',
                     font=dict(size=10, color=color))
 
-    today = _add_today_vline(fig)
+    _add_today_vline(fig)
 
     if _is_jobs_mode:
         y_max = max(_chart_hi95[-1], 1) + 1
@@ -9826,9 +9840,6 @@ def render_eci_gap():
 
         fig_h = go.Figure()
 
-        x_start = h_pts[0]['date'] - timedelta(days=30)
-        x_end = _today + timedelta(days=30)
-
         h_dates = [p['date'] for p in h_pts]
         h_gaps = [p['gap_months'] for p in h_pts]
         h_names = [p['name'] for p in h_pts]
@@ -10135,6 +10146,135 @@ _WC_GROWTH = (
     ("Europe/UK", 2.3, 1.7, 3.2),
     ("Other", 2.2, 1.6, 3.2),
 )
+
+# CTS lithography report (Brown & Khan, Sep 2026): US AI chip output against
+# China's *lithography-bounded ceiling*, with DUVi imports continuing or banned
+# from 2027. The China rows assume every other bottleneck solved, so their
+# levels are never China's path: China's realized output follows its own
+# trend and the ceiling only caps it (`_duv_policy_cut`).
+_DUV_FILE = 'cts_duv_production.csv'
+_DUV_SOURCE_URL = "https://techstatecraft.org/duv"
+_DUV_ALLOCS = (("trend", "today's allocation"),
+               ("push", "AI push"),
+               ("ceiling", "every DUVi on AI"))
+_DUV_BAN_ALLOC = "push"   # the allocation the Pacing lever reads
+# China's realized 2026 AI chip output, the report's Figure 9 (IFP): 62k–160k
+# B300e, read as a 10th–90th range. To H100e at the report's own conversion,
+# TrendForce's 13.9M GB300e ≈ 35M H100e (dense FP16).
+_DUV_CN_2026_B300E = (0.062, 0.160)   # millions
+_DUV_H100E_PER_B300E = 35.0 / 13.9
+_DUV_POLICY_YEAR = 2027.0             # the ban and the servicing cut both bite
+# Growth of that output in H100e, ×/yr: median, with the 10th–90th spread at
+# ÷/× _DUV_CN_OUTPUT_SPREAD. Chip output, not installed compute (`_WC_GROWTH`):
+# Epoch has Ascend units ~0.8M (2025) → ~1.5M (2026, ×1.9); SemiAnalysis's 2027
+# median is 2M Ascend 950s (×1.3), its high case 4M (×2.7); per-chip
+# performance rises on top. The import-ban cut is most sensitive to this, so
+# Pacing exposes it (`pc_duv_growth`).
+_DUV_CN_OUTPUT_GROWTH = 2.4
+_DUV_CN_OUTPUT_SPREAD = 1.6
+_DUV_CN_OUTPUT_GROWTH_RANGE = (1.2, 5.0)
+# Advanced-fab DUVi capacity lost per year once foreign servicing stops. The
+# report gives no number ("some uncertainty as to the magnitude"), so this is
+# a judgment, exposed as a slider: see CHINA_COMPUTE_JUDGMENTS.md §5.
+_DUV_SERVICE_DECAY_PCT = 15
+_DUV_SERVICE_DECAY_MAX = 50
+
+
+def _duv_mtime():
+    return os.path.getmtime(os.path.join(os.path.dirname(__file__), _DUV_FILE))
+
+
+@st.cache_data
+def load_duv_production(_mtime=None):
+    """{'us': rows, 'continue_push': rows, …}, rows = [(year, p10, p50, p90)]."""
+    path = os.path.join(os.path.dirname(__file__), _DUV_FILE)
+    with open(path) as f:
+        lines = [ln for ln in f if not ln.lstrip().startswith('#')]
+    out = {}
+    for r in csv.DictReader(lines):
+        key = r['scenario'].strip() or r['region'].strip()
+        out.setdefault(key, []).append(
+            (int(r['year']), float(r['p10']), float(r['p50']), float(r['p90'])))
+    for rows in out.values():
+        rows.sort()
+    return out
+
+
+def _duv_log_p50(rows, t):
+    """log10 P50 at fractional year `t`, each year's output dated mid-year.
+
+    Log-linear between years, clamped to the table's span; a zero P50 (the
+    2026 'trend' rows round to 0–1) is floored at 0.5M so the log stays finite.
+    """
+    xs = [y + 0.5 for y, *_ in rows]
+    ys = [np.log10(max(p50, 0.5)) for _y, _lo, p50, _hi in rows]
+    return float(np.interp(t, xs, ys))
+
+
+def _duv_frac_year(d):
+    return d.year + (d.timetuple().tm_yday - 1) / 365.25
+
+
+def _duv_realized_grid(n=15, growth=_DUV_CN_OUTPUT_GROWTH):
+    """Quantile grid of (log10 2026 output in M H100e, log10 growth ×/yr).
+
+    China's output absent any lithography limit: the IFP 2026 range, growing
+    at `growth` ×/yr (median, spread ÷/× `_DUV_CN_OUTPUT_SPREAD`), both
+    lognormal from their 10th/90th. Deterministic, so reruns agree.
+    """
+    z = [statistics.NormalDist().inv_cdf((k + 0.5) / n) for k in range(n)]
+
+    def _ln(lo, hi):
+        mu, sd = (np.log10(lo) + np.log10(hi)) / 2, (np.log10(hi / lo)) / 2.5631
+        return [mu + sd * q for q in z]
+
+    lo, hi = _DUV_CN_2026_B300E
+    lv = _ln(lo * _DUV_H100E_PER_B300E, hi * _DUV_H100E_PER_B300E)
+    return [(a, b) for a in lv
+            for b in _ln(growth / _DUV_CN_OUTPUT_SPREAD,
+                         growth * _DUV_CN_OUTPUT_SPREAD)]
+
+
+def _duv_log_output(t, lv0, lg, rows, decay=0.0):
+    """log10 China output at year `t`: its own trend, capped by the ceiling,
+    times the fleet that survives `decay`/yr without servicing."""
+    v = min(lv0 + lg * (t - 2026.5), _duv_log_p50(rows, t))
+    if decay > 0:
+        v += np.log10(1.0 - decay) * max(t - _DUV_POLICY_YEAR, 0.0)
+    return v
+
+
+def _duv_policy_cut(start, end, ban_imports=True, decay=0.0,
+                    alloc=_DUV_BAN_ALLOC, data=None,
+                    growth=_DUV_CN_OUTPUT_GROWTH):
+    """Share of China's chip-output growth the DUVi policies remove, start→end.
+
+    1 − (OOM/yr under the policy) / (OOM/yr with imports and servicing
+    continuing), averaged over `_duv_realized_grid`. China's output is its own
+    trend capped by the report's ceiling, so an import ban bites only once
+    the banned ceiling binds, which today's low output puts years out.
+    `decay` (fraction/yr) is the servicing ban: it erodes the fleet that makes
+    the chips, so it bites from 2027 whether or not the ceiling binds. None
+    when the window is empty.
+    """
+    data = data or load_duv_production(_duv_mtime())
+    t0, t1 = _duv_frac_year(start), _duv_frac_year(end)
+    if t1 - t0 < 0.25:
+        return None
+    if not ban_imports and decay <= 0:
+        return 0.0
+    cont = data[f"continue_{alloc}"]
+    pol = data[f"banned_{alloc}"] if ban_imports else cont
+    cuts = []
+    for lv0, lg in _duv_realized_grid(growth=growth):
+        g_c = (_duv_log_output(t1, lv0, lg, cont)
+               - _duv_log_output(t0, lv0, lg, cont)) / (t1 - t0)
+        g_p = (_duv_log_output(t1, lv0, lg, pol, decay)
+               - _duv_log_output(t0, lv0, lg, pol, decay)) / (t1 - t0)
+        if g_c > 0:
+            cuts.append(min(max(1.0 - g_p / g_c, 0.0), 1.0))
+    return float(np.mean(cuts)) if cuts else None
+
 
 # Compute/capabilities/diffusion tab
 _CC_RESET_KEYS = ["cc_future", "cc_run", "cc_end_year", "cc_bd_anchor",
@@ -10469,7 +10609,8 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
     st.caption(
         "Biggest training run one party per country could mount. Solid = actual, "
         "dashed = planned, dotted + cone = extrapolated (50% / 80%). "
-        "*China-accessible* adds DayOne Johor (FT: Alibaba, ByteDance train there).")
+        "*China-accessible* adds two Johor sites (FT: Alibaba, ByteDance train at DayOne; "
+        "Epoch: ByteDance at Bridge MY06).")
 
     # Pooling follows the sidebar's networking selector, exactly as the
     # company chart above does: a lone site when nothing pools, else the
@@ -10621,7 +10762,6 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         p = _pace_for(c)
         if p is None:
             return f"{c}: no trend to extrapolate"
-        dbl = 12 * np.log10(2) / p['g'] if p['g'] > 0 else float('inf')
         name = _DC_CTY_PACE_SOURCE.get(borrowed.get(c))
         src = (f"{name}, cone widened to its own fit" if name and fit
                else name or "own fit")
@@ -10799,8 +10939,8 @@ def _dc_render_region_share(series, country_of, *, today, cap_date, x_start,
         + (", and past today it is planned buildout." if include_future
            and cap_date > today else "."),
         ("where the building stands",
-         "Geography only \u2014 no host filter, no tenant attribution. DayOne "
-         "Johor counts under SEA here, though the panel above also reads it "
+         "Geography only \u2014 no host filter, no tenant attribution. The "
+         "Johor sites count under SEA here, though the panel above also reads them "
          "as China-accessible."),
         ("SEA, Europe/UK and Other",
          "SEA is Malaysia, Indonesia, Singapore, Thailand, Vietnam and the "
@@ -11846,7 +11986,6 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     eci_all = load_eci_frontier(_mtime=_eci_mtime())
     anchor = max(eci_all, key=lambda m: m['eci_score']) if eci_all \
         else max(cc_rows, key=lambda m: m['eci'])
-    anchor_name = anchor.get('display_name') or anchor.get('name', '')
     eci_now = anchor.get('eci_score', anchor.get('eci'))
 
     # Projected compute path: interpolate the running-max FLOP frontier in log
@@ -12115,7 +12254,7 @@ _CC_GAP_WINDOWS = [
 #
 # China is still a JUDGMENT call, but no longer unchecked. Epoch's catalogue now
 # holds a handful of Chinese sites (VNET Ulanqab…) plus the China-accessible
-# DayOne Johor campus, and the Data Centers tab's by-country panel projects
+# Johor sites, and the Data Centers tab's by-country panel projects
 # them; _cc_country_pace_check() reads that same engine here. The band stays a
 # hand-set constant rather than that fit because the two measure different
 # things: the catalogue pace is *buildings* (and China-accessible is a from-zero
@@ -12272,8 +12411,6 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     d_yrs = (today - cn_cap_d).days / 365.25
     cn_cap_lo_lf = cn_cap_apex_lo + g_cn_lo * d_yrs     # capacity range at today
     cn_cap_hi_lf = cn_cap_apex_hi + g_cn_hi * d_yrs
-    cn_cap_lf = 0.5 * (cn_cap_lo_lf + cn_cap_hi_lf)
-    cap_gap_oom = us_cap_lf - cn_cap_lf
 
     # ECI projection: derived from compute (Chart A growth) + shared algorithmic
     # progress. a_partial = ECI per ×10 compute; b_algo = shared ECI/yr at fixed
@@ -14022,6 +14159,145 @@ def _render_cc_world_shares(today, horizon):
         "China's share drifts down even as its compute grows.")
 
 
+def _render_cc_duv_ceiling(today):
+    """US AI chip output against China's lithography ceiling, ban vs continue.
+
+    The report's own numbers (`load_duv_production`), charted as published.
+    China's rows are a ceiling on chips made per year with every non-lithography
+    bottleneck assumed away, so this section says so up front and never feeds
+    the levels anywhere. China's own output trend is drawn under them, since
+    where it meets a ceiling is when that ceiling, and a ban on it, starts to
+    bind (`_duv_policy_cut`).
+    """
+    st.subheader("Lithography ceiling on China's chip output")
+    data = load_duv_production(_duv_mtime())
+    us = data["us"]
+    alloc = _DUV_BAN_ALLOC
+    cont, ban = data[f"continue_{alloc}"], data[f"banned_{alloc}"]
+    last = us[-1][0]
+    _fn_line(
+        f"By {last} the US and allies make **~{us[-1][2]:,.0f}M** H100e of AI "
+        f"chips a year (P50). China's **ceiling** is ~{cont[-1][2]:,.0f}M if "
+        f"DUV immersion imports continue and ~{ban[-1][2]:,.0f}M if they are "
+        "banned from 2027, if it pushes its fleet toward AI.",
+        ("ceiling", "What its lithography fleet could print if etch, "
+                    "deposition, HBM and packaging were no constraint and "
+                    "yields reached TSMC's by 2031. The authors call it "
+                    "unrealistic in the near term; it is not a forecast of "
+                    "China's output."))
+
+    def _x(y):
+        return datetime(y, 7, 1)
+
+    def _rgba(c, a):
+        return f"rgba({int(c[1:3], 16)},{int(c[3:5], 16)},{int(c[5:7], 16)},{a})"
+
+    us_c, cn_c = (_DC_REGION_COLORS["US domestic"],
+                  _DC_REGION_COLORS["China domestic"])
+    series = (("US and allies", us, us_c, 'solid', None),
+              ("China ceiling, imports continue", cont, cn_c, 'solid',
+               "continue"),
+              ("China ceiling, DUVi banned 2027", ban, cn_c, 'dash', "banned"))
+    fig = go.Figure()
+    for name, rows, color, dash, imp in series:
+        xs = [_x(y) for y, *_ in rows]
+        fig.add_trace(go.Scatter(
+            x=xs + xs[::-1], y=[r[3] for r in rows] + [r[1] for r in rows][::-1],
+            fill='toself', fillcolor=_rgba(color, 0.10 if dash == 'dash'
+                                           else 0.14),
+            line=dict(width=0), hoverinfo='skip', showlegend=False,
+            legendgroup=name, mode='lines'))
+        if imp is None:
+            cd = [f"{lo:,.0f}–{hi:,.0f}M (low–high)"
+                  for _y, lo, _m, hi in rows]
+        else:
+            # Hover lists every allocation, since only one is drawn.
+            cd = ["<br>".join(
+                f"{lab}: {data[f'{imp}_{a}'][i][2]:,.0f}M"
+                for a, lab in _DUV_ALLOCS)
+                + f"<br>(drawn: P10–P90 {lo:,.0f}–{hi:,.0f}M)"
+                for i, (_y, lo, _m, hi) in enumerate(rows)]
+        fig.add_trace(go.Scatter(
+            x=xs, y=[r[2] for r in rows], name=name, mode='lines+markers',
+            legendgroup=name, line=dict(color=color, width=2.5, dash=dash),
+            marker=dict(size=5), customdata=cd,
+            hovertemplate="%{x|%Y}: <b>%{y:,.0f}M</b> H100e/yr<br>"
+                          "%{customdata}<extra>" + name + "</extra>"))
+    # China's realized output and its own trend, absent any lithography cap:
+    # the same grid `_duv_policy_cut` averages over.
+    grid = _duv_realized_grid()
+    yrs = [y for y, *_ in us]
+    paths = np.array([[10 ** (lv0 + lg * (y + 0.5 - 2026.5)) for y in yrs]
+                      for lv0, lg in grid])
+    p10, p50, p90 = (np.percentile(paths, q, axis=0) for q in (10, 50, 90))
+    xs = [_x(y) for y in yrs]
+    trend_name = f"China's own trend (\u00d7{_DUV_CN_OUTPUT_GROWTH:g}/yr)"
+    fig.add_trace(go.Scatter(
+        x=xs, y=list(p50), name=trend_name, mode='lines',
+        line=dict(color='#7F7F7F', width=2, dash='dot'),
+        customdata=[f"{a:,.1f}\u2013{b:,.0f}M" for a, b in zip(p10, p90)],
+        hovertemplate="%{x|%Y}: <b>%{y:,.1f}M</b> H100e/yr (P10\u2013P90 "
+                      "%{customdata})<br>if output kept its own pace with "
+                      "no lithography cap<extra>" + trend_name
+                      + "</extra>"))
+    lo, hi = (v * _DUV_H100E_PER_B300E for v in _DUV_CN_2026_B300E)
+    mid = float(np.sqrt(lo * hi))
+    fig.add_trace(go.Scatter(
+        x=[_x(yrs[0])], y=[mid], name="China actual, 2026 (IFP)",
+        mode='markers', marker=dict(color='#222222', size=8, symbol='diamond'),
+        error_y=dict(type='data', symmetric=False, array=[hi - mid],
+                     arrayminus=[mid - lo], color='#222222', width=5),
+        hovertemplate=f"2026: {lo:.2f}\u2013{hi:.2f}M H100e "
+                      f"({_DUV_CN_2026_B300E[0] * 1000:.0f}k\u2013"
+                      f"{_DUV_CN_2026_B300E[1] * 1000:.0f}k B300e)"
+                      "<extra>China actual (IFP)</extra>"))
+    layout = _dc_layout(True, "AI chips made per year (M H100e)",
+                        datetime(us[0][0], 1, 1),
+                        datetime(last, 12, 31), show_legend=True, height=400)
+    layout['legend'] = dict(layout['legend'], orientation='h', y=-0.15)
+    layout['margin'] = dict(layout['margin'], t=28)
+    fig.update_layout(**layout)
+    fig.add_vline(x=today, line=dict(color='#999999', width=1.5, dash='dot'))
+    fig.add_annotation(x=today, yref='paper', y=1.0, text='Today',
+                       showarrow=False, xanchor='right', yanchor='bottom',
+                       font=dict(size=10, color='#777777'))
+    st.plotly_chart(fig, use_container_width=True)
+    end = datetime(_PC_END_YEARS[-1], 12, 31)
+    c_imp = _duv_policy_cut(today, end)
+    c_svc = _duv_policy_cut(today, end, ban_imports=True,
+                            decay=_DUV_SERVICE_DECAY_PCT / 100.0)
+    _fn_caption(
+        "Bands are P10\u2013P90 for China and the low\u2013high range for the "
+        "US. China is drawn at the AI-push allocation; hover for the "
+        "others. Chips made per year, not the largest single training run "
+        "the rest of this tab tracks. China's actual output is far under "
+        "both ceilings, so an import ban binds only once its own trend "
+        "reaches the banned line: the Pacing tab's lever puts that at "
+        f"~{c_imp:.0%} less growth to {end.year}, or ~{c_svc:.0%} with "
+        "servicing banned too. Source: Brown & Khan, Center for Technology "
+        f"& Statecraft, [*DUV Immersion Lithography*]({_DUV_SOURCE_URL}) "
+        "(Sep 2026), Table 45 and Figure 9.",
+        ("AI-push allocation", "China moves its DUVi fleet to AI chips in "
+                               "the same share the US ecosystem does, "
+                               "evading controls where it must. Today's "
+                               "allocation is far lower; the physical ceiling "
+                               "puts every machine on AI."),
+        ("its own trend",
+         "IFP's 2026 estimate of Huawei's output (62k\u2013160k B300e, at the "
+         "report's 2.5 H100e per B300e), growing "
+         f"\u00d7{_DUV_CN_OUTPUT_GROWTH:g}/yr (10th\u201390th "
+         f"\u00d7{_DUV_CN_OUTPUT_GROWTH / _DUV_CN_OUTPUT_SPREAD:.1f}\u2013"
+         f"{_DUV_CN_OUTPUT_GROWTH * _DUV_CN_OUTPUT_SPREAD:.1f}): Epoch and "
+         "SemiAnalysis put Ascend unit growth at \u00d71.3\u20132.7/yr, with "
+         "faster chips on top. The lever caps this trend at each ceiling "
+         "and compares growth with and without the policy. The import-ban "
+         "cut is sensitive to this rate; Pacing exposes it."),
+        ("with servicing banned too",
+         f"At the default {_DUV_SERVICE_DECAY_PCT}%/yr loss of advanced-fab "
+         "DUVi capacity from 2027. The report gives no rate; it is the "
+         "Pacing tab's judgment, set under Advanced."))
+
+
 def render_compute_capabilities():
     _today = datetime.now()
 
@@ -14455,6 +14731,11 @@ def render_compute_capabilities():
     # ══════════════════════════════════════════════════════════════════════
     _render_cc_world_shares(_today, horizon)
 
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 5: the lithography ceiling on China's chip output (CTS)
+    # ══════════════════════════════════════════════════════════════════════
+    _render_cc_duv_ceiling(_today)
+
 
 # ── URL parameter persistence ────────────────────────────────────────────
 
@@ -14673,7 +14954,8 @@ _PC_CARDS_PER_ROW = 4
 
 _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_pause_mo", "pc_stop_dist",
-                  "pc_stop_remote", "pc_withhold", "pc_dom_slow",
+                  "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
+                  "pc_duv_service", "pc_duv_decay", "pc_duv_growth",
                   "pc_dist_when", "pc_remote_when", "pc_cn_run"] + \
                  [_PC_RSI_W_KEY + s for s in _PC_RSI_WEIGHTS]
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
@@ -14702,7 +14984,10 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_end_year": _PC_HORIZON.year,
                 "pc_pause_mo": _pc_pause_default_mo(),
                 "pc_stop_dist": False, "pc_stop_remote": False,
-                "pc_withhold": True, "pc_dom_slow": 0,
+                "pc_withhold": True, "pc_dom_slow": 0, "pc_duv_ban": False,
+                "pc_duv_service": False,
+                "pc_duv_decay": _DUV_SERVICE_DECAY_PCT,
+                "pc_duv_growth": _DUV_CN_OUTPUT_GROWTH,
                 "pc_dist_when": _PC_WHEN_NOW,
                 "pc_remote_when": _PC_WHEN_NOW,
                 "pc_cn_run": 2,
@@ -15252,7 +15537,9 @@ def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_
                  "\u03c3 \u2014 then whichever company crosses first. That "
                  "fit is a near-perfect 3.7-year exponential, so this is "
                  "much the tightest card here; treat the narrowness as the "
-                 "fit's, not the world's."))
+                 "fit's, not the world's. Anthropic's run rate counts "
+                 "cloud-partner sales that OpenAI's omits, so where it leads "
+                 "the date may read about a month early."))
     # Revenue is release-dated because ARR is earned by *shipped* models, so
     # a crossing sits on the release clock exactly as a benchmark score does.
     _notes = {slug: note + _pc_clock_note(rel, timing_label)
@@ -15413,10 +15700,12 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
 # by X, moving a two-jump bar by 3X. GPT-6 Astra did exactly that once, and
 # the ECI cards moved ~13 months *later* on a refresh that made every fixed
 # bar arrive earlier. Move these deliberately when the bar should mean
-# something new — not on every rescore.
+# something new — not on every rescore. The names only have to identify a
+# frontier model near each score: when a rescore drops one off the frontier,
+# re-name it to a neighbour, don't re-number.
 _PC_ECI_TARGETS = (187.5, 200.0)
 _PC_ECI_JUMP_FROM = ("GPT-5", 150.0)
-_PC_ECI_JUMP_TO = ("Claude Fable 5", 162.5)
+_PC_ECI_JUMP_TO = ("GPT-5.5 Pro", 162.5)
 _PC_ECI_POS_CI = 2.0     # the ECI tab's default position CI, fitted score +/- 2
 
 
@@ -16057,12 +16346,38 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              + "and points already banked stay banked.")
     stop_remote = cb3.checkbox(
         "Cut Chinese remote access to compute abroad", key="pc_stop_remote",
-        help="Chinese labs lose the DayOne Johor-class sites and rented "
+        help="Chinese labs lose the Johor sites and rented "
              "clusters abroad: their largest run falls back to the biggest "
              "domestic cluster (a level setback the domestic buildout must "
              "first regrow), and grows at the domestic catalogued pace "
              "thereafter.")
-    dom_slow_pct = st.slider(
+    _duv_end = horizon if horizon is not None else _PC_HORIZON
+    # The growth slider sits under Advanced, below this help text, so read it
+    # a rerun early, as the blend weights are.
+    _imp_cut = _duv_policy_cut(
+        today, _duv_end, growth=st.session_state.get(
+            "pc_duv_growth", _PC_DEFAULTS["pc_duv_growth"])) or 0.0
+    db1, db2 = st.columns(2)
+    duv_ban = db1.checkbox(
+        "Ban DUV immersion lithography exports to China from 2027",
+        key="pc_duv_ban",
+        help="The China-wide DUVi import ban CTS proposes (Brown & Khan, "
+             f"[report]({_DUV_SOURCE_URL})). It lowers the report's ceiling "
+             "on China's AI chip output, but China's real output today sits "
+             "far below even the banned ceiling, so the ban bites only once "
+             f"output grows into it: **{_imp_cut:.0%}** less growth to "
+             f"{_duv_end.year}. That cut comes off China's domestic compute "
+             "growth, on top of the slider below. See the "
+             "Compute/capabilities tab's lithography chart.")
+    duv_service = db2.checkbox(
+        "Ban servicing of DUVi at China's advanced fabs from 2027",
+        key="pc_duv_service",
+        help="No foreign servicing, spare parts or field upgrades for the "
+             "scanners making China's AI chips, so that fleet erodes at the "
+             "rate set under *Advanced*. Unlike the import ban it bites "
+             "straight away, because it hits the machines in use rather "
+             "than a ceiling China has not reached yet.")
+    dom_slow_user = st.slider(
         "Slow China's domestic compute growth by", 0, _PC_DOM_SLOW_MAX,
         value=_PC_DEFAULTS["pc_dom_slow"], step=1, format="%d%%",
         key="pc_dom_slow",
@@ -16099,6 +16414,29 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                    "their own mean. Moving a slider right buys China more "
                    "time on that channel before it closes.")
         st.divider()
+        st.markdown("**DUVi fleet without servicing**")
+        duv_decay = st.slider(
+            "Advanced-fab DUVi capacity lost per year", 0,
+            _DUV_SERVICE_DECAY_MAX, value=_PC_DEFAULTS["pc_duv_decay"],
+            step=1, format="%d%%", key="pc_duv_decay",
+            disabled=not duv_service,
+            help="A judgment, not the report's: CTS says a servicing ban "
+                 "would degrade the fleet but gives no rate. Low values "
+                 "assume China self-services and cannibalizes its legacy "
+                 "fleet for parts; high ones that lasers and stages go down "
+                 "without foreign consumables. Needs the checkbox above.")
+        duv_growth = st.slider(
+            "Growth of China's AI chip output (\u00d7/yr, median)",
+            *_DUV_CN_OUTPUT_GROWTH_RANGE,
+            value=_PC_DEFAULTS["pc_duv_growth"], step=0.1, format="\u00d7%.1f",
+            key="pc_duv_growth", disabled=not (duv_ban or duv_service),
+            help="How fast China's real output, in H100e, grows toward the "
+                 "lithography ceiling. The import ban bites only once output "
+                 "reaches the banned ceiling, so this rate decides how soon "
+                 "it matters. Epoch and SemiAnalysis put Ascend unit growth "
+                 "at \u00d71.3\u20132.7/yr for 2026\u201327, with per-chip "
+                 "performance rising on top. Needs a DUVi checkbox above.")
+        st.divider()
         st.markdown("**Length of Chinese training run**")
         us_run_mo = max(int(round(run_days / 30)), 1)
         if not (us_run_mo <= st.session_state.get("pc_cn_run", us_run_mo)
@@ -16120,6 +16458,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              f"An L-month run carries \u00d7L/{us_run_mo} the compute of the "
              f"{us_run_mo}-month bar: China's whole path lifts by what that buys "
              f"and shifts right by L\u2212{us_run_mo} months."))
+    # The DUVi policies and the slider are independent levers: they compound.
+    duv_cut = (_duv_policy_cut(today, _duv_end, ban_imports=duv_ban,
+                               decay=(duv_decay / 100.0 if duv_service
+                                      else 0.0), growth=duv_growth) or 0.0)
+    dom_slow_pct = int(round(100 * (1 - (1 - dom_slow_user / 100.0)
+                                    * (1 - duv_cut))))
+    duv_names = " and ".join(n for n, on in (("import", duv_ban),
+                                             ("servicing", duv_service)) if on)
     d_dist = _pc_when_date(dist_when, today)
     d_remote = _pc_when_date(remote_when, today)
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
@@ -16465,7 +16811,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _dom_hi = g_hi_eff if g_dom_hi is None else g_dom_hi
     _dom_lo = g_lo_eff if g_dom_hi is None else g_dom_lo
     _slow = (f"; domestic buildout slowed {dom_slow_pct}%"
-             if dom_slow_pct else "")
+             + (f" incl. the DUVi {duv_names} ban"
+                + ("s" if duv_ban and duv_service else "")
+                if duv_names else "")
+             if dom_slow_pct or duv_names else "")
     if comp_dead is not None:
         _asm_comp = (f"compute — from {_when_r}, falls back "
                      f"**{dlvl_oom:.1f} OOM** to the largest domestic "
@@ -16652,10 +17001,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             f"while the {dlvl_oom:.1f} OOM setback is regrown.")
     elif stop_remote:
         _notes.append("Compute runs at the domestic pace only.")
-    if dom_slow_pct:
+    if dom_slow_pct or duv_names:
         _notes.append(
             f"China's own clusters grow {dom_slow_pct}% slower than the "
-            "catalogued domestic pace, which lowers both compute rows.")
+            "catalogued domestic pace"
+            + (f" ({duv_cut:.0%} of it the DUVi {duv_names} ban"
+               + ("s)" if duv_ban and duv_service else ")")
+               if duv_names else "")
+            + ", which lowers both compute rows.")
     _notes.append(f"Every row is scaled by the pace band "
                   f"(×{pace_lo:.2f}–{pace_hi:.2f}), the reality check "
                   "against China's own observed frontier slope.")
@@ -16920,7 +17273,7 @@ def render_pacing():
                            "disagreement with their own."),
         *([("its largest networkable group",
             "Unfiltered by host. *China-accessible* adds Chinese labs' sites "
-            "abroad (DayOne Johor); *domestic only* is the mainland alone.")]
+            "abroad (DayOne Nusajaya, Bridge MY06 in Johor); *domestic only* is the mainland alone.")]
           if party == 'country' else []))
 
     # ── Table ──

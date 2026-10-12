@@ -78,6 +78,18 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 - **Supported:** SemiAnalysis names DayOne among ByteDance's core offshore landlords.
 - **Not added:** Oracle Batam, though it sits in the hub SemiAnalysis names. No source ties a Chinese tenant to that specific site, and the tuple requires a site-level citation.
 
+### 5. DUVi import and servicing levers (`pc_duv_ban`, `pc_duv_service`, `_duv_policy_cut`)
+
+- **Source:** Brown & Khan, CTS, *DUV Immersion Lithography* (Sep 2026): Table 45 (in `cts_duv_production.csv`) and Figure 9's IFP estimate of China's 2026 output.
+- **The ceiling:** China's AI chips made per year if lithography were the only limit, imports continuing (the report's "Robust" path) or banned from 2027. Its levels assume every other bottleneck solved, so they are never China's path.
+- **China's path:** IFP's 62k–160k B300e for 2026 (×2.52 H100e per B300e, the report's TrendForce conversion, so ~0.16–0.40M H100e), growing at `_DUV_CN_OUTPUT_GROWTH` (median 2.4×/yr, 10th–90th 1.5–3.8×), capped at the ceiling. The cut is 1 − (growth under the policy ÷ growth with neither ban) over today → the Pacing horizon, averaged over a quantile grid of start level and rate, at the AI-push allocation.
+- **Why its own growth rate:** this is chip *output*, not installed compute, so it does not borrow `_WC_GROWTH` (1.9×). Ascend units go ~0.8M (2025) → ~1.5M (2026, Epoch, ×1.9); SemiAnalysis's 2027 median is 2M Ascend 950s (×1.3), its high case 4M (×2.7); per-chip performance rises on top, by an amount not pinned down here. Epoch's slow case keeps output near 1% of Nvidia's through 2028 on domestic HBM alone. The 2.4× median is a judgment across those.
+- **Import ban result, and what it hinges on:** China's path starts ~16× under even the banned ceiling, so the ban binds only once output grows into it. At the default: ~4% less growth to 2031, ~12% to 2035, a crossing moved by about a day. The cut is driven almost entirely by the growth rate: 0.5% to 2031 at 1.5×/yr, ~11% at 4×. The Pacing `pc_duv_growth` slider exposes it; don't quote "the ban barely matters near term" without the rate.
+- **Servicing ban:** advanced-fab DUVi capacity falls `pc_duv_decay` per year from 2027 (default 15%, 0–50%), multiplying China's path whether or not the ceiling binds. ~27% cut to 2031 at the defaults; about +1 month on the crossing.
+- **The decay rate is a judgment with no source.** The report says servicing controls would degrade the fleet "though there is some uncertainty as to the magnitude". Low values assume China self-services and cannibalizes its ~190 legacy-fab scanners for parts; high ones that lasers, stages and optics fail without foreign consumables. Not checked against any measured attrition rate.
+- **Why AI push:** the Pacing panel's China is a state-directed catch-up. With the ceiling rarely binding before 2031, the allocation matters little to the import-ban cut.
+- **Revisit when:** CTS re-versions the table; better estimates of China's realized output or its growth (IFP, Epoch, SemiAnalysis 2027 numbers) arrive; any evidence on scanner attrition without servicing; or a ban or servicing control is enacted.
+
 ## Checked and deliberately left alone
 
 - **Catalogue coverage.** It holds ~0.94 GW of IT power in China at end-2026, against SemiAnalysis's 24 GW national fleet (~4%; the US is ~25%). That is irrelevant to largest-site views as long as the largest sites are present.
@@ -85,7 +97,8 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
   - Near term, the catalogue's largest Chinese site (~250 MW now, ~760 MW by end-2027) is the right order of magnitude. It could be low by up to ~2×; that is a guess, not verified.
 - **Nearby clusters.** ByteDance's new campus shares the Bayin cluster with VNET Bayin Ulanqab. There is no point adding an Ulanqab cluster to `_DC_NETWORK_CLUSTERS` until Epoch catalogues a second site there.
 - **Huawei Wuhu timing.** Epoch steps it to 419 MW (facility) on 2026-12-31. SemiAnalysis's undated chart shows ~0.2 GW IT built of a ~3 GW design. Left to the next Epoch refresh.
-- **DayOne Nusajaya's owner.** Epoch's `Owner` reads "ByteDance #likely, Oracle #likely", so under operator attribution ByteDance appears as operator. SemiAnalysis says ByteDance "doesn't self-build outside China". This is an upstream field; it is not overridden here.
+- **DayOne Nusajaya's owner.** Epoch's `Owner` is blank again as of the 2026-09-29 pull (it had read "ByteDance #likely, Oracle #likely"), so the site is back under the DayOne fallback label under both attributions. This is an upstream field; it is not overridden here.
+- **DayOne Kempas (Johor), added upstream 2026-09-29.** ~480k H100e by Oct 2026, B300-only, no `Owner`/`Users`. Not added to `_DC_CN_ACCESS_ABROAD`: SemiAnalysis names DayOne as a ByteDance landlord at company level, but no source ties a Chinese tenant to this site. Revisit with a site-level citation.
 
 ## Known limitation
 
