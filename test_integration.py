@@ -1311,15 +1311,27 @@ class TestTakeoffTab:
         at = self._app()
         assert at.session_state["_active_tab"] == "Takeoff"
         assert any(h.value == "Takeoff to superintelligence" for h in at.header)
-        assert len(at.get("plotly_chart")) == 4
+        # Pace, people, milestone dates, time after coding, and the
+        # diagnostic panels under the hood.
+        assert len(at.get("plotly_chart")) == 5
+        assert [s.value for s in at.subheader][:4] == [
+            "1. Research speeds up", "2. People step out of the loop",
+            "3. When each milestone arrives",
+            "4. How fast it goes once coding is automated"]
         assert at.number_input(key="tk_end_year").value == 2031
         assert not _has_widget(at, "number_input", "tk_onset_low")
         import json
-        plot = json.loads(at.get("plotly_chart")[0].proto.spec)
+        plot = json.loads(at.get("plotly_chart")[2].proto.spec)
         assert plot["data"][0]["x"][-1].startswith("2031-12-31")
-        workflow = json.loads(at.get("plotly_chart")[2].proto.spec)
-        assert len(workflow["data"]) == 12
-        assert [s["y0"] for s in workflow["layout"]["shapes"]] == [5, 5, 5, 90]
+        pace = json.loads(at.get("plotly_chart")[0].proto.spec)
+        assert {"Modeled research pace", "If AI stopped improving today"} <= {
+            d.get("name") for d in pace["data"]}
+        # The flat tail is labelled as finished scenarios, not a slowdown.
+        assert any("hold their last pace" in a.get("text", "")
+                   for a in pace["layout"]["annotations"])
+        people = json.loads(at.get("plotly_chart")[1].proto.spec)
+        assert len(people["data"]) == 12      # three stages + failing projects
+        assert [s["y0"] for s in people["layout"]["shapes"]] == [5, 10]
         before = [(m.label, m.value) for m in at.metric]
         at.run()
         assert [(m.label, m.value) for m in at.metric] == before
@@ -1335,7 +1347,7 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", old_simulator)
         at = self._app()
         assert tk.simulate is not old_simulator
-        assert len(at.get("plotly_chart")) == 4
+        assert len(at.get("plotly_chart")) == 5
 
     def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
         import takeoff_model as tk
@@ -1352,7 +1364,7 @@ class TestTakeoffTab:
         at.number_input(key="tk_seed").set_value(81219).run()
         r = captured[-1]
         assert r["time_origin"] == "today"
-        assert any("Research acceleration, including human-directed" in s.value for s in at.subheader)
+        assert any("1. Research speeds up" in s.value for s in at.subheader)
         assert at.number_input(key="tk_fast_share").value == 25
         assert r["params"]["taste_slope"] != at.number_input(key="tk_taste_slope").value
         at.number_input(key="tk_cal_weight").set_value(0.0).run()
@@ -1382,7 +1394,7 @@ class TestTakeoffTab:
         assert at.number_input(key="tk_full_human").value == 5.0
         assert at.number_input(key="tk_progress_target").value == 12.0
         assert at.number_input(key="tk_advantage_target").value == 2.0
-        assert any("Human work and validated progress" in s.value for s in at.subheader)
+        assert any("2. People step out of the loop" in s.value for s in at.subheader)
         for chart in at.get("plotly_chart"):
             names = [d["name"] for d in json.loads(chart.proto.spec)["data"]]
             assert "Sustained research feedback" not in names

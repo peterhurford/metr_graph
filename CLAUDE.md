@@ -96,16 +96,24 @@ milestone could still arrive inside the horizon
 (`test_runaway_is_unresolved_only_while_a_milestone_could_still_arrive`); the tab
 captions up to `_TK_LIMITED_MAX` of them as not arriving and errors above that.
 Unit tests cover accounting, snapshots, fast feedback, calibration, ordering, censoring,
-convergence, and RNG isolation. AppTests cover four charts, calibration, matched hours,
+convergence, and RNG isolation. AppTests cover the layout, calibration, matched hours,
 URL sharing, stale imports, and exact inheritance from RSI.
+
+The tab reads as a story, top to bottom: the loop the model simulates (`_TK_LOOP_HTML`)
+and its three brakes, the headline cards, then **1. Research speeds up** (`_tk_pace_fig`:
+pace vs the AI-frozen reference, 2×/5×/10× guides, milestone medians as verticals),
+**2. People step out of the loop** (`_tk_humans_fig`: stage human hours plus project
+*failure*, so every line falls toward a bar), **3.** milestone dates and **4.** time after
+coding. The four-panel acceleration chart, outcome and constraint tables sit in the
+*Under the hood* expander. `test_default_render_and_stable_rerun` pins the order.
 
 `_rsi_experiment_draws` uses a local fixed seed so the RSI fan, threshold card, and Takeoff
 reuse the same paths without perturbing global RNG. `_tk_rsi_activity` shifts these to today
 and annualizes slopes. `_tk_simulate` caches by these arrays as well as model source and RSI
 onsets. Forward activity and mechanistic effort are alternative estimates, blended with a
 fading weight, not multiplied. Current activity normalization only affects the displayed
-2025-baseline fan, not today's already-assisted productivity. The acceleration chart also
-shows cumulative gains. All four panels now use 2025 units: activity, useful production
+2025-baseline fan, not today's already-assisted productivity. The under-the-hood acceleration
+chart also shows cumulative gains. All its four panels use 2025 units: activity, useful production
 pace before validation, cumulative deliveries in baseline months, and the reference's own
 pace (not an actual/reference ratio). `tk_cal_2025_yield` supplies the assumed reporting
 conversion. Rebase each draw before taking quantiles; never multiply quantile bands.
