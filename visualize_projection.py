@@ -17470,8 +17470,53 @@ _TK_DEFAULTS.update({
     "tk_end_year": 2031, "tk_cal_weight": 50.0, "tk_cal_compute": 2.0,
     "tk_cal_capability": 2.0, "tk_cal_yield": 1.0, "tk_cal_validated": 0.0,
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
-    "tk_cal_2025_yield": 1.0,
+    "tk_pace_today": 1.7,
 })
+
+# Human hours a task at each automation level still takes, as a share of
+# doing it unassisted (AL0..AL5). An assumption: the index rates who leads,
+# not how long people spend. It turns the ladder's latest month into today's
+# human share of R&D work.
+_TK_AL_HUMAN_HOURS = (1.0, 0.9, 0.7, 0.4, 0.15, 0.0)
+
+
+def _tk_ladder_human_share(row):
+    """Human share of R&D hours implied by one month of the AL ladder."""
+    cum = [100.0, row['al1'], row['al2'], row['al3'], row['al4'], 0.0]
+    return sum((cum[i] - cum[i + 1]) / 100 * _TK_AL_HUMAN_HOURS[i]
+               for i in range(5))
+
+
+def _tk_ladder_stage_starts(rows):
+    """Today's human share per stage: the model's stage pattern, rescaled so
+    its weighted mean matches the ladder's latest month."""
+    keys = [f"human_{k}" for k in takeoff.WORKFLOW_KEYS]
+    prior = np.array([takeoff.DEFAULTS[k] for k in keys])
+    scale = 100 * _tk_ladder_human_share(rows[-1]) / float(prior @ takeoff.WORKFLOW_WEIGHTS)
+    return {f"tk_{k}": round(float(v * scale), 1) for k, v in zip(keys, prior)}
+
+
+def _tk_nextstep_taste(frontier, experiments, capability_growth, transfer):
+    """Research-judgment elasticity implied by the next-step study.
+
+    Its win rate's odds are read as a strength ratio against the researcher
+    (Bradley-Terry), so their yearly growth is research judgment's. Divided
+    by the yearly effective-capability growth the experiment calibration
+    assumes, through the same transfer form `takeoff.calibrate_feedback` uses.
+    """
+    _base, _icpt, slope = _rsi_dir_fit(frontier)
+    quality = np.exp(slope * 365.25)
+    years = (experiments[-1]['date'] - experiments[0]['date']).days / 365.25
+    cap = capability_growth ** (1 / years)
+    if quality <= 1 or cap <= 1:
+        return takeoff.DEFAULTS["taste_slope"]
+    return round(float(np.log((quality - 1 + transfer) / transfer) / np.log(cap)), 2)
+
+
+_TK_DEFAULTS.update(_tk_ladder_stage_starts(load_rsi_automation()))
+_TK_DEFAULTS["tk_taste_slope"] = _tk_nextstep_taste(
+    rsi_dir_frontier_all, load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
+    _TK_DEFAULTS["tk_transfer"] / 100)
 _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
 
 
@@ -17479,9 +17524,8 @@ _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
 _TK_LIMITED_MAX = 0.01
 
 
-def _tk_apply_preset(name):
+def _tk_reset():
     st.session_state.update(_TK_DEFAULTS)
-    st.session_state.update({"tk_" + k: v for k, v in takeoff.PRESETS[name].items()})
     st.session_state.pop("_tk_fit_message", None)
 
 
@@ -17521,6 +17565,24 @@ _TK_LOOP_HTML = (
 
 # Pace levels a reader can hold onto; drawn as guides on the pace chart.
 _TK_PACE_GUIDES = (2, 5, 10)
+# Chart 1 opens a year back. Nothing is simulated before today, so the past
+# is reconstructed: each scenario's pace runs log-linearly from 1x at the
+# middle of 2025 (the baseline year, 1x by definition) to its own value today.
+_TK_HISTORY_DAYS = 365
+_TK_BASELINE_MID = datetime(2025, 7, 2)
+
+
+def _tk_pace_history(today_draws, today):
+    """(dates, [10, 50, 90] quantiles) of the reconstructed past pace."""
+    span = (today - _TK_BASELINE_MID).days
+    days = np.arange(-_TK_HISTORY_DAYS, 1, 7, dtype=float)
+    days[-1] = 0.0
+    frac = np.clip((days + span) / span, 0.0, None)
+    paths = np.exp(np.log(today_draws)[:, None] * frac[None, :])
+    return ([today + timedelta(days=float(d)) for d in days],
+            np.quantile(paths, [.1, .5, .9], axis=0).T)
+
+
 # A scenario that has reached every milestone stops simulating and holds its
 # last pace, so once this share has finished the median flattens for that
 # reason alone; the pace chart shades from there.
@@ -17532,17 +17594,37 @@ def _tk_dates(result, today):
             for y in result["workflow_progress"]["years"]]
 
 
-def _tk_pace_fig(result, today, markers=()):
+def _tk_pace_fig(result, today, markers=(), history=None):
     """Research pace in multiples of 2025, actual vs AI frozen at today.
 
     `markers` is [(label, date)] drawn as dotted verticals: the milestones'
     median dates, so the reader sees where on the curve each one lands. From
     the first date `_TK_FROZEN_SHARE` of scenarios have reached every
     milestone, the chart is shaded: those paths hold their last pace.
+    `history` is `_tk_pace_history()`'s output, drawn fainter behind a Today
+    line since it is reconstructed rather than simulated.
     """
     p = result["workflow_progress"]
     x = _tk_dates(result, today)
     fig = go.Figure()
+    if history is not None:
+        hx, hq = history
+        fig.add_trace(go.Scatter(x=hx, y=hq[:, 0], mode="lines", line=dict(width=0),
+                                 name="Reconstructed past: 10th percentile",
+                                 hoverinfo="skip", showlegend=False))
+        fig.add_trace(go.Scatter(x=hx, y=hq[:, 2], mode="lines", line=dict(width=0),
+                                 fill="tonexty", fillcolor="rgba(127,127,127,0.15)",
+                                 name="Reconstructed past: middle 80%",
+                                 hoverinfo="skip", showlegend=False))
+        fig.add_trace(go.Scatter(
+            x=hx, y=hq[:, 1], mode="lines", name="Past year (reconstructed)",
+            line=dict(color="#7f8c8d", width=2, dash="dot"),
+            hovertemplate="%{x|%b %Y}<br>%{y:.2f}\u00d7 the 2025 pace"
+                          "<extra>Reconstructed</extra>"))
+        fig.add_vline(x=today, line_color="#555", line_width=1.5)
+        fig.add_annotation(x=today, y=0.5, yref="paper", text="Today", showarrow=False,
+                           xanchor="right", textangle=-90,
+                           font=dict(size=11, color="#555"))
     finished = np.array([np.mean(np.max(np.vstack(list(result["events"].values())),
                                          axis=0) <= y) for y in p["years"]])
     frozen = np.flatnonzero(finished >= _TK_FROZEN_SHARE)
@@ -17825,12 +17907,7 @@ def render_takeoff():
 
     with st.sidebar:
         st.subheader("Takeoff assumptions")
-        cols = st.columns(3)
-        for col, name in zip(cols, takeoff.PRESETS):
-            col.button(name, key="tk_preset_" + name,
-                       on_click=_tk_apply_preset, args=(name,))
-        st.caption("Presets are illustrative assumptions, without assigned probabilities. "
-                   "Central restores all defaults.")
+        st.button("Reset to defaults", key="tk_reset", on_click=_tk_reset)
         st.caption("Coding automation inherits the final RSI projection. "
                    "Adjust its weights and timing on the RSI tab.")
         number("Project through (year end)", "end_year", datetime.now().year, 2050, 1)
@@ -17852,10 +17929,11 @@ def render_takeoff():
                    "Each cycle validates discoveries available at its start. Like successor "
                    "training, unfinished work cannot improve the available research system.")
         with st.expander("Evidence calibration"):
-            number("Useful progress per experiment today / 2025 (×)", "cal_2025_yield", 0.1, 5.0, 0.1,
-                   "Reporting assumption for the 2025 research baseline. Default 1 means "
-                   "unchanged yield: today's useful pace inherits RSI's activity multiple. "
-                   "This rebases the charts, not the simulated dynamics or automation dates.")
+            number("Research pace today (× 2025)", "pace_today", 0.5, 5.0, 0.1,
+                   "Where chart 1 starts: how much faster useful research is today than "
+                   "in 2025. The default is an assumption, not a measurement. "
+                   "Scenarios keep their spread around it. This sets the chart's units "
+                   "and the 2×/5× dates, not the simulated dynamics or automation dates.")
             number("Weight on inherited RSI activity trend (%)", "rsi_trend_weight", 0.0, 100.0, 5.0,
                    "Blend the RSI experiment projection with modeled research effort. "
                    "These are alternative estimates, not multiplicative gains. Zero keeps "
@@ -17904,7 +17982,10 @@ def render_takeoff():
                    "hours, at comparable project scope. A strong average cannot hide a bottleneck.")
             number("Required useful-project completion (%)", "full_success", 50.0, 100.0, 1.0)
             for stage, key in zip(takeoff.WORKFLOW_STAGES, takeoff.WORKFLOW_KEYS):
-                number(f"{stage}: human work today (%)", "human_" + key, 0.0, 100.0, 5.0)
+                number(f"{stage}: human work today (%)", "human_" + key, 0.0, 100.0, 5.0,
+                       "Default set from the RSI tab's R&D automation index: its latest "
+                       "month, read through an assumed human-time share per level, gives "
+                       "the average; the split across stages is assumed.")
                 number(f"{stage}: human-work halving time (months)", "half_" + key, 1.0, 60.0, 1.0,
                        "Months of capability progress at today’s pace needed to halve "
                        "human work above the floor. Future acceleration shortens calendar time. "
@@ -17927,8 +18008,9 @@ def render_takeoff():
             number("Consecutive qualifying successor cycles", "progress_cycles", 1, 5, 1)
         with st.expander("Research feedback"):
             number("Research-quality elasticity prior", "taste_slope", 0.0, 2.0, 0.1,
-                   "Research quality scales as capability raised to this power. "
-                   "This affects progress, but is no longer the R&D automation trigger.")
+                   "Research quality scales as capability raised to this power. The "
+                   "default is fitted from the RSI tab's next-step study: its win odds "
+                   "against researchers grow as research judgment does.")
             number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1)
             number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
                    "Discounts coding and judgment gains beyond today. Zero removes "
@@ -17963,26 +18045,20 @@ def render_takeoff():
             number("Simulation seed", "seed", 0, 4294967295, 1)
 
     st.header("Takeoff to superintelligence")
-    st.markdown("The model simulates one loop, month by month from today:")
     st.markdown(_TK_LOOP_HTML, unsafe_allow_html=True)
     _fn_line(
-        "Three brakes hold it back: **experiment compute** is limited, **each "
-        "improvement is harder to find** than the last, and **people still direct "
-        "and check the work** until the models can.",
-        ("experiment compute",
-         "AI labor and experiment compute combine so the scarcer one dominates: "
-         "at fixed compute, more AI labor alone can at most double research "
-         "throughput. Better research judgment from more capable models is not "
-         "capped this way, and compute grows on its own schedule."),
-        ("each improvement is harder to find",
-         "The research difficulty setting: pace is divided down as algorithms "
-         "improve. Whether the loop speeds up or fizzles depends on whether each "
-         "new model adds research capacity faster than difficulty rises."),
-        ("people still direct and check the work",
-         "Three research stages (direction, experiment design and "
-         "interpretation, verification and integration) each need a falling "
-         "share of human hours as models improve. Full R&D automation is when "
-         "every stage is under the bar and projects reliably succeed."))
+        "Brakes: **limited compute**, **ideas get harder to find**, and "
+        "**people still check the work**.",
+        ("limited compute",
+         "AI labor and experiment compute combine so the scarcer one limits: "
+         "more AI labor alone can at most double throughput. Better research "
+         "judgment is not capped this way."),
+        ("ideas get harder to find",
+         "Pace is divided down as algorithms improve. The loop speeds up only if "
+         "each model adds research capacity faster than difficulty rises."),
+        ("people still check the work",
+         "Direction, experiment design and verification each need a falling "
+         "share of human hours as models improve."))
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     end_date = datetime(int(st.session_state["tk_end_year"]), 12, 31)
     horizon = (end_date - today).total_seconds() / (365.25 * 86400)
@@ -18021,8 +18097,12 @@ def render_takeoff():
         st.info("The RSI experiment series has no positive growth projection to inherit.")
         return
     experiment_starts, experiment_slopes = activity
+    # Today's pace is set directly; scenarios keep the activity draws' spread
+    # around it. Reporting only: the simulated dynamics never see it.
+    pace_today = float(st.session_state["tk_pace_today"])
+    pace_yield = pace_today / float(np.median(np.exp(experiment_starts)))
     result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
-                          experiment_starts, experiment_slopes, st.session_state["tk_cal_2025_yield"],
+                          experiment_starts, experiment_slopes, pace_yield,
                           None if ladder_days is None else ladder_days / 365.25)
     limited = float(np.mean(result["numerically_limited"]))
     if limited > _TK_LIMITED_MAX:
@@ -18043,12 +18123,9 @@ def render_takeoff():
              f"{_tk_date(lo, today)} – {_tk_date(hi, today)}")
     c.metric(f"No superintelligence by {end_date:%b %Y}",
              f"{100 * np.mean(arrival > horizon):.0f}%")
-    st.caption(f"Coding automation uses RSI’s “{rsi_settings['rsi_timing']}” clock. "
-               "Successor milestones follow after the simulated training and deployment "
-               "delays. “Beyond horizon” includes slow or stalled paths; it does not mean never."
-               + (f" {100 * limited:.2f}% of scenarios ran away past the simulation’s numerical "
-                  "range and are left unresolved — counted as not arriving, which understates "
-                  "the fast tail by at most that share." if limited else ""))
+    st.caption("“Beyond horizon” means slow or stalled, not never."
+               + (f" {100 * limited:.2f}% of scenarios exceeded the simulation's range "
+                  "and count as not arriving." if limited else ""))
     medians = [(label, takeoff.quantile(samples, 0.5, horizon))
                for label, samples in (
                    ("Coding automated", result["onset"]),
@@ -18060,22 +18137,13 @@ def render_takeoff():
 
     st.subheader("1. Research speeds up")
     _fn_caption(
-        "How fast useful AI research gets done, as a multiple of 2025. The gap "
-        "between the two lines is the loop: what AI improving AI adds over the "
-        "same compute with today's models. Dotted verticals are each milestone's "
-        "median date.",
-        ("as a multiple of 2025",
-         f"Anchored on OpenAI's experiments per researcher: RSI projects "
-         f"{np.median(np.exp(experiment_starts)):.2f}× the 2025 rate today, "
-         f"times your assumed {st.session_state['tk_cal_2025_yield']:g}× "
-         "useful yield per experiment. A proxy-based normalization, not a "
-         "measurement of validated discoveries. Pace counts useful work before "
-         "validation, so it includes work in progress while successors train."),
-        ("the same compute with today's models",
-         "Identical compute growth, allocation, training and validation times and "
-         "rising difficulty, with AI research skills frozen at today's level. A "
-         "modeled comparison, not a measured experiment."))
-    st.plotly_chart(_tf(_tk_pace_fig(result, today, markers)), width="stretch")
+        "Research pace as a multiple of 2025. Verticals mark milestone medians.",
+        ("Research pace", "Useful work before validation, including work in "
+         "progress while successors train. Medians, with the middle 80% shaded."))
+    st.plotly_chart(_tf(_tk_pace_fig(
+        result, today, markers,
+        history=_tk_pace_history(np.exp(experiment_starts) * pace_yield, today))),
+        width="stretch")
     for col, (name, values) in zip(st.columns(len(result["pace_events_2025"])),
                                    result["pace_events_2025"].items()):
         col.metric(f"Research at {name.split()[0]} the 2025 pace",
@@ -18084,22 +18152,27 @@ def render_takeoff():
                         f"{100 * np.mean(values <= horizon):.0f}% of scenarios get "
                         f"there by {end_date:%b %Y}. Needs neither full automation "
                         "nor a sustained streak.")
+    st.markdown(
+        "**Where the pace comes from**\n\n"
+        f"- **Today: {pace_today:g}\u00d7**, an assumption (sidebar). The past "
+        "year is reconstructed, rising from 1\u00d7 in mid-2025.\n"
+        "- **Up:** better models add AI labor and research judgment; compute "
+        f"grows {params['compute_growth']:g}\u00d7 a year.\n"
+        "- **Down:** each improvement is harder to find.\n"
+        f"- **In steps:** most gains wait for the next model "
+        f"({params['training_months']:g} months training, "
+        f"{params['validation_months']:g} validating).\n"
+        "- **Year one** blends in OpenAI's experiments-per-researcher trend.\n"
+        "- **Dashed line:** AI frozen at today's level. It drifts down, so "
+        "everything above it is AI improving AI.")
 
     st.subheader("2. People step out of the loop")
     _fn_caption(
-        "Each line is something that still needs people, falling as models "
-        "improve. Full R&D automation needs every line under its bar in the same "
-        "scenario.",
-        ("still needs people",
-         "Share of a comparable baseline project's human hours each research "
-         "stage still takes, including corrections and rescue; and the share of "
-         "useful projects that still fail. Assumed capability-to-workflow "
-         "relationships, not measured trends. Lines are medians, shading the "
-         "middle 80%."),
-        ("in the same scenario",
-         "Medians crossing their bars does not establish the milestone: it is "
-         "checked per scenario. Or, in the share of scenarios set by the AL5 "
-         "weight, the milestone is the RSI tab's AL5 date instead."))
+        "Full R&D automation needs every line under its bar.",
+        ("every line under its bar",
+         "Checked per scenario, not on the medians; or, in the share set by the "
+         "AL5 weight, the RSI tab's AL5 date instead. Human hours by stage and "
+         "project failure are assumed relationships, not measured trends."))
     st.plotly_chart(_tf(_tk_humans_fig(result, today)), width="stretch")
 
     st.subheader("3. When each milestone arrives")
@@ -18124,17 +18197,10 @@ def render_takeoff():
                   for name, mask in (("Human hours and project completion", ~ladder_defined),
                                      ("Anthropic’s AL5 date", ladder_defined)) if mask.any()])
         _fn_caption(
-            "The two definitions disagree; the milestone above mixes them. Anthropic’s AL5 "
-            "date is an extrapolation, and either definition also waits for the coding "
-            "date. Moving the weight moves this milestone only: later milestones are gated "
-            "on validated progress, and human hours do not feed back into research speed.",
-            ("Anthropic’s AL5 date", "AL5 has no observations. The date is the AL4 trend "
-             "shifted by the automation ladder’s own spacing, so it cannot say whether a "
-             "ladder measured inside supervised work predicts the step that removes the "
-             "supervisor. It carries the RSI tab’s clock, conditioning and penalty."),
-            ("human hours do not feed back", "Research speed comes from coding labor, "
-             "experiment compute and research quality. The human-hours state is a readout "
-             "of capability, so an earlier automation date does not accelerate the path."))
+            "Full R&D automation mixes two definitions; the weight moves this milestone only.",
+            ("two definitions", "AL5 has no observations: its date is the AL4 trend "
+             "shifted by the ladder's spacing. Both definitions wait for coding "
+             "automation, and human hours never feed back into research speed."))
 
 
     st.subheader("4. How fast it goes once coding is automated")
@@ -18142,17 +18208,15 @@ def render_takeoff():
         col.metric(f"Superintelligence within {months} months",
                    f"{100 * np.mean(durations <= months / 12):.1f}%")
     st.plotly_chart(_tf(_tk_cdf_fig(result)), width="stretch")
-    st.caption("Durations subtract each scenario’s coding date from its simulated arrival. "
-               "All scenarios stay in the denominator. Follow-up ends at the calendar horizon: "
-               "late coding dates have less follow-up, so these are horizon-censored probabilities.")
+    st.caption("Late coding dates have less follow-up before the horizon, so these understate.")
 
     with st.expander("Under the hood: the model's own diagnostics"):
         st.markdown("**Research acceleration, panel by panel**")
         st.caption(f"All panels use a 2025 baseline. RSI projects "
-                   f"{np.median(np.exp(experiment_starts)):.2f}× experiments per researcher today. "
-                   f"With your assumed {st.session_state['tk_cal_2025_yield']:g}× useful yield per "
-                   "experiment, that anchors today's modeled research pace. This is a proxy-based "
-                   "normalization, not a measurement of validated discoveries since 2025.")
+                   f"{np.median(np.exp(experiment_starts)):.2f}× experiments per researcher "
+                   f"today; research pace today is set at {pace_today:g}× (sidebar), so "
+                   "each scenario's pace is rebased by the same ratio. A set normalization, "
+                   "not a measurement of validated discoveries since 2025.")
         st.plotly_chart(_tf(_tk_acceleration_fig(result)), width="stretch")
         st.caption("Research pace measures ongoing useful work before validation, so it includes "
                    "work in progress while successors train. The same-compute reference also uses "
@@ -18320,45 +18384,6 @@ def render_takeoff():
             "Compute growth is your scenario assumption.\n\n"
             "Inspired by the [AI Futures model](https://www.aifuturesmodel.com/); "
             "the parameters and output here are our own scenario model.")
-    snapshot = dict(version=result["version"], as_of=today.isoformat(),
-                    samples=n, step_years=1/52, params=params,
-                    project_through=end_date.isoformat(), rsi_settings=rsi_settings,
-                    time_origin="today", onset_source="Final RSI projection",
-                    experiment_projection=dict(source=_RSI_EXPERIMENT_SOURCE_URL,
-                        log_levels_today=experiment_starts.tolist(),
-                        log_growth_per_year=experiment_slopes.tolist(), baseline="2025 experiments = 1"),
-                    onset_days=[float(v) if np.isfinite(v) else None for v in onset_days],
-                    calibration=dict(inputs={k: st.session_state[k] for k in _TK_DEFAULTS
-                                             if k.startswith(("tk_cal_", "tk_measure_"))},
-                                     experiment_growth=observed_growth, fit=calibration,
-                                     source=_RSI_EXPERIMENT_SOURCE_URL,
-                                     evidence_start=evidence[0]["date"].isoformat(),
-                                     evidence_end=evidence[-1]["date"].isoformat()))
-    st.download_button("Download assumptions", json.dumps(snapshot, indent=2),
-                       file_name="takeoff_assumptions.json", mime="application/json")
-    records = [dict(milestone=name, months_after_today=[
-        round(float(v * 12), 4) if np.isfinite(v) else None for v in values],
-        months_after_coding_automation=[
-        round(float(v * 12), 4) if np.isfinite(v) else None
-        for v in takeoff.after_coding(values, result["onset"])])
-        for name, values in result["events"].items()]
-    st.download_button(
-        "Download simulation draws", json.dumps(dict(
-            snapshot, onset_months=[float(v * 12) if np.isfinite(v) else None for v in result["onset"]],
-            milestones=records,
-            pace_events_2025={name: [float(v * 12) if np.isfinite(v) else None for v in values]
-                              for name, values in result["pace_events_2025"].items()},
-            acceleration_events={name: [float(v * 12) if np.isfinite(v) else None for v in values]
-                                 for name, values in result["acceleration_events"].items()},
-            workflow_progress={key: np.where(np.isfinite(values), values, None).tolist()
-                               for key, values in result["workflow_progress"].items()
-                               if key.endswith("quantiles") or key in ("years", "matched_coverage")},
-            outcomes={name: {key: [float(v) if np.isfinite(v) else None for v in values]
-                             for key, values in measures.items()}
-                      for name, measures in result["outcomes"].items()},
-            missing_value="null means not reached or undefined within the horizon from today"),
-            indent=2, allow_nan=False),
-        file_name="takeoff_draws.json", mime="application/json")
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────

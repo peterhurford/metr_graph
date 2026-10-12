@@ -59,12 +59,13 @@ penalty, sampled near monthly boundaries within the weekly integration resolutio
 They start from today's already-assisted rate and can fall if difficulty outpaces gains.
 No minimum of 1× is imposed.
 
-The reporting anchor is each draw's RSI activity multiple today times an assumed useful
-yield per experiment relative to 2025 (default 1). This is an explicit proxy conversion,
-not measured discovery growth. It rescales each draw before computing percentiles and
-does not multiply existing assistance into dynamics a second time. Under default resource
-allocation and yield assumptions, both modeled pace series start at the inherited activity
-multiple, rather than appearing near zero while waiting for the first new successor.
+The reporting anchor is a set research pace today relative to 2025 (`tk_pace_today`,
+default 1.7×, an assumption). Each draw keeps its RSI activity
+multiple's spread around that median. It is a stated normalization, not measured discovery
+growth. It rescales each draw before computing percentiles and does not multiply existing
+assistance into dynamics a second time, so it moves the 2×/5× crossings but no milestone.
+Both modeled pace series start at that level, rather than appearing near zero while
+waiting for the first new successor.
 
 The third panel counts additional validated deliveries after today, measured in months
 of research at the 2025 pace. It starts at zero because it measures an additional amount,
@@ -95,6 +96,12 @@ in total delivered fast-plus-slow efficiency over the entire cycle. Broad superi
 retains the speculative bridge of three plus two capability doublings in successors.
 
 ## Evidence calibration
+
+Two priors come from the RSI tab. Today's human hours per stage are scaled so their
+25/50/25 average matches the R&D automation index's latest month, with each AL level
+assumed to take 100/90/70/40/15/0% of unassisted human time (AL0–AL5). The research-quality
+prior is the next-step study's win-odds growth (a Bradley-Terry strength ratio) divided
+through the same transfer form by assumed effective-capability growth.
 
 `openai_experiment_velocity.csv` contains 32 source-tooltip observations, already used by
 the RSI tab. OpenAI experiments per active researcher rise from 0.72× on January 5, 2026 to

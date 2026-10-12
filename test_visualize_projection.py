@@ -6434,3 +6434,27 @@ class TestMilestoneCardLayout:
         added or dropped, retarget this deliberately."""
         assert len(vp._PC_RSI_WEIGHTS) == 13
         assert self._rows(13) == [4, 3, 3, 3]
+
+
+class TestTakeoffRsiCalibration:
+    """Takeoff defaults read off RSI data rather than set by hand."""
+
+    def test_stage_starts_match_the_ladders_latest_month(self):
+        rows = vp.load_rsi_automation()
+        starts = vp._tk_ladder_stage_starts(rows)
+        keys = [f"tk_human_{k}" for k in vp.takeoff.WORKFLOW_KEYS]
+        mean = np.array([starts[k] for k in keys]) @ vp.takeoff.WORKFLOW_WEIGHTS
+        assert mean == pytest.approx(100 * vp._tk_ladder_human_share(rows[-1]), abs=0.1)
+        assert all(vp._TK_DEFAULTS[k] == starts[k] for k in keys)
+
+    def test_ladder_human_share_falls_as_automation_climbs(self):
+        shares = [vp._tk_ladder_human_share(r) for r in vp.load_rsi_automation()]
+        assert shares == sorted(shares, reverse=True)
+        assert 0 < shares[-1] < shares[0] <= 1
+
+    def test_taste_default_is_the_next_step_fit(self):
+        args = (vp.rsi_dir_frontier_all, vp.load_rsi_experiments())
+        taste = vp._tk_nextstep_taste(*args, 2.0, 0.6)
+        assert vp._TK_DEFAULTS["tk_taste_slope"] == taste > 0
+        # Faster capability growth means each unit of it buys less judgment.
+        assert vp._tk_nextstep_taste(*args, 4.0, 0.6) < taste

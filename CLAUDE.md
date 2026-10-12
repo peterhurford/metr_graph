@@ -85,7 +85,7 @@ Evidence calibration uses the endpoint growth in `openai_experiment_velocity.csv
 for assumed historical compute and coding gains, and fits a quality elasticity blended with
 the prior. A supplied validated-progress ratio overrides the experiment proxy. Matched-stage
 human hours can set current shares/halving times; missing inputs are zero, not invented data.
-The `tk_cal_` and `tk_measure_` inputs round-trip in URLs and exports. Central resets all
+The `tk_cal_` and `tk_measure_` inputs round-trip in URLs. *Reset to defaults* resets all
 Takeoff inputs and preserves RSI. Workflow fit callbacks validate before changing widgets.
 
 The model's source digest is checked on app reruns, reloads stale imported model code, and
@@ -107,6 +107,12 @@ pace vs the AI-frozen reference, 2×/5×/10× guides, milestone medians as verti
 coding. The four-panel acceleration chart, outcome and constraint tables sit in the
 *Under the hood* expander. `test_default_render_and_stable_rerun` pins the order.
 
+Two defaults are read off RSI data at import (`TestTakeoffRsiCalibration`). Today's
+human share per stage is the model's stage pattern rescaled to the R&D automation index's
+latest month, read through `_TK_AL_HUMAN_HOURS` (assumed human time per AL level). The
+research-judgment elasticity (`taste_slope`) is the next-step study's yearly odds growth,
+read as Bradley-Terry strength, over the experiment calibration's capability growth.
+
 `_rsi_experiment_draws` uses a local fixed seed so the RSI fan, threshold card, and Takeoff
 reuse the same paths without perturbing global RNG. `_tk_rsi_activity` shifts these to today
 and annualizes slopes. `_tk_simulate` caches by these arrays as well as model source and RSI
@@ -115,8 +121,8 @@ fading weight, not multiplied. Current activity normalization only affects the d
 2025-baseline fan, not today's already-assisted productivity. The under-the-hood acceleration
 chart also shows cumulative gains. All its four panels use 2025 units: activity, useful production
 pace before validation, cumulative deliveries in baseline months, and the reference's own
-pace (not an actual/reference ratio). `tk_cal_2025_yield` supplies the assumed reporting
-conversion. Rebase each draw before taking quantiles; never multiply quantile bands.
+pace (not an actual/reference ratio). `tk_pace_today` (default 1.7×) sets today's
+pace directly; each draw keeps its activity spread around it. Rebase each draw before taking quantiles; never multiply quantile bands.
 The simulator records ongoing production separately from delivery-window rates, which
 remain available for internal diagnostics and the validated milestone definitions.
 

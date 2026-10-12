@@ -1326,6 +1326,14 @@ class TestTakeoffTab:
         pace = json.loads(at.get("plotly_chart")[0].proto.spec)
         assert {"Modeled research pace", "If AI stopped improving today"} <= {
             d.get("name") for d in pace["data"]}
+        # Today's pace is set, not inherited from the experiment proxy.
+        [modeled] = [d for d in pace["data"] if d.get("name") == "Modeled research pace"]
+        y0 = modeled["y"]
+        if isinstance(y0, dict):          # plotly's packed binary arrays
+            import base64
+            y0 = np.frombuffer(base64.b64decode(y0["bdata"]), dtype=y0["dtype"])
+        assert float(y0[0]) == pytest.approx(
+            at.number_input(key="tk_pace_today").value, rel=0.05)
         # The flat tail is labelled as finished scenarios, not a slowdown.
         assert any("hold their last pace" in a.get("text", "")
                    for a in pace["layout"]["annotations"])
@@ -1414,7 +1422,7 @@ class TestTakeoffTab:
         outcomes = next(t.value for t in at.table if "Outcome at" in t.value.columns)
         assert outcomes[outcomes["Outcome at"] == "Full R&D automation"].iloc[0]["Human hours remaining"] == "Not reached"
         assert at.query_params["tk_human_floor"] == ["6.0"]
-        at.button(key="tk_preset_Central").click().run()
+        at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_human_floor").value == 1.0
 
     def test_al5_date_is_a_second_definition_of_full_automation(self):
@@ -1481,31 +1489,29 @@ class TestTakeoffTab:
         second = json.loads(at.get("plotly_chart")[-1].proto.spec)["data"][-1]
         assert second["y"] == curve["y"]
 
-    def test_horizon_and_rsi_settings_survive_presets(self):
+    def test_horizon_and_rsi_settings_survive_reset(self):
         at = self._app()
         at.number_input(key="tk_end_year").set_value(2035).run()
         _assert_no_error(at, "Takeoff / year end")
         assert at.query_params["tk_end_year"] == ["2035"]
-        at.button(key="tk_preset_Central").click().run()
+        at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_end_year").value == 2031
         assert "tk_end_year" not in at.query_params
 
-    def test_presets_reset_and_url_roundtrip(self):
+    def test_reset_and_url_roundtrip(self):
         at = self._app()
-        at.button(key="tk_preset_Bottlenecked").click().run()
-        _assert_no_error(at, "Takeoff / bottlenecked")
-        assert at.number_input(key="tk_transfer").value == 20
+        assert not _has_widget(at, "button", "tk_preset_Central")
+        at.number_input(key="tk_transfer").set_value(20).run()
+        _assert_no_error(at, "Takeoff / low transfer")
         assert at.query_params["tk_transfer"] == ["20"]
         fresh = _fresh_app()
         fresh.query_params.update(dict(at.query_params))
         fresh.run()
         _assert_no_error(fresh, "Takeoff / shared scenario")
         assert fresh.number_input(key="tk_transfer").value == 20
-        at.button(key="tk_preset_Central").click().run()
+        at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_transfer").value == 60
         assert "tk_transfer" not in at.query_params
-        at.button(key="tk_preset_Fast").click().run()
-        _assert_no_error(at, "Takeoff / fast")
 
     def test_invalid_budget_is_recoverable(self):
         at = self._app()
