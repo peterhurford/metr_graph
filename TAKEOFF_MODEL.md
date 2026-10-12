@@ -97,11 +97,13 @@ retains the speculative bridge of three plus two capability doublings in success
 
 ## Evidence calibration
 
-Two priors come from the RSI tab. Today's human hours per stage are scaled so their
+Four priors come from the RSI tab. Today's human hours per stage are scaled so their
 25/50/25 average matches the R&D automation index's latest month, with each AL level
-assumed to take 100/90/70/40/15/0% of unassisted human time (AL0–AL5). The research-quality
-prior is the next-step study's win-odds growth (a Bradley-Terry strength ratio) divided
-through the same transfer form by assumed effective-capability growth.
+assumed to take 100/90/70/40/15/0% of unassisted human time (AL0–AL5); stage halving times
+are scaled to that share's past-year halving. The research-quality prior is the next-step
+study's win-odds growth (a Bradley-Terry strength ratio) and the coding elasticity the staff
+survey's output growth, each divided through the same transfer form by assumed
+effective-capability growth.
 
 `openai_experiment_velocity.csv` contains 32 source-tooltip observations, already used by
 the RSI tab. OpenAI experiments per active researcher rise from 0.72× on January 5, 2026 to

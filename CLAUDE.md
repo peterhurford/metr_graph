@@ -107,11 +107,15 @@ pace vs the AI-frozen reference, 2×/5×/10× guides, milestone medians as verti
 coding. The four-panel acceleration chart, outcome and constraint tables sit in the
 *Under the hood* expander. `test_default_render_and_stable_rerun` pins the order.
 
-Two defaults are read off RSI data at import (`TestTakeoffRsiCalibration`). Today's
-human share per stage is the model's stage pattern rescaled to the R&D automation index's
-latest month, read through `_TK_AL_HUMAN_HOURS` (assumed human time per AL level). The
-research-judgment elasticity (`taste_slope`) is the next-step study's yearly odds growth,
-read as Bradley-Terry strength, over the experiment calibration's capability growth.
+Four defaults are read off RSI data at import (`TestTakeoffRsiCalibration`), each
+keeping the model's stage pattern and rescaling it. Today's human share per stage matches
+the R&D automation index's latest month, read through `_TK_AL_HUMAN_HOURS` (assumed human
+time per AL level); the stage halving times match that share's past-year halving. The
+judgment elasticity (`taste_slope`) is the next-step study's yearly odds growth, read as
+Bradley-Terry strength; the coding elasticity is the staff survey's yearly output growth.
+Both go through `_tk_elasticity` against the experiment calibration's capability growth.
+A higher coding elasticity leaves less experiment growth for judgment to explain, so it
+*delays* the late milestones.
 
 `_rsi_experiment_draws` uses a local fixed seed so the RSI fan, threshold card, and Takeoff
 reuse the same paths without perturbing global RNG. `_tk_rsi_activity` shifts these to today

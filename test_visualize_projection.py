@@ -6458,3 +6458,21 @@ class TestTakeoffRsiCalibration:
         assert vp._TK_DEFAULTS["tk_taste_slope"] == taste > 0
         # Faster capability growth means each unit of it buys less judgment.
         assert vp._tk_nextstep_taste(*args, 4.0, 0.6) < taste
+
+    def test_halving_times_match_the_ladders_decline(self):
+        rows = vp.load_rsi_automation()
+        floor = vp.takeoff.DEFAULTS["human_floor"]
+        halves = vp._tk_ladder_stage_halvings(rows, floor)
+        keys = [f"tk_half_{k}" for k in vp.takeoff.WORKFLOW_KEYS]
+        mean = np.array([halves[k] for k in keys]) @ vp.takeoff.WORKFLOW_WEIGHTS
+        months = np.array([(r['date'] - rows[0]['date']).days / 30.44 for r in rows])
+        share = np.array([100 * vp._tk_ladder_human_share(r) for r in rows])
+        _icpt, slope = vp.fit_line(months, np.log(share - floor))
+        assert mean == pytest.approx(-np.log(2) / slope, abs=0.1)
+        assert all(vp._TK_DEFAULTS[k] == halves[k] for k in keys)
+
+    def test_coding_default_is_the_survey_fit(self):
+        args = (vp.load_rsi_survey(), vp.load_rsi_experiments())
+        coding = vp._tk_survey_coding(*args, 2.0, 0.6)
+        assert vp._TK_DEFAULTS["tk_coding_slope"] == coding > 0
+        assert vp._tk_survey_coding(*args, 4.0, 0.6) < coding

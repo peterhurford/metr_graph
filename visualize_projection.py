@@ -17496,6 +17496,42 @@ def _tk_ladder_stage_starts(rows):
     return {f"tk_{k}": round(float(v * scale), 1) for k, v in zip(keys, prior)}
 
 
+def _tk_ladder_stage_halvings(rows, floor):
+    """Stage halving times (months): the model's stage pattern, rescaled so
+    its weighted mean matches how fast the ladder-implied human share falls
+    toward `floor` (%). Calendar months over the past year stand in for months
+    of capability progress at today's rate."""
+    months = np.array([(r['date'] - rows[0]['date']).days / 30.44 for r in rows])
+    share = np.array([100 * _tk_ladder_human_share(r) for r in rows])
+    _icpt, slope = fit_line(months, np.log(np.maximum(share - floor, 1e-6)))
+    keys = [f"half_{k}" for k in takeoff.WORKFLOW_KEYS]
+    prior = np.array([takeoff.DEFAULTS[k] for k in keys])
+    if slope >= 0:
+        return {f"tk_{k}": float(v) for k, v in zip(keys, prior)}
+    scale = (-np.log(2) / slope) / float(prior @ takeoff.WORKFLOW_WEIGHTS)
+    return {f"tk_{k}": round(float(v * scale), 1) for k, v in zip(keys, prior)}
+
+
+def _tk_elasticity(yearly_growth, experiments, capability_growth, transfer, fallback):
+    """Elasticity to capability of a quantity growing `yearly_growth`x a year,
+    through the transfer form `takeoff.calibrate_feedback` uses, against the
+    experiment calibration's assumed effective-capability growth."""
+    years = (experiments[-1]['date'] - experiments[0]['date']).days / 365.25
+    cap = capability_growth ** (1 / years)
+    if yearly_growth <= 1 or cap <= 1:
+        return fallback
+    return round(float(np.log((yearly_growth - 1 + transfer) / transfer) / np.log(cap)), 2)
+
+
+def _tk_survey_coding(rows, experiments, capability_growth, transfer):
+    """Coding-labor elasticity implied by the staff survey's yearly growth in
+    self-reported output, fitted on log(multiple) as the RSI tab does."""
+    days = np.array([(r['date'] - rows[0]['date']).days for r in rows], dtype=float)
+    _icpt, slope = fit_line(days, np.log([r['uplift'] for r in rows]))
+    return _tk_elasticity(np.exp(slope * 365.25), experiments, capability_growth,
+                          transfer, takeoff.DEFAULTS["coding_slope"])
+
+
 def _tk_nextstep_taste(frontier, experiments, capability_growth, transfer):
     """Research-judgment elasticity implied by the next-step study.
 
@@ -17505,17 +17541,18 @@ def _tk_nextstep_taste(frontier, experiments, capability_growth, transfer):
     assumes, through the same transfer form `takeoff.calibrate_feedback` uses.
     """
     _base, _icpt, slope = _rsi_dir_fit(frontier)
-    quality = np.exp(slope * 365.25)
-    years = (experiments[-1]['date'] - experiments[0]['date']).days / 365.25
-    cap = capability_growth ** (1 / years)
-    if quality <= 1 or cap <= 1:
-        return takeoff.DEFAULTS["taste_slope"]
-    return round(float(np.log((quality - 1 + transfer) / transfer) / np.log(cap)), 2)
+    return _tk_elasticity(np.exp(slope * 365.25), experiments, capability_growth,
+                          transfer, takeoff.DEFAULTS["taste_slope"])
 
 
 _TK_DEFAULTS.update(_tk_ladder_stage_starts(load_rsi_automation()))
+_TK_DEFAULTS.update(_tk_ladder_stage_halvings(load_rsi_automation(),
+                                               takeoff.DEFAULTS["human_floor"]))
 _TK_DEFAULTS["tk_taste_slope"] = _tk_nextstep_taste(
     rsi_dir_frontier_all, load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
+    _TK_DEFAULTS["tk_transfer"] / 100)
+_TK_DEFAULTS["tk_coding_slope"] = _tk_survey_coding(
+    load_rsi_survey(), load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
     _TK_DEFAULTS["tk_transfer"] / 100)
 _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
 
@@ -17989,7 +18026,8 @@ def render_takeoff():
                 number(f"{stage}: human-work halving time (months)", "half_" + key, 1.0, 60.0, 1.0,
                        "Months of capability progress at today’s pace needed to halve "
                        "human work above the floor. Future acceleration shortens calendar time. "
-                       "These starting assumptions have not been fitted to observations.")
+                       "Default: the R&D automation index's past-year halving, spread "
+                       "across stages in an assumed pattern.")
             number("Persistent human-work floor (%)", "human_floor", 0.0, 25.0, 1.0)
             number("Useful-project completion today (%)", "project_success", 5.0, 100.0, 5.0)
             number("Failure-rate halving time (months)", "success_half", 1.0, 60.0, 1.0,
@@ -18011,7 +18049,9 @@ def render_takeoff():
                    "Research quality scales as capability raised to this power. The "
                    "default is fitted from the RSI tab's next-step study: its win odds "
                    "against researchers grow as research judgment does.")
-            number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1)
+            number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1,
+                   "Default fitted from the RSI tab's staff survey: the yearly growth in "
+                   "self-reported output, read as AI coding labor.")
             number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
                    "Discounts coding and judgment gains beyond today. Zero removes "
                    "AI feedback; baseline research and compute can still improve models.")
