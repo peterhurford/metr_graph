@@ -2210,10 +2210,17 @@ _DC_NETWORK_CLUSTERS = (
     ("Pacific Northwest", 'plausible', ("Google The Dalles",
                                         "Google Storey County",
                                         "Meta-QTS Hillsboro 2")),
+    # Every pair within ~40 km. Two sites are China-accessible, which
+    # _dc_country_steps pools as one party, so this binds there.
+    ("Johor", 'plausible', ("DayOne Nusajaya", "DayOne Kempas",
+                            "Bridge Data Centres MY06")),
 )
 
 # The cluster bases, weakest first; each level admits every basis before it.
 _DC_NETWORK_LEVELS = ('proximity', 'fabric', 'plausible')
+# Labels of groups with no announced link; a pooled detail naming one says so.
+_DC_HYPOTHETICAL_CLUSTERS = frozenset(
+    lab for lab, b, _ in _DC_NETWORK_CLUSTERS if b == 'plausible')
 
 
 # ── Buildout by country ──────────────────────────────────────────────────
@@ -2229,8 +2236,12 @@ _DC_CTY_CN = "China"
 # DayOne Nusajaya cite the FT reporting Alibaba and ByteDance training models
 # in Southeast Asia, and DayOne is the GDS Holdings spin-off. Counting the
 # whole campus as Chinese-accessible is an upper-bound reading — DayOne has
-# other tenants — so it is a selector, and its label says what it assumes.
-_DC_CN_ACCESS_ABROAD = ("DayOne Nusajaya",)
+# other tenants — so its label says what it assumes. Bridge Data Centres MY06
+# (Sedenak, Johor) is the one Epoch itself attributes, to ByteDance (#likely).
+_DC_CN_ACCESS_ABROAD = ("DayOne Nusajaya", "Bridge Data Centres MY06")
+# In mode 'company', the China-accessible group pools its sites abroad as one
+# tenant: the premise of the group is that Chinese labs can use all of them.
+_DC_CN_ABROAD_PARTY = "Chinese labs abroad"
 _DC_CTY_CN_ACCESS = "China-accessible"
 # Extrapolation: log-linear OLS on monthly samples of a country's step series
 # since this year (the tab's earliest chart start), pace uncertainty as the
@@ -2301,8 +2312,8 @@ _DC_CTY_OTHER_COLORS = ("#2CA02C", "#9467BD", "#8C564B", "#7F7F7F", "#17BECF",
 # ── Share of catalogued capacity by region ───────────────────────────────
 # Buckets for the share chart at the bottom of the tab, in stack order, keyed
 # on Epoch's `Country` column. Geography only: a site counts where it stands,
-# whoever trains in it — so DayOne Johor sits in SEA here while the country
-# panel above also reads it as China-accessible. Anything unmatched, and any
+# whoever trains in it — so the Johor sites sit in SEA here while the country
+# panel above also reads them as China-accessible. Anything unmatched, and any
 # site Epoch leaves without a country, falls to the residual bucket.
 _DC_REGION_OTHER = "Other"
 _DC_REGION_SEA = "SEA"
@@ -2795,6 +2806,9 @@ def _dc_country_steps(series, names, mode, cluster_of):
     if mode == 'site':
         return [(d, v, n) for d, v, n, _ in _dc_envelope(sub)]
     if mode == 'company':
+        sub = {n: (dict(v, companies=[_DC_CN_ABROAD_PARTY])
+                   if n in _DC_CN_ACCESS_ABROAD else v)
+               for n, v in sub.items()}
         per_co = _dc_company_networked_series(sub, cluster_of)
         dates = sorted({d for steps in per_co.values() for d, *_ in steps})
         out = []
@@ -2806,7 +2820,10 @@ def _dc_country_steps(series, names, mode, cluster_of):
                     continue
                 if best is None or val > best[0]:
                     last = next(s for s in reversed(steps) if s[0] <= d)
-                    best = (val, f"{co} — {last[3]}" if last[3] else
+                    grp = last[3]
+                    if grp in _DC_HYPOTHETICAL_CLUSTERS:
+                        grp += " (hypothetical link)"
+                    best = (val, f"{co} — {grp}" if grp else
                             f"{co} — {last[2][0]}")
             if best is not None:
                 out.append((d, best[0], best[1]))
@@ -7806,8 +7823,9 @@ _OPENAI_REVENUE = [
     # that row 2026-08-13 (publication) where we carry the 2026-07-31 as-of; same observation, not a new one.
     # TickerTrends' 2026-09-29 post ("OpenAI and Anthropic ARR Tracking"): $50.44B, +13.4% MoM; the chart
     # card reads "As of Sep 24, 2026" and "company-wide annualized revenue run-rate", so it continues this
-    # series with a real as-of date.
-    ("2026-09-24", 50.44),
+    # series. Dated 09-28, per TickerTrends' 10-08 post ("tracked $50.44B on September 28"), which
+    # supersedes the chart card's Sep 24.
+    ("2026-09-28", 50.44),
     # Excluded: Axios/FT (2026-09-29) report OpenAI's run rate "nearing"/"about" $70B, now Epoch's newest
     # OpenAI row. A press report, not this series, and ~39% *above* the 50.44 tracked five days earlier --
     # the reverse of the usual tracker-above-press gap, so splicing it would draw a fake jump.
@@ -7996,10 +8014,12 @@ _CN_REVENUE = {
              "CFO Toby Xu, Q1 FY27 call: “ARR of our model and application "
              "services…surpassed RMB 16 billion”. A floor, converted at "
              "6.7851."),
-            ("2026-08-31", 20.0 / 6.7851, "press",
-             "Goldman Sachs note citing company data (via NetEase/Longbridge, "
-             "~2026-09-24): Qwen MaaS ARR “reached RMB 20 billion by end of "
-             "August”. No public Alibaba statement found; converted at 6.7851."),
+            ("2026-09-22", 20.0 / 6.7851, "company",
+             "Disclosed at the Yunqi conference (09-22), per Zhongtai Securities "
+             "(2026-10-01): Bailian platform ARR “近期突破200亿元（2026年8月为160亿）” "
+             "(recently passed RMB 20B; RMB 16B in August). Converted at 6.7851. "
+             "Supersedes a Goldman note (~09-24) dating RMB 20B to end of August, "
+             "which contradicts the company's own RMB 16B for August."),
             # Excluded (checked 2026-10-08): Rhodium's ~$2.4B for August (via ifeng,
             # 2026-09-21), a third-party estimate for a month already carried.
         ],
@@ -10576,7 +10596,8 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
     st.caption(
         "Biggest training run one party per country could mount. Solid = actual, "
         "dashed = planned, dotted + cone = extrapolated (50% / 80%). "
-        "*China-accessible* adds DayOne Johor (FT: Alibaba, ByteDance train there).")
+        "*China-accessible* adds two Johor sites (FT: Alibaba, ByteDance train at DayOne; "
+        "Epoch: ByteDance at Bridge MY06).")
 
     # Pooling follows the sidebar's networking selector, exactly as the
     # company chart above does: a lone site when nothing pools, else the
@@ -10905,8 +10926,8 @@ def _dc_render_region_share(series, country_of, *, today, cap_date, x_start,
         + (", and past today it is planned buildout." if include_future
            and cap_date > today else "."),
         ("where the building stands",
-         "Geography only \u2014 no host filter, no tenant attribution. DayOne "
-         "Johor counts under SEA here, though the panel above also reads it "
+         "Geography only \u2014 no host filter, no tenant attribution. The "
+         "Johor sites count under SEA here, though the panel above also reads them "
          "as China-accessible."),
         ("SEA, Europe/UK and Other",
          "SEA is Malaysia, Indonesia, Singapore, Thailand, Vietnam and the "
@@ -12220,7 +12241,7 @@ _CC_GAP_WINDOWS = [
 #
 # China is still a JUDGMENT call, but no longer unchecked. Epoch's catalogue now
 # holds a handful of Chinese sites (VNET Ulanqab…) plus the China-accessible
-# DayOne Johor campus, and the Data Centers tab's by-country panel projects
+# Johor sites, and the Data Centers tab's by-country panel projects
 # them; _cc_country_pace_check() reads that same engine here. The band stays a
 # hand-set constant rather than that fit because the two measure different
 # things: the catalogue pace is *buildings* (and China-accessible is a from-zero
@@ -16246,7 +16267,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              + "and points already banked stay banked.")
     stop_remote = cb3.checkbox(
         "Cut Chinese remote access to compute abroad", key="pc_stop_remote",
-        help="Chinese labs lose the DayOne Johor-class sites and rented "
+        help="Chinese labs lose the Johor sites and rented "
              "clusters abroad: their largest run falls back to the biggest "
              "domestic cluster (a level setback the domestic buildout must "
              "first regrow), and grows at the domestic catalogued pace "
@@ -17173,7 +17194,7 @@ def render_pacing():
                            "disagreement with their own."),
         *([("its largest networkable group",
             "Unfiltered by host. *China-accessible* adds Chinese labs' sites "
-            "abroad (DayOne Johor); *domestic only* is the mainland alone.")]
+            "abroad (DayOne Nusajaya, Bridge MY06 in Johor); *domestic only* is the mainland alone.")]
           if party == 'country' else []))
 
     # ── Table ──

@@ -648,8 +648,8 @@ panel above also reads it as China-accessible. Four things are load-bearing:
    country — falls to *Other*, so the region totals add to the catalogue's own
    total at every date (`test_regions_partition_the_catalogue`). Europe/UK is
    the EU, the UK and the rest of Europe (Norway today), which is why it isn't
-   called EU+UK; `test_every_catalogued_country_is_placed_deliberately` names
-   what the residual bucket currently holds, so a refresh that adds a country
+   called EU+UK; `test_every_catalogued_country_is_placed_deliberately` holds
+   *Other* under 5% of catalogued capacity, so a refresh that adds a country
    worth naming surfaces there.
 2. **The coverage caveat is body text above the chart, not caption fine
    print** — an `_fn_line` with a warning glyph, since `st.warning` takes no
@@ -680,15 +680,18 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    site list — `_dc_hidden_companies()` is not applied, because a landlord's hall in a
    country is capacity in that country whoever trains in it. `test_country_fallback_only_
    names_sites_epoch_left_blank` retires a fallback the moment Epoch fills the cell.
-2. **"China-accessible" = China + `_DC_CN_ACCESS_ABROAD`** (DayOne Nusajaya only). Epoch's own
-   source notes on Nusajaya cite the FT on Alibaba and ByteDance training in Southeast Asia.
+2. **"China-accessible" = China + `_DC_CN_ACCESS_ABROAD`** (DayOne Nusajaya and Bridge MY06,
+   both in Johor). Epoch's own source notes on Nusajaya cite the FT on Alibaba and ByteDance
+   training in Southeast Asia; Epoch lists ByteDance (#likely) as MY06's owner and user.
    Both lines are always drawn and projected — mainland alone and accessible — with no
    selector (one was tried and removed as redundant); the sites are *moved* out of Malaysia
    rather than copied, and the caption says the campus has other tenants. Assuming tenancy is the
    strong claim here, same as for the networked-clusters `'plausible'` level; don't add
    sites to the tuple without a citation of the same standard. DayOne Kempas, the other
-   Johor campus, stays in Malaysia for want of one (`test_abroad_scope_moves_sites_rather_
-   than_copying_them` pins it).
+   Johor campus, stays in Malaysia for want of one. In `'company'` mode the abroad sites pool
+   as one tenant, `_DC_CN_ABROAD_PARTY`, so only the `'plausible'` Johor cluster joins them,
+   and any `'plausible'` group in a country-step detail is tagged "(hypothetical link)"
+   (`test_sites_abroad_pool_as_one_party_only_on_a_hypothetical_link`).
 3. **Pooling follows the sidebar's one networking selector** (`dc_pool_n`), shared with
    the networked-sites chart so the China line reads in that chart's units: `'site'` mode
    when nothing pools, else the largest networked group per company. `_dc_country_steps()`
@@ -827,7 +830,7 @@ Four contracts, each guarded:
    by-country engine (`_dc_country_steps` + `_dc_cty_fit`, no pooling, plan-horizon
    clipped, unfiltered sites) for US / China-accessible / China-domestic. Captions quote
    it next to the segment fits and the hand-set `_CC_CN_COMPUTE_LO/HI` band; tests keep
-   the two engines honest — US segment fit within 0.15 OOM/yr of the country fit
+   the two engines honest — US segment fit within twice the country fit's `sigma_g`
    (`test_us_pace_cross_check_agrees_across_tabs`), and the China band at or below the
    catalogued paces (`TestCcCnComputeBand`: HI ≤ China-accessible ramp, LO ≤ domestic
    pace). The band stays hand-set on purpose: it claims coherent-*single-run* growth
@@ -1048,7 +1051,7 @@ US-best ECI frontier reaching each of `_PC_ECI_TARGETS` (`_PC_ECI_JUMP_TO` plus 
 and three more jumps the size of the pinned `_PC_ECI_JUMP_FROM` → `_PC_ECI_JUMP_TO` pair**,
 measured off those constants rather than the live frontier, since a floating anchor
 recedes exactly when capability arrives; `test_eci_target_is_two_more_pinned_jumps`
-checks the arithmetic and that both ends still name a model on the live frontier; well above anything that tab draws, and a lower card sat close
+checks the arithmetic and that both ends still name a model in the ECI table; well above anything that tab draws, and a lower card sat close
 enough to today's frontier that it dated model releases, not RSI, so its weight
 moved here). The cards are labelled *ECI reaches …*, not *US ECI* — the US-best
 frontier is stated in the hover. The 187.5 slug keeps the half-point
@@ -1242,8 +1245,7 @@ already confined to domestic clusters (remote cut on) takes the cut in full, and
 two levers stack instead of one subsuming the other. `g_dom` is slowed too, so the
 remote cut's setback takes proportionally longer to regrow, and the breakdown's
 `comp_shadow` cap falls with it. Without a catalogued domestic pace to decompose
-against, the whole band scales by `1−p`. Guarded by
-`test_domestic_slowdown_lever_delays_the_crossing`.
+against, the whole band scales by `1−p`.
 An *Advanced* expander dates the two cuts (`pc_dist_when` / `pc_remote_when`,
 `_pc_when_options` month labels — strings, so they round-trip through the URL and
 reset to a constant `Now` = the checkbox alone; a stale label is dropped like

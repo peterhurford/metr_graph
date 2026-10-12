@@ -73,6 +73,11 @@ CoreWeave Denton TX,252652.85497726125,262,9.925084,CoreWeave #confident,OpenAI 
 QTS Richmond 1,242546.7407781708,238,9.015915999999999,,,"- [Richmond 1 factsheet](https://qtsdatacenters.com/data-centers/richmond-1/)
 - [Environmental permit detailing power generation](https://www.deq.virginia.gov/home/showpublisheddocument/25650/638627871515730000)
 ",https://docs.google.com/spreadsheets/d/1tCoNEu-EK4B261RUWGlDO_341hPs9hnwBtkGO2dDOcA/edit?usp=sharing,,,,,,Dominion Energy,United States,"6000 Technology Blvd, Sandston, VA 23150"
+Bridge Data Centres MY06,221051.54118241536,243,9.205326,ByteDance #likely,ByteDance #likely,"- [Bridge Data Centers 2025 article about MY06](https://www.bridgedatacentres.com/bridge-data-centres-and-bca-international-to-partner-to-promote-green-data-centers-globally/)
+- [Drone footage from 2024](https://www.youtube.com/watch?v=n2b0ljMXyEg)
+- [Development authority linking Bytedance](https://www.mida.gov.my/media-release/bridge-data-centres-and-bytedance-celebrate-grand-opening-of-the-first-phase-hyperscale-data-centre-my06-in-johor-malaysia/)
+- [Street view linking second campus MY06-2](https://www.google.com/maps/@1.695402,103.4214409,3a,47.7y,213.04h,92.05t/data=!3m7!1e1!3m5!1sG4O28vWhkgGAlyz3dZ-fdg!2e0!6shttps:%2F%2Fstreetviewpixels-pa.googleapis.com%2Fv1%2Fthumbnail%3Fcb_client%3Dmaps_sv.tactile%26w%3D900%26h%3D600%26pitch%3D-2.0537269881136098%26panoid%3DG4O28vWhkgGAlyz3dZ-fdg%26yaw%3D213.043859649809!7i16384!8i8192?entry=ttu&g_ep=EgoyMDI2MDgxMi4wIKXMDSoASAFQAw%3D%3D)
+",https://docs.google.com/spreadsheets/d/1xTeOcRhloSOXYL9J3dQOTPhYd5bxQpe9DNM6Ej6-SII/edit?usp=sharing,,"A100,H100,B200","A100,H100,B200",,,,Malaysia,"Bridge Data Centres, Sedenak Tech Park, Johor, Malaysia"
 Meta Rosemount,215675.11520970188,178,6.742996,Meta #confident,Meta #confident,"- [Official Meta announcement.](https://datacenters.atmeta.com/2024/03/hello-rosemount/)
 - [Air quality permit for initial buildout.](https://drive.google.com/file/d/1i2D0eMp9uc1CfRhymu69Bms5wz9q0Rkc/view?usp=sharing)
 ",https://docs.google.com/spreadsheets/d/11pdqhcJnw3iAwraTho9AW4m7WyBdvTR9sYzK0z5-SC8/edit?usp=sharing,,B200,B200,,,,United States,"1772-2396 145th St, Rosemount, MN 55068, USA"
