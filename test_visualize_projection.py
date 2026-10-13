@@ -3559,7 +3559,7 @@ class TestRsiDirection:
 
 
 class TestRsiExperiments:
-    def test_all_research_panels_use_2025_units_and_rebase_draws_before_quantiles(self):
+    def test_research_pace_uses_2025_units_and_rebases_draws_before_quantiles(self):
         params = dict(years=1, uncertainty=0)
         onset = np.ones(20)
         starts = np.linspace(np.log(1.5), np.log(2.5), 20)
@@ -3579,9 +3579,6 @@ class TestRsiExperiments:
             np.testing.assert_allclose(h[key], np.quantile(
                 h[sample_key] * np.exp(starts)[:, None], [.1, .5, .9], axis=0).T)
         np.testing.assert_array_equal(a['software_log'], b['software_log'])
-        fig = vp._tk_acceleration_fig(a)
-        for axis in ['yaxis', 'yaxis2', 'yaxis3', 'yaxis4']:
-            assert '2025' in fig.layout[axis].title.text
 
     def test_takeoff_inherits_the_same_activity_paths_without_changing_global_rng(self):
         rows = vp.load_rsi_experiments()

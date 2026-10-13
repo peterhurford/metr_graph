@@ -17927,40 +17927,6 @@ def _tk_humans_fig(result, today, ladder=None):
     return fig
 
 
-def _tk_acceleration_fig(result):
-    from plotly.subplots import make_subplots
-
-    p = result["workflow_progress"]
-    fig = make_subplots(rows=2, cols=2, vertical_spacing=.22, subplot_titles=[
-        "Inherited RSI experiment activity", "Useful research pace (pre-validation)",
-        "Additional validated progress since today", "Same-compute reference research pace"])
-    for row, col, key, label, color, axis in (
-            (1, 1, "rsi_activity_quantiles", "RSI experiments / 2025", "#8e44ad", "Experiments (× 2025)"),
-            (1, 2, "pace_2025_quantiles", "Useful pace / 2025", "#2980b9", "Research pace (× 2025)"),
-            (2, 1, "cumulative_2025_quantiles", "Additional validated progress", "#d68910", "Months of 2025 research progress"),
-            (2, 2, "reference_2025_quantiles", "Reference pace / 2025", "#229954", "Research pace (× 2025)")):
-        for qi in (0, 2, 1):
-            fig.add_trace(go.Scatter(
-                x=p["years"] * 12, y=p[key][:, qi],
-                name=label if qi == 1 else label + ": middle 80%",
-                mode="lines", line=dict(color=color, width=2.5 if qi == 1 else 0),
-                fill="tonexty" if qi == 2 else None,
-                fillcolor="rgba(100,140,160,0.15)", showlegend=False,
-                hovertemplate=("%{x:.1f} months<br>%{y:.2f}"
-                               + (" months of 2025 progress" if key == "cumulative_2025_quantiles" else "× 2025")
-                               + "<extra>%{fullData.name}</extra>")
-                if qi == 1 else None, hoverinfo=None if qi == 1 else "skip"), row=row, col=col)
-        if key != "cumulative_2025_quantiles":
-            fig.add_hline(y=1, line_dash="dot", line_color="#777", row=row, col=col)
-        fig.update_yaxes(title_text=axis, type="log" if col == 1 and row == 1 else "linear",
-                         rangemode="tozero", row=row, col=col)
-    fig.update_xaxes(title_text="Months after today")
-    fig.update_layout(height=650, margin=dict(l=45, r=20, t=45, b=50))
-    return fig
-
-
-# Compute growth is averaged over this fixed window, so "Project through" sets
-# how far the charts run without changing any scenario's compute rate.
 _TK_DC_AVG_YEARS = 5
 
 
@@ -18032,30 +17998,6 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
 def _tk_date(value, today):
     return ((today + timedelta(days=value * 365.25)).strftime("%b %Y")
             if np.isfinite(value) else "Beyond horizon")
-
-
-def _tk_outcome_rows(result, horizon):
-    """Milestone measurements among arrivals inside the calendar horizon."""
-    rows = []
-    for name, measures in result["outcomes"].items():
-        dates = (np.zeros_like(result["onset"]) if name == "Today" else
-                 result["onset"] if name == "Full coding automation" else result["events"][name])
-        selected = (dates <= horizon) & np.isfinite(measures["progress_multiple"])
-        def fmt(key, scale, suffix):
-            # Ladder-defined draws carry no workflow measurement (NaN).
-            values = measures[key][selected & np.isfinite(measures[key])]
-            return (f"{np.median(values) * scale:.1f}{suffix}" if len(values) else
-                    "Not measured" if selected.any() else
-                    "Not modeled" if np.any(dates < 0) else "Not reached")
-        rows.append({
-            "Outcome at": name,
-            "Scenarios by horizon": f"{100 * np.mean(selected):.1f}%",
-            "Human hours remaining": fmt("human_mean", 100, "%"),
-            "Most human-dependent stage": fmt("human_worst", 100, "%"),
-            "Validated progress / today baseline": fmt("progress_multiple", 1, "×"),
-            "Advantage / same-compute baseline": fmt("compute_matched_advantage", 1, "×"),
-        })
-    return rows
 
 
 def render_takeoff():
@@ -18407,143 +18349,21 @@ def render_takeoff():
          "deployed model. For the first year it is floored at the trend, since "
          "no new model has shipped yet."))
     st.plotly_chart(_tf(_tk_eci_fig(result, today, eci, markers)), width="stretch")
-    at_rsi = eci["at_rsi"][np.isfinite(eci["at_rsi"])]
-    if at_rsi.size:
-        st.metric("ECI when RSI arrives", f"{np.median(at_rsi):.0f}",
-                  help=f"Median over the {100 * np.mean(rsi <= horizon):.0f}% of "
-                       f"scenarios reaching RSI by {end_date:%b %Y}; middle 80% "
-                       f"{np.quantile(at_rsi, .1):.0f}\u2013{np.quantile(at_rsi, .9):.0f}.")
-
-    with st.expander("Under the hood: the model's own diagnostics"):
-        st.markdown("**Research acceleration, panel by panel**")
-        st.caption(f"All panels use a 2025 baseline. RSI projects "
-                   f"{np.median(np.exp(experiment_starts)):.2f}× experiments per researcher "
-                   f"today; research pace today is set at {pace_today:g}× (sidebar), so "
-                   "each scenario's pace is rebased by the same ratio. A set normalization, "
-                   "not a measurement of validated discoveries since 2025.")
-        st.plotly_chart(_tf(_tk_acceleration_fig(result)), width="stretch")
-        st.caption("Research pace measures ongoing useful work before validation, so it includes "
-                   "work in progress while successors train. The same-compute reference also uses "
-                   "2025 = 1× and freezes AI research skills at today's level; it is no longer "
-                   "plotted as a ratio to the modeled path. Both pace curves start from today's "
-                   "already-assisted baseline and may decline if difficulty outweighs productivity "
-                   "gains. Lines show medians; shading shows the middle 80%.")
-        st.caption("Additional validated progress counts only gains delivered after today, in "
-                   "months of research at the 2025 pace. It starts at zero because it is a "
-                   "cumulative amount, not a speed multiplier. It can pause between deployments "
-                   "but never loses prior gains. Completed paths retain their last modeled pace.")
-        st.caption(f"Near-term output blends the mechanistic model with the RSI activity "
-                   f"trend at an initial {params['rsi_trend_weight']:g}% weight, halving every "
-                   f"{params['rsi_trend_months']:g} months. Compute growth is accounted for once; "
-                   "the useful-effort conversion is adjustable. This blends estimates rather "
-                   "than multiplying two forecasts based on overlapping evidence. Zero AI "
-                   "transfer disables the trend's influence on research output.")
-        st.markdown("**State of the research workflow at each milestone**")
-        st.table(_tk_outcome_rows(result, horizon))
-        st.caption("Medians among scenarios reaching each milestone by the calendar horizon. "
-                   "Human hours are relative to comparable baseline projects, not a staffing "
-                   "forecast. The average weights direction, experiments, "
-                   "and verification 25/50/25; RSI checks direction alone. Progress "
-                   "counts efficiency gains at fixed quality, after fast validation or successor "
-                   "deployment. Historical coding dates have no reconstructed outcome measurements. "
-                   "These are simulated outcomes, not observed measurements.")
-        st.markdown("**What constrains experiment throughput?**")
-        compute_limited = 100 * np.mean(result["compute_limited"])
-        st.table([
-            {"Smaller research input": "Experiment compute", "Share of scenarios": f"{compute_limited:.0f}%"},
-            {"Smaller research input": "Coding labor", "Share of scenarios": f"{100-compute_limited:.0f}%"},
-        ])
-        st.caption("Compared at RSI, or at the simulation’s end. "
-                   "This identifies the smaller throughput input, not a causal attribution "
-                   "of delay. Research judgment, rising difficulty, and successor cycles also matter.")
-
-    with st.expander("What triggers RSI?"):
+    with st.expander("About this model"):
         st.markdown(
-            "The inherited coding date must have arrived, and research direction, "
-            "the stage that chooses what to try next, must need **at most "
-            f"{params['full_human']:g}% of its baseline human hours**. Experiment work "
-            "and verification can still involve people; a floor above the bar rules "
-            "RSI out.")
-    with st.expander("Evidence used and remaining assumptions", expanded=True):
-        st.write(f"OpenAI experiments per researcher: {evidence[0]['mult']:.2f}× on "
-                 f"{evidence[0]['date']:%b %d, %Y} → {evidence[-1]['mult']:.2f}× on "
-                 f"{evidence[-1]['date']:%b %d, %Y}, or {observed_growth:.2f}× growth. "
-                 "Values are four-week trailing averages relative to the 2025 baseline.")
-        if calibration:
-            st.write(f"Calibration basis: {calibration['basis']}. After the assumed compute "
-                     f"adjustment, useful-progress growth is {calibration['resource_adjusted_growth']:.2f}×. "
-                     f"The fitted quality elasticity is {calibration['quality_slope']:.2f}; "
-                     f"blending with your prior gives {params['taste_slope']:.2f}.")
-            if calibration["boundary"]:
-                st.caption("These assumptions imply no positive quality-feedback residual. "
-                           "The fitted elasticity is held at zero, the model’s lower bound.")
-        else:
-            st.caption("Feedback transfer is zero, so evidence calibration is inactive.")
-        st.markdown(
-            "[OpenAI’s research report](https://openai.com/index/research-acceleration-view-inside-openai/) "
-            "reports that more than half of successful 4–8 hour tasks required intervention. "
-            "That is task incidence, not human hours or whole-project success. The matched-stage "
-            "controls accept intervention and rescue hours without equating those quantities. "
-            "The report supplies no matched whole-project hours or validated efficiency-gain series. "
-            "Those inputs remain assumptions until measurements are supplied.\n\n"
-            "[Anthropic’s report](https://www.anthropic.com/institute/recursive-self-improvement) "
-            "reports 8× code per engineer relative to 2024. Code volume is contextual evidence; "
-            "it is not used as an 8× research-output multiplier.\n\n"
-            "The experiment fit removes assumed compute growth and modeled coding gains before "
-            "estimating research-quality feedback. Existing assistance is already in today’s "
-            "baseline; historical growth calibrates elasticity, not an extra starting multiplier. "
-            "RSI and calibration partly use the same evidence and are not independent confirmations.\n\n")
-        st.markdown(
-            "**Human involvement:** log human hours in each stage of comparable, "
-            "complete research projects, including rescue work and corrections. "
-            "Track project completion and independent evaluation alongside time saved.\n\n"
-            "**Validated progress:** measure compute saved at fixed capability, or "
-            "capability gained at a fixed compute budget. Count improvements after "
-            "replication and incorporation into successors, with total costs and "
-            "elapsed time recorded.\n\n"
-            "[METR’s RE-Bench](https://arxiv.org/abs/2411.15114) provides a starting "
-            "point for comparisons with human experts under resource constraints. "
-            "Our CoBench and next-step-judgment panels provide related signals, but "
-            "do not directly establish whole-workflow human-hours or success rates. "
-            "The experiment series informs feedback calibration, while whole-workflow "
-            "measurements must be supplied separately.")
-    with st.expander("How this model works"):
-        st.markdown(
-            "Partially automated research today → experiments → validated efficiency "
-            "improvements → better tools and successors → faster research. Humans may "
-            "remain involved throughout this feedback loop.\n\n"
-            "**Milestones.** Coding automation is inherited from the RSI tab. RSI is "
-            "low human involvement in research direction. Capability after that is "
-            "read as ECI, anchored on today's ECI trend.\n\n"
-            "**Research.** Coding labor and experiment compute combine through a harmonic "
-            "mean, so a shortage of either constrains output. Research judgment multiplies "
-            "that output. Software improvement slows as algorithms become harder to improve. "
-            "The transfer setting discounts gains beyond the capability present today.\n\n"
-            "**Initial pipeline.** Both paths start with the same assumed stock of "
-            "undeployed discoveries. Validation is required before these become useful.\n\n"
-            "**Fast feedback.** A separate share of discoveries becomes available after "
-            "short validation cycles, without waiting for frontier training. Fast and slow "
-            "shares sum to 100%; the same gain is never added twice.\n\n"
-            "**Successors.** Each run freezes its algorithms at the start. Compute is "
-            "accumulated during training; the successor becomes available after validation. "
-            "Later discoveries enter the next run. The reference model used a three-month "
-            "run with 40% of the initial compute budget. Longer runs trade more compute "
-            "against slower incorporation of discoveries.\n\n"
-            "Capability here means effective training compute relative to today’s "
-            "model: training compute × algorithmic efficiency. The mapping to "
-            "coding, judgment, and general intelligence is an assumption. Training "
-            "capacity stays reserved during validation; it is not reassigned to agents.\n\n"
-            "**Uncertainty.** The coding-automation distribution is the final RSI blend. "
-            "Other varied parameters use independent, bounded log-space draws; these are "
-            "scenario priors, independent of the inherited onset date. Reruns with "
-            "the same RSI samples and seed use identical draws.\n\n"
-            "**Scope.** The RSI blend anchors the coding milestone and a smooth coding "
-            "productivity ramp. It does not postpone the start of research feedback. "
-            "It does not fit a joint capability model, "
-            "or simulate hardware innovation, manufacturing, or policy changes. "
-            "Compute growth is your scenario assumption.\n\n"
-            "Inspired by the [AI Futures model](https://www.aifuturesmodel.com/); "
-            "the parameters and output here are our own scenario model.")
+            "- **Coding automation** is the RSI tab's blend (AL5 card excluded).\n"
+            "- **RSI** is research direction handed to AI: at most "
+            f"{params['full_human']:g}% of its baseline human hours, after coding "
+            "automation.\n"
+            f"- **Superintelligence** is ECI {_TK_ASI_ECI:g}, read off each scenario's "
+            "capability path.\n"
+            "- Rates are fitted to the RSI tab's series where it has one (top of the "
+            "page); compute growth comes from the Data Centers tab. Everything else is "
+            "an assumption, and the sidebar's top section holds the few that move the "
+            "dates.\n"
+            "- Inspired by the [AI Futures model](https://www.aifuturesmodel.com/) and "
+            "Forethought's work on software intelligence explosions; the parameters "
+            "and output are this app's own.")
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────

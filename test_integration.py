@@ -1311,8 +1311,8 @@ class TestTakeoffTab:
         at = self._app()
         assert at.session_state["_active_tab"] == "Takeoff"
         assert any(h.value == "Takeoff" for h in at.header)
-        # RSI evidence, pace, pace factors, people, ECI, and under-the-hood panels.
-        assert len(at.get("plotly_chart")) == 6
+        # RSI evidence, pace, pace factors, people and ECI.
+        assert len(at.get("plotly_chart")) == 5
         assert [s.value for s in at.subheader][:4] == [
             "What the RSI tab feeds in", "1. Research speeds up", "2. People step out of the loop",
             "3. What it does to capability (ECI)"]
@@ -1384,7 +1384,7 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", old_simulator)
         at = self._app()
         assert tk.simulate is not old_simulator
-        assert len(at.get("plotly_chart")) == 6
+        assert len(at.get("plotly_chart")) == 5
 
     def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
         import takeoff_model as tk
@@ -1436,8 +1436,6 @@ class TestTakeoffTab:
         _assert_no_error(at, "Takeoff / persistent human bottleneck")
         assert next(m.value for m in at.metric if m.label == rsi_label) == "Beyond horizon"
         assert not any(m.label == "ECI when RSI arrives" for m in at.metric)
-        outcomes = next(t.value for t in at.table if "Outcome at" in t.value.columns)
-        assert outcomes[outcomes["Outcome at"] == "RSI"].iloc[0]["Human hours remaining"] == "Not reached"
         assert at.query_params["tk_human_floor"] == ["6.0"]
         at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_human_floor").value == 1.0

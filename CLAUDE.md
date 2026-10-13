@@ -121,13 +121,12 @@ Unit tests cover accounting, snapshots, fast feedback, calibration, ordering, ce
 convergence, and RNG isolation. AppTests cover the layout, calibration, matched hours,
 URL sharing, stale imports, and exact inheritance from RSI.
 
-The tab reads as a story, top to bottom: the loop the model simulates (`_TK_LOOP_HTML`)
-and its three brakes, the headline cards, then **1. Research speeds up** (`_tk_pace_fig`:
-pace vs the AI-frozen reference, 2×/5×/10× guides, milestone medians as verticals),
-**2. People step out of the loop** (`_tk_humans_fig`: stage human hours plus project
-*failure*, so every line falls toward a bar), **3.** milestone dates and **4.** time after
-coding. The four-panel acceleration chart, outcome and constraint tables sit in the
-*Under the hood* expander. `test_default_render_and_stable_rerun` pins the order.
+The tab reads as a story, top to bottom: the warning, the loop the model simulates
+(`_TK_LOOP_HTML`) and its three brakes, the headline cards (coding automation, RSI,
+superintelligence, each with an 80% CI), the RSI evidence row, then **1. Research speeds
+up** (`_tk_pace_fig` plus the factor chart), **2. People step out of the loop**
+(`_tk_humans_fig`) and **3. What it does to capability (ECI)**, closing on one short
+*About this model* expander. `test_default_render_and_stable_rerun` pins the order.
 
 Four defaults are read off RSI data at import (`TestTakeoffRsiCalibration`), each
 keeping the model's stage pattern and rescaling it. Today's human share per stage matches
@@ -144,10 +143,9 @@ reuse the same paths without perturbing global RNG. `_tk_rsi_activity` shifts th
 and annualizes slopes. `_tk_simulate` caches by these arrays as well as model source and RSI
 onsets. Forward activity and mechanistic effort are alternative estimates, blended with a
 fading weight, not multiplied. Current activity normalization only affects the displayed
-2025-baseline fan, not today's already-assisted productivity. The under-the-hood acceleration
-chart also shows cumulative gains. All its four panels use 2025 units: activity, useful production
-pace before validation, cumulative deliveries in baseline months, and the reference's own
-pace (not an actual/reference ratio). `tk_pace_today` (default 1.7×) sets today's
+2025-baseline fan, not today's already-assisted productivity. `_tk_simulate` still returns
+2025-unit quantiles of pace, the reference's own pace and cumulative deliveries.
+`tk_pace_today` (default 1.7×) sets today's
 pace directly; each draw keeps its activity spread around it. Rebase each draw before taking quantiles; never multiply quantile bands.
 The simulator records ongoing production separately from delivery-window rates, which
 remain available for internal diagnostics and the validated milestone definitions.
