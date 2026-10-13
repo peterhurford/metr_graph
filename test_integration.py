@@ -1311,8 +1311,8 @@ class TestTakeoffTab:
         at = self._app()
         assert at.session_state["_active_tab"] == "Takeoff"
         assert any(h.value == "Takeoff" for h in at.header)
-        # RSI evidence, pace, people, ECI, and the diagnostic panels under the hood.
-        assert len(at.get("plotly_chart")) == 5
+        # RSI evidence, pace, pace factors, people, ECI, and under-the-hood panels.
+        assert len(at.get("plotly_chart")) == 6
         assert [s.value for s in at.subheader][:4] == [
             "What the RSI tab feeds in", "1. Research speeds up", "2. People step out of the loop",
             "3. What it does to capability (ECI)"]
@@ -1323,7 +1323,7 @@ class TestTakeoffTab:
         titles = " ".join(a["text"] for a in evidence["layout"]["annotations"])
         for name in ("Next-step wins", "Staff speedup", "Experiments/researcher"):
             assert name in titles
-        eci = json.loads(at.get("plotly_chart")[3].proto.spec)
+        eci = json.loads(at.get("plotly_chart")[4].proto.spec)
         [projected] = [d for d in eci["data"] if d.get("name") == "Projected ECI"]
         assert projected["x"][-1].startswith("2031-12-31")
         pace = json.loads(at.get("plotly_chart")[1].proto.spec)
@@ -1340,7 +1340,11 @@ class TestTakeoffTab:
         # Draws run to the horizon, so there is no held-pace tail to label.
         assert not any("hold their last pace" in a.get("text", "")
                    for a in pace["layout"]["annotations"])
-        people = json.loads(at.get("plotly_chart")[2].proto.spec)
+        factors = json.loads(at.get("plotly_chart")[2].proto.spec)
+        assert [d["name"] for d in factors["data"]] == [
+            "Labor & compute", "Research judgment", "Harder ideas (divides)",
+            "Net research pace"]
+        people = json.loads(at.get("plotly_chart")[3].proto.spec)
         # Three stages (band edges + median each), then the measured index history.
         assert len(people["data"]) == 10
         assert people["data"][-1]["name"] == "Measured: R&D automation index"
@@ -1363,7 +1367,7 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", old_simulator)
         at = self._app()
         assert tk.simulate is not old_simulator
-        assert len(at.get("plotly_chart")) == 5
+        assert len(at.get("plotly_chart")) == 6
 
     def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
         import takeoff_model as tk

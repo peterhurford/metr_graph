@@ -346,3 +346,14 @@ def test_longer_validation_delays_milestones():
 def test_invalid_assumptions_rejected(params):
     with pytest.raises(ValueError):
         tk.simulate(params, n=1)
+
+
+def test_pace_factors_multiply_back_to_the_pace():
+    """Resources x judgment / difficulty is the recorded pace, month by month."""
+    r = tk.simulate(n=200, onset_years=np.full(200, 1.0))
+    p = r["workflow_progress"]
+    f = p["pace_factors"]
+    log_rebuilt = f["resources"] + f["judgment"] - f["difficulty"]
+    ok = log_rebuilt < 699      # the pace itself is capped at exp(700)
+    assert ok.mean() > 0.9
+    np.testing.assert_allclose(np.exp(log_rebuilt[ok]), p["pace"][ok], rtol=1e-6)

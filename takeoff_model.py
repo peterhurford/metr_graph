@@ -287,6 +287,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # Today's production baseline already includes existing AI assistance.
     pace_history = np.full_like(capability_history, initial_throughput)
     reference_pace_history = np.full_like(capability_history, initial_throughput)
+    # log pace = resources + judgment - difficulty, recorded with the pace so
+    # the chart can show what moves it. Resources carry the trend blend.
+    factor_history = {k: np.zeros_like(capability_history)
+                      for k in ("resources", "judgment", "difficulty")}
+    factor_history["resources"][:] = np.log(initial_throughput)
+    last_factors = {k: v[:, 0].copy() for k, v in factor_history.items()}
     observation_index = np.ones(n, dtype=int)
     last_pace = np.full(n, initial_throughput)
     last_reference_pace = np.full(n, initial_throughput)
@@ -331,6 +337,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         labor_log = parallel * (compute_log + np.log(shares[2] / 0.2) + coding_log)
         experiment_log = parallel * (compute_log + np.log(shares[1] / 0.4))
         research_log = np.log(2) - np.logaddexp(-labor_log, -experiment_log) + quality_log
+        judgment_log = quality_log.copy()
         if experiment_slopes is not None and transfer:
             mid = t + dt / 2
             resource_log = np.log(initial_throughput) + parallel * compute_rate * mid
@@ -341,12 +348,14 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             # Substitute between two estimates of total research effort; do
             # not multiply the trend into feedback already calibrated from it.
             research_log = (1 - weight) * research_log + weight * proxy_log
+            judgment_log = (1 - weight) * quality_log
         log_amount = np.log(software_rate) + research_log + np.log(
             dt, out=np.full(n, -np.inf), where=dt > 0)
         # Derivative of the same discovery process being integrated below,
         # in multiples of today's software-progress rate. Snapshot near the
         # end of each monthly integration interval (at most one week long).
-        pace = np.exp(np.minimum(research_log - beta * (software - initial_stock), 700))
+        penalty = beta * (software - initial_stock)
+        pace = np.exp(np.minimum(research_log - penalty, 700))
         reference_progress = reference_software(t, software_rate, compute_rate,
                                                 parallel, initial_throughput, beta)
         reference_pace = np.exp(np.minimum(np.log(initial_throughput)
@@ -434,6 +443,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         observed = active & (end >= next_observation - 1e-12)
         rows = np.flatnonzero(observed)
         pace_history[rows, observation_index[rows]] = pace[rows]
+        for key, values in (("judgment", judgment_log),
+                            ("resources", research_log - judgment_log),
+                            ("difficulty", penalty)):
+            factor_history[key][rows, observation_index[rows]] = values[rows]
+            last_factors[key][active] = values[active]
         reference_pace_history[rows, observation_index[rows]] = reference_pace[rows]
         observation_index[rows] += 1
         last_pace[active] = pace[active]
@@ -445,6 +459,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     stopped = workflow_grid[None, :] > stopped_at[:, None]
     pace_history = np.where(stopped, last_pace[:, None], pace_history)
     reference_pace_history = np.where(stopped, last_reference_pace[:, None], reference_pace_history)
+    for key in factor_history:
+        factor_history[key] = np.where(stopped, last_factors[key][:, None], factor_history[key])
     # Retain all draws in each percentile, including slow/non-arriving paths.
     human_quantiles = [np.quantile(workflow_state(capability, baseline_capability_rate,
                                                   starts, halves, floor), [.1, .5, .9], axis=0)
@@ -498,6 +514,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             "validated_log": validated_history,
             "validated_baseline_months": validated_history / software_rate[:, None] * 12,
             "pace": pace_history,
+            "pace_factors": factor_history,
             "reference_pace": reference_pace_history,
             "reference_log": reference_history,
             "rate": rate_history,

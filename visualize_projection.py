@@ -17646,12 +17646,13 @@ def _tk_pace_fig(result, today, markers=(), history=None):
                                  name="Reconstructed past: middle 80%",
                                  hoverinfo="skip", showlegend=False))
         fig.add_trace(go.Scatter(
-            x=hx, y=hq[:, 1], mode="lines", name="Past year (reconstructed)",
+            x=hx, y=hq[:, 1], mode="lines", name="Past year (reconstructed from 1\u00d7 in mid-2025)",
             line=dict(color="#7f8c8d", width=2, dash="dot"),
             hovertemplate="%{x|%b %Y}<br>%{y:.2f}\u00d7 the 2025 pace"
                           "<extra>Reconstructed</extra>"))
         fig.add_vline(x=today, line_color="#555", line_width=1.5)
-        fig.add_annotation(x=today, y=0.5, yref="paper", text="Today", showarrow=False,
+        fig.add_annotation(x=today, y=0.5, yref="paper", showarrow=False,
+                           text=f"Today: {hq[-1, 1]:.1f}\u00d7 (assumed)",
                            xanchor="right", textangle=-90,
                            font=dict(size=11, color="#555"))
     for key, name, color, dash in (
@@ -17735,6 +17736,32 @@ def _tk_evidence_fig(params):
         fig.update_yaxes(type="log", title_text=ytitle, row=1, col=col)
     fig.update_annotations(font_size=12)
     fig.update_layout(height=280, margin=dict(l=50, r=15, t=40, b=30))
+    return fig
+
+
+def _tk_factors_fig(result, today):
+    """What multiplies into the research pace, each relative to today (median
+    over scenarios): labor and compute, research judgment, and difficulty,
+    drawn as the divisor it is. Their product is the pace."""
+    p = result["workflow_progress"]
+    f = p["pace_factors"]
+    x = _tk_dates(result, today)
+    fig = go.Figure()
+    for name, values, color, dash in (
+            ("Labor & compute", f["resources"], "#2980b9", None),
+            ("Research judgment", f["judgment"], "#8e44ad", None),
+            ("Harder ideas (divides)", -f["difficulty"], "#c0392b", None),
+            ("Net research pace", np.log(p["pace"]), "#333", "dot")):
+        rel = np.exp(np.median(values - values[:, :1], axis=0))
+        fig.add_trace(go.Scatter(
+            x=x, y=rel, mode="lines", name=name,
+            line=dict(color=color, width=2.5 if dash is None else 2, dash=dash),
+            hovertemplate="%{x|%b %Y}<br>%{y:.3g}\u00d7 today<extra>" + name + "</extra>"))
+    fig.add_hline(y=1, line_color="#999", line_width=1)
+    fig.update_layout(
+        height=340, margin=dict(l=55, r=20, t=20, b=40),
+        yaxis=dict(type="log", title="Multiplier vs today (median)"),
+        legend=dict(orientation="h", y=-0.15), hovermode="x")
     return fig
 
 
@@ -18216,19 +18243,15 @@ def render_takeoff():
                         f"{100 * np.mean(values <= horizon):.0f}% of scenarios get "
                         f"there by {end_date:%b %Y}. Needs neither full automation "
                         "nor a sustained streak.")
-    st.markdown(
-        "**Where the pace comes from**\n\n"
-        f"- **Today: {pace_today:g}\u00d7**, an assumption (sidebar). The past "
-        "year is reconstructed, rising from 1\u00d7 in mid-2025.\n"
-        "- **Up:** better models add AI labor and research judgment; compute "
-        f"grows {params['compute_growth']:g}\u00d7 a year.\n"
-        "- **Down:** each improvement is harder to find.\n"
-        f"- **In steps:** most gains wait for the next model "
-        f"({params['training_months']:g} months training, "
-        f"{params['validation_months']:g} validating).\n"
-        "- **Year one** blends in OpenAI's experiments-per-researcher trend.\n"
-        "- **Dashed line:** AI frozen at today's level. It drifts down, so "
-        "everything above it is AI improving AI.")
+    st.markdown("**What moves the pace**")
+    _fn_caption(
+        "Multiply the three factors and you get the dotted line.",
+        ("three factors",
+         "Labor and compute: AI coding labor and experiment compute, the scarcer "
+         "one limiting, blended with OpenAI's experiment trend in year one. "
+         "Research judgment rises with model capability. Harder ideas: each "
+         "improvement makes the next harder to find."))
+    st.plotly_chart(_tf(_tk_factors_fig(result, today)), width="stretch")
 
     st.subheader("2. People step out of the loop")
     _fn_caption(
