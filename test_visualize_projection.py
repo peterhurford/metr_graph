@@ -5176,6 +5176,57 @@ class TestRevenueChina:
         assert flat["Doubling time"] == "\u2014"
 
 
+class TestRevenueUsChina:
+    """US labs' summed ARR against the Chinese labs' sum."""
+
+    def _cmp(self):
+        us = [("OpenAI", *vp._parse_revenue(vp._OPENAI_REVENUE)),
+              ("Anthropic", *vp._parse_revenue(vp._ANTHROPIC_REVENUE))]
+        return us, vp._rev_us_china(us, vp._cn_rev_series())
+
+    def test_two_series_sum_matches_the_combined_line(self):
+        us, cmp = self._cmp()
+        assert cmp["us"] == vp._rev_combined_series(us[0][1], us[0][2],
+                                                    us[1][1], us[1][2])
+
+    def test_china_total_starts_when_every_lab_reports(self):
+        _, cmp = self._cmp()
+        firsts = [d[0] for _, d, _ in vp._cn_rev_series()]
+        assert cmp["start"] == max(firsts)
+        assert cmp["cn_now"] == pytest.approx(sum(
+            vp._rev_value_at(d, v, cmp["as_of"]) for _, d, v in vp._cn_rev_series()))
+
+    def test_the_us_stood_at_chinas_total_on_the_lag_date(self):
+        _, cmp = self._cmp()
+        us_d, us_v = cmp["us"]
+        assert cmp["us_reached"] < cmp["start"]
+        assert vp._rev_value_at(us_d, us_v, cmp["us_reached"]) == \
+            pytest.approx(cmp["cn_now"], rel=0.01)     # dates read to the day
+
+    def test_nowcast_continues_the_last_interval_and_matches_inside(self):
+        d = [datetime(2025, 1, 1), datetime(2025, 1, 11)]
+        assert vp._rev_value_nowcast(d, [1.0, 2.0], datetime(2025, 1, 21)) == \
+            pytest.approx(4.0)
+        assert vp._rev_value_nowcast(d, [1.0, 2.0], datetime(2025, 1, 6)) == \
+            vp._rev_value_at(d, [1.0, 2.0], datetime(2025, 1, 6))
+
+    def test_ratio_path_matches_the_cards_and_top_n_drops_the_tail(self):
+        us, cmp = self._cmp()
+        cn = vp._cn_rev_series()
+        grid, ratio = vp._rev_ratio_path(us, cn, cmp["start"], cmp["as_of"])
+        assert grid[0] == cmp["start"] and grid[-1] == cmp["as_of"]
+        assert ratio[0] == pytest.approx(cmp["ratio_start"])
+        assert ratio[-1] == pytest.approx(cmp["ratio_now"])
+        _, top = vp._rev_ratio_path(us, cn, cmp["start"], cmp["as_of"], top_n=2)
+        assert all(t > r for t, r in zip(top, ratio))
+
+    def test_first_reach_edges(self):
+        d = [datetime(2025, 1, 1), datetime(2025, 1, 3)]
+        assert vp._rev_first_reach(d, [1.0, 4.0], 2.0) == datetime(2025, 1, 2)
+        assert vp._rev_first_reach(d, [1.0, 4.0], 0.5) == d[0]
+        assert vp._rev_first_reach(d, [1.0, 4.0], 8.0) is None
+
+
 class TestMilestoneCardLayout:
     """Thirteen cards have to stay legible: at most four per row, and the
     rows balanced rather than filled greedily."""

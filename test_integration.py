@@ -579,10 +579,22 @@ class TestRevenueDefaults:
         import visualize_projection as vp
         at = self._rev_app()
         charts = at.get("plotly_chart")
-        assert len(charts) == 2
+        assert len(charts) == 4
         names = {t.get("name") for t in json.loads(charts[1].proto.spec)["data"]}
         assert set(vp._CN_REVENUE) <= names
         assert len(at.dataframe[-1].value) == len(vp._CN_REVENUE)
+
+    def test_us_vs_china_closes_the_tab(self):
+        import json
+        at = self._rev_app()
+        assert at.subheader[-1].value == "US vs China"
+        charts = at.get("plotly_chart")
+        names = [t.get("name") for t in json.loads(charts[-2].proto.spec)["data"]]
+        assert "OpenAI + Anthropic" in names and "Chinese labs" in names
+        ratio = [t.get("name") for t in json.loads(charts[-1].proto.spec)["data"]]
+        assert len(ratio) == 2 and all(n.startswith("Top 2 vs top 2") for n in ratio)
+        assert [m.label for m in at.metric][-4:] == [
+            "US labs' ARR", "Chinese labs' ARR", "US ÷ China", "China's lag"]
 
 
 # ===========================================================================
@@ -2100,10 +2112,11 @@ class TestTodayForwardMode:
         at.checkbox(key="today_fwd").set_value(True).run()
         _switch_tab(at, "Revenue")
         assert at.checkbox(key="today_fwd").value is True
-        # The projection converts; the Chinese-lab chart has no projection
-        # and keeps its history, like the RSI tab's diagnostic charts.
-        proj, china = self._specs(at)
-        assert self._starts_today(proj) and not self._starts_today(china)
+        # The projection converts; the Chinese-lab and US-vs-China charts have
+        # no projection and keep their history, like the RSI tab's diagnostics.
+        proj, *rest = self._specs(at)
+        assert self._starts_today(proj) and len(rest) == 3
+        assert not any(self._starts_today(sp) for sp in rest)
         # No tab's reset clears it.
         _switch_tab(at, "Pacing")
         at.button(key="pc_reset").click().run()

@@ -8160,11 +8160,28 @@ def _rev_combined_series(a_dates, a_vals, b_dates, b_vals):
     interpolated to the other's dates by `_rev_value_at`. Starts where both
     have data, so the sum never steps up merely because a series began.
     """
-    start = max(a_dates[0], b_dates[0])
-    out_dates = [d for d in sorted(set(a_dates) | set(b_dates)) if d >= start]
-    out_vals = [_rev_value_at(a_dates, a_vals, d) + _rev_value_at(b_dates, b_vals, d)
+    return _rev_sum_series([(a_dates, a_vals), (b_dates, b_vals)])
+
+
+def _rev_sum_series(series):
+    """Sum any number of `(dates, vals)` ARR series the same way: on the union
+    of their report dates, from the first date every one has data."""
+    start = max(dates[0] for dates, _ in series)
+    out_dates = sorted({d for dates, _ in series for d in dates if d >= start})
+    out_vals = [sum(_rev_value_at(dates, vals, d) for dates, vals in series)
                 for d in out_dates]
     return out_dates, out_vals
+
+
+def _rev_first_reach(dates, vals, target):
+    """The date a series first reached `target`, log-linear between reports;
+    None if it never has, and its first date if it already had."""
+    i = next((i for i, v in enumerate(vals) if v >= target), None)
+    if i is None or i == 0:
+        return None if i is None else dates[0]
+    lo, hi = np.log2(vals[i - 1]), np.log2(vals[i])
+    f = (np.log2(target) - lo) / (hi - lo)
+    return dates[i - 1] + timedelta(days=float(f * (dates[i] - dates[i - 1]).days))
 
 
 def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=None,
@@ -8734,8 +8751,10 @@ def render_revenue():
          "/openai-held-1-billion-revenue-lead-anthropic-first-quarter)."),
         ("projections, not forecasts", PROJ_DISCLAIMER.strip()))
 
-    _render_rev_china([("OpenAI", openai_dates, openai_vals),
-                       ("Anthropic", anthropic_dates, anthropic_vals)], show_labels)
+    _us_series = [("OpenAI", openai_dates, openai_vals),
+                  ("Anthropic", anthropic_dates, anthropic_vals)]
+    _render_rev_china(_us_series, show_labels)
+    _render_rev_us_china(_us_series)
 
 _CN_REV_BASIS_LABEL = {"company": "Company-stated", "press": "Press-reported"}
 
@@ -8842,6 +8861,178 @@ def _render_rev_china(ref_series, show_labels):
          "DeepSeek's only statement of its own, a March 2025 \u201ctheoretical\u201d "
          "$562k a day, is excluded because the post says it is not actual revenue."))
 
+
+
+def _cn_rev_series():
+    """Each Chinese lab's `(lab, dates, vals)`, basis and notes dropped."""
+    return [(lab, *_parse_revenue([(d, v) for d, v, _, _ in spec["points"]]))
+            for lab, spec in _CN_REVENUE.items()]
+
+
+def _rev_us_china(us_series, cn_series):
+    """US labs' summed ARR against Chinese labs' summed ARR.
+
+    Each side is summed by `_rev_sum_series`, so China's total starts on the
+    first date every listed lab reports. Both are read on China's latest
+    report date, and `us_reached` is when the US total first stood at China's
+    total then."""
+    us_d, us_v = _rev_sum_series([(d, v) for _, d, v in us_series])
+    cn_d, cn_v = _rev_sum_series([(d, v) for _, d, v in cn_series])
+    as_of, start = cn_d[-1], cn_d[0]
+    def us_at(d):
+        return sum(_rev_value_at(d_, v_, d) for _, d_, v_ in us_series)
+    us_now, cn_now, us_start = us_at(as_of), cn_v[-1], us_at(start)
+    return {
+        "us": (us_d, us_v), "cn": (cn_d, cn_v),
+        "as_of": as_of, "start": start,
+        "us_now": us_now, "cn_now": cn_now,
+        "ratio_now": us_now / cn_now, "ratio_start": us_start / cn_v[0],
+        "us_reached": _rev_first_reach(us_d, us_v, cn_now),
+    }
+
+
+def _rev_value_nowcast(dates, vals, d):
+    """`_rev_value_at`, but past the last report continued at the last
+    interval's growth rate instead of held flat."""
+    if len(dates) < 2 or d <= dates[-1]:
+        return _rev_value_at(dates, vals, d)
+    g = np.log(vals[-1] / vals[-2]) / (dates[-1] - dates[-2]).days
+    return float(vals[-1] * np.exp(g * (d - dates[-1]).days))
+
+
+def _rev_ratio_path(us_series, cn_series, start, end, top_n=None, nowcast=False):
+    """US ÷ China summed ARR, daily from `start` to `end`. `top_n` sums only
+    each side's largest labs on each day; `nowcast` reads past a lab's last
+    report with `_rev_value_nowcast` instead of holding it flat."""
+    read = _rev_value_nowcast if nowcast else _rev_value_at
+
+    def total(series, d):
+        vals = sorted((read(ds, vs, d) for _, ds, vs in series), reverse=True)
+        return sum(vals[:top_n])
+
+    grid = [start + timedelta(days=i) for i in range((end - start).days + 1)]
+    return grid, [total(us_series, d) / total(cn_series, d) for d in grid]
+
+
+def _render_rev_us_china(us_series):
+    """The two US labs' summed ARR against the Chinese labs' sum. Data only,
+    like the chart above it."""
+    cn_series = _cn_rev_series()
+    cmp = _rev_us_china(us_series, cn_series)
+    us_names = " + ".join(n for n, _, _ in us_series)
+    as_of, start = cmp["as_of"], cmp["start"]
+    lag_mo = (as_of - cmp["us_reached"]).days / 30.44
+
+    st.subheader("US vs China")
+    _fn_line(
+        f"{us_names} against all {len(cn_series)} Chinese labs above, each side "
+        "summed. China's total starts when the last of its labs first reports.",
+        (f"{us_names}", "Only the two US labs this tab tracks. Other US model "
+                        "sellers (Google, xAI and others) are not in it, so the "
+                        "US side is a floor."),
+        ("each side summed", "Each lab is interpolated log-linearly between its "
+                             "reports and held flat past its last one, never "
+                             "extrapolated, so a lab that has not reported lately "
+                             "pulls its side's total down."))
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("US labs' ARR", _fmt_revenue(cmp["us_now"]),
+              help=f"{us_names}, summed, on {as_of:%b %d, %Y}.")
+    c2.metric("Chinese labs' ARR", _fmt_revenue(cmp["cn_now"]),
+              help=f"{', '.join(n for n, _, _ in cn_series)}, summed, "
+                   f"on {as_of:%b %d, %Y}, China's latest report.")
+    c3.metric("US ÷ China", f"{cmp['ratio_now']:.0f}×",
+              delta=f"from {cmp['ratio_start']:.0f}× on {start:%b %d}",
+              delta_color="off",
+              help="Each lab held flat since its last report. The chart below "
+                   "also projects every lab to today, and matches lab counts.")
+    c4.metric("China's lag", f"{lag_mo:.0f} months",
+              help=f"The US labs' total first stood at "
+                   f"{_fmt_revenue(cmp['cn_now'])} around "
+                   f"{cmp['us_reached']:%b %Y}. A lag in revenue, not in "
+                   "capability.")
+
+    fig = go.Figure()
+    x_start = datetime(2024, 7, 1)
+    us_d, us_v = cmp["us"]
+    cn_d, cn_v = cmp["cn"]
+    for name, dates, vals, color in [(us_names, us_d, us_v, '#1f4e9c'),
+                                     ("Chinese labs", cn_d, cn_v, '#d62828')]:
+        keep = [(d, v) for d, v in zip(dates, vals) if d >= x_start]
+        fig.add_trace(go.Scatter(
+            x=[d for d, _ in keep], y=[v for _, v in keep],
+            mode='lines+markers', line=dict(color=color, width=2.5),
+            marker=dict(color=color, size=6), name=name,
+            hovertemplate=f"{name}<br>%{{x|%b %d, %Y}}<br>$%{{y:.1f}}B<extra></extra>"))
+    fig.add_hline(y=cmp["cn_now"], line=dict(color='#d62828', width=1, dash='dot'))
+    fig.add_trace(go.Scatter(
+        x=[cmp["us_reached"], as_of], y=[cmp["cn_now"]] * 2,
+        mode='markers', marker=dict(color='#d62828', size=9, symbol='diamond'),
+        name="China's total today, and when the US was there",
+        hovertext=[f"US labs reached {_fmt_revenue(cmp['cn_now'])} "
+                   f"~{cmp['us_reached']:%b %Y}",
+                   f"Chinese labs {_fmt_revenue(cmp['cn_now'])} on {as_of:%b %d, %Y}"],
+        hoverinfo='text'))
+    today = _add_today_vline(fig)
+    tickvals = [0.3, 1, 3, 10, 30, 100, 300]
+    fig.update_layout(
+        yaxis_title="ARR ($ Billions)", yaxis_type="log",
+        xaxis_range=[x_start, today + timedelta(days=20)],
+        height=450, template="plotly_white",
+        legend=dict(orientation='h', x=0, y=1.02, yanchor='bottom'),
+        hovermode='closest')
+    fig.update_yaxes(
+        tickvals=tickvals,
+        ticktext=[_fmt_revenue(v).replace(".0B", "B") for v in tickvals],
+        range=[np.log10(1), np.log10(max(us_v) * 1.5)])
+    st.plotly_chart(fig, width="stretch")
+    _render_rev_us_china_ratio(us_series, cn_series, start, as_of)
+    _fn_caption(
+        "Neither side's total is on one basis: the labs count different things.",
+        ("different things",
+         "Anthropic includes sales through cloud partners and OpenAI does not; "
+         "Alibaba's figure is a stated floor for its model-services line only; "
+         "MiniMax's August figure may be one week annualized. See each lab's row "
+         "in the table above."))
+
+
+def _render_rev_us_china_ratio(us_series, cn_series, start, as_of):
+    """US ÷ China over time, each side's top labs only, held flat and
+    projected to today."""
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    top_n = len(us_series)
+    name, color = f"Top {top_n} vs top {top_n}", '#e07a5f'
+    fig = go.Figure()
+    last = {}
+    for nowcast, dash, end in [(False, 'solid', as_of), (True, 'dash', today)]:
+        grid, ratio = _rev_ratio_path(us_series, cn_series, start, end,
+                                      top_n=top_n, nowcast=nowcast)
+        suffix = "projected to today" if nowcast else "held flat"
+        fig.add_trace(go.Scatter(
+            x=grid, y=ratio, mode='lines',
+            line=dict(color=color, width=2.5 if not nowcast else 1.8, dash=dash),
+            name=f"{name}, {suffix}",
+            hovertemplate=f"{name} ({suffix})<br>%{{x|%b %d, %Y}}<br>"
+                          "US ÷ China %{y:.1f}×<extra></extra>"))
+        last[nowcast] = ratio[-1]
+    _add_today_vline(fig)
+    fig.update_layout(
+        yaxis_title="US ÷ China ARR", height=380, template="plotly_white",
+        xaxis_range=[start - timedelta(days=5), today + timedelta(days=10)],
+        legend=dict(orientation='h', x=0, y=1.02, yanchor='bottom'),
+        hovermode='closest')
+    fig.update_yaxes(rangemode='tozero', ticksuffix='×')
+    st.plotly_chart(fig, width="stretch")
+    _fn_caption(
+        f"With lab counts matched the gap is {last[False]:.0f}×, or "
+        f"{last[True]:.0f}× projecting every lab to today.",
+        ("lab counts matched",
+         f"Each side's {top_n} largest labs on each day, so China's long tail "
+         "is not counted against a US side that has none."),
+        ("projecting every lab to today",
+         "Past its last report each lab continues at the growth rate between "
+         "its last two reports, rather than held flat. A nowcast, not data: "
+         f"Anthropic has not reported since {_parse_revenue(_ANTHROPIC_REVENUE)[0][-1]:%b %d}."))
 
 # ── Employment ────────────────────────────────────────────────────────────
 
