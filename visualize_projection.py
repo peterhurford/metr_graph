@@ -17886,7 +17886,7 @@ _TK_ECI_FLOOR_YEARS = 1.0
 _TK_ECI_FLOOR_FADE_YEARS = 1.0
 
 # Ultraintelligence, as an ECI level each scenario's capability path must reach.
-_TK_ULTRA_ECI = 290.0
+_TK_ULTRA_ECI = 250.0
 
 
 def _tk_first_reach(paths, years, level):
@@ -18097,7 +18097,7 @@ def render_takeoff():
         number("Project through (year end)", "end_year", datetime.now().year, 2050, 1)
         with st.expander("What decides ultraintelligence", expanded=True):
             st.caption("Across a plausible range, each moves the ultraintelligence date "
-                       "by 4\u201321 months; everything under Advanced moves it a few "
+                       "by 2\u20137 months; everything under Advanced moves it a few "
                        "months at most.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")

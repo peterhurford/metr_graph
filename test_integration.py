@@ -1369,7 +1369,7 @@ class TestTakeoffTab:
         labels = [m.label for m in at.metric]
         assert labels[:3] == ["Full coding automation (RSI tab)",
                               "RSI: AI directs research",
-                              "Ultraintelligence: ECI 290"]
+                              "Ultraintelligence: ECI 250"]
         cis = [c.value for c in at.caption if c.value.startswith("80% CI: ")]
         assert len(cis) >= 3
         assert any("RSI projections under construction" in w.value for w in at.warning)

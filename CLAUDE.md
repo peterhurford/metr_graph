@@ -87,7 +87,7 @@ it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
 The sidebar leads with the four parameters a one-at-a-time sweep (uncapped judgment) found
-move ultraintelligence 4–21 months: parallelization, r, the judgment elasticity, ρ; the
+move ultraintelligence 2–7 months: parallelization, r, the judgment elasticity, ρ; the
 rest, data-center compute included (~1 month), sit in one *Advanced* expander. Retarget
 that grouping if a rerun of the sweep reorders them.
 AI judgment is gated by the direction stage's human share, uncapped
@@ -97,7 +97,7 @@ can fall or rise as AI improves; the b card's hover gives b at 100× when it is 
 that runs away numerically counts as reaching RSI then (unless the human floor sits above
 the bar): its capability has passed any coding milestone
 (`test_a_runaway_reaches_rsi_unless_the_floor_blocks_it`). Ultraintelligence is the first
-month a draw's ECI reaches `_TK_ULTRA_ECI` (290). ECI at RSI is fixed by construction:
+month a draw's ECI reaches `_TK_ULTRA_ECI` (250). ECI at RSI is fixed by construction:
 human hours depend only on capability, so RSI is a capability threshold.
 A *Takeoff speed b* card beside the 2×/5× cards reads the AI Futures Model's statistic off the
 settings (`_tk_takeoff_b`): with AI directing research, uplift ∝ effort^(s/β), so successive
