@@ -1109,7 +1109,7 @@ class TestRsiTab:
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = t[t["Milestone"] == "Leading company revenue >$1T"]
         assert len(row) == 1
-        assert row.iloc[0]["Weight"].startswith("10%")
+        assert row.iloc[0]["Weight"].startswith("0%")
         # Every milestone gets a row, and the weights editor an input each.
         assert len(t) == 13
 
@@ -1127,7 +1127,7 @@ class TestRsiTab:
         assert label in [str(m.label) for m in at.metric]
         table = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = table[table["Milestone"] == label]
-        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("5%")
+        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("6%")
         figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
         fig = next(f for f in figures if any(t.get('name') == 'OpenAI observations'
                                              for t in f['data']))
@@ -1144,9 +1144,9 @@ class TestRsiTab:
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = t[t["Milestone"] == "Code per person reaches 30x"]
         assert len(row) == 1
-        assert row.iloc[0]["Weight"].startswith("5%")
+        assert row.iloc[0]["Weight"].startswith("6%")
         staff = t[t["Milestone"].str.contains("acceleration")]
-        assert staff.iloc[0]["Weight"].startswith("5%")
+        assert staff.iloc[0]["Weight"].startswith("7%")
 
     def test_rd_automation_section_and_blend_row(self):
         """The index's own section, card and weighted row — and the fitted
@@ -1158,7 +1158,7 @@ class TestRsiTab:
         assert label in [str(m.label) for m in at.metric]
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = t[t["Milestone"] == label]
-        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("5%")
+        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("7%")
         figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
         fig = next(f for f in figures
                    if any(t.get("error_y") for t in f["data"]))
@@ -1182,7 +1182,7 @@ class TestRsiTab:
         assert label in [str(m.label) for m in at.metric]
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = t[t["Milestone"] == label]
-        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("15%")
+        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("20%")
         figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
         fig = next(f for f in figures if any(
             "AL5 measured" in (tr.get("name") or "") for tr in f["data"]))

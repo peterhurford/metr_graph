@@ -3704,12 +3704,12 @@ class TestRsiCode:
         the R&D automation index; the staff survey then gave 5 more to AL5."""
         slug = f"code_{vp._RSI_CODE_TARGET:.0f}x"
         assert slug == "code_30x"
-        assert vp._PC_RSI_WEIGHTS[slug] == 5.0
-        assert vp._PC_RSI_WEIGHTS["experiments_10x"] == 5.0
-        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 5.0
+        assert vp._PC_RSI_WEIGHTS[slug] == 6.0
+        assert vp._PC_RSI_WEIGHTS["experiments_10x"] == 6.0
+        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 7.0
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
         assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
-        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 5.0
+        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 6.0
 
     def test_the_milestone_is_on_the_internal_clock(self):
         """Driven by models Anthropic uses internally before release, like
@@ -3854,10 +3854,10 @@ class TestRsiAutomation:
         at 5 while AL5 takes the single largest weight."""
         slug = f"rdauto_{vp._RSI_AUTO_TARGET:.0f}"
         assert slug == "rdauto_90"
-        assert vp._PC_RSI_WEIGHTS[slug] == 5.0
+        assert vp._PC_RSI_WEIGHTS[slug] == 7.0
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
         assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
-        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 5.0
+        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 7.0
         al5 = f"al5_{vp._RSI_AL5_TARGET:.0f}"
         assert al5 == "al5_90"
         assert vp._PC_RSI_WEIGHTS[al5] == max(vp._PC_RSI_WEIGHTS.values())
@@ -5691,7 +5691,7 @@ class TestPacing:
         # it keys the blend weight, so "eci_188" would silently unweight it.
         slugs = [f"eci_{t:g}".replace(".", "_") for t in vp._PC_ECI_TARGETS]
         assert slugs == ["eci_187_5", "eci_200"]
-        assert [vp._PC_RSI_WEIGHTS[s] for s in slugs] == [5.0, 10.0]
+        assert [vp._PC_RSI_WEIGHTS[s] for s in slugs] == [0.0, 0.0]
 
     def test_rli_eta_reproduces_the_rli_tab_defaults(self):
         """The RLI 90% card is the RLI tab at its defaults: single OLS in
@@ -5950,7 +5950,7 @@ class TestPacing:
         """ARR is earned by shipped models, so the crossing is on the
         release clock and comes back by the report lag like METR/ECI/RLI —
         never on the internal-eval clock, which would double-count it."""
-        assert vp._PC_RSI_WEIGHTS["rev_1t"] == 10.0
+        assert vp._PC_RSI_WEIGHTS["rev_1t"] == 0.0
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100
         days = np.full(20000, 500.0)
         lo, hi = vp._PC_REPORT_LAG_DAYS

@@ -14982,27 +14982,28 @@ def _pc_ramp_for(timing_label, ramp_days):
 # late-but-uncertain milestone widens the answer instead of just shifting it.
 # Keyed by slug because the card labels are built from the target constants.
 _PC_RSI_WEIGHTS = {
-    "metr_p50": 5.0,
-    "metr_p80": 10.0,
-    "eci_187_5": 5.0,
-    "eci_200": 10.0,
-    "rli_90": 10.0,
-    "cobench_85": 5.0,
-    "staff_10x": 5.0,
-    # The two output-volume proxies give up 5 points each to the automation
-    # index: lines merged and experiments launched are things a coding model
-    # inflates directly, while the index rates the share of the work itself
-    # that the model leads — nearer the question the blend is asking.
-    "code_30x": 5.0,
-    "experiments_10x": 5.0,
-    # The AL4 bar is now an intermediate rung: AL5 is the headline, and takes
-    # the largest single weight. Its 15 comes from RLI-90 and the staff survey
-    # (broad substitution proxies the ladder measures more directly) and from
-    # the AL4 card itself, which no longer has to stand in for full autonomy.
-    "rdauto_90": 5.0,
-    "al5_90": 15.0,
-    "nextstep_90": 10.0,
-    "rev_1t": 10.0,
+    # The remaining cards' weights were scaled by 4/3 to sum to 100 when the ECI
+    # and revenue cards were zeroed; the two output-volume proxies and METR p80
+    # absorb the rounding.
+    "metr_p50": 7.0,
+    "metr_p80": 13.0,
+    # The ECI and revenue cards stay on the tab but carry no weight: general
+    # capability and earnings are not measures of AI doing AI research.
+    "eci_187_5": 0.0,
+    "eci_200": 0.0,
+    "rli_90": 13.0,
+    "cobench_85": 7.0,
+    "staff_10x": 7.0,
+    # Lines merged and experiments launched are things a coding model inflates
+    # directly, so these output-volume proxies sit below the automation index.
+    "code_30x": 6.0,
+    "experiments_10x": 6.0,
+    # AL5 is the headline rung and takes the largest single weight; AL4 is an
+    # intermediate rung that no longer has to stand in for full autonomy.
+    "rdauto_90": 7.0,
+    "al5_90": 20.0,
+    "nextstep_90": 14.0,
+    "rev_1t": 0.0,
 }
 _PC_RSI_W_KEY = "pc_rsiw_"        # session-state prefix, one float per slug
 # Milestone cards wider than this truncate their labels mid-word.

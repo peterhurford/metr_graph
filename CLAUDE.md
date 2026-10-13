@@ -1270,7 +1270,8 @@ evals, and the checkbox help says so.
 
 Under the cards sits *RSI projection (tentative)* (`_pc_render_rsi_blend()`):
 no single benchmark defines the threshold, so each milestone is treated as one
-candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets. The result
+candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets. The ECI and revenue cards carry
+zero weight: they date general capability and earnings, not AI doing AI research. The result
 is `_pc_rsi_blend()`, the **mixture of their date distributions, not an average
 of their medians**, drawn as a CDF (`_pc_rsi_dist_fig()`) between the
 cards and the weights table — cumulative rather than a density because a mixture
