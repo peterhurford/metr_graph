@@ -6474,3 +6474,18 @@ class TestTakeoffRsiCalibration:
         coding = vp._tk_survey_coding(*args, 2.0, 0.6)
         assert vp._TK_DEFAULTS["tk_coding_slope"] == coding > 0
         assert vp._tk_survey_coding(*args, 4.0, 0.6) < coding
+
+
+class TestTakeoffB:
+    """The AI Futures Model's takeoff statistic, read off Takeoff's settings."""
+
+    def test_b_is_one_where_judgment_matches_difficulty(self):
+        p = dict(taste_slope=0.5, difficulty=0.5, transfer=60, uncertainty=0)
+        assert vp._tk_takeoff_b(p)["median"] == pytest.approx(1.0)
+        faster = vp._tk_takeoff_b(dict(p, taste_slope=1.0))
+        assert faster["median"] == pytest.approx(2 ** -0.5)
+        assert faster["accelerating"] == 1.0
+
+    def test_no_feedback_has_no_b(self):
+        assert vp._tk_takeoff_b(dict(taste_slope=0.0, difficulty=0.5,
+                                     transfer=60, uncertainty=40)) is None

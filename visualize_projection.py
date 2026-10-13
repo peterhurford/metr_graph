@@ -17778,6 +17778,26 @@ def _tk_factors_fig(result, today):
     return fig
 
 
+def _tk_takeoff_b(params, n=20000):
+    """The AI Futures Model's takeoff statistic for these settings.
+
+    With AI directing research, judgment grows as exp(s * software) and
+    difficulty makes software grow as log(cumulative effort) / beta, so the
+    research uplift goes as effort^(s / beta) and successive uplift doublings
+    take b = 2^(beta / s - 1) times as long. Returns {'median', 'accelerating'}
+    over the model's own spread on s and beta, or None without feedback.
+    """
+    s, beta = params["taste_slope"], params["difficulty"]
+    if s <= 0 or params["transfer"] <= 0:
+        return None
+    rng = np.random.default_rng(0)
+    spread = params["uncertainty"] / 100
+    ratio = beta * np.exp(spread * rng.uniform(-1, 1, n)) / (
+        s * np.exp(spread * rng.uniform(-1, 1, n)))
+    b = 2 ** (ratio - 1)
+    return {"median": float(2 ** (beta / s - 1)), "accelerating": float(np.mean(b < 1))}
+
+
 def _tk_eci(result, params):
     """Each scenario's capability path read as ECI, anchored on the US frontier.
 
@@ -18317,14 +18337,23 @@ def render_takeoff():
         result, today, markers,
         history=_tk_pace_history(np.exp(experiment_starts) * pace_yield, today))),
         width="stretch")
-    for col, (name, values) in zip(st.columns(len(result["pace_events_2025"])),
-                                   result["pace_events_2025"].items()):
+    cols = st.columns(len(result["pace_events_2025"]) + 1)
+    for col, (name, values) in zip(cols, result["pace_events_2025"].items()):
         col.metric(f"Research at {name.split()[0]} the 2025 pace",
                    _tk_date(takeoff.quantile(values, .5, horizon), today),
                    help=f"Median first month research pace reaches {name}; "
                         f"{100 * np.mean(values <= horizon):.0f}% of scenarios get "
                         f"there by {end_date:%b %Y}. Needs neither full automation "
                         "nor a sustained streak.")
+    b = _tk_takeoff_b(params)
+    cols[-1].metric(
+        "Takeoff speed b", "no feedback" if b is None else f"{b['median']:.2f}",
+        help=None if b is None else
+        "Once AI directs research, each research speed-up doubling takes b times as "
+        "long as the last, from judgment alone: below 1 it accelerates. The AI "
+        "Futures Model's statistic, 2^(difficulty / judgment elasticity \u2212 1). "
+        f"Here {100 * b['accelerating']:.0f}% of scenarios accelerate. Their Dec 2025 "
+        "median is 1.21 (38% accelerate); AI 2027's was 0.64\u20130.78.")
     st.markdown("**What moves the pace**")
     _fn_caption(
         "Multiply the three factors and you get the dotted line.",

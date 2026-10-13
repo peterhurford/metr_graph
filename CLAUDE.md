@@ -94,6 +94,10 @@ AI judgment is gated by the direction stage's human share, uncapped
 (`test_ai_judgment_only_counts_where_ai_directs_research`). Superintelligence is the first
 month a draw's ECI reaches `_TK_ASI_ECI` (290). ECI at RSI is fixed by construction:
 human hours depend only on capability, so RSI is a capability threshold.
+A *Takeoff speed b* card beside the 2×/5× cards reads the AI Futures Model's statistic off the
+settings (`_tk_takeoff_b`): with AI directing research, uplift ∝ effort^(s/β), so successive
+uplift doublings take b = 2^(β/s − 1) as long (`TestTakeoffB`). It uses the blended judgment
+elasticity the simulator receives.
 `tk_dc_compute` (default on) feeds compute growth from the Data Centers tab:
 `_tk_dc_compute` samples the US largest-run projection (`_pc_projection`, as Pacing does)
 and averages each path over a fixed `_TK_DC_AVG_YEARS` (not the chart horizon, which
