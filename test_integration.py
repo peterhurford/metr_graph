@@ -965,21 +965,30 @@ class TestTakeoffTab:
         at = self._app()
         assert at.session_state["_active_tab"] == "Takeoff"
         assert any(h.value == "Takeoff" for h in at.header)
-        # RSI evidence, pace, pace factors, people and ECI.
-        assert len(at.get("plotly_chart")) == 5
-        assert [s.value for s in at.subheader][:4] == [
+        # RSI evidence, pace, pace factors, people, ECI and the distributions.
+        assert len(at.get("plotly_chart")) == 6
+        assert [s.value for s in at.subheader][:5] == [
             "What the RSI tab feeds in", "1. Research speeds up", "2. People step out of the loop",
-            "3. What it does to capability (ECI)"]
-        assert at.number_input(key="tk_end_year").value == 2031
-        assert not _has_widget(at, "number_input", "tk_onset_low")
+            "3. What it does to capability (ECI)", "4. When it happens, and how fast"]
         import json
+        dist = json.loads(at.get("plotly_chart")[5].proto.spec)
+        # Density and cumulative share for RSI, ultraintelligence and the gap.
+        assert len(dist["data"]) == 6
+        import base64
+        ys = lambda y: (np.frombuffer(base64.b64decode(y["bdata"]), dtype=y["dtype"])
+                        if isinstance(y, dict) else np.asarray(y, dtype=float))
+        cdfs = [ys(d["y"]) for d in dist["data"] if d.get("yaxis") in ("y3", "y4")]
+        assert len(cdfs) == 3
+        assert all(((0 <= y) & (y <= 100)).all() and (np.diff(y) >= -1e-9).all() for y in cdfs)
+        assert at.number_input(key="tk_end_year").value == 2030
+        assert not _has_widget(at, "number_input", "tk_onset_low")
         evidence = json.loads(at.get("plotly_chart")[0].proto.spec)
         titles = " ".join(a["text"] for a in evidence["layout"]["annotations"])
         for name in ("Next-step wins", "Staff speedup", "Experiments/researcher"):
             assert name in titles
         eci = json.loads(at.get("plotly_chart")[4].proto.spec)
         [projected] = [d for d in eci["data"] if d.get("name") == "Projected ECI"]
-        assert projected["x"][-1].startswith("2031-12-31")
+        assert projected["x"][-1].startswith("2030-12")
         import base64
 
         def _ys(trace):
@@ -1041,7 +1050,7 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", old_simulator)
         at = self._app()
         assert tk.simulate is not old_simulator
-        assert len(at.get("plotly_chart")) == 5
+        assert len(at.get("plotly_chart")) == 6
 
     def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
         import takeoff_model as tk
@@ -1153,11 +1162,17 @@ class TestTakeoffTab:
         at.run()
         _assert_no_error(at, "Takeoff / inherited RSI penalty")
         assert at.session_state["rsi_atc_penalty"] == 50
+        cards = [(m.label, m.value) for m in at.metric]
         at.number_input(key="tk_end_year").set_value(2035).run()
         _assert_no_error(at, "Takeoff / year end")
         assert at.query_params["tk_end_year"] == ["2035"]
+        # The year crops the charts; the cards come from scenarios run to 2040.
+        assert [(m.label, m.value) for m in at.metric] == cards
+        eci = json.loads(at.get("plotly_chart")[4].proto.spec)
+        [projected] = [d for d in eci["data"] if d.get("name") == "Projected ECI"]
+        assert projected["x"][-1].startswith("2035-12")
         at.button(key="tk_reset").click().run()
-        assert at.number_input(key="tk_end_year").value == 2031
+        assert at.number_input(key="tk_end_year").value == 2030
         assert "tk_end_year" not in at.query_params
         assert at.session_state["rsi_atc_penalty"] == 50
 

@@ -17667,7 +17667,7 @@ def _render_anchor_links(scroll_to, tab_slug):
 _TK_DEFAULTS = {"tk_" + k: v for k, v in takeoff.DEFAULTS.items()
                 if k not in ("onset_low", "onset_high", "years")}
 _TK_DEFAULTS.update({
-    "tk_end_year": 2031, "tk_cal_weight": 50.0, "tk_cal_compute": 2.0,
+    "tk_end_year": 2030, "tk_cal_weight": 50.0, "tk_cal_compute": 2.0,
     "tk_cal_capability": 2.0, "tk_cal_yield": 1.0, "tk_cal_validated": 0.0,
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
     "tk_pace_today": 1.7, "tk_returns": 1.0, "tk_dc_compute": True,
@@ -18026,6 +18026,71 @@ def _tk_factors_fig(result, today):
     return fig
 
 
+def _tk_density(samples, edges):
+    """Share of all draws per year of x in each bin of `edges`, lightly
+    smoothed; draws outside the edges (never arriving included) count in the
+    denominator, so the curve's area is the share arriving inside."""
+    counts = np.histogram(samples[np.isfinite(samples)], edges)[0]
+    counts = np.convolve(counts, [0.25, 0.5, 0.25], mode="same")
+    return counts / len(samples) / np.diff(edges)
+
+
+def _tk_dist_fig(rsi, ultra, gap, today, view_years, sim_end):
+    """Section 4: density (top) and cumulative share (bottom) of the RSI and
+    ultraintelligence dates (left, calendar, cropped to the chart year) and of
+    the RSI-to-ultraintelligence gap (right, among draws reaching RSI by
+    `sim_end`; a gap past it counts in the denominator, never arriving)."""
+    from plotly.subplots import make_subplots
+    fig = make_subplots(rows=2, cols=2, shared_xaxes="columns", vertical_spacing=0.08,
+                        horizontal_spacing=0.09,
+                        subplot_titles=["When each milestone arrives",
+                                        "RSI \u2192 ultraintelligence", "", ""])
+    month = 1 / 12
+    edges = np.arange(0, view_years + month, month)
+    mids = [today + timedelta(days=float(y * 365.25)) for y in (edges[:-1] + edges[1:]) / 2]
+    for name, samples, color in (("RSI", rsi, "#d68910"),
+                                 ("Ultraintelligence", ultra, "#c0392b")):
+        by_end = 100 * np.mean(samples <= view_years)
+        fig.add_trace(go.Scatter(
+            x=mids, y=_tk_density(samples, edges) / 12 * 100, mode="lines", name=name,
+            line=dict(color=color, width=2.5), fill="tozeroy", legendgroup=name,
+            hovertemplate="%{x|%b %Y}: %{y:.1f}% of scenarios<extra>" + name + "</extra>"),
+            row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=mids, y=100 * takeoff.cdf(samples, (edges[:-1] + edges[1:]) / 2), mode="lines",
+            name=name, line=dict(color=color, width=2.5), legendgroup=name, showlegend=False,
+            hovertemplate="By %{x|%b %Y}: %{y:.0f}%<extra>" + name
+                          + f" ({by_end:.0f}% by the chart's end)</extra>"),
+            row=2, col=1)
+    finite = gap[np.isfinite(gap)]
+    lo = min(-0.5, np.floor(np.quantile(finite, 0.01) * 12) / 12) if finite.size else -0.5
+    hi = max(1.0, np.ceil(np.quantile(finite, 0.99))) if finite.size else 5.0
+    g_edges = np.arange(lo, hi + month, month)
+    g_mids = (g_edges[:-1] + g_edges[1:]) / 2
+    fig.add_trace(go.Scatter(
+        x=g_mids, y=_tk_density(gap, g_edges) / 12 * 100, mode="lines",
+        name="RSI \u2192 ultraintelligence", line=dict(color="#8e44ad", width=2.5),
+        fill="tozeroy", legendgroup="gap",
+        hovertemplate="%{x:.1f} yr: %{y:.1f}% of scenarios<extra></extra>"), row=1, col=2)
+    fig.add_trace(go.Scatter(
+        x=g_mids, y=100 * takeoff.cdf(gap, g_mids), mode="lines", showlegend=False,
+        name="RSI \u2192 ultraintelligence", line=dict(color="#8e44ad", width=2.5),
+        legendgroup="gap", hovertemplate="Within %{x:.1f} yr: %{y:.0f}%<extra></extra>"),
+        row=2, col=2)
+    fig.add_vline(x=0, line_color="#999", line_width=1, row=1, col=2)
+    fig.add_vline(x=0, line_color="#999", line_width=1, row=2, col=2)
+    fig.update_yaxes(title_text="% of scenarios per month", row=1, col=1, rangemode="tozero")
+    fig.update_yaxes(rangemode="tozero", row=1, col=2)
+    fig.update_yaxes(title_text="Cumulative %", range=[0, 100], row=2, col=1)
+    fig.update_yaxes(range=[0, 100], row=2, col=2)
+    fig.update_xaxes(range=[mids[0], mids[-1]], col=1)
+    fig.update_xaxes(range=[g_edges[0], g_edges[-1]], col=2)
+    fig.update_xaxes(title_text="Years from RSI to ECI " f"{_TK_ULTRA_ECI:g}", row=2, col=2)
+    fig.update_layout(height=560, margin=dict(l=55, r=20, t=40, b=40),
+                      legend=dict(orientation="h", y=-0.12))
+    return fig
+
+
 def _tk_takeoff_b(params, draws=None):
     """The AI Futures Model's takeoff statistic for these settings.
 
@@ -18145,12 +18210,6 @@ def _tk_eci_fig(result, today, eci, markers=()):
     fig.add_hline(y=_TK_ULTRA_ECI, line_dash="dash", line_color="#c0392b", line_width=1,
                   annotation_text=f"Ultraintelligence: ECI {_TK_ULTRA_ECI:g}",
                   annotation_position="top left", annotation_font_color="#c0392b")
-    if q[-1, 2] > _TK_ECI_VIEW_MAX:
-        fig.add_annotation(
-            x=x[-1], y=_TK_ECI_VIEW_MAX, xanchor="right", yanchor="top",
-            showarrow=False, font=dict(size=11, color="#888"),
-            text=f"Scenarios continue above {_TK_ECI_VIEW_MAX} (median "
-                 f"{q[-1, 1]:.0f} at the horizon)")
     fig.update_layout(
         height=420, margin=dict(l=55, r=20, t=30, b=40),
         xaxis=dict(range=[past[0]['date'] if past else x[0], x[-1]]),
@@ -18270,6 +18329,29 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
     return result
 
 
+# The simulation, and every date, interval and share the tab quotes, runs to
+# the end of this year; the sidebar's *Project through* year only crops charts.
+_TK_SIM_END_YEAR = 2040
+
+
+def _tk_clip(result, years):
+    """`result` with its monthly series cut to the first `years` from today,
+    for charts that show less than the simulation ran."""
+    wp = result["workflow_progress"]
+    T, n = len(wp["years"]), len(result["onset"])
+    keep = max(int(np.searchsorted(wp["years"], years, side="right")), 2)
+
+    def cut(v):
+        if isinstance(v, dict):
+            return {k: cut(x) for k, x in v.items()}
+        if not isinstance(v, np.ndarray) or v.ndim == 0:
+            return v
+        if v.ndim == 2 and v.shape == (n, T):
+            return v[:, :keep]
+        return v[:keep] if v.shape[0] == T else v
+    return dict(result, workflow_progress={k: cut(v) for k, v in wp.items()})
+
+
 def _tk_gap(earlier, later, horizon):
     """(years from `earlier` to `later`, mask of draws whose `earlier` falls by
     `horizon`). A `later` past the horizon is +inf: censored, not dropped."""
@@ -18316,7 +18398,10 @@ def render_takeoff():
         st.button("Reset to defaults", key="tk_reset", on_click=_tk_reset)
         st.caption("Coding automation inherits the final RSI projection. "
                    "Adjust its weights and timing on the RSI tab.")
-        number("Project through (year end)", "end_year", datetime.now().year, 2050, 1)
+        number("Project through (year end)", "end_year", datetime.now().year,
+               _TK_SIM_END_YEAR, 1,
+               "Where the charts stop. Dates, intervals and shares come from scenarios "
+               f"simulated through {_TK_SIM_END_YEAR}, whatever this says.")
         with st.expander("What decides ultraintelligence", expanded=True):
             st.caption("Across a plausible range, each moves the ultraintelligence date "
                        "by 2\u20137 months; everything under Advanced moves it a few "
@@ -18512,8 +18597,10 @@ def render_takeoff():
          "Direction, experiment design and verification each need a falling "
          "share of human hours as models improve."))
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    end_date = datetime(int(st.session_state["tk_end_year"]), 12, 31)
+    end_date = datetime(_TK_SIM_END_YEAR, 12, 31)
     horizon = (end_date - today).total_seconds() / (365.25 * 86400)
+    view_end = datetime(int(st.session_state["tk_end_year"]), 12, 31)
+    view_years = (view_end - today).total_seconds() / (365.25 * 86400)
     onset_days, _ladder_days, rsi_settings = _pc_rsi_onset(today)
     if onset_days is None:
         st.info("The RSI projection has no available draws. Adjust its settings on the RSI tab.")
@@ -18612,7 +18699,10 @@ def render_takeoff():
                for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
                                       ("Ultraintelligence", eci["ultra"]))]
     markers = [(label, today + timedelta(days=float(t * 365.25)))
-               for label, t in medians if 0 <= t <= horizon]
+               for label, t in medians if 0 <= t <= view_years]
+    # Charts stop at the sidebar's year; everything quoted above runs to the end.
+    result = _tk_clip(result, view_years)
+    eci = dict(eci, paths=eci["paths"][:, :len(result["workflow_progress"]["years"])])
 
     st.subheader("What the RSI tab feeds in")
     _fn_caption(
@@ -18694,6 +18784,22 @@ def render_takeoff():
          "deployed model. For the first year it is floored at the trend, since "
          "no new model has shipped yet."))
     st.plotly_chart(_tf(_tk_eci_fig(result, today, eci, markers)), width="stretch")
+
+    st.subheader("4. When it happens, and how fast")
+    gap, reached = _tk_gap(rsi, eci["ultra"], horizon)
+    _fn_caption(
+        f"Arrival dates through {view_end:%Y}, and the time from RSI to "
+        "ultraintelligence: a short gap is a fast takeoff.",
+        ("Arrival dates",
+         "Share of all scenarios per month (top) and by each date (bottom). A curve "
+         "ending under 100% leaves the rest arriving later or never."),
+        ("time from RSI to ultraintelligence",
+         f"Among the {100 * np.mean(reached):.0f}% of scenarios reaching RSI by "
+         f"{end_date:%Y}; one not reaching ultraintelligence by then stays in the "
+         "denominator. Below zero, ECI got there before research direction was handed "
+         "over."))
+    st.plotly_chart(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_years,
+                                 end_date), width="stretch")
     with st.expander("About this model"):
         st.markdown(
             "- **Coding automation** is the RSI tab's blend (AL5 card excluded).\n"

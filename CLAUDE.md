@@ -45,8 +45,10 @@ See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and 
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
 subtracts finite coding dates, preserving censored draws without inf-minus-inf NaNs.
-The horizon is December 31 of `tk_end_year` (default 2031); relative-duration charts have
-less follow-up for late coding dates and explicitly describe that censoring.
+The simulation, and every card, interval and share, runs to December 31 of
+`_TK_SIM_END_YEAR` (2040); `tk_end_year` (default 2030) only crops the charts, via
+`_tk_clip` (`test_horizon_resets_and_rsi_settings_survive_reset` holds the cards fixed as
+it moves). Gaps have less follow-up for late starters and say so.
 
 `_pc_rsi_onset` preserves hidden RSI widgets, caches source components and the mixture,
 and returns sorted exact final samples, including conditioning, penalty, and clock.
@@ -138,7 +140,9 @@ The tab reads as a story, top to bottom: the warning, the loop the model simulat
 (`_TK_LOOP_HTML`) and its three brakes, the headline cards (coding automation, RSI,
 ultraintelligence, each with 80%/90% CIs) and the two gaps between them, the RSI evidence row, then **1. Research speeds
 up** (`_tk_pace_fig` plus the factor chart), **2. People step out of the loop**
-(`_tk_humans_fig`) and **3. What it does to capability (ECI)**, closing on one short
+(`_tk_humans_fig`), **3. What it does to capability (ECI)** and **4. When it happens, and
+how fast** (`_tk_dist_fig`: density and cumulative share of the RSI and ultraintelligence
+dates and the gap between them), closing on one short
 *About this model* expander. `test_default_render_and_stable_rerun` pins the order.
 
 Four defaults are read off RSI data at import (`TestTakeoffRsiCalibration`), each
