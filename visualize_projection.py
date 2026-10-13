@@ -18361,10 +18361,16 @@ def _tk_gap(earlier, later, horizon):
 
 
 def _tk_span(years, end_date):
-    """A duration in years as months under two years, else years."""
+    """A duration in the coarsest unit that still reads: days under two weeks,
+    weeks under three months, months under a year, else years."""
     if not np.isfinite(years):
         return f"not by {end_date:%Y}"
-    return f"{12 * years:.0f} mo" if abs(years) < 2 else f"{years:.1f} yr"
+    days = years * 365.25
+    if abs(days) < 14:
+        return f"{days:.0f} d"
+    if abs(years) < 0.25:
+        return f"{days / 7:.0f} wk"
+    return f"{12 * years:.0f} mo" if abs(years) < 1 else f"{years:.1f} yr"
 
 
 def _tk_date(value, today):
@@ -18694,7 +18700,9 @@ def render_takeoff():
               "Time from each scenario's coding-automation date to its RSI date.")
     _gap_card(b, "RSI \u2192 ultraintelligence", rsi, eci["ultra"],
               "How fast the takeoff is: time from each scenario's RSI date to its "
-              f"ECI reaching {_TK_ULTRA_ECI:g}. Negative where ECI gets there first.")
+              f"ECI reaching {_TK_ULTRA_ECI:g}. Negative where ECI gets there first: "
+              "nearly always a scenario whose inherited coding-automation date, which "
+              "RSI waits for, comes late.")
     medians = [(label, takeoff.quantile(samples, 0.5, horizon))
                for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
                                       ("Ultraintelligence", eci["ultra"]))]
@@ -18796,8 +18804,8 @@ def render_takeoff():
         ("time from RSI to ultraintelligence",
          f"Among the {100 * np.mean(reached):.0f}% of scenarios reaching RSI by "
          f"{end_date:%Y}; one not reaching ultraintelligence by then stays in the "
-         "denominator. Below zero, ECI got there before research direction was handed "
-         "over."))
+         "denominator. Below zero, ECI got there first, nearly always because the "
+         "scenario's inherited coding-automation date, which RSI waits for, came late."))
     st.plotly_chart(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_years,
                                  end_date), width="stretch")
     with st.expander("About this model"):

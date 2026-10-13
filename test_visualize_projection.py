@@ -5322,6 +5322,16 @@ class TestTakeoffRsiCalibration:
         assert with_aut["quality_slope"] < without["quality_slope"]
 
 
+def test_takeoff_durations_read_in_the_coarsest_fitting_unit():
+    end = datetime(2040, 12, 31)
+    span = lambda y: vp._tk_span(y, end)
+    assert span(3 / 365.25) == "3 d"
+    assert span(-5 / 52) == "-5 wk"
+    assert span(0.5) == "6 mo"
+    assert span(1.83) == "1.8 yr"
+    assert span(np.inf) == "not by 2040"
+
+
 class TestTakeoffB:
     """The AI Futures Model's takeoff statistic, read off Takeoff's settings."""
 
