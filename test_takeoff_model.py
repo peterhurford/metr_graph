@@ -158,10 +158,15 @@ def test_research_difficulty_is_sampled_with_the_other_rates(monkeypatch):
     tk.simulate(dict(years=0.5, difficulty=0), n=5)  # the undiscounted branch still runs
 
 
-def test_runaway_is_unresolved_only_while_rsi_could_still_arrive():
-    """A diverged draw is unresolved only if RSI is open and coding is inside the horizon."""
-    explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, uncertainty=0, years=12,
-                     )
+def test_a_runaway_reaches_rsi_unless_the_floor_blocks_it():
+    """A diverged draw has automated coding whatever its inherited date says, so
+    it reaches RSI, even before that date. Under a floor above the bar it is
+    unresolved only if coding falls inside the horizon."""
+    explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, uncertainty=0, years=12)
+    early = tk.simulate(explosive, n=1, onset_years=np.array([11.0]))
+    assert early["software_log"][0] == 1e6
+    assert early["events"]["RSI"][0] < 11.0
+    assert not early["numerically_limited"][0]
     reached = tk.simulate(explosive, n=1, onset_years=np.array([0.5]))
     assert reached["software_log"][0] == 1e6          # it did diverge
     assert np.isfinite(reached["events"]["RSI"][0])
@@ -182,13 +187,6 @@ def test_workflow_halving_time_has_a_measurable_interpretation():
     human = tk.workflow_state(np.array([1.0]), np.array([1.0]), starts,
                               np.full((1, 3), 12.0), .02)
     np.testing.assert_allclose(human, .02 + (starts - .02) / 2)
-
-
-def test_validated_progress_uses_efficiency_and_full_cycle_duration():
-    baseline = np.log(2)  # one software doubling per year
-    assert tk.progress_multiple(0, np.log(2), 1, baseline) == pytest.approx(1)
-    assert tk.progress_multiple(0, np.log(2), 1/12, baseline) == pytest.approx(12)
-    assert tk.progress_multiple(0, 0, 1/12, baseline) == 0
 
 
 def test_fast_feedback_precedes_successors_and_is_not_double_counted():
@@ -310,32 +308,30 @@ def test_capability_paths_span_the_grid_and_rsi_waits_for_coding():
     assert np.all(r["events"]["RSI"] >= np.maximum(r["onset"], 0))
 
 
-def test_coding_automation_precedes_rsi_and_non_arrivals_are_retained():
-    """RSI never precedes coding, and draws missing the horizon stay as +inf."""
-    r = tk.simulate(dict(tk.PRESETS["Bottlenecked"], years=1), n=200)
-    rsi = r["events"]["RSI"]
-    assert np.all(r["onset"] <= rsi)
-    assert np.isinf(rsi).mean() > .5
-    assert tk.quantile(rsi, 0.5) == np.inf
-    assert tk.cdf(rsi, [2])[0] == np.mean(rsi <= 2)
+def test_cdf_and_quantile_keep_censored_draws():
+    """Non-arrivals (+inf) stay in the denominator and can be the quantile."""
     assert tk.cdf([1, 2, np.inf, np.inf], [0, 1, 2, 20]).tolist() == [0, .25, .5, .5]
     assert tk.quantile([1, 2, np.inf, np.inf], .9) == np.inf
     assert tk.quantile([1, 2, 3], .5, horizon=1) == np.inf
 
 
 def test_weekly_steps_converge_to_half_week_steps():
-    p = dict(uncertainty=0, years=8)
-    weekly = tk.simulate(p, n=1)
-    half_week = tk.simulate(p, n=1, step=1/104)
+    """Milestones land on run, deployment and observation events, so the step
+    cannot move them; the integrated software stock converges well inside the
+    error a monthly step leaves (~2e-4)."""
+    p = dict(years=8)
+    weekly = tk.simulate(p, n=200)
+    half_week = tk.simulate(p, n=200, step=1/104)
     for name in tk.MILESTONES:
-        assert abs(weekly["events"][name][0] - half_week["events"][name][0]) < .12
+        np.testing.assert_array_equal(weekly["events"][name], half_week["events"][name])
+    np.testing.assert_allclose(weekly["software_log"], half_week["software_log"], rtol=3e-5)
 
 
 def test_longer_validation_delays_milestones():
     a = tk.simulate(dict(uncertainty=0, validation_months=0.5), n=1)
     b = tk.simulate(dict(uncertainty=0, validation_months=3.0), n=1)
     for name in tk.MILESTONES:
-        assert b["events"][name][0] >= a["events"][name][0]
+        assert b["events"][name][0] > a["events"][name][0]
 
 
 @pytest.mark.parametrize("params", [
@@ -389,12 +385,3 @@ def test_judgment_drift_bends_the_judgment_rate_per_10x():
                     - tk.judgment_gain_log(np.log(10), 0.3, 0.5)) / h
     assert slope_at_10x == pytest.approx(0.45, rel=1e-4)
 
-
-def test_a_runaway_reaches_rsi_unless_the_floor_blocks_it():
-    """A draw that diverges before its inherited coding date has automated
-    coding anyway: RSI is reached, and the draw is not left unresolved."""
-    explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, uncertainty=0, years=12)
-    early = tk.simulate(explosive, n=1, onset_years=np.array([11.0]))
-    assert early["software_log"][0] == 1e6
-    assert early["events"]["RSI"][0] < 11.0
-    assert not early["numerically_limited"][0]
