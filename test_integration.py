@@ -1750,6 +1750,21 @@ class TestPacingTab:
         caps = " ".join(str(c.value) for c in at.caption)
         assert "Dates = model releases" in caps
 
+    def test_race_bar_is_the_state_of_play_us_run(self):
+        """The race below runs to the US row's largest training run, at the
+        default pause and at a later one."""
+        import visualize_projection as vp
+        at = self._app()
+        for mo in (None, vp._PC_PAUSE_MO_MAX):
+            if mo is not None:
+                at.select_slider(key="pc_pause_mo").set_value(mo).run()
+                _assert_no_error(at, f"Pacing / pause {mo}")
+            us = self._state(at).iloc[0]["Largest training run"].split()[0]
+            titles = [json.loads(el.proto.spec)["layout"].get("title", {})
+                      .get("text", "") for el in at.get("plotly_chart")]
+            race = next(t for t in titles if t.startswith("First \u2265"))
+            assert race.startswith(f"First \u2265{us} log OP"), (us, race)
+
     def test_state_of_play_describes_both_sides_at_the_pause(self):
         """The panel opens with what each side has when the music stops:
         the US ahead of China on compute and on capability, China's lag in

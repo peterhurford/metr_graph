@@ -15133,6 +15133,17 @@ def _pc_when_date(label, today):
         return today
 
 
+def _pc_race_threshold(caps):
+    """The race's bar: the US's median largest run at the pause.
+
+    `caps` is `_pc_capacity_at`'s reading, so the race and the state-of-play
+    table above it cannot describe different scales, and the pause date and
+    run length move both. `_PC_FALLBACK_THRESHOLD` covers a catalogue with no
+    US capacity.
+    """
+    return caps[_DC_CTY_US][1] if _DC_CTY_US in caps else _PC_FALLBACK_THRESHOLD
+
+
 def _pc_capacity_at(rows, dcs, today, when, since=None, qs=(10, 50, 90)):
     """Each entity's largest training run at one date: label -> (q10, q50, q90).
 
@@ -17188,11 +17199,7 @@ def render_pacing():
          (_DC_CTY_CN_DOMESTIC, 'country', _dom_steps_raw,
           tuple(_dom_names))],
         dc_view, _today, pause_d, since=_DC_DEFAULTS["dc_cty_since"])
-    # The race's bar is the run the US is mounting when it pauses, so the
-    # two halves of the tab cannot describe different scales. Same units as
-    # the racers (the sidebar's run length), so run length moves both.
-    threshold = (caps[_DC_CTY_US][1] if _DC_CTY_US in caps
-                 else _PC_FALLBACK_THRESHOLD)
+    threshold = _pc_race_threshold(caps)
     threshold_label = f"{_log_op(threshold)} log OP"
 
     _pc_render_us_pause(_today, pause_d, caps, run_days,

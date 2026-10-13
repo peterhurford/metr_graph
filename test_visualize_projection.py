@@ -4313,6 +4313,13 @@ class TestDcCtyPlanSlip:
 class TestPacing:
     """The Pacing tab: threshold menu, crossing math, and the entity roster."""
 
+    def test_race_bar_is_the_us_median_run_at_the_pause(self):
+        caps = {vp._DC_CTY_US: (1e26, 3e26, 9e26),
+                vp._DC_CTY_CN_ACCESS: (1e25, 2e25, 4e25)}
+        assert vp._pc_race_threshold(caps) == 3e26
+        assert vp._pc_race_threshold({vp._DC_CTY_CN_ACCESS: (1, 2, 3)}) == \
+            vp._PC_FALLBACK_THRESHOLD
+
     def test_defaults_cover_reset_keys_and_url_tracking(self):
         """Every Pacing default is reset and URL-tracked, as are the RSI
         blend's weights and its not-yet conditioning. The pause is an int of
