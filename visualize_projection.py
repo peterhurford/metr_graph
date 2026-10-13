@@ -17561,6 +17561,10 @@ _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
 _TK_LIMITED_MAX = 0.01
 
 
+# The input exponent r is defined against; difficulty = this / r.
+_TK_R_REF_PARALLEL = takeoff.DEFAULTS["parallelization"]
+
+
 def _tk_reset():
     st.session_state.update(_TK_DEFAULTS)
     st.session_state.pop("_tk_fit_message", None)
@@ -18038,8 +18042,9 @@ def render_takeoff():
                    "cumulative research effort buys; below 1 ideas get harder faster "
                    "than effort grows. Default 1.0 is Forethought's revised central "
                    "estimate (range 0.33\u20133); Davidson & Houlden's was 1\u20134, or "
-                   "0.5\u20132 with hardware fixed. Sets research difficulty as the "
-                   "parallelization exponent divided by r.")
+                   "0.5\u20132 with hardware fixed. Sets research difficulty as "
+                   f"{_TK_R_REF_PARALLEL:g} / r, independent of the parallelization "
+                   "setting.")
             number("How fast AI research judgment improves", "taste_slope", 0.0, 2.0, 0.1,
                    "Research quality scales as capability raised to this power. The "
                    "default is fitted from the RSI tab's next-step study: its win odds "
@@ -18209,8 +18214,10 @@ def render_takeoff():
     onset_years = onset_days / 365.25
     params = {k: st.session_state["tk_" + k] for k in takeoff.DEFAULTS
               if k not in ("onset_low", "onset_high", "years")}
-    # Difficulty is set through the returns to research: r = parallelization / difficulty.
-    params["difficulty"] = params["parallelization"] / float(st.session_state["tk_returns"])
+    # Difficulty is set through the returns to research, r = lambda / difficulty,
+    # with lambda held at the reference exponent so the parallelization setting
+    # moves returns to inputs alone, not how fast ideas get harder.
+    params["difficulty"] = _TK_R_REF_PARALLEL / float(st.session_state["tk_returns"])
     # Every path begins today and ends at the selected calendar horizon.
     # Past coding dates stay intact; we do not invent pre-today research history.
     params["years"] = horizon

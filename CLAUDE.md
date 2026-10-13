@@ -83,7 +83,12 @@ the ~3× smaller measured exchange rate), floored at that trend for `_TK_ECI_FLO
 v7 adds a CES labor-compute mean (`substitution`), Amdahl labor gains as the human share
 falls (`ai_speed`), non-AI input growth holding the frozen-AI pace (`baseline_inputs`), a
 steady-state pipeline, and an `r` control (`tk_returns`) from which the app sets
-difficulty = parallelization / r. The pace-factor chart (`_tk_factors_fig`) is capped at
+difficulty = 0.5 / r (`_TK_R_REF_PARALLEL`, the default exponent), so the parallelization
+setting moves returns to inputs only, not difficulty
+(`test_parallelization_does_not_move_difficulty`). It still moves dates through the
+experiment calibration: a higher exponent lets compute and coding explain more of the
+observed experiment growth, leaving a lower fitted judgment elasticity (at `cal_weight` 0
+it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `_TK_FACTOR_VIEW`. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.

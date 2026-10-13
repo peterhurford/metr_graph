@@ -1554,6 +1554,28 @@ class TestTakeoffTab:
         progress = captured[-1]["workflow_progress"]
         np.testing.assert_allclose(progress["pace"], progress["reference_pace"], rtol=1e-4)
 
+    def test_parallelization_does_not_move_difficulty(self, monkeypatch):
+        """Difficulty is set from r alone; parallelization moves only returns to inputs."""
+        import takeoff_model as tk
+        seen = []
+        original = tk.simulate
+
+        def capture(params, **kwargs):
+            seen.append(dict(params))
+            return original(params, **kwargs)
+
+        monkeypatch.setattr(tk, "simulate", capture)
+        import streamlit as st
+        st.cache_data.clear()
+        at = self._app()
+        base = seen[-1]["difficulty"]
+        at.number_input(key="tk_parallelization").set_value(0.8).run()
+        _assert_no_error(at, "Takeoff / parallelization 0.8")
+        assert seen[-1]["parallelization"] == 0.8
+        assert seen[-1]["difficulty"] == base
+        at.number_input(key="tk_returns").set_value(2.0).run()
+        assert seen[-1]["difficulty"] == pytest.approx(base / 2)
+
     def test_malformed_url_values_and_tab_switching(self):
         at = _fresh_app()
         at.query_params.update(tab="takeoff", tk_compute_growth="nan", tk_seed="-2")

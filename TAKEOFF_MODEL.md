@@ -52,9 +52,10 @@ capability drove takeoff whether or not people had left; gated, it takes over as
 research direction is handed off, which is RSI.
 
 Difficulty is set from the returns to research r (the tab's control, default 1.0, the
-revised Forethought central estimate): difficulty = parallelization / r, the
-semi-endogenous relation in which each doubling of cumulative effort buys r doublings of
-efficiency. Today's pace has held steady while compute grew at its historical rate (the
+revised Forethought central estimate): difficulty = 0.5 / r, the semi-endogenous relation
+in which each doubling of cumulative effort buys r doublings of efficiency at the default
+input exponent of 0.5. It is held there so the parallelization setting changes only how
+much extra input buys, not how fast ideas get harder. Today's pace has held steady while compute grew at its historical rate (the
 data-center series' own fit, 3.1x/yr), so the other research inputs are set to whatever
 growth or lag reproduces that steady state (`baseline_inputs`% of it): with AI frozen,
 only a projected change in compute growth moves the pace. This settles the tension
