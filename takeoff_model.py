@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v6-rsi-eci"
+MODEL_VERSION = "takeoff-v7-amdahl-ces"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -33,8 +33,19 @@ DEFAULTS = {
     "human_floor": 1.0, "full_human": 5.0,
     "fast_share": 25.0, "fast_months": 1.0,
     "coding_today": 70.0,
-    "pipeline_months": 2.0,
+    # Steady state: the next model ships with one full cycle (training +
+    # validation) of discoveries not yet deployed.
+    "pipeline_months": 4.0,
     "rsi_trend_weight": 50.0, "rsi_trend_months": 12.0, "rsi_useful_growth": 100.0,
+    # Labor and experiment compute combine as a CES mean with this exponent:
+    # -1 is the harmonic mean (strong complements), 0 Cobb-Douglas.
+    "substitution": -0.5,
+    # Speed of AI on work it has taken over, relative to the people it
+    # replaced; sets how much a falling human share speeds research (Amdahl).
+    "ai_speed": 30.0,
+    # Share of the non-AI input growth that would hold today's pace with AI
+    # frozen (researchers, spending); 0 leaves compute the only growing input.
+    "baseline_inputs": 100.0,
 }
 PRESETS = {
     "Central": {},
@@ -86,12 +97,16 @@ def validate(params):
     if not 0 <= p["rsi_trend_weight"] <= 100 or not 0 <= p["rsi_useful_growth"] <= 100 \
             or p["rsi_trend_months"] <= 0:
         raise ValueError("RSI trend weights must be percentages and their half-life positive.")
+    if not -5 <= p["substitution"] <= 0.9 or p["ai_speed"] < 1 \
+            or not 0 <= p["baseline_inputs"] <= 200:
+        raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
+                         "baseline input growth in [0, 200]%.")
     return p
 
 
 def calibrate_feedback(experiment_growth, compute_growth, capability_growth,
                        yield_change=1.0, validated_growth=None, transfer=.6,
-                       coding_slope=.8, parallel=.5):
+                       coding_slope=.8, parallel=.5, substitution=-0.5):
     """Effective quality elasticity after accounting for compute and coding.
 
     Aggregate experiments are a proxy, not causal identification. A supplied
@@ -108,7 +123,7 @@ def calibrate_feedback(experiment_growth, compute_growth, capability_growth,
     useful_growth = experiment_growth * yield_change if validated_growth is None else validated_growth
     residual = useful_growth / compute_growth ** parallel
     coding = (1 - transfer + transfer * capability_growth ** coding_slope) ** parallel
-    quality = residual / _harmonic(coding, 1.0)
+    quality = residual / _ces(coding, 1.0, substitution)
     slope = np.log(max(1.0, (quality - 1 + transfer) / transfer)) / np.log(capability_growth)
     return dict(quality_slope=float(slope), resource_adjusted_growth=float(residual),
                 useful_growth=float(useful_growth), boundary=bool(quality < 1),
@@ -135,8 +150,15 @@ def after_coding(samples, onset):
                        where=np.isfinite(samples) & np.isfinite(onset))
 
 
-def _harmonic(labor, compute):
-    return 2.0 / (1.0 / labor + 1.0 / compute)
+def _ces_log(x, y, rho):
+    """Log of the CES mean of exp(x) and exp(y), equal to 1 when both are 1."""
+    if abs(rho) < 1e-9:
+        return (x + y) / 2
+    return (np.logaddexp(rho * x, rho * y) - np.log(2)) / rho
+
+
+def _ces(a, b, rho):
+    return np.exp(_ces_log(np.log(a), np.log(b), rho))
 
 
 def workflow_state(capability_log, baseline_rate, starts, half_months, floor):
@@ -281,8 +303,20 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     transfer = p["transfer"] / 100
     beta = p["difficulty"] * factors[15]
     parallel = p["parallelization"]
-    initial_throughput = _harmonic((shares[2] / 0.2) ** parallel,
-                                   (shares[1] / 0.4) ** parallel)
+    rho = p["substitution"]
+    initial_throughput = _ces((shares[2] / 0.2) ** parallel,
+                              (shares[1] / 0.4) ** parallel, rho)
+    # Non-AI input growth that holds today's pace with AI frozen: the steady
+    # state of d(software)/dt = rate * pace with pace = inputs^parallel /
+    # exp(beta * software). Applied to both research inputs, never training.
+    extra_rate = p["baseline_inputs"] / 100 * np.maximum(
+        beta * software_rate * initial_throughput / parallel - compute_rate, 0)
+    input_rate = compute_rate + extra_rate
+    # Amdahl: AI labor on research speeds up as the human share h falls, by
+    # (h0 + (1 - h0)/s) / (h + (1 - h)/s), normalized to today's share h0.
+    ai_speed = p["ai_speed"]
+    human0 = starts @ WORKFLOW_WEIGHTS
+    amdahl0 = np.log(human0 + (1 - human0) / ai_speed)
     # Ongoing useful research production is distinct from batched deliveries.
     # Today's production baseline already includes existing AI assistance.
     pace_history = np.full_like(capability_history, initial_throughput)
@@ -317,7 +351,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         end = np.where(active, end, t)
         dt = np.maximum(end - t, 0)
         compute_log = compute_rate * (t + dt / 2)
+        extra_log = extra_rate * (t + dt / 2)
         effective = deployed + fast_deployed
+        share_now = workflow_state(effective, baseline_capability_rate, starts,
+                                   halves, floor) @ WORKFLOW_WEIGHTS
+        amdahl_log = amdahl0 - np.log(share_now + (1 - share_now) / ai_speed)
         # The RSI anchor supplies a smooth reduction in coding human hours.
         # Its productivity gain and endogenous coding gains overlap: use the
         # larger, not their product. Existing assistance is normalized to 1.
@@ -331,16 +369,20 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                                      np.log(transfer) + coding_gain)
             quality_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
                                       np.log(transfer) + taste_slope * effective)
+            automation_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
+                                          np.log(transfer) + amdahl_log)
         else:
             coding_log = np.zeros(n)
             quality_log = np.zeros(n)
-        labor_log = parallel * (compute_log + np.log(shares[2] / 0.2) + coding_log)
-        experiment_log = parallel * (compute_log + np.log(shares[1] / 0.4))
-        research_log = np.log(2) - np.logaddexp(-labor_log, -experiment_log) + quality_log
+            automation_log = np.zeros(n)
+        labor_log = parallel * (compute_log + extra_log + np.log(shares[2] / 0.2)
+                                + coding_log + automation_log)
+        experiment_log = parallel * (compute_log + extra_log + np.log(shares[1] / 0.4))
+        research_log = _ces_log(labor_log, experiment_log, rho) + quality_log
         judgment_log = quality_log.copy()
         if experiment_slopes is not None and transfer:
             mid = t + dt / 2
-            resource_log = np.log(initial_throughput) + parallel * compute_rate * mid
+            resource_log = np.log(initial_throughput) + parallel * input_rate * mid
             residual = (experiment_slopes - parallel * compute_rate) * mid
             proxy_log = resource_log + p["rsi_useful_growth"] / 100 * residual
             weight = p["rsi_trend_weight"] / 100 * np.exp(
@@ -356,10 +398,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # end of each monthly integration interval (at most one week long).
         penalty = beta * (software - initial_stock)
         pace = np.exp(np.minimum(research_log - penalty, 700))
-        reference_progress = reference_software(t, software_rate, compute_rate,
+        reference_progress = reference_software(t, software_rate, input_rate,
                                                 parallel, initial_throughput, beta)
         reference_pace = np.exp(np.minimum(np.log(initial_throughput)
-            + parallel * compute_log - beta * reference_progress, 700))
+            + parallel * (compute_log + extra_log) - beta * reference_progress, 700))
         if p["difficulty"] > 0:
             updated = initial_stock + np.logaddexp(
                 beta * (software - initial_stock), np.log(beta) + log_amount) / beta
@@ -382,7 +424,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         adopted = done & (candidate > deployed)
         pending[done] = np.maximum(deployed[done], candidate[done])
         pending_software[done] = np.where(adopted[done], (1 - fast_fraction) * snapshot[done], deployed_software[done])
-        reference_snapshot = initial_stock + reference_software(run_start, software_rate, compute_rate,
+        reference_snapshot = initial_stock + reference_software(run_start, software_rate, input_rate,
                                                  parallel, initial_throughput, beta)
         reference_candidate = (1 - fast_fraction) * reference_snapshot + np.log(
             np.maximum(run_compute / reference_train_compute, 1e-12))
@@ -397,7 +439,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         fast_deployed[fast_ready] = fast_fraction * fast_snapshot[fast_ready]
         reference_fast[fast_ready] = fast_fraction * (initial_stock[fast_ready] + reference_software(
             np.maximum(0, fast_next[fast_ready] - fast_time), software_rate[fast_ready],
-            compute_rate[fast_ready], parallel, initial_throughput, beta[fast_ready]))
+            input_rate[fast_ready], parallel, initial_throughput, beta[fast_ready]))
         fast_snapshot[fast_ready] = software[fast_ready]
         fast_next[fast_ready] += fast_time
         # For non-ready slow runs, only their already deployed algorithms count.

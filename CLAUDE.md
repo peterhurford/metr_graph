@@ -46,7 +46,7 @@ Thirteen-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v6-rsi-eci`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v7-amdahl-ces`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -78,6 +78,11 @@ RSI gates on coding plus every stage under the human-hours bar. Research acceler
 has its own chart and 2×/5× first-crossing events. `_tk_eci` reads each draw's capability
 path as ECI, scaled so today's modeled growth equals the ECI frontier's fitted rate (not
 the ~3× smaller measured exchange rate); `_TK_ECI_VIEW_MAX` caps the chart's view.
+v7 adds a CES labor-compute mean (`substitution`), Amdahl labor gains as the human share
+falls (`ai_speed`), non-AI input growth holding the frozen-AI pace (`baseline_inputs`), a
+steady-state pipeline, and an `r` control (`tk_returns`) from which the app sets
+difficulty = parallelization / r. The pace-factor chart (`_tk_factors_fig`) is capped at
+`_TK_FACTOR_VIEW`. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
 
 Evidence calibration uses the endpoint growth in `openai_experiment_velocity.csv`, adjusts
 for assumed historical compute and coding gains, and fits a quality elasticity blended with

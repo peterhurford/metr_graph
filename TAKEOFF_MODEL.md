@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v6-rsi-eci`. Work remains on `codex/grounded-takeoff`;
+Version: `takeoff-v7-amdahl-ces`. Work remains on `codex/grounded-takeoff`;
 checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
@@ -15,8 +15,9 @@ They no longer shift an otherwise identical post-coding simulation forward in ti
 Research is partially automated today. Initial human-hour shares (calibrated below),
 coding automation (70%), and the current software
 progress rate (one doubling per nine months) are assumptions. The current progress rate
-already includes existing AI assistance. An assumed two months of undeployed discoveries
-initializes both the actual and same-compute reference pipelines. Those discoveries must
+already includes existing AI assistance. One full cycle (training plus validation, four
+months) of undeployed discoveries initializes both the actual and same-compute reference
+pipelines, the steady state, so the next model ships at today's pace. Those discoveries must
 still pass validation; the model does not invent a pre-today trajectory.
 
 For future RSI dates, remaining coding hours decline smoothly from the assumed current
@@ -29,9 +30,22 @@ statistical fit of coding and research capabilities.
 
 ## Fast and slow feedback
 
-Research combines coding labor and experiment compute through a harmonic mean, multiplies
-by research quality, and discounts increasingly difficult discoveries. Agents, experiments,
-and training have disjoint shares of one growing compute budget.
+Research combines labor and experiment compute through a CES mean (`substitution`, default
+-0.5; -1 is the old harmonic mean, under which unlimited labor at most doubles output),
+multiplies by research quality, and discounts increasingly difficult discoveries. Agents,
+experiments, and training have disjoint shares of one growing compute budget.
+
+Labor speeds up as the human share h of research hours falls, by Amdahl's law:
+(h0 + (1 - h0)/s) / (h + (1 - h)/s), with s = `ai_speed` (default 30x) and h0 today's
+share, through the same transfer discount as coding and judgment. RSI is where h is
+lowest, so it is where this term is largest.
+
+Difficulty is set from the returns to research r (the tab's control, default 1.0, the
+revised Forethought central estimate): difficulty = parallelization / r, the
+semi-endogenous relation in which each doubling of cumulative effort buys r doublings of
+efficiency. Non-AI inputs (researchers, spending) grow at `baseline_inputs`% of the rate
+that holds today's pace with AI frozen, as the past trend has; at 100% the same-compute
+reference stays at today's pace instead of decaying.
 
 Discoveries are measured in log fixed-quality algorithmic efficiency. By default, 25%
 can be delivered through fast improvements (tooling, kernels, and small updates) and 75%

@@ -45,7 +45,7 @@ def test_seeded_draws_and_rng_isolation():
 
 def test_baseline_growth_and_zero_transfer_remove_feedback():
     """With zero transfer, AI skill slopes cannot change the software path."""
-    p = dict(transfer=0, compute_growth=1.0, uncertainty=0, years=2)
+    p = dict(transfer=0, compute_growth=1.0, uncertainty=0, years=2, baseline_inputs=0)
     a = tk.simulate(p, n=1)
     rate = np.log(2) * 12 / tk.DEFAULTS["software_months"]
     beta = tk.DEFAULTS["difficulty"]
@@ -188,7 +188,7 @@ def test_validated_progress_uses_efficiency_and_full_cycle_duration():
 
 
 def test_fast_feedback_precedes_successors_and_is_not_double_counted():
-    p = dict(uncertainty=0, transfer=0, compute_growth=1, fast_share=25,
+    p = dict(uncertainty=0, transfer=0, compute_growth=1, baseline_inputs=0, fast_share=25,
              fast_months=1, training_months=3, validation_months=1, years=.25)
     r = tk.simulate(p, n=1, onset_years=np.array([10.]))
     earlier = tk.simulate(dict(p, years=2/12), n=1, onset_years=np.array([10.]))
@@ -223,7 +223,7 @@ def test_rates_need_a_full_window_and_cumulative_progress_never_falls():
 
 
 def test_ongoing_research_pace_does_not_wait_for_successor_deliveries():
-    r = tk.simulate(dict(years=.5, uncertainty=0, fast_share=0,
+    r = tk.simulate(dict(years=.5, uncertainty=0, baseline_inputs=0, fast_share=0,
                          training_months=12, validation_months=3, transfer=0,
                          compute_growth=1), n=2)
     h = r["workflow_progress"]
@@ -308,7 +308,7 @@ def test_capability_paths_span_the_grid_and_rsi_waits_for_coding():
 
 def test_coding_automation_precedes_rsi_and_non_arrivals_are_retained():
     """RSI never precedes coding, and draws missing the horizon stay as +inf."""
-    r = tk.simulate(dict(tk.PRESETS["Bottlenecked"], years=3), n=200)
+    r = tk.simulate(dict(tk.PRESETS["Bottlenecked"], years=2), n=200)
     rsi = r["events"]["RSI"]
     assert np.all(r["onset"] <= rsi)
     assert np.isinf(rsi).mean() > .5

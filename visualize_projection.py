@@ -17470,7 +17470,7 @@ _TK_DEFAULTS.update({
     "tk_end_year": 2031, "tk_cal_weight": 50.0, "tk_cal_compute": 2.0,
     "tk_cal_capability": 2.0, "tk_cal_yield": 1.0, "tk_cal_validated": 0.0,
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
-    "tk_pace_today": 1.7,
+    "tk_pace_today": 1.7, "tk_returns": 1.0,
 })
 
 # Human hours a task at each automation level still takes, as a share of
@@ -17684,6 +17684,7 @@ def _tk_pace_fig(result, today, markers=(), history=None):
                            font=dict(size=11, color="#888"))
     fig.update_layout(
         height=420, margin=dict(l=55, r=20, t=30, b=40),
+        xaxis=dict(range=[history[0][0] if history is not None else x[0], x[-1]]),
         yaxis=dict(type="log", title="Research pace (× the 2025 pace)",
                    tickvals=[0.5, 1, 2, 5, 10, 20, 50, 100, 200],
                    ticktext=["0.5×", "1×", "2×", "5×",
@@ -17739,6 +17740,11 @@ def _tk_evidence_fig(params):
     return fig
 
 
+# Judgment and difficulty both run to thousands-fold and largely cancel; the
+# view stops at this multiple either way so the product stays readable.
+_TK_FACTOR_VIEW = 100
+
+
 def _tk_factors_fig(result, today):
     """What multiplies into the research pace, each relative to today (median
     over scenarios): labor and compute, research judgment, and difficulty,
@@ -17760,7 +17766,9 @@ def _tk_factors_fig(result, today):
     fig.add_hline(y=1, line_color="#999", line_width=1)
     fig.update_layout(
         height=340, margin=dict(l=55, r=20, t=20, b=40),
-        yaxis=dict(type="log", title="Multiplier vs today (median)"),
+        xaxis=dict(range=[x[0], x[-1]]),
+        yaxis=dict(type="log", title="Multiplier vs today (median)",
+                   range=[-np.log10(_TK_FACTOR_VIEW), np.log10(_TK_FACTOR_VIEW)]),
         legend=dict(orientation="h", y=-0.15), hovermode="x")
     return fig
 
@@ -17839,6 +17847,7 @@ def _tk_eci_fig(result, today, eci, markers=()):
                  f"{q[-1, 1]:.0f} at the horizon)")
     fig.update_layout(
         height=420, margin=dict(l=55, r=20, t=30, b=40),
+        xaxis=dict(range=[past[0]['date'] if past else x[0], x[-1]]),
         yaxis=dict(title="ECI (Epoch Capabilities Index)",
                    range=[min(m['eci_score'] for m in past) - 10, _TK_ECI_VIEW_MAX]),
         legend=dict(orientation="h", y=-0.12), hovermode="x")
@@ -18101,10 +18110,28 @@ def render_takeoff():
             number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
                    "Discounts coding and judgment gains beyond today. Zero removes "
                    "AI feedback; baseline research and compute can still improve models.")
-            number("Increasing research difficulty", "difficulty", 0.0, 2.0, 0.1,
-                   "A larger value means each further software improvement takes more work. "
-                   "Feedback compounds only while the research-quality elasticity exceeds it; "
-                   "both vary with parameter uncertainty, so some scenarios fizzle.")
+            number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
+                   "How many doublings of algorithmic efficiency each doubling of "
+                   "cumulative research effort buys; below 1 ideas get harder faster "
+                   "than effort grows. Default 1.0 is Forethought's revised central "
+                   "estimate (range 0.33\u20133); Davidson & Houlden's was 1\u20134, or "
+                   "0.5\u20132 with hardware fixed. Sets research difficulty as the "
+                   "parallelization exponent divided by r.")
+            number("Labor\u2013compute substitutability (\u03c1)", "substitution", -3.0, 0.5, 0.1,
+                   "How research labor and experiment compute combine (CES exponent). "
+                   "\u22121 is a harmonic mean, where unlimited labor at most doubles "
+                   "output; 0 lets either fully make up for the other. Contested: "
+                   "compute-bottleneck views sit near \u22121, views where AI "
+                   "economizes on experiments nearer 0.")
+            number("AI speed on automated work (\u00d7)", "ai_speed", 1.0, 1000.0, 5.0,
+                   "How much faster AI does the research work it has taken over. As "
+                   "the human share h falls, research labor speeds up by "
+                   "(h\u2080 + (1\u2212h\u2080)/s) / (h + (1\u2212h)/s): Amdahl's law, "
+                   "so the last stretch to RSI matters most.")
+            number("Non-AI input growth (% of steady state)", "baseline_inputs", 0.0, 200.0, 10.0,
+                   "Growth in researchers and spending. 100% is the growth that would "
+                   "hold today's research pace with AI frozen, as the past trend has; "
+                   "0 leaves compute as the only growing input.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
         with st.expander("Compute and successor cycles"):
@@ -18149,6 +18176,8 @@ def render_takeoff():
     onset_years = onset_days / 365.25
     params = {k: st.session_state["tk_" + k] for k in takeoff.DEFAULTS
               if k not in ("onset_low", "onset_high", "years")}
+    # Difficulty is set through the returns to research: r = parallelization / difficulty.
+    params["difficulty"] = params["parallelization"] / float(st.session_state["tk_returns"])
     # Every path begins today and ends at the selected calendar horizon.
     # Past coding dates stay intact; we do not invent pre-today research history.
     params["years"] = horizon
@@ -18166,7 +18195,7 @@ def render_takeoff():
             st.session_state["tk_cal_capability"], st.session_state["tk_cal_yield"],
             st.session_state["tk_cal_validated"] or None,
             transfer=params["transfer"] / 100, coding_slope=params["coding_slope"],
-            parallel=params["parallelization"])
+            parallel=params["parallelization"], substitution=params["substitution"])
         w = st.session_state["tk_cal_weight"] / 100
         calibration["quality_prior"] = params["taste_slope"]
         calibration["weight"] = w

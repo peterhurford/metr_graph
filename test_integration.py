@@ -1523,10 +1523,10 @@ class TestTakeoffTab:
         at.run()
         _assert_no_error(at, "Takeoff / invalid URL")
         assert at.number_input(key="tk_compute_growth").value == 2.0
-        at.number_input(key="tk_difficulty").set_value(1.0).run()
+        at.number_input(key="tk_returns").set_value(2.0).run()
         _switch_tab(at, "RSI")
         _switch_tab(at, "Takeoff")
-        assert at.number_input(key="tk_difficulty").value == 1.0
+        assert at.number_input(key="tk_returns").value == 2.0
 
 
 class TestUkCyberTab:
