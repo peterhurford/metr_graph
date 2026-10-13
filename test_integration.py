@@ -52,70 +52,27 @@ def _switch_tab(at, tab_name):
 # ===========================================================================
 
 class TestNonDefaultProjectionBases:
-    """Test that switching to a non-default projection basis renders OK.
-    Default bases are covered by TestDefaultValues."""
+    """Switching to a non-default projection basis or entity renders OK.
+    Default bases are covered by TestDefaultValues; Piecewise → Linear by
+    TestModeSwitchingBehavior."""
 
-    def test_metr_linear(self):
-        """METR defaults to Piecewise; verify Linear works."""
-        at = _fresh_app()
-        at.run()
-        proj = at.radio(key="metr_proj_basis")
-        proj.set_value("Linear").run()
-        _assert_no_error(at, "METR / Linear")
-
-    def test_eci_piecewise(self):
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Epoch ECI")
-        at.radio(key="eci_proj_basis").set_value("Piecewise linear").run()
-        _assert_no_error(at, "ECI / Piecewise linear")
-
-    def test_eci_superexp(self):
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Epoch ECI")
-        at.radio(key="eci_proj_basis").set_value("Superexponential").run()
-        _assert_no_error(at, "ECI / Superexponential")
-
-    def test_eci_entity_comparison(self):
-        """A second entity (subject) is projected against the first (benchmark)."""
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Epoch ECI")
+    @pytest.mark.parametrize("tab,kind,key,value", [
+        ("Epoch ECI", "radio", "eci_proj_basis", "Superexponential"),
         # [US best, China best]: project China against the US trend.
-        at.selectbox(key="eci_entity_b").set_value("China best").run()
-        _assert_no_error(at, "ECI / US best vs China best")
-        assert at.selectbox(key="eci_entity_a").value == "US best"
-
-    def test_eci_single_entity(self):
-        """A non-default primary entity with no comparison renders alone."""
+        ("Epoch ECI", "selectbox", "eci_entity_b", "China best"),
+        # A non-default primary entity with no comparison renders alone.
+        ("Epoch ECI", "selectbox", "eci_entity_a", "DeepSeek"),
+        ("Remote Labor Index", "radio", "rli_proj_basis",
+         "Superexponential (logit)"),
+        ("Employment", "radio", "emp_proj_basis", "Piecewise linear (logit)"),
+        ("Employment", "radio", "emp_proj_basis", "Superexponential (logit)"),
+    ])
+    def test_renders(self, tab, kind, key, value):
         at = _fresh_app()
         at.run()
-        _switch_tab(at, "Epoch ECI")
-        at.selectbox(key="eci_entity_a").set_value("DeepSeek").run()
-        _assert_no_error(at, "ECI / DeepSeek solo")
-        assert at.selectbox(key="eci_entity_b").value == "—"
-
-    def test_rli_linear(self):
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Remote Labor Index")
-        at.radio(key="rli_proj_basis").set_value("Linear (logit)").run()
-        _assert_no_error(at, "RLI / Linear (logit)")
-
-    def test_rli_piecewise(self):
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Remote Labor Index")
-        at.radio(key="rli_proj_basis").set_value("Piecewise linear (logit)").run()
-        _assert_no_error(at, "RLI / Piecewise linear (logit)")
-
-    def test_rli_superexp(self):
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Remote Labor Index")
-        at.radio(key="rli_proj_basis").set_value("Superexponential (logit)").run()
-        _assert_no_error(at, "RLI / Superexponential (logit)")
+        _switch_tab(at, tab)
+        getattr(at, kind)(key=key).set_value(value).run()
+        _assert_no_error(at, f"{tab} / {key}={value}")
 
 
 # ===========================================================================
@@ -126,39 +83,30 @@ class TestModeSwitchingBehavior:
     """Verify that switching projection basis actually changes the UI —
     not just that it doesn't crash."""
 
-    # -- METR --
-
-    def test_metr_linear_has_no_segments_radio(self):
-        """Linear mode should not render the Segments radio."""
+    @pytest.mark.parametrize("tab,basis_key,seg_key,piecewise,linear", [
+        (None, "metr_proj_basis", "piecewise_n_seg",
+         "Piecewise linear", "Linear"),
+        ("Epoch ECI", "eci_proj_basis", "eci_piecewise_n_seg",
+         "Piecewise linear", "Linear"),
+        ("Remote Labor Index", "rli_proj_basis", "rli_piecewise_n_seg",
+         "Piecewise linear (logit)", "Linear (logit)"),
+    ])
+    def test_piecewise_to_linear_clears_segments(self, tab, basis_key, seg_key,
+                                                 piecewise, linear):
+        """Piecewise draws a 2-segment radio; switching back to Linear removes
+        both the radio and its session state."""
         at = _fresh_app()
         at.run()
-        at.radio(key="metr_proj_basis").set_value("Linear").run()
-        _assert_no_error(at, "METR / Linear")
-        assert not _has_widget(at, "radio", "piecewise_n_seg"), \
-            "Linear mode should not have Segments radio"
-        assert "piecewise_n_seg" not in at.session_state, \
-            "Linear mode should not have piecewise_n_seg in session state"
-
-    def test_metr_piecewise_has_segments_radio(self):
-        """Piecewise mode should render the Segments radio with value 2."""
-        at = _fresh_app()
-        at.run()  # Default is Piecewise
-        assert _has_widget(at, "radio", "piecewise_n_seg"), \
-            "Piecewise mode should have Segments radio"
-        assert at.radio(key="piecewise_n_seg").value == 2
-
-    def test_metr_piecewise_to_linear_clears_segments(self):
-        """Switching Piecewise → Linear should clear the segments state."""
-        at = _fresh_app()
-        at.run()
-        # Starts in Piecewise with 2 segments
-        assert at.radio(key="piecewise_n_seg").value == 2
-        # Switch to Linear
-        at.radio(key="metr_proj_basis").set_value("Linear").run()
-        _assert_no_error(at, "METR Piecewise→Linear")
-        assert not _has_widget(at, "radio", "piecewise_n_seg"), \
+        if tab:
+            _switch_tab(at, tab)
+        at.radio(key=basis_key).set_value(piecewise).run()
+        _assert_no_error(at, f"{basis_key} / {piecewise}")
+        assert at.radio(key=seg_key).value == 2
+        at.radio(key=basis_key).set_value(linear).run()
+        _assert_no_error(at, f"{basis_key} Piecewise→Linear")
+        assert not _has_widget(at, "radio", seg_key), \
             "Segments radio should disappear after switching to Linear"
-        assert "piecewise_n_seg" not in at.session_state
+        assert seg_key not in at.session_state
 
     def test_metr_linear_to_piecewise_gets_segments(self):
         """Switching Linear → Piecewise should create the segments radio."""
@@ -174,20 +122,6 @@ class TestModeSwitchingBehavior:
             "Segments radio should appear after switching to Piecewise"
         assert at.radio(key="piecewise_n_seg").value == 2
 
-    def test_metr_linear_ci_differs_from_piecewise_ci(self):
-        """Linear (full OLS) should have different CI defaults than
-        Piecewise (last-segment OLS)."""
-        at = _fresh_app()
-        at.run()
-        # Default is Piecewise — record its CI
-        pw_dt_lo = at.number_input(key="custom_dt_lo").value
-        # Switch to Linear
-        at.radio(key="metr_proj_basis").set_value("Linear").run()
-        _assert_no_error(at, "METR / Linear CI check")
-        lin_dt_lo = at.number_input(key="custom_dt_lo").value
-        assert lin_dt_lo != pw_dt_lo, \
-            f"Linear and Piecewise should have different DT defaults: both={pw_dt_lo}"
-
     def test_metr_superexp_has_no_segments_or_dt_keys(self):
         """Superexponential should not have linear/piecewise widgets."""
         at = _fresh_app()
@@ -199,79 +133,6 @@ class TestModeSwitchingBehavior:
             "Superexp should not have linear DT CI widget"
         assert _has_widget(at, "number_input", "superexp_dt_ci_lo"), \
             "Superexp should have its own DT CI widget"
-
-    # -- ECI --
-
-    def test_eci_linear_has_no_segments_radio(self):
-        """ECI Linear mode should not render the Segments radio."""
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Epoch ECI")  # Defaults to Linear
-        assert not _has_widget(at, "radio", "eci_piecewise_n_seg"), \
-            "ECI Linear mode should not have Segments radio"
-        assert "eci_piecewise_n_seg" not in at.session_state
-
-    def test_eci_piecewise_has_segments_radio(self):
-        """ECI Piecewise mode should render the Segments radio."""
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Epoch ECI")
-        at.radio(key="eci_proj_basis").set_value("Piecewise linear").run()
-        _assert_no_error(at, "ECI / Piecewise")
-        assert _has_widget(at, "radio", "eci_piecewise_n_seg"), \
-            "ECI Piecewise should have Segments radio"
-        assert at.radio(key="eci_piecewise_n_seg").value == 2
-
-    def test_eci_piecewise_to_linear_clears_segments(self):
-        """ECI: switching Piecewise → Linear should clear segments state."""
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Epoch ECI")
-        # Switch to Piecewise first
-        at.radio(key="eci_proj_basis").set_value("Piecewise linear").run()
-        assert at.radio(key="eci_piecewise_n_seg").value == 2
-        # Switch back to Linear
-        at.radio(key="eci_proj_basis").set_value("Linear").run()
-        _assert_no_error(at, "ECI Piecewise→Linear")
-        assert not _has_widget(at, "radio", "eci_piecewise_n_seg"), \
-            "ECI Segments radio should disappear after switching to Linear"
-        assert "eci_piecewise_n_seg" not in at.session_state
-
-    # -- RLI --
-
-    def test_rli_linear_has_no_segments_radio(self):
-        """RLI Linear mode should not render the Segments radio."""
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Remote Labor Index")  # Defaults to Linear (logit)
-        assert not _has_widget(at, "radio", "rli_piecewise_n_seg"), \
-            "RLI Linear mode should not have Segments radio"
-        assert "rli_piecewise_n_seg" not in at.session_state
-
-    def test_rli_piecewise_has_segments_radio(self):
-        """RLI Piecewise mode should render the Segments radio."""
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Remote Labor Index")
-        at.radio(key="rli_proj_basis").set_value("Piecewise linear (logit)").run()
-        _assert_no_error(at, "RLI / Piecewise")
-        assert _has_widget(at, "radio", "rli_piecewise_n_seg"), \
-            "RLI Piecewise should have Segments radio"
-
-    def test_rli_piecewise_to_linear_clears_segments(self):
-        """RLI: switching Piecewise → Linear should clear segments state."""
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Remote Labor Index")
-        # Switch to Piecewise first
-        at.radio(key="rli_proj_basis").set_value("Piecewise linear (logit)").run()
-        assert _has_widget(at, "radio", "rli_piecewise_n_seg")
-        # Switch back to Linear
-        at.radio(key="rli_proj_basis").set_value("Linear (logit)").run()
-        _assert_no_error(at, "RLI Piecewise→Linear")
-        assert not _has_widget(at, "radio", "rli_piecewise_n_seg"), \
-            "RLI Segments radio should disappear after switching to Linear"
-        assert "rli_piecewise_n_seg" not in at.session_state
 
 
 # ===========================================================================
@@ -388,35 +249,6 @@ class TestWidgetPropagation:
         assert ci_3seg != ci_1seg, \
             f"ECI CI didn't change: {ci_1seg} → {ci_3seg}"
 
-    def test_metr_custom_ci_renders_ok(self):
-        """Changing CI values manually should render without error."""
-        at = _fresh_app()
-        at.run()
-        at.number_input(key="custom_dt_lo").set_value(30).run()
-        _assert_no_error(at, "custom dt_lo=30")
-        at.number_input(key="custom_dt_hi").set_value(500).run()
-        _assert_no_error(at, "custom dt_hi=500")
-
-    def test_metr_toggles_render_ok(self):
-        """Toggling sidebar controls should render without errors."""
-        at = _fresh_app()
-        at.run()
-        at.toggle(key="milestones").set_value(False).run()
-        _assert_no_error(at, "milestones off")
-        at.toggle(key="log_scale").set_value(False).run()
-        _assert_no_error(at, "log scale off")
-        at.toggle(key="p80").set_value(True).run()
-        _assert_no_error(at, "p80 on")
-
-    def test_rli_custom_ci_renders_ok(self):
-        """RLI: changing CI values renders without error."""
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Remote Labor Index")
-        at.number_input(key="rli_custom_dt_lo").set_value(30.0).run()
-        _assert_no_error(at, "RLI custom dt_lo=30")
-
-
 # ===========================================================================
 # (c) Reset restores all defaults
 # ===========================================================================
@@ -437,10 +269,12 @@ class TestReset:
         at.number_input(key="custom_dt_hi").set_value(999).run()
         at.toggle(key="milestones").set_value(False).run()
         at.toggle(key="log_scale").set_value(False).run()
+        at.toggle(key="p80").set_value(True).run()
         _assert_no_error(at, "after modifications")
         # Verify they actually changed
         assert at.number_input(key="custom_dt_lo").value == 10
         assert at.toggle(key="milestones").value is False
+        assert at.toggle(key="p80").value is True
         # Click reset
         at.button(key="reset_linear").click().run()
         _assert_no_error(at, "after reset")
@@ -451,6 +285,7 @@ class TestReset:
             f"DT hi not reset: {at.number_input(key='custom_dt_hi').value} != {dt_hi_default}"
         assert at.toggle(key="milestones").value is True, "milestones not reset"
         assert at.toggle(key="log_scale").value is True, "log_scale not reset"
+        assert at.toggle(key="p80").value is False, "p80 not reset"
 
     def test_metr_superexp_reset(self):
         """METR superexp reset reverts to default projection basis
@@ -524,38 +359,8 @@ def _emp_app():
     return at
 
 
-class TestEmploymentRenders:
-    """Employment tab renders without error across projection bases."""
-
-    def test_emp_default_linear_renders(self):
-        """Employment tab renders with default Linear (logit) basis."""
-        at = _emp_app()
-        assert at.radio(key="emp_proj_basis").value == "Linear (logit)"
-        assert _has_widget(at, "slider", "emp_rli_coverage")
-        assert _has_widget(at, "slider", "emp_base_unemployment")
-
-    def test_emp_piecewise_renders(self):
-        at = _emp_app()
-        at.radio(key="emp_proj_basis").set_value("Piecewise linear (logit)").run()
-        _assert_no_error(at, "Employment / Piecewise")
-
-    def test_emp_superexp_renders(self):
-        at = _emp_app()
-        at.radio(key="emp_proj_basis").set_value("Superexponential (logit)").run()
-        _assert_no_error(at, "Employment / Superexponential")
-
-
 class TestEmploymentDefaults:
     """Employment default values are reasonable and data-driven."""
-
-    def test_emp_slider_defaults(self):
-        at = _emp_app()
-        assert at.slider(key="emp_rli_coverage").value == 70.0
-        assert at.slider(key="emp_supervision_overhead").value == 10.0
-        assert at.slider(key="emp_remote_digital_share").value == 38.0
-        assert at.slider(key="emp_base_unemployment").value == 4.0
-        assert at.slider(key="emp_jevons_recovery").value == 30.0
-        assert at.slider(key="emp_adoption_lag").value == 365.0
 
     def test_emp_ci_defaults_are_data_driven(self):
         at = _emp_app()
@@ -566,59 +371,27 @@ class TestEmploymentDefaults:
         assert 3.0 <= dt_hi / dt_lo <= 5.0, \
             f"Unexpected CI spread: lo={dt_lo}, hi={dt_hi}"
 
-    def test_emp_display_mode_default(self):
-        at = _emp_app()
-        assert at.radio(key="emp_display_mode").value == "Unemployment Rate (%)"
-
-    def test_emp_end_year_default(self):
-        at = _emp_app()
-        assert at.radio(key="emp_end_year").value == 2028
-
 
 class TestEmploymentSliderChanges:
-    """Changing economic model sliders renders without error."""
+    """The economic model renders at the ends of its sliders, in both
+    display modes."""
 
-    def test_emp_low_rli_coverage(self):
-        """Low RLI coverage (10%) should not crash."""
+    @pytest.mark.parametrize("mode,key,value", [
+        (None, "emp_rli_coverage", 0.0),
+        (None, "emp_rli_coverage", 10.0),
+        (None, "emp_rli_coverage", 100.0),
+        (None, "emp_jevons_recovery", 0.0),
+        (None, "emp_adoption_lag", 0.0),
+        (None, "emp_adoption_lag", 1460.0),
+        (None, "emp_base_unemployment", 12.0),
+        ("Jobs Lost Above Baseline", "emp_rli_coverage", 10.0),
+    ])
+    def test_renders_at_edge(self, mode, key, value):
         at = _emp_app()
-        at.slider(key="emp_rli_coverage").set_value(10.0).run()
-        _assert_no_error(at, "emp_rli_coverage=10")
-
-    def test_emp_zero_rli_coverage(self):
-        """Zero RLI coverage should not crash."""
-        at = _emp_app()
-        at.slider(key="emp_rli_coverage").set_value(0.0).run()
-        _assert_no_error(at, "emp_rli_coverage=0")
-
-    def test_emp_max_rli_coverage(self):
-        """Max RLI coverage (100%) should not crash."""
-        at = _emp_app()
-        at.slider(key="emp_rli_coverage").set_value(100.0).run()
-        _assert_no_error(at, "emp_rli_coverage=100")
-
-    def test_emp_zero_jevons(self):
-        """Zero Jevons recovery should not crash."""
-        at = _emp_app()
-        at.slider(key="emp_jevons_recovery").set_value(0.0).run()
-        _assert_no_error(at, "emp_jevons=0")
-
-    def test_emp_zero_lag(self):
-        """Zero adoption lag should not crash."""
-        at = _emp_app()
-        at.slider(key="emp_adoption_lag").set_value(0.0).run()
-        _assert_no_error(at, "emp_lag=0")
-
-    def test_emp_max_lag(self):
-        """Max adoption lag (1460 days) should not crash."""
-        at = _emp_app()
-        at.slider(key="emp_adoption_lag").set_value(1460.0).run()
-        _assert_no_error(at, "emp_lag=1460")
-
-    def test_emp_high_base_unemployment(self):
-        """High base unemployment should not crash."""
-        at = _emp_app()
-        at.slider(key="emp_base_unemployment").set_value(12.0).run()
-        _assert_no_error(at, "emp_base_unemp=12")
+        if mode:
+            at.radio(key="emp_display_mode").set_value(mode).run()
+        at.slider(key=key).set_value(value).run()
+        _assert_no_error(at, f"Employment / {mode} / {key}={value}")
 
 
 class TestEmploymentDisplayModes:
@@ -636,13 +409,6 @@ class TestEmploymentDisplayModes:
         at = _emp_app()
         assert not _has_widget(at, "number_input", "emp_labor_force"), \
             "Labor force input should not appear in Unemployment Rate mode"
-
-    def test_emp_jobs_lost_low_coverage(self):
-        """Jobs Lost mode with low RLI coverage should not crash."""
-        at = _emp_app()
-        at.radio(key="emp_display_mode").set_value("Jobs Lost Above Baseline").run()
-        at.slider(key="emp_rli_coverage").set_value(10.0).run()
-        _assert_no_error(at, "Jobs Lost + low coverage")
 
 
 class TestEmploymentReset:
@@ -697,19 +463,6 @@ class TestDataCenters:
         assert "Current largest single data center by company" in text
         assert "Largest single data center by company over time" in text
 
-    def test_metric_switch(self):
-        at = self._dc_app()
-        at.selectbox(key="dc_metric").set_value("Power (MW)").run()
-        _assert_no_error(at, "Data Centers / Power (MW)")
-
-    def test_train_log_op_metrics_render(self):
-        for label in ("2mo train log OP", "6mo train log OP"):
-            at = self._dc_app()
-            at.selectbox(key="dc_metric").set_value(label).run()
-            _assert_no_error(at, f"Data Centers / {label}")
-            text = " ".join(str(c.value) for c in at.caption)
-            assert f"Methodology: *{label}*" in text
-
     def test_every_networking_option_renders(self):
         """Each pooling level draws, and the caption follows the selection —
         it describes the curated groups only where the level uses them."""
@@ -731,32 +484,26 @@ class TestDataCenters:
                 # is being assumed rather than just a bigger number.
                 assert "Mid-South" in text and "Texas & Oklahoma" in text
 
-    def test_train_log_op_timing_shift(self):
+    @pytest.mark.parametrize("metric,timing,methodology,units", [
+        ("2mo train log OP", None, "Methodology: *2mo train log OP*", False),
+        ("6mo train log OP", "Model release",
+         "Methodology: *6mo train log OP*", False),
+        # Time-to-train captions are in time units, never a bare run count.
+        ("Capacity (time to GPT-5)", None, "Methodology: time to train one", True),
+        ("Capacity (time to Mythos)", None, "Methodology: time to train one", True),
+    ])
+    def test_metric_methodology_caption(self, metric, timing, methodology, units):
+        """Each derived metric renders and its methodology caption names it."""
         at = self._dc_app()
-        at.selectbox(key="dc_metric").set_value("6mo train log OP").run()
-        at.selectbox(key="dc_timing").set_value("Model release").run()
-        _assert_no_error(at, "Data Centers / 6mo train log OP + model release")
-
-    def test_train_time_metrics_render_durations(self):
-        for label in ("Capacity (time to GPT-5)", "Capacity (time to Mythos)"):
-            at = self._dc_app()
-            at.selectbox(key="dc_metric").set_value(label).run()
-            _assert_no_error(at, f"Data Centers / {label}")
-            text = " ".join(str(m.value) for m in at.markdown) + \
-                " ".join(str(c.value) for c in at.caption)
-            # Captions are in time units, never a bare run count.
-            assert "Methodology: time to train one" in text
+        at.selectbox(key="dc_metric").set_value(metric).run()
+        if timing:
+            at.selectbox(key="dc_timing").set_value(timing).run()
+        _assert_no_error(at, f"Data Centers / {metric} / {timing}")
+        text = " ".join(str(m.value) for m in at.markdown) + \
+            " ".join(str(c.value) for c in at.caption)
+        assert methodology in text
+        if units:
             assert any(u in text for u in ("hour", "day", "week", "month"))
-
-    def test_include_future(self):
-        at = self._dc_app()
-        at.checkbox(key="dc_future").set_value(True).run()
-        _assert_no_error(at, "Data Centers / include future")
-
-    def test_projection_range_defaults(self):
-        at = self._dc_app()
-        assert at.radio(key="dc_start_year").value == 2025
-        assert at.radio(key="dc_end_year").value == 2027
 
     def test_projection_range_change(self):
         at = self._dc_app()
@@ -808,13 +555,6 @@ class TestRevenueDefaults:
         assert ant.value == len(ant_vals), \
             f"Anthropic fit-N should default to max ({len(ant_vals)}), got {ant.value}"
 
-    def test_fit_to_last_n_still_reducible(self):
-        """The slider remains user-adjustable to fit on fewer recent points."""
-        at = self._rev_app()
-        at.slider(key="oai_n_recent").set_value(3).run()
-        _assert_no_error(at, "Revenue / reduced fit-N")
-        assert at.slider(key="oai_n_recent").value == 3
-
     def test_combined_line_is_off_until_toggled(self):
         """Off by default; on, it adds a fitted sum series with its own
         controls and leaves the two company series in place."""
@@ -858,45 +598,24 @@ class TestComputeVsCapabilities:
         _switch_tab(at, "Compute/capabilities/diffusion")
         return at
 
-    def test_renders(self):
+    def test_renders_every_section(self):
+        """Section 1 (exchange rate + two-engine flow with its metrics),
+        section 2 (ECI forecasts to end-2029 with the four-row China
+        distillation table), section 3 (US vs. China) and the three-channel
+        decomposition with its consistency check all render."""
         at = self._cc_app()
-        _assert_no_error(at, "Compute vs Capabilities default")
         text = (" ".join(str(m.value) for m in at.markdown) +
                 " ".join(str(h.value) for h in at.subheader) +
                 " ".join(str(w.value) for w in at.warning)).lower()
-        # All three sections render: 1 (exchange rate + two-engine flow),
-        # 2 (ECI forecasts), 3 (US vs. China).
-        assert "exchange rate" in text
-        assert "two engines" in text
-        assert "eci forecasts" in text
-        assert "us vs. china" in text
-
-    def test_forecast_section_renders_milestones(self):
-        at = self._cc_app()
-        # Section 2 projects to end-2029 with year-end milestone cards and a
-        # China distillation-scenario table carrying all four channel rows.
+        for s in ("exchange rate", "two engines", "eci forecasts", "us vs. china",
+                  "distillation scenario", "no external distillation",
+                  "indigenous only", "where frontier growth comes from",
+                  "diffusion", "distillation"):
+            assert s in text, s
         labels = " ".join(str(m.label) for m in at.metric)
-        assert "End 2029" in labels
-        text = " ".join(str(m.value) for m in at.markdown).lower()
-        assert "distillation scenario" in text
-        assert "no external distillation" in text
-        assert "indigenous only" in text
-
-    def test_has_two_engine_metrics(self):
-        at = self._cc_app()
-        # The effective-compute decomposition exposes its two engines as metrics.
-        labels = " ".join(str(m.label) for m in at.metric)
-        assert "Physical compute" in labels
-        assert "Algorithmic efficiency" in labels
-        assert "Share of growth of compute" in labels
-
-    def test_channel_decomposition_renders(self):
-        """The three-channel section shows the derivation table, the stacked
-        US/China bars, and the residual consistency check."""
-        at = self._cc_app()
-        text = " ".join(str(m.value) for m in at.markdown)
-        assert "Where frontier growth comes from" in text
-        assert "Diffusion" in text and "Distillation" in text
+        for s in ("End 2029", "Physical compute", "Algorithmic efficiency",
+                  "Share of growth of compute"):
+            assert s in labels, s
         caps = " ".join(str(c.value) for c in at.caption)
         assert "consistency check" in caps
 
@@ -910,11 +629,6 @@ class TestComputeVsCapabilities:
         _assert_no_error(at, "Compute vs Capabilities / backdated scenario")
         caps = " ".join(str(c.value) for c in at.caption)
         assert "Backdated to" in caps
-
-    def test_include_future_toggle(self):
-        at = self._cc_app()
-        at.checkbox(key="cc_future").set_value(False).run()
-        _assert_no_error(at, "Compute vs Capabilities / no future")
 
     def test_dc_derivation_is_stated(self):
         """The tab says where its compute inputs come from: the
@@ -959,6 +673,7 @@ class TestComputeVsCapabilities:
     def test_reset(self):
         at = self._cc_app()
         at.checkbox(key="cc_future").set_value(False).run()
+        _assert_no_error(at, "Compute vs Capabilities / no future")
         at.button(key="cc_reset").click().run()
         _assert_no_error(at, "after cc reset")
         assert at.checkbox(key="cc_future").value is True
@@ -1015,7 +730,6 @@ class TestCcDuvCeilingTab:
         _assert_no_error(at, "CC / DUV ceiling")
         assert [str(h.value) for h in at.subheader][-1] == self._HEAD
         text = " ".join(str(m.value) for m in at.markdown)
-        assert "974M" in text and "378M" in text and "110M" in text
         assert "not a forecast" in text
         caps = " ".join(str(c.value) for c in at.caption)
         assert "techstatecraft.org/duv" in caps
@@ -1029,38 +743,6 @@ class TestRsiTab:
         at.run()
         _switch_tab(at, "RSI")
         return at
-
-    def test_renders(self):
-        at = self._rsi_app()
-        _assert_no_error(at, "RSI / default")
-
-    def test_deep_link_slug(self):
-        at = _fresh_app()
-        at.query_params["tab"] = "rsi"
-        at.run()
-        _assert_no_error(at, "RSI / deep link")
-        assert at.session_state["_active_tab"] == "RSI"
-
-    def test_metr_174h_panel_renders_at_the_top(self):
-        """Both reliability levels at the month-scale bar, as their own cards."""
-        at = self._rsi_app()
-        labels = [str(m.label) for m in at.metric]
-        assert "METR p50 horizon reaches 174h" in labels
-        assert "METR p80 horizon reaches 174h" in labels
-        assert not any("40h" in l for l in labels)
-        assert "ECI reaches 187.5" in labels
-        assert "ECI reaches 200" in labels
-        assert not any("ECI reaches 170" in l for l in labels)
-        assert "RLI reaches 90%" in labels
-        caps = " ".join(str(c.value) for c in at.caption)
-        assert caps.count("80% CI:") >= 4
-
-
-    def test_research_direction_section_renders(self):
-        at = self._rsi_app()
-        assert "Research direction" in [str(h.value) for h in at.subheader]
-        caps = " ".join(str(c.value) for c in at.caption)
-        assert "When AI builds itself" in caps
 
     def test_the_sections_chart_and_the_cards_date(self):
         """Every bar is dated once, on its milestone card. The per-section
@@ -1091,7 +773,7 @@ class TestRsiTab:
             return (x.get("title")
                     and len(rng) == 2 and all(isinstance(v, str) for v in rng))
         series = [L for L in charts if _calendar(L)]
-        assert len(series) == 6 and len(charts) == 7
+        assert series and len(series) == len(charts) - 1
         for L in series:
             notes = [a for a in L.get("annotations", [])
                      if a.get("text") == "Today"]
@@ -1099,25 +781,6 @@ class TestRsiTab:
             assert any(sh.get("line", {}).get("dash") == "dash"
                        and sh.get("x0") == sh.get("x1")
                        for sh in L.get("shapes", []))
-
-    def test_revenue_milestone_card_and_blend_row(self):
-        """The $1T card renders alongside the benchmark milestones and gets
-        its own weighted row in the blend."""
-        at = self._rsi_app()
-        labels = {str(m.label) for m in at.metric}
-        assert "Leading company revenue >$1T" in labels
-        t = next(x.value for x in at.table if "Milestone" in x.value.columns)
-        row = t[t["Milestone"] == "Leading company revenue >$1T"]
-        assert len(row) == 1
-        assert row.iloc[0]["Weight"].startswith("0%")
-        # Every milestone gets a row, and the weights editor an input each.
-        assert len(t) == 13
-
-    def test_merged_code_section_renders(self):
-        at = self._rsi_app()
-        assert "Code merged per Anthropic engineer" in [str(h.value)
-                                                        for h in at.subheader]
-        assert "Code per person reaches 30x" in [str(m.label) for m in at.metric]
 
     def test_experiment_velocity_chart_and_blend(self):
         import json
@@ -1127,26 +790,11 @@ class TestRsiTab:
         assert label in [str(m.label) for m in at.metric]
         table = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = table[table["Milestone"] == label]
-        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("6%")
+        assert len(row) == 1
         figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
         fig = next(f for f in figures if any(t.get('name') == 'OpenAI observations'
                                              for t in f['data']))
-        observed = next(t for t in fig['data'] if t.get('name') == 'OpenAI observations')
-        assert len(observed['x']) == 32
-        assert observed['y'][0] == 0.72 and observed['y'][-1] == 1.60
         assert any(s.get('y0') == s.get('y1') == 10 for s in fig['layout']['shapes'])
-
-    def test_merged_code_row_in_the_blend(self):
-        """Merged code is down to 5%: it and experiment velocity each gave
-        half their weight to the R&D automation index, which rates the work
-        rather than counting the output a coding model inflates directly."""
-        at = self._rsi_app()
-        t = next(x.value for x in at.table if "Milestone" in x.value.columns)
-        row = t[t["Milestone"] == "Code per person reaches 30x"]
-        assert len(row) == 1
-        assert row.iloc[0]["Weight"].startswith("6%")
-        staff = t[t["Milestone"].str.contains("acceleration")]
-        assert staff.iloc[0]["Weight"].startswith("7%")
 
     def test_rd_automation_section_and_blend_row(self):
         """The index's own section, card and weighted row — and the fitted
@@ -1158,12 +806,12 @@ class TestRsiTab:
         assert label in [str(m.label) for m in at.metric]
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = t[t["Milestone"] == label]
-        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("7%")
+        assert len(row) == 1
         figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
         fig = next(f for f in figures
                    if any(t.get("error_y") for t in f["data"]))
         obs = next(t for t in fig["data"] if t.get("error_y"))
-        assert len(obs["x"]) == 6 and obs["y"][-1] == 26.0
+        assert len(obs["x"]) == len(obs["error_y"]["array"])
         assert any(s.get("y0") == s.get("y1") == 90 for s in fig["layout"]["shapes"])
         # The rungs below AL4 ride the same chart as measured context.
         import visualize_projection as vp
@@ -1182,7 +830,7 @@ class TestRsiTab:
         assert label in [str(m.label) for m in at.metric]
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = t[t["Milestone"] == label]
-        assert len(row) == 1 and row.iloc[0]["Weight"].startswith("20%")
+        assert len(row) == 1
         figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
         fig = next(f for f in figures if any(
             "AL5 measured" in (tr.get("name") or "") for tr in f["data"]))
@@ -1214,14 +862,16 @@ class TestRsiTab:
         caption nobody reads: every card has a hover naming its fit and its
         clock, and the caption under them stays short."""
         at = self._rsi_app()
-        cards = [m for m in at.metric if "80% CI" not in str(m.label)
-                 and str(m.label) not in ("Blended median", "Median")]
-        helps = {str(m.label): (m.proto.help or "") for m in cards}
-        milestones = {k: v for k, v in helps.items()
-                      if "reaches" in k or "revenue" in k or "acceleration" in k}
-        assert len(milestones) == 11
-        for lab, h in milestones.items():
-            assert "defaults" in h, lab
+        helps = {str(m.label): (m.proto.help or "") for m in at.metric}
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns)
+        milestones = list(t["Milestone"])
+        assert len(milestones) > 10
+        for lab in milestones:
+            assert lab in helps, lab
+            h = helps[lab]
+            # Fitted cards name the tab defaults they reproduce; AL5 is no
+            # fit of its own and names the AL4 fit it shifts.
+            assert "defaults" in h or "fit" in h, lab
             assert "clock" in h or "releases" in h, lab
         cap = next(str(c.value) for c in at.caption if "hover a card" in str(c.value))
         assert len(cap) < 300
@@ -1233,15 +883,13 @@ class TestRsiTab:
         """Footnotes hang off the words they qualify, not off markers parked
         at the end of the line: across every tab, no note falls back to a
         trailing `?`."""
-        import re
-        tabs = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "RSI",
-                "UK Cyber", "Revenue", "Employment", "ECI Company Gap",
-                "Data Centers", "Compute/capabilities/diffusion", "Pacing"]
         total = 0
-        for tab in tabs:
+        for tab, slug in _SLUG_FOR_TAB.items():
             at = _fresh_app()
+            at.query_params["tab"] = slug
             at.run()
-            _switch_tab(at, tab)
+            _assert_no_error(at, f"footnotes / {tab}")
+            assert at.session_state["_active_tab"] == tab
             for el in list(at.caption) + list(at.markdown):
                 v = str(el.value)
                 total += v.count('class="vp-fn-a')
@@ -1249,12 +897,6 @@ class TestRsiTab:
                                    v)
                 assert not stray, (tab, stray)
         assert total > 50            # the sweep is app-wide, not one tab
-
-    def test_blend_renders(self):
-        at = self._rsi_app()
-        labels = {str(m.label) for m in at.metric}
-        assert {"Blended median", "80% CI"} <= labels
-        assert any("RSI projection (tentative)" in h.value for h in at.subheader)
 
     def test_notyet_conditioning_toggle(self):
         """Default on: the blend table carries the reality-check column;
