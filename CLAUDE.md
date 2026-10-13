@@ -46,7 +46,7 @@ Thirteen-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v7-amdahl-ces`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v8-gated-taste`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -83,6 +83,10 @@ falls (`ai_speed`), non-AI input growth holding the frozen-AI pace (`baseline_in
 steady-state pipeline, and an `r` control (`tk_returns`) from which the app sets
 difficulty = parallelization / r. The pace-factor chart (`_tk_factors_fig`) is capped at
 `_TK_FACTOR_VIEW`. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
+v8 gates AI judgment by the direction stage's human share and caps it (`taste_cap`,
+`test_ai_judgment_only_counts_where_ai_directs_research`). Superintelligence is the first
+month a draw's ECI reaches `_TK_ASI_ECI` (290). ECI at RSI is fixed by construction:
+human hours depend only on capability, so RSI is a capability threshold.
 
 Evidence calibration uses the endpoint growth in `openai_experiment_velocity.csv`, adjusts
 for assumed historical compute and coding gains, and fits a quality elasticity blended with

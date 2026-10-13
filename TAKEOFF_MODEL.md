@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v7-amdahl-ces`. Work remains on `codex/grounded-takeoff`;
+Version: `takeoff-v8-gated-taste`. Work remains on `codex/grounded-takeoff`;
 checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
@@ -39,6 +39,14 @@ Labor speeds up as the human share h of research hours falls, by Amdahl's law:
 (h0 + (1 - h0)/s) / (h + (1 - h)/s), with s = `ai_speed` (default 30x) and h0 today's
 share, through the same transfer discount as coding and judgment. RSI is where h is
 lowest, so it is where this term is largest.
+
+Research judgment is gated by who directs research: people still in the direction stage
+keep today's judgment, and AI judgment (rising with capability, capped at `taste_cap`,
+default 10x today) applies to the rest, so quality = h_dir + (1 - h_dir) x AI judgment.
+Uncapped, judgment compounding with capability was the takeoff engine whether or not
+people had left; gated and capped it peaks around RSI, and with r = 1 the pace then
+drifts back toward the input-growth rate, as semi-endogenous growth predicts for a level
+gain.
 
 Difficulty is set from the returns to research r (the tab's control, default 1.0, the
 revised Forethought central estimate): difficulty = parallelization / r, the

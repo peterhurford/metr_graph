@@ -17796,7 +17796,17 @@ def _tk_eci(result, params):
     at_rsi = np.where(np.isfinite(rsi) & (rsi <= years[-1]),
                       paths[np.arange(len(rsi)), idx], np.nan)
     return {"now": now, "ppy": ppy, "paths": paths, "at_rsi": at_rsi,
-            "frontier": frontier}
+            "frontier": frontier, "asi": _tk_first_reach(paths, years, _TK_ASI_ECI)}
+
+
+# Superintelligence, as an ECI level each scenario's capability path must reach.
+_TK_ASI_ECI = 290.0
+
+
+def _tk_first_reach(paths, years, level):
+    """Per draw, the first grid year its path reaches `level` (+inf if never)."""
+    hit = paths >= level
+    return np.where(hit.any(axis=1), years[np.argmax(hit, axis=1)], np.inf)
 
 
 # Past RSI some scenarios' efficiency compounds without limit, and ECI (linear
@@ -17839,6 +17849,9 @@ def _tk_eci_fig(result, today, eci, markers=()):
         fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper",
                            text=label, showarrow=False, xanchor="left",
                            font=dict(size=11, color="#888"))
+    fig.add_hline(y=_TK_ASI_ECI, line_dash="dash", line_color="#c0392b", line_width=1,
+                  annotation_text=f"Superintelligence: ECI {_TK_ASI_ECI:g}",
+                  annotation_position="top left", annotation_font_color="#c0392b")
     if q[-1, 2] > _TK_ECI_VIEW_MAX:
         fig.add_annotation(
             x=x[-1], y=_TK_ECI_VIEW_MAX, xanchor="right", yanchor="top",
@@ -18123,6 +18136,10 @@ def render_takeoff():
                    "output; 0 lets either fully make up for the other. Contested: "
                    "compute-bottleneck views sit near \u22121, views where AI "
                    "economizes on experiments nearer 0.")
+            number("Ceiling on AI research judgment (\u00d7 today)", "taste_cap", 1.0, 1000.0, 1.0,
+                   "AI judgment grows with capability up to this multiple of today's "
+                   "research quality, and applies only to the share of research "
+                   "direction AI does; people still directing keep today's judgment.")
             number("AI speed on automated work (\u00d7)", "ai_speed", 1.0, 1000.0, 5.0,
                    "How much faster AI does the research work it has taken over. As "
                    "the human share h falls, research labor speeds up by "
@@ -18152,6 +18169,8 @@ def render_takeoff():
             number("Simulation seed", "seed", 0, 4294967295, 1)
 
     st.header("Takeoff")
+    st.warning("Warning: RSI projections under construction, these are simple "
+               "models and not 'all things considered' takes.")
     st.markdown(_TK_LOOP_HTML, unsafe_allow_html=True)
     _fn_line(
         "Brakes: **limited compute**, **ideas get harder to find**, and "
@@ -18221,24 +18240,28 @@ def render_takeoff():
         return
     rsi = result["events"]["RSI"]
     eci = _tk_eci(result, params)
+    def _card(col, label, samples, help):
+        col.metric(label, _tk_date(takeoff.quantile(samples, 0.5, horizon), today),
+                   help=help + f" {100 * np.mean(samples <= horizon):.0f}% of scenarios "
+                               f"by {end_date:%b %Y}.")
+        col.caption(f"80% CI: {_tk_date(takeoff.quantile(samples, 0.1, horizon), today)}"
+                    f" \u2013 {_tk_date(takeoff.quantile(samples, 0.9, horizon), today)}")
+
     a, b, c = st.columns(3)
-    a.metric("Full coding automation (RSI tab)",
-             _tk_date(takeoff.quantile(result["onset"], 0.5, horizon), today),
-             help="Median of the RSI tab's blend, AL5 card excluded.")
-    b.metric("RSI: every stage \u2264 " f"{params['full_human']:g}% human",
-             _tk_date(takeoff.quantile(rsi, 0.5, horizon), today),
-             help=f"Median; middle 80% {_tk_date(takeoff.quantile(rsi, 0.1, horizon), today)}"
-                  f" \u2013 {_tk_date(takeoff.quantile(rsi, 0.9, horizon), today)}. "
-                  f"{100 * np.mean(rsi <= horizon):.0f}% of scenarios by {end_date:%b %Y}.")
-    c.metric(f"ECI by {end_date:%b %Y}", f"{np.median(eci['paths'][:, -1]):.0f}",
-             help=f"Median; middle 80% {np.quantile(eci['paths'][:, -1], .1):.0f}\u2013"
-                  f"{np.quantile(eci['paths'][:, -1], .9):.0f}. Today's frontier: "
-                  f"{eci['now']:.0f}.")
+    _card(a, "Full coding automation (RSI tab)", result["onset"],
+          "The RSI tab's blend, AL5 card excluded.")
+    _card(b, "RSI: every stage \u2264 " f"{params['full_human']:g}% human", rsi,
+          "Every research stage at or under the human-hours bar, after coding "
+          "automation.")
+    _card(c, f"Superintelligence: ECI {_TK_ASI_ECI:g}", eci["asi"],
+          f"First month a scenario's ECI reaches {_TK_ASI_ECI:g} (today's frontier: "
+          f"{eci['now']:.0f}).")
     if limited:
         st.caption(f"{100 * limited:.2f}% of scenarios exceeded the simulation's range "
                    "and count as not reaching RSI.")
     medians = [(label, takeoff.quantile(samples, 0.5, horizon))
-               for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi))]
+               for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
+                                      ("Superintelligence", eci["asi"]))]
     markers = [(label, today + timedelta(days=float(t * 365.25)))
                for label, t in medians if 0 <= t <= horizon]
 

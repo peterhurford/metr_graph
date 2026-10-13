@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v7-amdahl-ces"
+MODEL_VERSION = "takeoff-v8-gated-taste"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -46,6 +46,10 @@ DEFAULTS = {
     # Share of the non-AI input growth that would hold today's pace with AI
     # frozen (researchers, spending); 0 leaves compute the only growing input.
     "baseline_inputs": 100.0,
+    # Ceiling on AI research judgment, as a multiple of today's research
+    # quality. Judgment applies only to the share of research direction AI
+    # does, so it takes over as people leave the direction stage.
+    "taste_cap": 10.0,
 }
 PRESETS = {
     "Central": {},
@@ -98,7 +102,7 @@ def validate(params):
             or p["rsi_trend_months"] <= 0:
         raise ValueError("RSI trend weights must be percentages and their half-life positive.")
     if not -5 <= p["substitution"] <= 0.9 or p["ai_speed"] < 1 \
-            or not 0 <= p["baseline_inputs"] <= 200:
+            or not 0 <= p["baseline_inputs"] <= 200 or p["taste_cap"] < 1:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
                          "baseline input growth in [0, 200]%.")
     return p
@@ -353,9 +357,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         compute_log = compute_rate * (t + dt / 2)
         extra_log = extra_rate * (t + dt / 2)
         effective = deployed + fast_deployed
-        share_now = workflow_state(effective, baseline_capability_rate, starts,
-                                   halves, floor) @ WORKFLOW_WEIGHTS
+        human_now = workflow_state(effective, baseline_capability_rate, starts,
+                                   halves, floor)
+        share_now = human_now @ WORKFLOW_WEIGHTS
         amdahl_log = amdahl0 - np.log(share_now + (1 - share_now) / ai_speed)
+        # People still directing research keep today's judgment; AI's (capped)
+        # applies to the rest, so research quality is the direction-weighted mix.
+        direction = human_now[:, 0]
         # The RSI anchor supplies a smooth reduction in coding human hours.
         # Its productivity gain and endogenous coding gains overlap: use the
         # larger, not their product. Existing assistance is normalized to 1.
@@ -367,8 +375,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         if transfer:
             coding_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
                                      np.log(transfer) + coding_gain)
-            quality_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
-                                      np.log(transfer) + taste_slope * effective)
+            ai_taste_log = np.minimum(np.logaddexp(
+                np.log1p(-transfer) if transfer < 1 else -np.inf,
+                np.log(transfer) + taste_slope * effective), np.log(p["taste_cap"]))
+            quality_log = np.log(direction + (1 - direction) * np.exp(ai_taste_log))
             automation_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
                                           np.log(transfer) + amdahl_log)
         else:
