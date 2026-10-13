@@ -107,8 +107,11 @@ def validate(params):
 
 def calibrate_feedback(experiment_growth, compute_growth, capability_growth,
                        yield_change=1.0, validated_growth=None, transfer=.6,
-                       coding_slope=.8, parallel=.5, substitution=-0.5):
-    """Effective quality elasticity after accounting for compute and coding.
+                       coding_slope=.8, parallel=.5, substitution=-0.5,
+                       automation_growth=1.0):
+    """Effective quality elasticity after the model's own research equation
+    has accounted for compute, coding help and `automation_growth` (the
+    Amdahl labor gain from people's falling share over the same window).
 
     Aggregate experiments are a proxy, not causal identification. A supplied
     validated-progress ratio supersedes that proxy. Ratios compare matched
@@ -117,13 +120,15 @@ def calibrate_feedback(experiment_growth, compute_growth, capability_growth,
     values = [experiment_growth, compute_growth, capability_growth, yield_change]
     if validated_growth is not None:
         values.append(validated_growth)
+    values.append(automation_growth)
     if not all(np.isfinite(v) and v > 0 for v in values) or capability_growth <= 1:
         raise ValueError("Calibration needs positive ratios and capability growth above 1×.")
     if not 0 < transfer <= 1 or not 0 < parallel <= 1 or coding_slope < 0:
         raise ValueError("Calibration requires positive transfer and valid elasticities.")
     useful_growth = experiment_growth * yield_change if validated_growth is None else validated_growth
     residual = useful_growth / compute_growth ** parallel
-    coding = (1 - transfer + transfer * capability_growth ** coding_slope) ** parallel
+    coding = ((1 - transfer + transfer * capability_growth ** coding_slope)
+              * (1 - transfer + transfer * automation_growth)) ** parallel
     quality = residual / _ces(coding, 1.0, substitution)
     slope = np.log(max(1.0, (quality - 1 + transfer) / transfer)) / np.log(capability_growth)
     return dict(quality_slope=float(slope), resource_adjusted_growth=float(residual),

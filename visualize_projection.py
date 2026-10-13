@@ -17536,16 +17536,56 @@ def _tk_survey_coding(rows, experiments, capability_growth, transfer):
 def _tk_nextstep_taste(frontier, experiments, capability_growth, transfer):
     """Research-judgment elasticity implied by the next-step study.
 
-    Its win rate's odds are read as a strength ratio against the researcher
-    (Bradley-Terry), so their yearly growth is research judgment's. Divided
-    by the yearly effective-capability growth the experiment calibration
-    assumes, through the same transfer form `takeoff.calibrate_feedback` uses.
+    Its win odds grow as a strength ratio against the researcher would
+    (Bradley-Terry), but picking the better step more often is not research
+    that much more productive: judgment is taken to grow as the odds raised to
+    `_TK_ODDS_TO_JUDGMENT`. Divided by the yearly effective-capability growth,
+    through the same transfer form `takeoff.calibrate_feedback` uses.
     """
     _base, _icpt, slope = _rsi_dir_fit(frontier)
-    return _tk_elasticity(np.exp(slope * 365.25), experiments, capability_growth,
-                          transfer, takeoff.DEFAULTS["taste_slope"])
+    return _tk_elasticity(np.exp(_TK_ODDS_TO_JUDGMENT * slope * 365.25), experiments,
+                          capability_growth, transfer, takeoff.DEFAULTS["taste_slope"])
 
 
+# Research value grows as the square root of the next-step study's win odds:
+# a hedge between reading the odds as productivity (1) and ignoring them (0).
+_TK_ODDS_TO_JUDGMENT = 0.5
+
+
+def _tk_hist_compute_rate():
+    """Log growth a year of the US largest training run, the Data Centers
+    tab's own fit: the compute growth behind today's trends."""
+    series = _dc_series_for_metric(dc_all, 'train_flop')
+    country_of = {dc['name']: _dc_site_country(dc) for dc in dc_all}
+    names = _dc_country_groups(series, country_of, 'abroad').get(_DC_CTY_US, [])
+    fit = _dc_cty_fit(_dc_country_steps(series, names, 'site', {}),
+                      since=_DC_DEFAULTS["dc_cty_since"],
+                      t_end=datetime.now() + timedelta(days=_DC_CTY_PLAN_HORIZON_DAYS))
+    return fit['g'] * np.log(10) if fit else np.log(takeoff.DEFAULTS["compute_growth"])
+
+
+def _tk_evidence_window_growth(experiments):
+    """(compute, effective capability) growth over the experiment evidence
+    window, from evidence: the data-center compute fit, and that times the
+    model's own software-efficiency trend."""
+    years = (experiments[-1]['date'] - experiments[0]['date']).days / 365.25
+    compute = _tk_hist_compute_rate()
+    software = np.log(2) * 12 / takeoff.DEFAULTS["software_months"]
+    return (round(float(np.exp(compute * years)), 2),
+            round(float(np.exp((compute + software) * years)), 2))
+
+
+def _tk_automation_growth(rows, experiments, ai_speed):
+    """The Amdahl labor gain over the experiment evidence window, from the
+    automation index's human share at its two ends."""
+    def share(d):
+        return _tk_ladder_human_share(min(rows, key=lambda r: abs((r['date'] - d).days)))
+    h0, h1 = share(experiments[0]['date']), share(experiments[-1]['date'])
+    return float((h0 + (1 - h0) / ai_speed) / (h1 + (1 - h1) / ai_speed))
+
+
+_TK_DEFAULTS["tk_cal_compute"], _TK_DEFAULTS["tk_cal_capability"] = \
+    _tk_evidence_window_growth(load_rsi_experiments())
 _TK_DEFAULTS.update(_tk_ladder_stage_starts(load_rsi_automation()))
 _TK_DEFAULTS.update(_tk_ladder_stage_halvings(load_rsi_automation(),
                                                takeoff.DEFAULTS["human_floor"]))
@@ -18256,7 +18296,9 @@ def render_takeoff():
             st.session_state["tk_cal_capability"], st.session_state["tk_cal_yield"],
             st.session_state["tk_cal_validated"] or None,
             transfer=params["transfer"] / 100, coding_slope=params["coding_slope"],
-            parallel=params["parallelization"], substitution=params["substitution"])
+            parallel=params["parallelization"], substitution=params["substitution"],
+            automation_growth=_tk_automation_growth(load_rsi_automation(), evidence,
+                                                    params["ai_speed"]))
         w = st.session_state["tk_cal_weight"] / 100
         calibration["quality_prior"] = params["taste_slope"]
         calibration["weight"] = w

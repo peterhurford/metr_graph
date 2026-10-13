@@ -6452,10 +6452,11 @@ class TestTakeoffRsiCalibration:
 
     def test_taste_default_is_the_next_step_fit(self):
         args = (vp.rsi_dir_frontier_all, vp.load_rsi_experiments())
-        taste = vp._tk_nextstep_taste(*args, 2.0, 0.6)
+        cap = vp._TK_DEFAULTS["tk_cal_capability"]
+        taste = vp._tk_nextstep_taste(*args, cap, 0.6)
         assert vp._TK_DEFAULTS["tk_taste_slope"] == taste > 0
         # Faster capability growth means each unit of it buys less judgment.
-        assert vp._tk_nextstep_taste(*args, 4.0, 0.6) < taste
+        assert vp._tk_nextstep_taste(*args, 2 * cap, 0.6) < taste
 
     def test_halving_times_match_the_ladders_decline(self):
         rows = vp.load_rsi_automation()
@@ -6471,9 +6472,43 @@ class TestTakeoffRsiCalibration:
 
     def test_coding_default_is_the_survey_fit(self):
         args = (vp.load_rsi_survey(), vp.load_rsi_experiments())
-        coding = vp._tk_survey_coding(*args, 2.0, 0.6)
+        cap = vp._TK_DEFAULTS["tk_cal_capability"]
+        coding = vp._tk_survey_coding(*args, cap, 0.6)
         assert vp._TK_DEFAULTS["tk_coding_slope"] == coding > 0
-        assert vp._tk_survey_coding(*args, 4.0, 0.6) < coding
+        assert vp._tk_survey_coding(*args, 2 * cap, 0.6) < coding
+
+    def test_window_growth_comes_from_evidence(self):
+        """Compute over the evidence window is the data-center fit; capability
+        is that times the model's software-efficiency trend."""
+        ev = vp.load_rsi_experiments()
+        years = (ev[-1]['date'] - ev[0]['date']).days / 365.25
+        compute, cap = vp._tk_evidence_window_growth(ev)
+        assert compute == pytest.approx(np.exp(vp._tk_hist_compute_rate() * years), abs=0.01)
+        software = np.exp(np.log(2) * 12 / vp.takeoff.DEFAULTS["software_months"] * years)
+        assert cap == pytest.approx(compute * software, abs=0.02)
+        assert (vp._TK_DEFAULTS["tk_cal_compute"], vp._TK_DEFAULTS["tk_cal_capability"]) == (compute, cap)
+
+    def test_judgment_reads_the_square_root_of_the_win_odds(self):
+        args = (vp.rsi_dir_frontier_all, vp.load_rsi_experiments(), 3.0, 0.6)
+        half = vp._tk_nextstep_taste(*args)
+        full_odds = vp._TK_ODDS_TO_JUDGMENT
+        try:
+            vp._TK_ODDS_TO_JUDGMENT = 1.0
+            assert vp._tk_nextstep_taste(*args) > half
+        finally:
+            vp._TK_ODDS_TO_JUDGMENT = full_odds
+
+    def test_experiment_fit_credits_measured_automation_first(self):
+        """The automation index's falling human share explains part of the
+        experiment growth, leaving less to judgment."""
+        ev = vp.load_rsi_experiments()
+        g = ev[-1]['mult'] / ev[0]['mult']
+        aut = vp._tk_automation_growth(vp.load_rsi_automation(), ev, 30.0)
+        assert aut > 1
+        kw = dict(transfer=0.6, coding_slope=0.85, parallel=0.5, substitution=-0.5)
+        with_aut = vp.takeoff.calibrate_feedback(g, 1.95, 3.38, automation_growth=aut, **kw)
+        without = vp.takeoff.calibrate_feedback(g, 1.95, 3.38, **kw)
+        assert with_aut["quality_slope"] < without["quality_slope"]
 
 
 class TestTakeoffB:
