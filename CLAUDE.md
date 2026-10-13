@@ -1199,7 +1199,7 @@ R&D work reaching `_RSI_AUTO_TARGET` (the app's bar, not the post's — see the
 RSI tab section), `_pc_rsi_al5_eta()` for the AL5 share — model R&D with no
 human in the loop — reaching `_RSI_AL5_TARGET`, the same 90% bar, which is
 **not a fitted series** but the AL4 rung shifted by the ladder's own step (see
-the R&D automation section; it carries the single largest blend weight and the
+the R&D automation section; it carries the same blend weight as every research card and the
 loudest caveat), `_pc_nextstep_eta()` for the detour study's frontier reaching
 `_RSI_DIR_TARGET` (that study's own practical ceiling — see the RSI tab section),
 and `_pc_revenue_eta()` for the **leading** company's ARR reaching `_PC_REV_TARGET_B`
@@ -1270,7 +1270,7 @@ evals, and the checkbox help says so.
 
 Under the cards sits *RSI projection (tentative)* (`_pc_render_rsi_blend()`):
 no single benchmark defines the threshold, so each milestone is treated as one
-candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets. The ECI and revenue cards carry
+candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets: 10 for each research card. The ECI and revenue cards carry
 zero weight: they date general capability and earnings, not AI doing AI research. The result
 is `_pc_rsi_blend()`, the **mixture of their date distributions, not an average
 of their medians**, drawn as a CDF (`_pc_rsi_dist_fig()`) between the

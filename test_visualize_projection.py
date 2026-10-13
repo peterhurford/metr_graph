@@ -3700,16 +3700,15 @@ class TestRsiCode:
         assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
 
     def test_milestone_card_is_weighted_in_the_blend(self):
-        """Both output proxies sit at 5%, having given half their weight to
-        the R&D automation index; the staff survey then gave 5 more to AL5."""
+        """Every research card carries an equal 10."""
         slug = f"code_{vp._RSI_CODE_TARGET:.0f}x"
         assert slug == "code_30x"
-        assert vp._PC_RSI_WEIGHTS[slug] == 6.0
-        assert vp._PC_RSI_WEIGHTS["experiments_10x"] == 6.0
-        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 7.0
+        assert vp._PC_RSI_WEIGHTS[slug] == 10.0
+        assert vp._PC_RSI_WEIGHTS["experiments_10x"] == 10.0
+        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 10.0
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
         assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
-        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 6.0
+        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 10.0
 
     def test_the_milestone_is_on_the_internal_clock(self):
         """Driven by models Anthropic uses internally before release, like
@@ -3850,14 +3849,13 @@ class TestRsiAutomation:
         assert vp._pc_rsi_auto_eta(rows) is None
 
     def test_milestone_card_is_weighted_in_the_blend(self):
-        """AL4 is an intermediate rung once AL5 is the headline, so it sits
-        at 5 while AL5 takes the single largest weight."""
+        """AL4 and AL5 carry the same equal weight as every research card."""
         slug = f"rdauto_{vp._RSI_AUTO_TARGET:.0f}"
         assert slug == "rdauto_90"
-        assert vp._PC_RSI_WEIGHTS[slug] == 7.0
+        assert vp._PC_RSI_WEIGHTS[slug] == 10.0
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
         assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
-        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 7.0
+        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 10.0
         al5 = f"al5_{vp._RSI_AL5_TARGET:.0f}"
         assert al5 == "al5_90"
         assert vp._PC_RSI_WEIGHTS[al5] == max(vp._PC_RSI_WEIGHTS.values())
