@@ -87,10 +87,10 @@ difficulty = parallelization / r. The pace-factor chart (`_tk_factors_fig`) is c
 `_TK_FACTOR_VIEW`. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
-The sidebar leads with the five parameters a one-at-a-time sweep found move
-superintelligence 9–19 months (ρ, r, parallelization, data-center compute; the judgment
-ceiling was the fifth, since removed); the rest sit in one *Advanced* expander. Retarget that grouping if a rerun of
-the sweep reorders them.
+The sidebar leads with the four parameters a one-at-a-time sweep (uncapped judgment) found
+move superintelligence 4–21 months: parallelization, r, the judgment elasticity, ρ; the
+rest, data-center compute included (~1 month), sit in one *Advanced* expander. Retarget
+that grouping if a rerun of the sweep reorders them.
 AI judgment is gated by the direction stage's human share, uncapped
 (`test_ai_judgment_only_counts_where_ai_directs_research`). Superintelligence is the first
 month a draw's ECI reaches `_TK_ASI_ECI` (290). ECI at RSI is fixed by construction:

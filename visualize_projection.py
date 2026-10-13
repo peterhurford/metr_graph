@@ -18028,15 +18028,11 @@ def render_takeoff():
                    "Adjust its weights and timing on the RSI tab.")
         number("Project through (year end)", "end_year", datetime.now().year, 2050, 1)
         with st.expander("What decides superintelligence", expanded=True):
-            st.caption("Each moves the superintelligence date by 9\u201319 months "
-                       "across its plausible range; everything under Advanced moves "
-                       "it 4 months or less.")
-            number("Labor\u2013compute substitutability (\u03c1)", "substitution", -3.0, 0.5, 0.1,
-                   "How research labor and experiment compute combine (CES exponent). "
-                   "\u22121 is a harmonic mean, where unlimited labor at most doubles "
-                   "output; 0 lets either fully make up for the other. Contested: "
-                   "compute-bottleneck views sit near \u22121, views where AI "
-                   "economizes on experiments nearer 0.")
+            st.caption("Across a plausible range, each moves the superintelligence date "
+                       "by 4\u201321 months; everything under Advanced moves it a few "
+                       "months at most.")
+            number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
+                   "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
                    "How many doublings of algorithmic efficiency each doubling of "
                    "cumulative research effort buys; below 1 ideas get harder faster "
@@ -18044,16 +18040,16 @@ def render_takeoff():
                    "estimate (range 0.33\u20133); Davidson & Houlden's was 1\u20134, or "
                    "0.5\u20132 with hardware fixed. Sets research difficulty as the "
                    "parallelization exponent divided by r.")
-            number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
-                   "0.5 gives square-root returns to more coding labor or experiment compute.")
-            st.checkbox("Use the Data Centers tab's compute projection", key="tk_dc_compute",
-                        help="Each scenario's compute grows at the average rate of one "
-                             "sampled US largest-training-run trajectory from the Data "
-                             "Centers tab (planned sites under slip, then the fitted "
-                             f"trend) over the next {_TK_DC_AVG_YEARS} years, whatever the "
-                             "chart horizon. Off: the flat rate below.")
-            number("Compute growth per year (×)", "compute_growth", 1.0, 5.0, 0.1,
-                   "Used when the data-center projection is off.")
+            number("How fast AI research judgment improves", "taste_slope", 0.0, 2.0, 0.1,
+                   "Research quality scales as capability raised to this power. The "
+                   "default is fitted from the RSI tab's next-step study: its win odds "
+                   "against researchers grow as research judgment does.")
+            number("Labor\u2013compute substitutability (\u03c1)", "substitution", -3.0, 0.5, 0.1,
+                   "How research labor and experiment compute combine (CES exponent). "
+                   "\u22121 is a harmonic mean, where unlimited labor at most doubles "
+                   "output; 0 lets either fully make up for the other. Contested: "
+                   "compute-bottleneck views sit near \u22121, views where AI "
+                   "economizes on experiments nearer 0.")
         with st.expander("What decides RSI"):
             number("Human work at RSI (%)", "full_human", 0.0, 25.0, 1.0,
                    "RSI is when research direction (choosing what to try next) falls "
@@ -18062,6 +18058,14 @@ def render_takeoff():
             st.caption("RSI otherwise follows the coding-automation date, and research "
                        "direction's starting share and halving time under Advanced.")
         with st.expander("Advanced (small effects)"):
+            st.checkbox("Use the Data Centers tab's compute projection", key="tk_dc_compute",
+                        help="Each scenario's compute grows at the average rate of one "
+                             "sampled US largest-training-run trajectory from the Data "
+                             "Centers tab (planned sites under slip, then the fitted "
+                             f"trend) over the next {_TK_DC_AVG_YEARS} years, whatever the "
+                             "chart horizon. Off: the flat rate below.")
+            number("Compute growth per year (×)", "compute_growth", 1.0, 5.0, 0.1,
+                   "Used when the data-center projection is off.")
             number("Research pace today (× 2025)", "pace_today", 0.5, 5.0, 0.1,
                    "Where chart 1 starts: how much faster useful research is today than "
                    "in 2025. The default is an assumption, not a measurement. "
@@ -18141,10 +18145,6 @@ def render_takeoff():
                    "compute saved at fixed quality, at the reference 40/40/20 compute split. "
                    "Includes AI assistance already present today; it is not multiplied in again.")
             st.markdown("**Research feedback**")
-            number("Research-quality elasticity prior", "taste_slope", 0.0, 2.0, 0.1,
-                   "Research quality scales as capability raised to this power. The "
-                   "default is fitted from the RSI tab's next-step study: its win odds "
-                   "against researchers grow as research judgment does.")
             number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1,
                    "Default fitted from the RSI tab's staff survey: the yearly growth in "
                    "self-reported output, read as AI coding labor.")
