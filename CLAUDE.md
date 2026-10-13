@@ -46,7 +46,7 @@ Thirteen-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v5-al-ladder`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v6-rsi-eci`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -58,15 +58,12 @@ less follow-up for late coding dates and explicitly describe that censoring.
 and returns sorted exact final samples, including conditioning, penalty, and clock.
 This remains shared with the RSI tab. The display horizon does not clip its tail.
 
-`_TK_LADDER_SLUGS` (the AL5 card) dates full R&D automation itself, so `_pc_rsi_onset`
-zeroes it in the coding blend — the exact-CDF invariant is against the RSI blend with
-that weight at zero (`test_coding_automation_inherits_the_exact_final_rsi_cdf`) — and
-returns it separately as `ladder_years`. `ladder_weight` picks, per draw, whether full
-R&D automation is that date or the workflow gate; either waits for coding, and the tab
-tabulates the two subsets (`test_al5_date_is_a_second_definition_of_full_automation`).
-Human hours never feed back into research speed, so the weight moves no later milestone
-(`test_ladder_date_redefines_full_automation_and_nothing_upstream`); ladder-defined
-draws carry no workflow readout, hence "Not measured".
+`_TK_LADDER_SLUGS` (the AL5 card) is zeroed in the coding blend by `_pc_rsi_onset` — the
+exact-CDF invariant is against the RSI blend with that weight at zero
+(`test_coding_automation_inherits_the_exact_final_rsi_cdf`). It still returns the AL5 dates
+as `ladder_years`; Takeoff ignores them. RSI is the first time every research stage is at
+or under `full_human`% of baseline human hours with the coding date arrived
+(`test_capability_paths_span_the_grid_and_rsi_waits_for_coding`).
 
 `difficulty` is drawn with the other rates
 (`test_research_difficulty_is_sampled_with_the_other_rates`); append new factor rows to
@@ -77,9 +74,10 @@ and an assumed existing undeployed backlog shared with the reference. Coding pro
 ramps to the inherited milestone; overlapping endogenous coding gains use a maximum rather
 than multiplying the two. Fast and successor improvements partition discoveries and each
 validate a start-of-cycle snapshot. A same-compute reference freezes today's AI skills.
-Full R&D gates on coding plus workflow criteria. Research acceleration has a separate chart
-and 2×/5× first-crossing events; it does not require full autonomy. Sustained feedback stays
-in the table but is omitted from both milestone CDF charts.
+RSI gates on coding plus every stage under the human-hours bar. Research acceleration
+has its own chart and 2×/5× first-crossing events. `_tk_eci` reads each draw's capability
+path as ECI, scaled so today's modeled growth equals the ECI frontier's fitted rate (not
+the ~3× smaller measured exchange rate); `_TK_ECI_VIEW_MAX` caps the chart's view.
 
 Evidence calibration uses the endpoint growth in `openai_experiment_velocity.csv`, adjusts
 for assumed historical compute and coding gains, and fits a quality elasticity blended with
@@ -91,9 +89,9 @@ Takeoff inputs and preserves RSI. Workflow fit callbacks validate before changin
 The model's source digest is checked on app reruns, reloads stale imported model code, and
 is an explicit argument to `_tk_simulate`'s Streamlit cache. Preserve this dependency when
 changing the simulator schema. Local seeded RNG and common draws support paired scenarios.
-A diverged draw records nothing further and is `numerically_limited` only while a
-milestone could still arrive inside the horizon
-(`test_runaway_is_unresolved_only_while_a_milestone_could_still_arrive`); the tab
+A diverged draw records nothing further and is `numerically_limited` only while RSI
+could still arrive inside the horizon
+(`test_runaway_is_unresolved_only_while_rsi_could_still_arrive`); the tab
 captions up to `_TK_LIMITED_MAX` of them as not arriving and errors above that.
 Unit tests cover accounting, snapshots, fast feedback, calibration, ordering, censoring,
 convergence, and RNG isolation. AppTests cover the layout, calibration, matched hours,

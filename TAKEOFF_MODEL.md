@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v5-al-ladder`. Work remains on `codex/grounded-takeoff`;
+Version: `takeoff-v6-rsi-eci`. Work remains on `codex/grounded-takeoff`;
 checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
@@ -9,12 +9,11 @@ explicit proxy calibration, not statistically identified probabilities.
 Every simulation starts today and ends at the selected calendar horizon (default
 December 31, 2031). The exact final RSI samples remain the coding-automation dates,
 including weights, conditioning, penalty, clock, past dates, and the late tail — with
-the AL5 card's weight set to zero, since that card dates full R&D automation itself and
-is read as a definition of that milestone instead (below).
+the AL5 card's weight set to zero, since full autonomy is not a coding milestone.
 They no longer shift an otherwise identical post-coding simulation forward in time.
 
-Research is partially automated today. Initial human-hour shares (40/30/50% by stage),
-useful-project completion (60%), coding automation (70%), and the current software
+Research is partially automated today. Initial human-hour shares (calibrated below),
+coding automation (70%), and the current software
 progress rate (one doubling per nine months) are assumptions. The current progress rate
 already includes existing AI assistance. An assumed two months of undeployed discoveries
 initializes both the actual and same-compute reference pipelines. Those discoveries must
@@ -25,8 +24,8 @@ share to 5% at the coding milestone. This supplies an incremental coding-product
 channel. Endogenous coding gains and this ramp overlap, so the model uses their maximum,
 not their product. Past coding dates are already satisfied, with existing assistance
 normalized into today's baseline. Never-arriving coding dates still have research paths.
-Full R&D automation requires the coding date to have arrived; this anchoring constraint
-is not a joint statistical fit of coding and research capabilities.
+RSI requires the coding date to have arrived; this anchoring constraint is not a joint
+statistical fit of coding and research capabilities.
 
 ## Fast and slow feedback
 
@@ -74,26 +73,22 @@ cumulative series. Table crossings refer to 2×/5× 2025 production pace. The in
 three-month delivered-rate and actual/reference diagnostics remain available for model
 analysis and validated milestone definitions; they are not the chart's ongoing pace.
 
-Full R&D automation has two candidate definitions, mixed per scenario by *Weight on
-Anthropic's AL5 date* (default 50%). The human-hours definition requires every research
-stage to need at most 5% of baseline human hours and useful-project completion to reach at
-least 90%. The AL5 definition is the RSI tab's AL5 card — the date 90% of Anthropic's
-model-R&D tasks are rated fully autonomous — inherited as calendar draws, rank-paired with
-the coding dates and carrying the same subjective penalty. Either waits for the coding
-milestone. The tab tabulates the two subsets side by side; human hours and project
-completion at full R&D are reported only for scenarios the human-hours definition decided.
-Human hours are a readout, not an input: they never feed back into research speed, so the
-ladder weight moves full R&D automation and nothing downstream of it
-(`test_ladder_date_redefines_full_automation_and_nothing_upstream`).
+**RSI** is the first time every research stage needs at most 5% of its baseline human
+hours, with the coding date arrived. Human hours are a readout, not an input: they never
+feed back into research speed. Every draw runs to the horizon (only a numerically
+divergent one stops), so its capability path continues past RSI.
 The stages are direction, experiment design/interpretation, and verification/integration.
 The 1% floor and stage halving times remain adjustable. Halving times use months of capability
 progress at today's initial growth rate, not calendar months; accelerated capability progress
 compresses calendar durations. The available research system includes validated fast gains.
 
-Superhuman AI research requires full automation plus 12× today's progress and 2× the
-same-compute reference for two consecutive successor cycles. Cycle progress counts changes
-in total delivered fast-plus-slow efficiency over the entire cycle. Broad superintelligence
-retains the speculative bridge of three plus two capability doublings in successors.
+**Capability as ECI.** Each draw's deployed effective compute (training compute × algorithmic
+efficiency, relative to today's model) is read as ECI: today's US frontier score plus a
+fixed number of points per unit of log effective compute, set so today's modeled growth
+equals the ECI frontier's fitted points per year. The measured exchange rate (about 6.4
+points per 10× training compute) would give a third of that slope, so the choice roughly
+triples every post-RSI gain read as ECI; both readings belong next to any bar picked off it.
+Superintelligence is to be defined as an ECI level on this chart.
 
 ## Evidence calibration
 
@@ -170,6 +165,5 @@ fingerprint reloads changed model code and invalidates Streamlit's result cache.
 
 Human-hour curves are operational criteria, not a staffing or queueing model. Quality and
 capability remain aggregate quantities. Project success is not an experiment-level failure
-simulation. Hardware innovation, manufacturing, policy, and a measured cross-domain bridge
-to superintelligence remain outside scope. Proxy calibration does not establish a causal
+simulation. Hardware innovation, manufacturing and policy remain outside scope. Proxy calibration does not establish a causal
 feedback coefficient or calibrated confidence intervals.

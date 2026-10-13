@@ -1310,20 +1310,23 @@ class TestTakeoffTab:
     def test_default_render_and_stable_rerun(self):
         at = self._app()
         assert at.session_state["_active_tab"] == "Takeoff"
-        assert any(h.value == "Takeoff to superintelligence" for h in at.header)
-        # Pace, people, milestone dates, time after coding, and the
-        # diagnostic panels under the hood.
+        assert any(h.value == "Takeoff" for h in at.header)
+        # RSI evidence, pace, people, ECI, and the diagnostic panels under the hood.
         assert len(at.get("plotly_chart")) == 5
         assert [s.value for s in at.subheader][:4] == [
-            "1. Research speeds up", "2. People step out of the loop",
-            "3. When each milestone arrives",
-            "4. How fast it goes once coding is automated"]
+            "What the RSI tab feeds in", "1. Research speeds up", "2. People step out of the loop",
+            "3. What it does to capability (ECI)"]
         assert at.number_input(key="tk_end_year").value == 2031
         assert not _has_widget(at, "number_input", "tk_onset_low")
         import json
-        plot = json.loads(at.get("plotly_chart")[2].proto.spec)
-        assert plot["data"][0]["x"][-1].startswith("2031-12-31")
-        pace = json.loads(at.get("plotly_chart")[0].proto.spec)
+        evidence = json.loads(at.get("plotly_chart")[0].proto.spec)
+        titles = " ".join(a["text"] for a in evidence["layout"]["annotations"])
+        for name in ("Next-step wins", "Staff speedup", "Experiments/researcher"):
+            assert name in titles
+        eci = json.loads(at.get("plotly_chart")[3].proto.spec)
+        [projected] = [d for d in eci["data"] if d.get("name") == "Projected ECI"]
+        assert projected["x"][-1].startswith("2031-12-31")
+        pace = json.loads(at.get("plotly_chart")[1].proto.spec)
         assert {"Modeled research pace", "If AI stopped improving today"} <= {
             d.get("name") for d in pace["data"]}
         # Today's pace is set, not inherited from the experiment proxy.
@@ -1334,16 +1337,21 @@ class TestTakeoffTab:
             y0 = np.frombuffer(base64.b64decode(y0["bdata"]), dtype=y0["dtype"])
         assert float(y0[0]) == pytest.approx(
             at.number_input(key="tk_pace_today").value, rel=0.05)
-        # The flat tail is labelled as finished scenarios, not a slowdown.
-        assert any("hold their last pace" in a.get("text", "")
+        # Draws run to the horizon, so there is no held-pace tail to label.
+        assert not any("hold their last pace" in a.get("text", "")
                    for a in pace["layout"]["annotations"])
-        people = json.loads(at.get("plotly_chart")[1].proto.spec)
-        assert len(people["data"]) == 12      # three stages + failing projects
-        assert [s["y0"] for s in people["layout"]["shapes"]] == [5, 10]
+        people = json.loads(at.get("plotly_chart")[2].proto.spec)
+        # Three stages (band edges + median each), then the measured index history.
+        assert len(people["data"]) == 10
+        assert people["data"][-1]["name"] == "Measured: R&D automation index"
+        assert [s["y0"] for s in people["layout"]["shapes"]
+                if s.get("yref") == "y"] == [5]
         before = [(m.label, m.value) for m in at.metric]
         at.run()
         assert [(m.label, m.value) for m in at.metric] == before
-        assert any("within 24 months" in m.label for m in at.metric)
+        labels = [m.label for m in at.metric]
+        assert labels[:3] == ["Full coding automation (RSI tab)",
+                              "RSI: every stage \u2264 5% human", "ECI by Dec 2031"]
 
     def test_takeoff_refreshes_an_old_imported_model(self, monkeypatch):
         import takeoff_model as tk
@@ -1397,49 +1405,21 @@ class TestTakeoffTab:
         assert fresh.number_input(key="tk_human_verification").value == 25.0
 
     def test_grounded_thresholds_and_workflow_floor(self):
-        import json
+        """A human-work floor above the RSI bar rules RSI out, and reset restores it."""
         at = self._app()
         assert at.number_input(key="tk_full_human").value == 5.0
-        assert at.number_input(key="tk_progress_target").value == 12.0
-        assert at.number_input(key="tk_advantage_target").value == 2.0
         assert any("2. People step out of the loop" in s.value for s in at.subheader)
-        for chart in at.get("plotly_chart"):
-            names = [d["name"] for d in json.loads(chart.proto.spec)["data"]]
-            assert "Sustained research feedback" not in names
+        rsi_label = "RSI: every stage \u2264 5% human"
+        assert next(m.value for m in at.metric if m.label == rsi_label) != "Beyond horizon"
         at.number_input(key="tk_human_floor").set_value(6.0).run()
         _assert_no_error(at, "Takeoff / persistent human bottleneck")
-        # The floor blocks the human-hours definition only; AL5-defined scenarios still arrive.
-        table = next(t.value for t in at.table if "Milestone" in t.value.columns)
-        by = next(c for c in table.columns if c.startswith("By "))
-        arrived = float(table[table["Milestone"] == "Full R&D automation"].iloc[0][by].rstrip("%"))
-        assert 30 < arrived < 60
-        at.number_input(key="tk_ladder_weight").set_value(0.0).run()
-        _assert_no_error(at, "Takeoff / human-hours definition alone")
-        assert not any("Full R&D automation defined by" in t.value.columns for t in at.table)
-        table = next(t.value for t in at.table if "Milestone" in t.value.columns)
-        for name in ("Full R&D automation", "Superhuman AI research", "Broad superintelligence"):
-            assert table[table["Milestone"] == name].iloc[0]["Median"] == "Beyond horizon"
+        assert next(m.value for m in at.metric if m.label == rsi_label) == "Beyond horizon"
+        assert not any(m.label == "ECI when RSI arrives" for m in at.metric)
         outcomes = next(t.value for t in at.table if "Outcome at" in t.value.columns)
-        assert outcomes[outcomes["Outcome at"] == "Full R&D automation"].iloc[0]["Human hours remaining"] == "Not reached"
+        assert outcomes[outcomes["Outcome at"] == "RSI"].iloc[0]["Human hours remaining"] == "Not reached"
         assert at.query_params["tk_human_floor"] == ["6.0"]
         at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_human_floor").value == 1.0
-
-    def test_al5_date_is_a_second_definition_of_full_automation(self):
-        at = self._app()
-        split = next(t.value for t in at.table
-                     if "Full R&D automation defined by" in t.value.columns)
-        assert len(split) == 2
-        at.number_input(key="tk_ladder_weight").set_value(100.0).run()
-        _assert_no_error(at, "Takeoff / AL5 definition alone")
-        assert at.query_params["tk_ladder_weight"] == ["100.0"]
-        split = next(t.value for t in at.table
-                     if "Full R&D automation defined by" in t.value.columns)
-        assert list(split["Scenarios"]) == ["100%"]
-        outcomes = next(t.value for t in at.table if "Outcome at" in t.value.columns)
-        row = outcomes[outcomes["Outcome at"] == "Full R&D automation"].iloc[0]
-        assert row["Human hours remaining"] == "Not measured"
-        assert float(row["Scenarios by horizon"].rstrip("%")) > 90
 
     def test_invalid_workflow_start_is_recoverable(self):
         at = self._app()
@@ -1461,14 +1441,12 @@ class TestTakeoffTab:
 
         def capture(*args, **kwargs):
             captured.append(kwargs["onset_years"].copy())
-            ladders.append(kwargs["ladder_years"])
             return original(*args, **kwargs)
 
         monkeypatch.setattr(tk, "simulate", capture)
-        ladders = []
         at = _fresh_app()
-        # Takeoff drops the AL5 card from the blend it inherits (it dates full R&D
-        # automation instead), so the RSI curve it must reproduce is the one without it.
+        # Takeoff drops the AL5 card from the blend it inherits, so the RSI curve
+        # it must reproduce is the one with that weight at zero.
         at.query_params.update(tab="rsi", rsi_atc_penalty="50",
                                rsi_timing=timing, rsi_notyet=condition, rsi_notyet_ramp="180",
                                pc_rsiw_rli_90="70", pc_rsiw_al5_90="0", tk_seed="9182")
@@ -1481,7 +1459,6 @@ class TestTakeoffTab:
         _switch_tab(at, "Takeoff")
         assert captured
         np.testing.assert_allclose(100 * tk.cdf(captured[-1], grid), curve["y"])
-        assert ladders[-1].shape == captured[-1].shape and np.all(np.diff(ladders[-1]) >= 0)
         assert at.session_state["rsi_atc_penalty"] == 50
         assert at.session_state["pc_rsiw_rli_90"] == 70
         _switch_tab(at, "RSI")
@@ -1513,7 +1490,16 @@ class TestTakeoffTab:
         assert at.number_input(key="tk_transfer").value == 60
         assert "tk_transfer" not in at.query_params
 
-    def test_invalid_budget_is_recoverable(self):
+    def test_invalid_budget_is_recoverable(self, monkeypatch):
+        import takeoff_model as tk
+        captured = []
+        original = tk.simulate
+
+        def capture(*args, **kwargs):
+            captured.append(original(*args, **kwargs))
+            return captured[-1]
+
+        monkeypatch.setattr(tk, "simulate", capture)
         at = self._app()
         at.number_input(key="tk_training_share").set_value(70).run()
         _assert_no_error(at, "Takeoff / invalid budget")
@@ -1523,9 +1509,9 @@ class TestTakeoffTab:
         assert not at.error
         at.number_input(key="tk_transfer").set_value(0).run()
         _assert_no_error(at, "Takeoff / zero feedback")
-        table = next(t.value for t in at.table if "Milestone" in t.value.columns)
-        row = table[table["Milestone"] == "Sustained research feedback"].iloc[0]
-        assert row["Median"] == "Beyond horizon"
+        # With no AI feedback, research runs at the frozen-AI reference pace.
+        progress = captured[-1]["workflow_progress"]
+        np.testing.assert_allclose(progress["pace"], progress["reference_pace"], rtol=1e-4)
 
     def test_malformed_url_values_and_tab_switching(self):
         at = _fresh_app()
@@ -1533,10 +1519,10 @@ class TestTakeoffTab:
         at.run()
         _assert_no_error(at, "Takeoff / invalid URL")
         assert at.number_input(key="tk_compute_growth").value == 2.0
-        at.number_input(key="tk_general_gap").set_value(4.0).run()
+        at.number_input(key="tk_difficulty").set_value(1.0).run()
         _switch_tab(at, "RSI")
         _switch_tab(at, "Takeoff")
-        assert at.number_input(key="tk_general_gap").value == 4.0
+        assert at.number_input(key="tk_difficulty").value == 1.0
 
 
 class TestUkCyberTab:

@@ -7,26 +7,23 @@ import takeoff_model as tk
 
 
 def test_workflow_trajectory_observes_deployments_and_keeps_all_draws():
+    """Human hours fall only after deployments, and every draw stays in the bands."""
     result = tk.simulate(dict(years=2, uncertainty=0), n=3,
                          onset_years=np.array([0, 20, np.inf]))
     progress = result["workflow_progress"]
     grid = progress["years"]
     human = progress["human_quantiles"]
-    success = progress["success_quantiles"]
     assert grid[0] == 0 and grid[-1] == 2
     assert human.shape == (len(grid), 3, 3)
-    assert success.shape == (len(grid), 3)
+    assert progress["capability_log"].shape == (3, len(grid))
     starts = np.array([tk.DEFAULTS["human_" + s] for s in tk.WORKFLOW_KEYS]) / 100
     np.testing.assert_allclose(human[0], np.tile(starts, (3, 1)))
-    np.testing.assert_allclose(success[0], tk.DEFAULTS["project_success"] / 100)
     # No improvement before the first fast validation cycle finishes.
     before_deployment = grid < 1 / 12 - 1e-12
     np.testing.assert_allclose(human[before_deployment],
                               np.broadcast_to(human[0], human[before_deployment].shape))
     assert np.all(np.diff(human, axis=0) <= 1e-12)
-    assert np.all(np.diff(success, axis=0) >= -1e-12)
     assert np.all(human >= tk.DEFAULTS["human_floor"] / 100)
-    assert np.all(success <= 1)
     assert np.all(human[-1] < human[0])
     # Even a never-arriving coding milestone retains a research trajectory.
     never = tk.simulate(dict(years=2, uncertainty=0), n=1,
@@ -47,13 +44,13 @@ def test_seeded_draws_and_rng_isolation():
 
 
 def test_baseline_growth_and_zero_transfer_remove_feedback():
+    """With zero transfer, AI skill slopes cannot change the software path."""
     p = dict(transfer=0, compute_growth=1.0, uncertainty=0, years=2)
     a = tk.simulate(p, n=1)
     rate = np.log(2) * 12 / tk.DEFAULTS["software_months"]
     beta = tk.DEFAULTS["difficulty"]
     expected = rate * tk.DEFAULTS["pipeline_months"] / 12 + np.log1p(beta * rate * p["years"]) / beta
     assert a["software_log"][0] == pytest.approx(expected)
-    assert np.isinf(a["events"]["Sustained research feedback"]).all()
     b = tk.simulate(dict(p, coding_slope=2.0, taste_slope=2.0), n=1)
     np.testing.assert_allclose(a["software_log"], b["software_log"])
 
@@ -93,28 +90,21 @@ def test_algorithms_wait_for_the_next_run_and_validation():
     assert delayed["deployed_log"][0] == pytest.approx(0, abs=1e-10)
 
 
-def test_larger_general_gap_delays_asi_and_does_not_change_rd():
-    a = tk.simulate(n=100)
-    b = tk.simulate(dict(general_gap=8.0), n=100)
-    for name in tk.MILESTONES[:-1]:
-        np.testing.assert_array_equal(a["events"][name], b["events"][name])
-    assert np.all(b["events"][tk.MILESTONES[-1]] >= a["events"][tk.MILESTONES[-1]])
-
-
 def test_later_coding_does_not_postpone_the_start_of_research():
+    """Research improves before the coding date; only RSI waits for it."""
     p = dict(years=.5, uncertainty=0)
     a = tk.simulate(p, n=1, onset_years=np.array([1.]))
     b = tk.simulate(p, n=1, onset_years=np.array([10.]))
     assert a["software_log"][0] >= b["software_log"][0] > 0
     assert b["fast_software_log"][0] > 0
-    assert np.isinf(b["events"]["Full R&D automation"][0])
+    assert np.isinf(b["events"]["RSI"][0])
 
 
 def test_external_onset_preserves_past_dates_and_censored_tail():
     onset = np.array([-1.0, .25, 2.0, 20.0, np.inf])
     b = tk.simulate(n=5, onset_years=onset)
     np.testing.assert_array_equal(b["onset"], onset)
-    for name in tk.MILESTONES[1:]:
+    for name in tk.MILESTONES:
         assert np.all(b["events"][name] >= np.maximum(onset, 0))
     assert np.isnan(b["outcomes"]["Full coding automation"]["human_mean"][-1])
     assert np.all(np.isfinite(b["outcomes"]["Today"]["human_mean"]))
@@ -123,63 +113,30 @@ def test_external_onset_preserves_past_dates_and_censored_tail():
     assert np.isinf(durations[-1])
 
 
-def test_full_rd_requires_low_human_work_and_successful_projects():
+def test_rsi_needs_low_human_work_and_the_coding_date():
+    """With every stage already under the bar, RSI arrives with coding automation."""
     p = dict(uncertainty=0, onset_low=0, onset_high=0, human_floor=0.0, human_direction=0.0,
-             human_experiments=0.0, human_verification=0.0, project_success=95.0)
-    r = tk.simulate(p, n=1)
-    assert r["events"]["Full R&D automation"][0] == 0
-    assert r["events"]["Sustained research feedback"][0] > 0
-    # The hidden feedback milestone does not gate operational automation.
-    b = tk.simulate(dict(p, feedback_cycles=5), n=1)
-    assert b["events"]["Full R&D automation"][0] == 0
+             human_experiments=0.0, human_verification=0.0)
+    assert tk.simulate(p, n=1)["events"]["RSI"][0] == 0
+    later = tk.simulate(p, n=1, onset_years=np.array([.5]))["events"]["RSI"][0]
+    assert .5 <= later < .5 + 1 / 12
 
 
 def test_one_human_bottleneck_cannot_be_averaged_away():
+    """An average under the RSI bar does not count while one stage is above it."""
     p = dict(years=0.1, uncertainty=0, human_floor=0.0, human_direction=0.0,
-             human_experiments=0.0, human_verification=9.0, project_success=100.0)
+             human_experiments=0.0, human_verification=9.0)
     r = tk.simulate(p, n=1)
     initial = r["outcomes"]["Today"]
     assert initial["human_mean"][0] < tk.DEFAULTS["full_human"] / 100
     assert initial["human_worst"][0] > tk.DEFAULTS["full_human"] / 100
-    assert np.isinf(r["events"]["Full R&D automation"][0])
+    assert np.isinf(r["events"]["RSI"][0])
 
 
-def test_project_completion_is_an_independent_gate():
-    p = dict(years=0.1, uncertainty=0, human_floor=0.0, human_direction=0.0,
-             human_experiments=0.0, human_verification=0.0, project_success=50.0)
-    r = tk.simulate(p, n=1)
-    assert np.isinf(r["events"]["Full R&D automation"][0])
-
-
-def test_persistent_human_floor_prevents_all_later_milestones():
-    r = tk.simulate(dict(human_floor=6.0), n=30)  # no ladder dates: the workflow gate alone
-    for name in tk.MILESTONES[1:]:
-        assert np.isinf(r["events"][name]).all()
-
-
-def test_ladder_date_redefines_full_automation_and_nothing_upstream():
-    onset, ladder = np.linspace(0.2, 3, 40), np.linspace(4, 0.1, 40)
-    base = tk.simulate(dict(years=6), n=40, onset_years=onset)
-    off = tk.simulate(dict(years=6, ladder_weight=0), n=40, onset_years=onset, ladder_years=ladder)
-    on = tk.simulate(dict(years=6, ladder_weight=100), n=40, onset_years=onset, ladder_years=ladder)
-    for name in tk.MILESTONES:
-        np.testing.assert_array_equal(base["events"][name], off["events"][name])
-    assert not base["ladder_defined"].any() and on["ladder_defined"].all()
-    # Same parameter draws: the milestone that does not depend on the gate is untouched.
-    np.testing.assert_array_equal(base["events"][tk.MILESTONES[0]], on["events"][tk.MILESTONES[0]])
-    # The ladder cannot precede the coding date.
-    np.testing.assert_allclose(on["events"][tk.MILESTONES[1]], np.maximum(onset, ladder))
-    measured = on["outcomes"][tk.MILESTONES[1]]
-    assert np.isnan(measured["human_mean"]).all() and np.isfinite(measured["progress_multiple"]).all()
-
-
-def test_ladder_overrides_a_persistent_human_floor_only_where_it_defines_the_milestone():
-    r = tk.simulate(dict(human_floor=6.0, years=4), n=200, onset_years=np.full(200, 0.5),
-                    ladder_years=np.full(200, 1.0))
-    full = r["events"][tk.MILESTONES[1]]
-    assert 0 < r["ladder_defined"].mean() < 1
-    np.testing.assert_allclose(full[r["ladder_defined"]], 1.0)
-    assert np.isinf(full[~r["ladder_defined"]]).all()
+def test_persistent_human_floor_above_the_bar_prevents_rsi():
+    """A human-work floor above the RSI bar rules RSI out in every draw."""
+    r = tk.simulate(dict(human_floor=6.0), n=30)
+    assert np.isinf(r["events"]["RSI"]).all()
 
 
 def test_research_difficulty_is_sampled_with_the_other_rates(monkeypatch):
@@ -198,24 +155,29 @@ def test_research_difficulty_is_sampled_with_the_other_rates(monkeypatch):
     tk.simulate(dict(years=0.5, difficulty=0), n=5)  # the undiscounted branch still runs
 
 
-def test_runaway_is_unresolved_only_while_a_milestone_could_still_arrive():
+def test_runaway_is_unresolved_only_while_rsi_could_still_arrive():
+    """A diverged draw is unresolved only if RSI is open and coding is inside the horizon."""
     explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, uncertainty=0, years=12)
-    waiting = tk.simulate(explosive, n=1, onset_years=np.array([20.0]))
+    reached = tk.simulate(explosive, n=1, onset_years=np.array([0.5]))
+    assert reached["software_log"][0] == 1e6          # it did diverge
+    assert np.isfinite(reached["events"]["RSI"][0])
+    assert not reached["numerically_limited"][0]
+    # A floor above the bar keeps RSI open when the draw diverges.
+    blocked = dict(explosive, human_floor=6.0)
+    waiting = tk.simulate(blocked, n=1, onset_years=np.array([20.0]))
     assert not waiting["numerically_limited"][0]
-    assert np.isinf(waiting["events"][tk.MILESTONES[1]][0])
-    open_ = tk.simulate(explosive, n=1, onset_years=np.array([0.5]))
+    assert np.isinf(waiting["events"]["RSI"][0])
+    open_ = tk.simulate(blocked, n=1, onset_years=np.array([0.5]))
     assert open_["numerically_limited"][0]
-    # A diverged state records no further milestones.
-    assert np.isinf(open_["events"][tk.MILESTONES[-1]][0])
+    assert np.isinf(open_["events"]["RSI"][0])
 
 
 def test_workflow_halving_time_has_a_measurable_interpretation():
+    """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])
-    human, success = tk.workflow_state(np.array([1.0]), np.array([1.0]), starts,
-                                      np.full((1, 3), 12.0), .02,
-                                      np.array([.6]), np.array([12.0]))
+    human = tk.workflow_state(np.array([1.0]), np.array([1.0]), starts,
+                              np.full((1, 3), 12.0), .02)
     np.testing.assert_allclose(human, .02 + (starts - .02) / 2)
-    np.testing.assert_allclose(success, .8)
 
 
 def test_validated_progress_uses_efficiency_and_full_cycle_duration():
@@ -242,10 +204,11 @@ def test_fast_feedback_precedes_successors_and_is_not_double_counted():
 
 
 def test_acceleration_can_arrive_without_autonomous_research():
+    """Research can reach 2x its pace in draws that never reach RSI."""
     r = tk.simulate(dict(years=5, uncertainty=0, human_floor=6), n=1,
                     onset_years=np.array([20.]))
     assert np.isfinite(r["acceleration_events"]["2× research progress"][0])
-    assert np.isinf(r["events"]["Full R&D automation"][0])
+    assert np.isinf(r["events"]["RSI"][0])
 
 
 def test_rates_need_a_full_window_and_cumulative_progress_never_falls():
@@ -310,43 +273,47 @@ def test_matched_stage_fit_uses_hours_not_intervention_incidence():
         tk.calibrate_workflow(10, 2, 5, 2, 1, 1)
 
 
-def test_resource_growth_alone_cannot_trigger_superhuman_research():
+def test_resource_growth_alone_creates_no_compute_matched_advantage():
+    """Faster progress from compute alone is matched by the same-compute reference."""
     r = tk.simulate(dict(transfer=0, difficulty=0.0, compute_growth=5.0,
                          uncertainty=0, years=5), n=1)
-    assert r["progress_multiple"][0] > tk.DEFAULTS["progress_target"]
+    assert r["progress_multiple"][0] > 1
     assert r["compute_matched_advantage"][0] == pytest.approx(1, rel=1e-4)
-    assert np.isinf(r["events"]["Superhuman AI research"][0])
 
 
-def test_superhuman_outcomes_meet_all_operational_thresholds():
+def test_rsi_outcomes_meet_the_human_hours_bar():
+    """Every draw reaching RSI has every stage at or under the bar there."""
     r = tk.simulate(n=100)
-    observed = r["outcomes"]["Superhuman AI research"]
-    reached = np.isfinite(r["events"]["Superhuman AI research"])
+    observed = r["outcomes"]["RSI"]
+    reached = np.isfinite(r["events"]["RSI"])
     assert reached.any()
     assert np.all(observed["human_worst"][reached] <= tk.DEFAULTS["full_human"] / 100)
-    assert np.all(observed["project_success"][reached] >= tk.DEFAULTS["full_success"] / 100)
-    assert np.all(observed["progress_multiple"][reached] >= tk.DEFAULTS["progress_target"])
-    assert np.all(observed["compute_matched_advantage"][reached] >= tk.DEFAULTS["advantage_target"])
+    assert np.isnan(observed["human_worst"][~reached]).all()
 
 
-def test_acceleration_must_persist_across_successor_cycles():
-    p = dict(uncertainty=0, progress_cycles=1)
-    once = tk.simulate(p, n=1)
-    three = tk.simulate(dict(p, progress_cycles=3), n=1)
-    difference = (three["events"]["Superhuman AI research"][0]
-                  - once["events"]["Superhuman AI research"][0])
-    cycle = (tk.DEFAULTS["training_months"] + tk.DEFAULTS["validation_months"]) / 12
-    assert difference >= 2 * cycle - 1e-10
+def test_capability_paths_span_the_grid_and_rsi_waits_for_coding():
+    """Each draw's capability path starts at zero, stays finite and never falls
+    across the full grid, and RSI never precedes its coding date."""
+    r = tk.simulate(dict(years=4), n=200)
+    progress = r["workflow_progress"]
+    capability = progress["capability_log"]
+    assert capability.shape == (200, len(progress["years"]))
+    assert progress["years"][-1] == 4
+    np.testing.assert_array_equal(capability[:, 0], 0)
+    assert np.isfinite(capability).all()
+    assert np.all(np.diff(capability, axis=1) >= -1e-12)
+    assert np.all(capability[:, -1] > 0)
+    assert np.all(r["events"]["RSI"] >= np.maximum(r["onset"], 0))
 
 
-def test_milestone_order_and_retained_non_arrivals():
-    r = tk.simulate(tk.PRESETS["Bottlenecked"], n=200)
-    full, research, asi = (r["events"][name] for name in tk.MILESTONES[1:])
-    assert np.all(full <= research)
-    assert np.all(research <= asi)
-    assert np.isinf(asi).any()
-    assert tk.quantile(asi, 0.5) == np.inf
-    assert tk.cdf(asi, [10])[0] == np.mean(asi <= 10)
+def test_coding_automation_precedes_rsi_and_non_arrivals_are_retained():
+    """RSI never precedes coding, and draws missing the horizon stay as +inf."""
+    r = tk.simulate(dict(tk.PRESETS["Bottlenecked"], years=3), n=200)
+    rsi = r["events"]["RSI"]
+    assert np.all(r["onset"] <= rsi)
+    assert np.isinf(rsi).mean() > .5
+    assert tk.quantile(rsi, 0.5) == np.inf
+    assert tk.cdf(rsi, [2])[0] == np.mean(rsi <= 2)
     assert tk.cdf([1, 2, np.inf, np.inf], [0, 1, 2, 20]).tolist() == [0, .25, .5, .5]
     assert tk.quantile([1, 2, np.inf, np.inf], .9) == np.inf
     assert tk.quantile([1, 2, 3], .5, horizon=1) == np.inf
@@ -363,7 +330,7 @@ def test_weekly_steps_converge_to_half_week_steps():
 def test_longer_validation_delays_milestones():
     a = tk.simulate(dict(uncertainty=0, validation_months=0.5), n=1)
     b = tk.simulate(dict(uncertainty=0, validation_months=3.0), n=1)
-    for name in tk.MILESTONES[1:]:
+    for name in tk.MILESTONES:
         assert b["events"][name][0] >= a["events"][name][0]
 
 
@@ -371,19 +338,11 @@ def test_longer_validation_delays_milestones():
     {"training_share": 60, "experiment_share": 40},
     {"onset_low": 50, "onset_high": 10}, {"transfer": 101},
     {"software_months": 0}, {"compute_growth": float("nan")},
-    {"seed": -1}, {"general_gap": -1}, {"taste_slope": -1},
+    {"seed": -1}, {"difficulty": -1}, {"parallelization": 0}, {"taste_slope": -1},
     {"human_direction": -1}, {"human_floor": 50}, {"half_direction": 0},
-    {"full_success": 110}, {"project_success": 0}, {"advantage_target": 1},
-    {"progress_cycles": 1.5}, {"fast_share": 101}, {"fast_months": 0},
-    {"coding_today": 95}, {"ladder_weight": 101},
+    {"full_human": 101}, {"fast_share": 101}, {"fast_months": 0},
+    {"coding_today": 95}, {"rsi_trend_weight": 101},
 ])
 def test_invalid_assumptions_rejected(params):
     with pytest.raises(ValueError):
         tk.simulate(params, n=1)
-
-
-def test_ladder_dates_must_match_the_draws():
-    with pytest.raises(ValueError):
-        tk.simulate({}, n=3, ladder_years=np.array([1.0, np.nan, 2.0]))
-    with pytest.raises(ValueError):
-        tk.simulate({}, n=3, ladder_years=np.array([1.0, 2.0]))
