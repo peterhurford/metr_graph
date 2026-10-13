@@ -181,10 +181,10 @@ class TestFmtHrs:
     def test_format(self, h, want):
         assert vp.fmt_hrs(h) == want
 
-    def test_minutes_rounding(self):
-        # 59.9 minutes ~ 1h
-        result = vp.fmt_hrs(59.9 / 60)
-        assert "m" in result
+    @pytest.mark.parametrize("hours_only", [False, True])
+    def test_minutes_that_round_to_an_hour_read_as_hours(self, hours_only):
+        assert vp.fmt_hrs(59.9 / 60, hours_only=hours_only) == "1h"
+        assert vp.fmt_hrs(59.4 / 60, hours_only=hours_only) == "59m"
 
 
 # ===========================================================================

@@ -227,11 +227,12 @@ def fmt_hrs(h, hours_only=False):
     Shows sub-unit remainder (e.g., 1h20m, 2d3h). No decimals.
     When hours_only=True, output is always in hours (or minutes for h<1)."""
     minutes = h * 60
+    # Branch on the rounded minutes, so 59.9m reads "1h", not "60m".
     if hours_only:
-        if h < 1:
+        if round(minutes) < 60:
             return f"{int(round(minutes))}m"
         return f"{int(round(h)):,}h"
-    if h < 1:
+    if round(minutes) < 60:
         return f"{int(round(minutes))}m"
     if h < 100:
         hrs = int(h)
