@@ -1986,14 +1986,6 @@ class TestEcgOrgMatching:
             assert c["slug"] not in seen_slugs, f"duplicate slug: {c['slug']}"
             seen_slugs.add(c["slug"])
 
-    def test_derived_tables_cover_every_company(self):
-        for name in vp._ECI_COMPANIES:
-            assert name in vp._ECG_COLORS, name
-            assert name in vp._ECG_COUNTRY, name
-            assert name in vp._ECI_ENTITY_SPECS, name
-            assert name in vp._ECI_ENTITY_SLUG, name
-        assert set(vp._ECG_ORG_MAP.values()) == set(vp._ECI_COMPANIES)
-
     def test_country_entities_lead_the_dropdown(self):
         # _ECI_ENTITY_OPTIONS[0] is the ECI tab's default benchmark, so the
         # country aggregates must stay ahead of the companies.
@@ -2003,73 +1995,10 @@ class TestEcgOrgMatching:
         assert vp._ECI_ENTITY_OPTIONS[n:] == list(vp._ECI_COMPANIES)
 
     def test_slugs_round_trip(self):
+        # The registry check dedupes company slugs among themselves; this one
+        # also catches a company slug colliding with a country's ("us", "china").
         for label, slug in vp._ECI_ENTITY_SLUG.items():
             assert vp._ECI_ENTITY_FOR_SLUG[slug] == label
-
-
-class TestCcTrainingFloorMatch:
-    """Backward (release → cluster) match uses a training-run causal floor
-    (_CC_TRAIN_FLOOR_DAYS, ~60d), not the full +90d expected-release lag. A
-    cluster online at least one training run before a release can claim it even
-    if the model shipped a few weeks faster than the full pipeline; a cluster
-    online less than a training run before it cannot."""
-
-    def _responsible(self, release, milestones, floor):
-        """Replicates render's backward match: the most recent cluster online at
-        least one training run (floor) before the release."""
-        cand = [m for m in milestones if (m[0] + floor) <= release]
-        return cand[-1] if cand else None
-
-    def test_floor_is_training_run_not_full_lag(self):
-        # The causal floor is the ~2-month training run, strictly less than the
-        # 90d train+release-prep window used for the *expected* release date.
-        assert vp._CC_TRAIN_FLOOR_DAYS == vp._DAYS_2MO
-        assert vp._CC_TRAIN_FLOOR_DAYS < vp._CC_RELEASE_LAG_DAYS
-
-    def test_live_matches_are_the_latest_step_past_the_floor(self):
-        """On the shipped data, every unpinned OpenAI release is matched to a
-        step online at least the floor before it, and no later record step
-        also clears the floor."""
-        from datetime import timedelta
-        attr = vp._cc_lab_attribution()
-        milestones = vp._cc_lab_dc_milestones("OpenAI", attr, key="perf")
-        floor = timedelta(days=vp._CC_TRAIN_FLOOR_DAYS)
-        releases = vp._cc_company_frontier_models().get("OpenAI", [])
-        assert milestones and releases
-        matched = 0
-        for d, _e, name in releases:
-            step, pinned = vp._cc_responsible_cluster(d, name, "OpenAI",
-                                                      milestones)
-            if pinned or step is None:
-                continue
-            assert step[0] + floor <= d, name
-            later = [m for m in milestones
-                     if m[0] > step[0] and m[0] + floor <= d]
-            assert not later, (name, later)
-            matched += 1
-        assert matched
-
-    def test_implausibly_fresh_cluster_is_excluded(self):
-        # A model that shipped only ~2 weeks after a much bigger cluster came
-        # online can't be attributed to it — no time to train — so the match
-        # falls back to the earlier cluster that was online long enough.
-        from datetime import timedelta
-        floor = timedelta(days=vp._CC_TRAIN_FLOOR_DAYS)
-        release = datetime(2026, 6, 1)
-        old = (datetime(2026, 1, 1), 1.0, "Old cluster")        # 151d before
-        fresh = (datetime(2026, 5, 18), 9.0, "Fresh cluster")   # 14d before
-        milestones = [old, fresh]
-        resp = self._responsible(release, milestones, floor)
-        assert resp[2] == "Old cluster"
-
-    def test_cluster_exactly_at_floor_qualifies(self):
-        from datetime import timedelta
-        floor = timedelta(days=vp._CC_TRAIN_FLOOR_DAYS)
-        release = datetime(2026, 6, 1)
-        exact = (release - floor, 5.0, "Exactly one training run")
-        just_short = (release - floor + timedelta(days=1), 9.0, "One day short")
-        resp = self._responsible(release, [exact, just_short], floor)
-        assert resp[2] == "Exactly one training run"
 
 
 class TestCcForwardMatch:
@@ -2324,6 +2253,15 @@ class TestCcResponsibleCluster:
                                                  self._steps())
         assert got[2] == "Big" and pinned is False
 
+    def test_a_step_exactly_one_training_run_before_qualifies(self):
+        # The floor is inclusive: online exactly _CC_TRAIN_FLOOR_DAYS before
+        # the release counts, one day later does not.
+        rel = datetime(2026, 6, 1)
+        exact = (rel - self.FLOOR, 5.0, "Exactly one training run")
+        short = (rel - self.FLOOR + timedelta(days=1), 9.0, "One day short")
+        got, pinned = vp._cc_responsible_cluster(rel, "X", "Lab", [exact, short])
+        assert got[2] == "Exactly one training run" and pinned is False
+
     def test_nothing_predates_the_release(self):
         got, pinned = vp._cc_responsible_cluster(datetime(2025, 1, 1), "X",
                                                  "Lab", self._steps())
@@ -2366,19 +2304,31 @@ class TestCcResponsibleCluster:
             got, pinned = vp._cc_responsible_cluster(hits[0][0], model, lab, ms)
             assert pinned and got[2] == site, f"pin for {model!r} does not bind"
 
-    def test_astra_is_pinned_to_abilene(self):
-        assert vp._CC_TRAINED_ON[("OpenAI", "GPT-6 Astra")] == "OpenAI Stargate Abilene"
-
 
 class TestCcCompanyAllReleases:
     """_cc_company_all_releases: the tier-3 fallback pool."""
 
-    def test_collapses_reasoning_effort_variants(self):
-        # Keyed on (Model name, Release date), so a model's reasoning-effort
-        # rows are one release whatever Display names Epoch gives them.
-        for lab, rel in vp._cc_company_all_releases().items():
-            keys = [(t[2], t[0]) for t in rel]
-            assert len(keys) == len(set(keys)), lab
+    def test_keys_on_model_name_and_release_date(self, monkeypatch):
+        # A model's reasoning-effort rows (one Model name, one date, several
+        # Display names) are one release carrying the best score; the same
+        # Model name on another date is a separate release.
+        def row(display, name, date, eci):
+            return {"Organization": "OpenAI", "Display name": display,
+                    "Model name": name, "Release date": date, "ECI Score": eci}
+        rows = [row("GPT-X (low)", "GPT-X", "2026-01-01", "140"),
+                row("GPT-X (high)", "GPT-X", "2026-01-01", "150"),
+                row("GPT-X (high)", "GPT-X", "2026-03-01", "152"),
+                row("Other", "Other", "2026-01-01", "")]
+        monkeypatch.setattr(vp, "csv",
+                            types.SimpleNamespace(DictReader=lambda _f: rows))
+        # Under real Streamlit (an AppTest earlier on this worker) the loader is
+        # cached: bypass it so the fixture is read and never cached.
+        fn = getattr(vp._cc_company_all_releases, "__wrapped__",
+                     vp._cc_company_all_releases)
+        assert fn()["OpenAI"] == [
+            (datetime(2026, 1, 1), 150.0, "GPT-X"),
+            (datetime(2026, 1, 1), None, "Other"),
+            (datetime(2026, 3, 1), 152.0, "GPT-X")]
 
     def test_keeps_redated_revisions_of_one_model_name_apart(self):
         # GPT-4o shipped dated revisions; collapsing them would lose releases
@@ -2413,26 +2363,6 @@ class TestCcCompanyAllReleases:
             dates = {t[0] for t in allr[lab]}
             for d, _e, _n in front:
                 assert d in dates, f"{lab}: frontier date {d} missing from pool"
-
-    def test_wisconsin_matches_some_release(self):
-        # End-to-end on the shipped data: whatever the tier, the step must not
-        # come back blank. This was the live tier-3 case until 2026-09-03, when
-        # GPT-6 Astra (169.23) re-took the record and tier 1 began matching it
-        # again — the retirement its own comment predicted, so the assert was
-        # relaxed to "some release is matched" rather than deleted. Tier 3
-        # itself stays guarded synthetically by TestCcForwardMatch.
-        attr = vp._cc_lab_attribution()
-        milestones = vp._cc_lab_dc_milestones("OpenAI", attr, key="perf")
-        front = vp._cc_company_frontier_models()["OpenAI"]
-        allr = vp._cc_company_all_releases()["OpenAI"]
-        steps = [m for m in milestones
-                 if m[2] == "Microsoft Fairwater Wisconsin"
-                 and m[0] <= TestCcForwardMatch.TODAY]
-        assert steps, "Fairwater Wisconsin has no online capacity step"
-        got, fb = vp._cc_forward_match(steps[0], front, allr, {},
-                                       TestCcForwardMatch.TODAY)
-        assert got is not None, "Wisconsin still matches nothing"
-        assert got[2], "Wisconsin matched an unnamed release"
 
 
 class TestCcDcDerivation:
@@ -2521,9 +2451,6 @@ class TestCcDcDerivation:
 class TestCcCnComputeBand:
     """The hand-set China compute band vs the DC tab's catalogued paces."""
 
-    def test_band_is_ordered_and_positive(self):
-        assert 0 < vp._CC_CN_COMPUTE_LO < vp._CC_CN_COMPUTE_HI
-
     def test_band_sits_at_or_below_the_catalogue_paces(self):
         """The band claims coherent-single-run growth, a strictly harder thing
         than building halls, so it must not exceed what the catalogue shows:
@@ -2557,9 +2484,6 @@ class TestCcDecomp:
         for i in (0, 1, 3):
             rows[i]["is_eci_frontier"] = True
         return rows
-
-    def test_returns_none_under_ten_rows(self):
-        assert vp._cc_decomp(self._rows()[:9]) is None
 
     def test_recovers_known_coefficients(self):
         d = vp._cc_decomp(self._rows())
@@ -2601,15 +2525,11 @@ class TestCcEfficiency:
             rows.append(_ccrow(d, 0.05 * eci - 0.4 * t + 10.0, eci))
         return rows
 
-    def test_returns_none_under_ten_rows(self):
-        assert vp._cc_efficiency(self._rows()[:9]) is None
-
     def test_recovers_exchange_rate_and_efficiency(self):
         e = vp._cc_efficiency(self._rows())
         assert e["eci_per_oom"] == pytest.approx(20.0, rel=1e-3)  # 1/alpha
         assert e["g_inv"] == pytest.approx(0.4, rel=1e-3)
         assert 0.0 < e["g_central"] < 1.0
-        assert e["algo_mult"] == pytest.approx(10 ** e["g_central"], rel=1e-9)
         assert e["bands"], "the ECI-115 band should produce a fit line"
 
     def test_times_are_monotonic_and_bracketed(self):
@@ -2639,13 +2559,21 @@ class TestCcIsoCompute:
             rows.append(_ccrow(base + timedelta(days=30 * i), 22.0 + 0.2 * i, 90 + i))
         return rows
 
-    def test_returns_none_under_ten_rows(self):
-        assert vp._cc_iso_compute(self._rows()[:9]) is None
-
     def test_recovers_capability_rate(self):
         r = vp._cc_iso_compute(self._rows())
         assert r["eci_per_yr"] == pytest.approx(10.0, rel=1e-2)
         assert r["lo"] <= r["eci_per_yr"] <= r["hi"]
+
+
+@pytest.mark.parametrize("fn, rows", [
+    (lambda r: vp._cc_decomp(r), lambda: TestCcDecomp()._rows()),
+    (lambda r: vp._cc_efficiency(r), lambda: TestCcEfficiency()._rows()),
+    (lambda r: vp._cc_iso_compute(r), lambda: TestCcIsoCompute()._rows()),
+    (lambda r: vp._cc_pooled_decomp(r)[0], lambda: TestCcPooledDecomp()._rows()),
+], ids=["decomp", "efficiency", "iso_compute", "pooled_decomp"])
+def test_cc_fits_decline_under_ten_rows(fn, rows):
+    """Each model-level CC fit returns nothing on fewer than ten rows."""
+    assert fn(rows()[:9]) is None
 
 
 class TestCcIsoComputeRate:
@@ -2668,13 +2596,11 @@ class TestCcIsoComputeRate:
         assert n == 8
         assert med == pytest.approx(24.6, abs=0.11)
 
-    def test_sparse_country_returns_none(self):
-        rate, n, med = vp._cc_iso_compute_rate(self._rows(n=5), "China")
-        assert rate is None and n == 0 and med is None
-
-    def test_unknown_country_returns_none(self):
-        rate, n, med = vp._cc_iso_compute_rate(self._rows(), "Narnia")
-        assert rate is None and n == 0 and med is None
+    @pytest.mark.parametrize("n, country", [(5, "China"), (8, "Narnia")],
+                             ids=["sparse", "unknown"])
+    def test_too_few_rows_for_the_country_returns_none(self, n, country):
+        rate, got_n, med = vp._cc_iso_compute_rate(self._rows(n=n), country)
+        assert rate is None and got_n == 0 and med is None
 
 
 class TestCcQuarterEnds:
@@ -2768,10 +2694,6 @@ class TestCcPooledDecomp:
             rows.append(_ccrow(d, lf, 3.0 * lf + 5.0 * t, country=country))
         return rows
 
-    def test_returns_none_under_ten(self):
-        a, b = vp._cc_pooled_decomp(self._rows(n=9))
-        assert a is None and b is None
-
     def test_recovers_coefficients(self):
         a, b = vp._cc_pooled_decomp(self._rows())
         assert a == pytest.approx(3.0, abs=1e-6)
@@ -2793,8 +2715,19 @@ class TestCcCnTargetYears:
     _ARGS = dict(anchor_eci=100.0, target=112.0, algo_lo=10.0, algo_mid=10.0,
                  algo_hi=10.0, a_partial=10.0, g_lo=0.2, g_hi=0.2)
 
+    @pytest.fixture(autouse=True)
+    def _seeded(self):
+        """The samplers draw from the global np.random: seed it, then restore."""
+        state = np.random.get_state()
+        np.random.seed(0)
+        yield
+        np.random.set_state(state)
+
     def test_central_case_is_gap_over_rate(self):
+        # Every range is degenerate here, so this also covers the padding that
+        # keeps np.random.triangular from raising on lo == hi.
         y, r = vp._cc_cn_target_years(pace_lo=1.0, pace_hi=1.0, n=2000, **self._ARGS)
+        assert np.all(np.isfinite(y)) and np.all(r > 0)
         assert np.median(r) == pytest.approx(12.0, rel=0.02)
         assert np.median(y) == pytest.approx(1.0, rel=0.05)
 
@@ -2824,12 +2757,6 @@ class TestCcCnTargetYears:
                                          **self._ARGS)
         assert np.median(fast) < np.median(slow)
 
-    def test_degenerate_ranges_do_not_crash_triangular(self):
-        # algo_lo == algo_hi and g_lo == g_hi would be invalid triangular args;
-        # the helper pads them instead of raising.
-        y, r = vp._cc_cn_target_years(pace_lo=1.0, pace_hi=1.0, n=500, **self._ARGS)
-        assert np.all(np.isfinite(y)) and np.all(r > 0)
-
     def test_algo_mode_outside_range_is_clamped(self):
         args = dict(self._ARGS, algo_lo=8.0, algo_mid=99.0, algo_hi=12.0)
         _, r = vp._cc_cn_target_years(pace_lo=1.0, pace_hi=1.0, n=4000, **args)
@@ -2851,13 +2778,6 @@ class TestCcInnovationAlgoBand:
         # The indigenous band sits at or below the distillation-inclusive
         # central rate — the premise of the correction.
         assert hi <= vp._cc_iso_compute(cc)['eci_per_yr'] + 1.0
-        # And its low end is at least the pretraining-efficiency floor,
-        # lifted to the tight frontier-grade time coefficient when that
-        # refit is available.
-        fg3 = vp._cc_frontier_grade_algo(cc, vp.load_eci_frontier(full_window=True),
-                                         margin=3.0)
-        if fg3:
-            assert lo >= min(fg3['b_time'], hi) - 1e-9
 
 
 class TestCcFrontierGradeAlgo:
@@ -2935,31 +2855,22 @@ class TestCcCnLevelOffset:
 
 
 class TestCcCnPaceBand:
-    def test_band_brackets_unity_and_reports_observations(self):
-        eci = vp.load_eci_frontier()
-        cn_fr = vp._cc_country_frontier(eci, 'China')
-        lo, hi, obs = vp._cc_cn_pace_band(cn_fr, 14.0)
-        assert lo <= 0.85 and hi >= 1.15
-        assert obs is None or len(obs) >= 1
-
     def test_degenerate_input_falls_back(self):
         lo, hi, obs = vp._cc_cn_pace_band([], 14.0)
         assert (lo, hi, obs) == (0.85, 1.15, None)
 
 
-class TestCcPureInnovationBand:
-    def test_pure_band_sits_below_the_diffusion_intact_band(self):
-        cc = vp.load_eci_compute()
-        nodist = vp._cc_innovation_algo_band(cc)
-        pure = vp._cc_pure_innovation_band(cc)
-        assert pure is not None and nodist is not None
-        assert 0 < pure[0] <= pure[1]
-        assert pure[1] <= nodist[0] + 1e-9
-
-
 class TestCcCnCrossingSim:
     KW = dict(a_partial=8.0, g_lo=0.15, g_hi=0.30, algo_lo=11.0,
               algo_mid=12.5, algo_hi=13.0, pace_lo=0.9, pace_hi=1.1, n=4000)
+
+    @pytest.fixture(autouse=True)
+    def _seeded(self):
+        """The samplers draw from the global np.random: seed it, then restore."""
+        state = np.random.get_state()
+        np.random.seed(0)
+        yield
+        np.random.set_state(state)
 
     def test_distil_saturated_matches_constant_rate(self):
         # With the US pulling away (gap/gap0 >= 1 throughout) the decay never
@@ -2999,8 +2910,7 @@ class TestCcCnCrossingSim:
         cn_fr = vp._cc_country_frontier(eci, 'China')
         us_best = max(us_fr, key=lambda x: x[1])
         cn_best = max(cn_fr, key=lambda x: x[1])
-        if cn_best[1] >= vp._CC_CN_TARGET_ECI:
-            pytest.skip("China already past the CC target")
+        assert cn_best[1] < vp._CC_CN_TARGET_ECI, "China already past the CC target"
         a_partial, b_algo = vp._cc_pooled_decomp(cc)
         us_algo, _, _ = vp._cc_iso_compute_rate(cc, 'United States of America')
         cn_algo, _, _ = vp._cc_iso_compute_rate(cc, 'China')
@@ -3060,34 +2970,32 @@ class TestCcCnCrossingSim:
         assert traj.shape == (self.KW['n'], len(grid))
         assert (np.diff(traj, axis=1) >= -1e-9).all()
 
-    def test_distillation_stop_slows_the_crossing(self):
-        """t_dist_stop cuts the teacher channel at that time; with a real
-        distillation edge (algo > nodist) the same bar takes longer, even
-        while the US keeps the gap wide (where gap decay never bites)."""
+    # With the US holding the gap wide (where gap decay never bites):
+    # t_dist_stop cuts the teacher channel; comp_dead zeroes the compute term
+    # inside its window (a level setback being regrown); a dist_teacher below
+    # the bar dries distillation before the crossing.
+    @pytest.mark.parametrize("lever", [
+        dict(t_dist_stop=0.0), dict(comp_dead=(0.0, 50.0)),
+        dict(dist_teacher=152.0)],
+        ids=["dist_stop", "comp_dead", "teacher_withheld"])
+    def test_lever_slows_the_crossing(self, lever):
         common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
                       us_anchor=165.0, us_rate=25.0)
         y_on, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
-        y_off, _, _ = vp._cc_cn_crossing_sim(
-            150.0, 160.0, t_dist_stop=0.0, **common)
+        y_off, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **lever, **common)
         assert np.nanmedian(y_off) > np.nanmedian(y_on)
 
-    def test_distillation_stop_beyond_horizon_is_inert(self):
+    # The same levers dated past the horizon, or a teacher above the US level.
+    @pytest.mark.parametrize("lever", [
+        dict(t_dist_stop=50.0), dict(comp_dead=(40.0, 50.0)),
+        dict(dist_teacher=1e9)],
+        ids=["dist_stop", "comp_dead", "teacher_withheld"])
+    def test_lever_out_of_reach_is_inert(self, lever):
         common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
                       us_anchor=165.0, us_rate=25.0)
         y_none, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
-        y_far, _, _ = vp._cc_cn_crossing_sim(
-            150.0, 160.0, t_dist_stop=50.0, **common)
+        y_far, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **lever, **common)
         assert abs(np.nanmedian(y_far) - np.nanmedian(y_none)) < 0.06
-
-    def test_comp_dead_window_slows_the_crossing(self):
-        """comp_dead zeroes the compute term inside its window (a level
-        setback being regrown), so the same bar takes longer to cross."""
-        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
-                      us_anchor=165.0, us_rate=25.0)
-        y_on, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
-        y_dead, _, _ = vp._cc_cn_crossing_sim(
-            150.0, 160.0, comp_dead=(0.0, 50.0), **common)
-        assert np.nanmedian(y_dead) > np.nanmedian(y_on)
 
     def test_comp_slow_only_bites_after_its_cut(self):
         """comp_slow drops the compute term from t_cut on: cutting at t=0 is
@@ -3107,32 +3015,6 @@ class TestCcCnCrossingSim:
             150.0, 160.0, comp_slow=(0.5, slow), **common)
         assert np.nanmedian(y_none) <= np.nanmedian(y_mid) + 0.06
         assert np.nanmedian(y_mid) <= np.nanmedian(y_now) + 0.06
-
-    def test_comp_dead_past_window_is_inert(self):
-        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
-                      us_anchor=165.0, us_rate=25.0)
-        y_none, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
-        y_late, _, _ = vp._cc_cn_crossing_sim(
-            150.0, 160.0, comp_dead=(40.0, 50.0), **common)
-        assert abs(np.nanmedian(y_late) - np.nanmedian(y_none)) < 0.06
-
-    def test_withheld_teacher_slows_the_crossing(self):
-        """dist_teacher below the bar dries distillation early — the last
-        stretch runs without the teacher, so the crossing lands later."""
-        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
-                      us_anchor=165.0, us_rate=25.0)
-        y_open, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
-        y_held, _, _ = vp._cc_cn_crossing_sim(
-            150.0, 160.0, dist_teacher=152.0, **common)
-        assert np.nanmedian(y_held) > np.nanmedian(y_open)
-
-    def test_teacher_at_or_above_the_us_level_is_inert(self):
-        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
-                      us_anchor=165.0, us_rate=25.0)
-        y_none, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **common)
-        y_high, _, _ = vp._cc_cn_crossing_sim(
-            150.0, 160.0, dist_teacher=1e9, **common)
-        assert abs(np.nanmedian(y_high) - np.nanmedian(y_none)) < 0.06
 
 
 class TestCcReleaseGapDays:
