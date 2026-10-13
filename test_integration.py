@@ -1021,12 +1021,14 @@ class TestTakeoffTab:
         at.run()
         assert [(m.label, m.value) for m in at.metric] == before
         labels = [m.label for m in at.metric]
-        assert labels[:3] == ["Full coding automation (RSI tab)",
+        assert labels[:5] == ["Full coding automation (RSI tab)",
                               "RSI: AI directs research",
-                              "Ultraintelligence: ECI 250"]
+                              "Ultraintelligence: ECI 250",
+                              "Coding automation \u2192 RSI",
+                              "RSI \u2192 ultraintelligence"]
         cis = [c.value for c in at.caption if c.value.startswith("80% CI: ")]
-        assert len(cis) >= 3
-        assert len([c for c in at.caption if c.value.startswith("90% CI: ")]) == 3
+        assert len(cis) >= 5
+        assert len([c for c in at.caption if c.value.startswith("90% CI: ")]) == 5
         assert any("RSI projections under construction" in w.value for w in at.warning)
 
     def test_takeoff_refreshes_an_old_imported_model(self, monkeypatch):
@@ -1196,22 +1198,29 @@ class TestTakeoffTab:
         _assert_no_error(at, "Takeoff / flat compute")
         assert seen[-1] is None
 
-    def test_foom_card_moves_with_the_parameter_spreads(self):
-        """FOOM is neither ruled in nor out at the defaults, and goes to zero
-        when every spread is."""
+    def test_gaps_between_milestones_and_a_capped_pace_view(self):
+        """Under the three cards, coding to RSI and RSI to ultraintelligence
+        each get a median and ordered 80%/90% intervals; spreads widen the
+        takeoff's. The pace chart's view stays capped though runaways reach
+        ~1e300."""
         import takeoff_model as tk
         at = self._app()
-        label = next(m.label for m in at.metric if m.label.startswith("FOOM"))
-        share = lambda: float(next(m.value for m in at.metric if m.label == label)[:-1])
-        assert 5 < share() < 80
-        # Runaways reach ~1e300; the pace chart's view stays capped.
+        labels = ["Coding automation \u2192 RSI", "RSI \u2192 ultraintelligence"]
+        for label in labels:
+            assert any(m.label == label for m in at.metric), label
         pace = json.loads(at.get("plotly_chart")[1].proto.spec)
         assert pace["layout"]["yaxis"]["range"][1] <= np.log10(1000) + 1e-9
+        assert not any(m.label.startswith("FOOM") for m in at.metric)
+
+        def ci80():
+            text = [c.value for c in at.caption if c.value.startswith("80% CI")][-1]
+            return text
+        wide = ci80()
         for key in tk.POINT_ESTIMATE:
             at.number_input(key="tk_" + key).set_value(0)
         at.run()
         _assert_no_error(at, "Takeoff / point estimates")
-        assert share() < 1
+        assert ci80() != wide
 
     def test_zero_transfer_runs_at_the_reference_pace(self, monkeypatch):
         """With no AI feedback, research runs at the frozen-AI reference pace."""

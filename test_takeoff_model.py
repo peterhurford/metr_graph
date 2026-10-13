@@ -165,22 +165,18 @@ def test_research_difficulty_is_sampled_with_the_other_rates(monkeypatch):
 def test_a_runaway_reaches_rsi_unless_the_floor_blocks_it():
     """A diverged draw has automated coding whatever its inherited date says, so
     it reaches RSI, even before that date. Under a floor above the bar no draw
-    can reach RSI, so a runaway is a non-arrival, not unresolved."""
+    can reach RSI, so a runaway never does."""
     explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, **tk.POINT_ESTIMATE, years=12)
     early = tk.simulate(explosive, n=1, onset_years=np.array([11.0]))
     assert early["software_log"][0] == 1e6
     assert early["events"]["RSI"][0] < 11.0
-    assert not early["numerically_limited"][0]
     reached = tk.simulate(explosive, n=1, onset_years=np.array([0.5]))
     assert reached["software_log"][0] == 1e6          # it did diverge
     assert np.isfinite(reached["events"]["RSI"][0])
-    assert not reached["numerically_limited"][0]
     blocked = dict(explosive, human_floor=6.0)
     waiting = tk.simulate(blocked, n=1, onset_years=np.array([20.0]))
-    assert not waiting["numerically_limited"][0]
     assert np.isinf(waiting["events"]["RSI"][0])
     inside = tk.simulate(blocked, n=1, onset_years=np.array([0.5]))
-    assert not inside["numerically_limited"][0]
     assert np.isinf(inside["events"]["RSI"][0])
 
 

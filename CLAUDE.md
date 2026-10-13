@@ -103,9 +103,10 @@ never): its capability has passed any coding milestone
 (`test_a_runaway_reaches_rsi_unless_the_floor_blocks_it`). Ultraintelligence is the first
 month a draw's ECI reaches `_TK_ULTRA_ECI` (250). ECI at RSI is fixed by construction:
 human hours depend only on capability, so RSI is a capability threshold.
-Beside the 2×/5× cards, a *FOOM* card gives the share of scenarios reaching
-`_TK_FOOM_PACE` (100×) the 2025 pace by the horizon, and a *Takeoff speed b* card reads the AI
-Futures Model's statistic (`_tk_takeoff_b`): with AI directing research, uplift ∝ effort^(s/β),
+Under the three headline cards, a row gives coding → RSI and RSI → ultraintelligence
+(`_tk_gap`, the FOOM readout) with 80%/90% intervals, over draws reaching the first by the
+horizon, a second past it counting as longer. Beside the 2×/5× cards, a *Takeoff speed b*
+card reads the AI Futures Model's statistic (`_tk_takeoff_b`): with AI directing research, uplift ∝ effort^(s/β),
 so successive uplift doublings take b = 2^(β/s − 1) as long (`TestTakeoffB`). Its median uses
 the settings; its accelerating share reads the simulator's per-draw s and β.
 `tk_dc_compute` (default on) feeds compute growth from the Data Centers tab:
@@ -126,17 +127,16 @@ Takeoff inputs and preserves RSI. Workflow fit callbacks validate before changin
 The model's source digest is checked on app reruns, reloads stale imported model code, and
 is an explicit argument to `_tk_simulate`'s Streamlit cache. Preserve this dependency when
 changing the simulator schema. Local seeded RNG and common draws support paired scenarios.
-A diverged draw records nothing further and is `numerically_limited` only while RSI
-could still arrive inside the horizon
-(`test_a_runaway_reaches_rsi_unless_the_floor_blocks_it`); the tab
-captions up to `_TK_LIMITED_MAX` of them as not arriving and errors above that.
+A diverged draw records nothing further
+(`test_a_runaway_reaches_rsi_unless_the_floor_blocks_it`); the pace chart's view stops
+at `_TK_PACE_VIEW`, since a runaway's pace reaches ~1e300.
 Unit tests cover accounting, snapshots, fast feedback, calibration, ordering, censoring,
 convergence, and RNG isolation. AppTests cover the layout, calibration, matched hours,
 URL sharing, stale imports, and exact inheritance from RSI.
 
 The tab reads as a story, top to bottom: the warning, the loop the model simulates
 (`_TK_LOOP_HTML`) and its three brakes, the headline cards (coding automation, RSI,
-ultraintelligence, each with an 80% CI), the RSI evidence row, then **1. Research speeds
+ultraintelligence, each with 80%/90% CIs) and the two gaps between them, the RSI evidence row, then **1. Research speeds
 up** (`_tk_pace_fig` plus the factor chart), **2. People step out of the loop**
 (`_tk_humans_fig`) and **3. What it does to capability (ECI)**, closing on one short
 *About this model* expander. `test_default_render_and_stable_rerun` pins the order.

@@ -401,7 +401,6 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # cycle (which could move an entire milestone to the next successor).
     t = np.zeros(n)
     stopped_at = np.full(n, np.inf)
-    limited = np.zeros(n, dtype=bool)
     while np.any(t < p["years"] - 1e-12):
         train_end = run_start + train_time
         deploy_end = train_end + eval_time
@@ -487,7 +486,6 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         rsi_possible = floor <= p["full_human"] / 100
         runaway_rsi = diverged & ~np.isfinite(events["RSI"]) & rsi_possible
         events["RSI"][runaway_rsi] = end[runaway_rsi]
-        limited |= diverged & ~np.isfinite(events["RSI"]) & (onset <= p["years"]) & rsi_possible
         software = np.minimum(updated, 1e6)
         train_budget = np.exp(compute_rate * t) * np.divide(
             np.expm1(compute_rate * dt), compute_rate,
@@ -640,7 +638,6 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         },
         "progress_multiple": delivered_rate,
         "compute_matched_advantage": advantage,
-        "numerically_limited": limited,
         "draws": {"taste_slope": taste_slope, "difficulty": beta,
                   "judgment_drift": drift, "substitution": rho},
     }

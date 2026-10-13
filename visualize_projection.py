@@ -17797,10 +17797,6 @@ _TK_DEFAULTS["tk_coding_slope"] = _tk_survey_coding(
 _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
 
 
-# Runaway draws tolerated as unresolved before the tab refuses to report.
-_TK_LIMITED_MAX = 0.01
-
-
 # The input exponent r is defined against; difficulty = this / r.
 _TK_R_REF_PARALLEL = takeoff.DEFAULTS["parallelization"]
 
@@ -17923,12 +17919,6 @@ def _tk_pace_fig(result, today, markers=(), history=None):
                           "<extra>" + name + "</extra>"))
     for level in _TK_PACE_GUIDES:
         fig.add_hline(y=level, line_dash="dot", line_color="#999", line_width=1)
-    # Labelled by hand: on a log axis plotly reads an hline annotation's y as
-    # the exponent, parking it at 10^100.
-    fig.add_hline(y=_TK_FOOM_PACE, line_dash="dash", line_color="#c0392b", line_width=1)
-    fig.add_annotation(x=0, xref="paper", y=np.log10(_TK_FOOM_PACE), xanchor="left",
-                       yanchor="bottom", showarrow=False, text=f"FOOM ({_TK_FOOM_PACE}\u00d7)",
-                       font=dict(size=11, color="#c0392b"))
     # A runaway's pace reaches ~1e300: hold the view to the readable range,
     # letting those scenarios run off the top.
     lows = [p["reference_2025_quantiles"][:, 0], p["pace_2025_quantiles"][:, 0]]
@@ -17937,7 +17927,7 @@ def _tk_pace_fig(result, today, markers=(), history=None):
         lows.append(history[1][:, 0])
         highs.append(history[1][:, 2])
     low = max(min(float(np.nanmin(v)) for v in lows), 0.1) / 1.3
-    high = min(max(max(float(np.nanmax(v)) for v in highs), 2 * _TK_FOOM_PACE) * 1.3,
+    high = min(max(max(float(np.nanmax(v)) for v in highs), 10) * 1.3,
                _TK_PACE_VIEW)
     for i, (label, when) in enumerate(markers):
         fig.add_vline(x=when, line_dash="dot", line_color="#b0b0b0", line_width=1)
@@ -18115,7 +18105,7 @@ def _tk_first_reach(paths, years, level):
 # Past RSI some scenarios' efficiency compounds without limit, and ECI (linear
 # in log effective compute) runs into the thousands; the chart's view stops
 # here so the range an ultraintelligence bar would sit in stays readable.
-_TK_ECI_VIEW_MAX = 400
+_TK_ECI_VIEW_MAX = 300
 
 
 def _tk_eci_fig(result, today, eci, markers=()):
@@ -18277,13 +18267,22 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
         return np.where(reached.any(axis=1), grid[np.argmax(reached, axis=1)], np.inf)
     result["pace_events_2025"] = {f"{threshold}× 2025 research pace": first(threshold)
                                   for threshold in (2, 5)}
-    result["foom"] = first(_TK_FOOM_PACE)
     return result
 
 
-# FOOM: research running at this multiple of the 2025 pace, a century of
-# 2025 progress a year.
-_TK_FOOM_PACE = 100
+def _tk_gap(earlier, later, horizon):
+    """(years from `earlier` to `later`, mask of draws whose `earlier` falls by
+    `horizon`). A `later` past the horizon is +inf: censored, not dropped."""
+    reached = np.isfinite(earlier) & (earlier <= horizon)
+    later = np.where(later <= horizon, later, np.inf)
+    return np.where(reached, later - np.where(reached, earlier, 0), np.nan), reached
+
+
+def _tk_span(years, end_date):
+    """A duration in years as months under two years, else years."""
+    if not np.isfinite(years):
+        return f"not by {end_date:%Y}"
+    return f"{12 * years:.0f} mo" if abs(years) < 2 else f"{years:.1f} yr"
 
 
 def _tk_date(value, today):
@@ -18569,13 +18568,6 @@ def render_takeoff():
     # The ECI trend reflects the compute growth behind it: the data-center
     # series' own historical fit when its projection is in use.
     result["hist_compute"] = hist_compute
-    limited = float(np.mean(result["numerically_limited"]))
-    if limited > _TK_LIMITED_MAX:
-        st.error("These assumptions exceed the simulation’s numerical range in "
-                 f"{100 * limited:.1f}% of draws. "
-                 "Milestone probabilities are unavailable for this configuration; "
-                 "the unresolved draws have not been counted as slow outcomes.")
-        return
     rsi = result["events"]["RSI"]
     eci = _tk_eci(result, params)
     def _card(col, label, samples, help):
@@ -18586,6 +18578,21 @@ def render_takeoff():
             col.caption(f"{level}% CI: {_tk_date(takeoff.quantile(samples, lo, horizon), today)}"
                         f" \u2013 {_tk_date(takeoff.quantile(samples, hi, horizon), today)}")
 
+    def _gap_card(col, label, earlier, later, help):
+        gap, reached = _tk_gap(earlier, later, horizon)
+        if not reached.any():
+            col.metric(label, "\u2014", help=help + " No scenario reaches the first "
+                       f"milestone by {end_date:%b %Y}.")
+            return
+        g = gap[reached]
+        col.metric(label, _tk_span(takeoff.quantile(g, 0.5), end_date),
+                   help=help + f" Among the {100 * np.mean(reached):.0f}% of scenarios "
+                   f"reaching the first by {end_date:%b %Y}; one not reaching the second "
+                   "by then counts as longer, so late starters read long.")
+        for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
+            col.caption(f"{level}% CI: {_tk_span(takeoff.quantile(g, lo), end_date)}"
+                        f" \u2013 {_tk_span(takeoff.quantile(g, hi), end_date)}")
+
     a, b, c = st.columns(3)
     _card(a, "Full coding automation (RSI tab)", result["onset"],
           "The RSI tab's blend, AL5 card excluded.")
@@ -18595,9 +18602,12 @@ def render_takeoff():
     _card(c, f"Ultraintelligence: ECI {_TK_ULTRA_ECI:g}", eci["ultra"],
           f"First month a scenario's ECI reaches {_TK_ULTRA_ECI:g} (today's frontier: "
           f"{eci['now']:.0f}).")
-    if limited:
-        st.caption(f"{100 * limited:.2f}% of scenarios exceeded the simulation's range "
-                   "and count as not reaching RSI.")
+    a, b = st.columns(2)
+    _gap_card(a, "Coding automation \u2192 RSI", result["onset"], rsi,
+              "Time from each scenario's coding-automation date to its RSI date.")
+    _gap_card(b, "RSI \u2192 ultraintelligence", rsi, eci["ultra"],
+              "How fast the takeoff is: time from each scenario's RSI date to its "
+              f"ECI reaching {_TK_ULTRA_ECI:g}. Negative where ECI gets there first.")
     medians = [(label, takeoff.quantile(samples, 0.5, horizon))
                for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
                                       ("Ultraintelligence", eci["ultra"]))]
@@ -18629,7 +18639,7 @@ def render_takeoff():
         result, today, markers,
         history=_tk_pace_history(np.exp(experiment_starts) * pace_yield, today))),
         width="stretch")
-    cols = st.columns(len(result["pace_events_2025"]) + 2)
+    cols = st.columns(len(result["pace_events_2025"]) + 1)
     for col, (name, values) in zip(cols, result["pace_events_2025"].items()):
         col.metric(f"Research at {name.split()[0]} the 2025 pace",
                    _tk_date(takeoff.quantile(values, .5, horizon), today),
@@ -18637,16 +18647,6 @@ def render_takeoff():
                         f"{100 * np.mean(values <= horizon):.0f}% of scenarios get "
                         f"there by {end_date:%b %Y}. Needs neither full automation "
                         "nor a sustained streak.")
-    foom = result["foom"] <= horizon
-    cols[-2].metric(
-        f"FOOM: research at {_TK_FOOM_PACE}\u00d7", f"{100 * np.mean(foom):.0f}%",
-        help=f"Share of scenarios whose research pace reaches {_TK_FOOM_PACE}\u00d7 the "
-             f"2025 pace by {end_date:%b %Y}: a century of 2025 progress a year"
-             + (f", first reached in {_tk_date(float(np.median(result['foom'][foom])), today)} "
-                "at the median among them" if foom.any() else "")
-             + ". Set by the parameter spreads under Advanced: the literature leaves "
-             "whether takeoff runs away open (Forethought puts ~60% on acceleration, "
-             "the AI Futures Model 38%).")
     b = _tk_takeoff_b(params, result["draws"])
     cols[-1].metric(
         "Takeoff speed b", "no feedback" if b is None else f"{b['median']:.2f}",
@@ -18660,8 +18660,8 @@ def render_takeoff():
            "100\u00d7 more capable")
         + ". Their Dec 2025 "
         "median is 1.21 (38% accelerate); AI 2027's was 0.64\u20130.78. b counts "
-        "judgment alone; the FOOM card also counts runaways driven by AI labor "
-        "where it substitutes for compute, and by judgment gains compounding.")
+        "judgment alone; scenarios also run away through AI labor where it "
+        "substitutes for compute, and through judgment gains compounding.")
     st.markdown("**What moves the pace**")
     _fn_caption(
         "Multiply the three factors and you get the dotted line.",

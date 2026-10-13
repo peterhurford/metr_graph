@@ -136,10 +136,12 @@ to the literature:
 
 The judgment elasticity is still calibrated once at the ρ setting, not per draw.
 
-At the defaults about 32% of scenarios reach 100× the 2025 research pace by the end of
-2031 (the tab's FOOM card), and a quarter have judgment outrunning difficulty (b < 1),
-against the AI Futures Model's 38% and Forethought's ~60% chance that progress
-accelerates. With every spread at zero (`POINT_ESTIMATE`) no scenario reaches 100×.
+FOOM here means a short gap from RSI to ultraintelligence, which the tab reports with
+80%/90% intervals under the milestone cards. At the defaults 10% of scenarios reaching RSI
+by the end of 2031 get to ultraintelligence within 6 months and 22% within a year, against
+5% and 8% with every spread at zero (`POINT_ESTIMATE`). A quarter have judgment outrunning
+difficulty (b < 1), against the AI Futures Model's 38% and Forethought's ~60% chance that
+progress accelerates.
 
 ## Evidence calibration
 
@@ -205,11 +207,8 @@ Their follow-up ends at the calendar horizon, so late coding dates have less fol
 Workflow plots show monthly medians and middle-80% intervals across scenarios. Marginal
 medians meeting every target do not establish joint automation. Completed paths retain
 last modeled workflow values and last measured rates. A draw whose research runs past
-numerical range records nothing further. It counts as unresolved only while a milestone
-could still arrive inside the horizon — not when every open milestone waits on a coding
-date past it, nor under a human floor above the RSI bar, where no draw can reach it — and
-the tab reports up to 1% unresolved draws in its caption as not arriving, refusing to
-report above that.
+numerical range records nothing further; it has reached RSI, unless a human floor above
+the bar rules RSI out for every draw.
 
 Exports include the version, time origin, effective parameters, calibration assumptions,
 evidence dates, inherited RSI samples, and calendar/coding-relative event times. The source
