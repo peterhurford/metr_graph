@@ -79,7 +79,7 @@ RSI gates on coding plus research direction under the human-hours bar
 has its own chart and 2×/5× first-crossing events. `_tk_eci` reads each draw's capability
 path as ECI, scaled so today's modeled growth equals the ECI frontier's fitted rate (not
 the ~3× smaller measured exchange rate), floored at that trend for `_TK_ECI_FLOOR_YEARS`
-(the shipping lag) only; `_TK_ECI_VIEW_MAX` caps the chart's view.
+(the shipping lag), the lift then fading over `_TK_ECI_FLOOR_FADE_YEARS` so no line steps down; `_TK_ECI_VIEW_MAX` caps the chart's view.
 v7 adds a CES labor-compute mean (`substitution`), Amdahl labor gains as the human share
 falls (`ai_speed`), non-AI input growth holding the frozen-AI pace (`baseline_inputs`), a
 steady-state pipeline, and an `r` control (`tk_returns`) from which the app sets

@@ -17792,13 +17792,18 @@ def _tk_eci(result, params):
     now = frontier[-1]['eci_score']
     cap = result["workflow_progress"]["capability_log"]
     years = result["workflow_progress"]["years"]
-    # Today's trend is a floor for the first year only, covering the months
-    # before the next model ships; after that a scenario runs on its own
-    # dynamics, so one where research slows can fall behind the trend.
+    # Today's trend is a floor for the first year, covering the months before
+    # the next model ships. The lift it gives a scenario then fades out over
+    # the next `_TK_ECI_FLOOR_FADE_YEARS`, so the scenario returns to its own
+    # dynamics (and can fall behind the trend) without a step.
     trend = now + ppy * years
-    paths = now + ppy / base_rate * cap
-    paths = np.where(years[None, :] <= _TK_ECI_FLOOR_YEARS,
-                     np.maximum(paths, trend[None, :]), paths)
+    model = now + ppy / base_rate * cap
+    floored = np.maximum(model, trend[None, :])
+    j = min(np.searchsorted(years, _TK_ECI_FLOOR_YEARS), len(years) - 1)
+    fade = np.clip(1 - (years - years[j]) / _TK_ECI_FLOOR_FADE_YEARS, 0, 1)
+    paths = np.where(years[None, :] <= years[j], floored,
+                     model + (floored[:, j] - model[:, j])[:, None] * fade[None, :])
+    paths = np.maximum.accumulate(paths, axis=1)
     rsi = result["events"]["RSI"]
     idx = np.clip(np.searchsorted(years, rsi, side="right") - 1, 0, len(years) - 1)
     at_rsi = np.where(np.isfinite(rsi) & (rsi <= years[-1]),
@@ -17807,8 +17812,10 @@ def _tk_eci(result, params):
             "frontier": frontier, "asi": _tk_first_reach(paths, years, _TK_ASI_ECI)}
 
 
-# Years from today during which projected ECI is floored at today's trend.
+# Years from today during which projected ECI is floored at today's trend, and
+# the years over which that lift then fades out.
 _TK_ECI_FLOOR_YEARS = 1.0
+_TK_ECI_FLOOR_FADE_YEARS = 1.0
 
 # Superintelligence, as an ECI level each scenario's capability path must reach.
 _TK_ASI_ECI = 290.0

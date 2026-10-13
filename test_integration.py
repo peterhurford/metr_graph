@@ -1334,6 +1334,8 @@ class TestTakeoffTab:
                     if isinstance(y, dict) else np.asarray(y, dtype=float))
 
         traces = {d.get("name"): d for d in eci["data"]}
+        for name in ("Projected ECI", "Projected ECI: 10th percentile"):
+            assert np.all(np.diff(_ys(traces[name])) >= -1e-9), name   # no step down
         first_year = slice(0, 13)        # monthly grid: today plus 12 months
         assert np.all(_ys(traces["Projected ECI: 10th percentile"])[first_year]
                       >= _ys(traces["Today's trend continued"])[first_year] - 1e-9)
