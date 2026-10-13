@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v12-literature-spread"
+MODEL_VERSION = "takeoff-v13-compute-slowdown"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -58,6 +58,10 @@ DEFAULTS = {
     # points, and 1-sigma of ln(elasticity of substitution 1 / (1 - rho)).
     "returns_spread": 65.0, "judgment_spread": 50.0,
     "drift_spread": 15.0, "substitution_spread": 80.0,
+    # Compute growth keeps this share of its log rate from `compute_slow_years`
+    # after today (the app sets end-2030, where Epoch's feasibility analysis
+    # stops); an assumption, not a fitted rate.
+    "compute_slowdown": 50.0, "compute_slow_years": 4.0,
 }
 # Every spread at zero: each draw uses the settings themselves.
 POINT_ESTIMATE = {"uncertainty": 0, "returns_spread": 0, "judgment_spread": 0,
@@ -116,7 +120,8 @@ def validate(params):
             or p["rsi_trend_months"] <= 0:
         raise ValueError("RSI trend weights must be percentages and their half-life positive.")
     if not -5 <= p["substitution"] <= 0.9 or p["ai_speed"] < 1 \
-            or not 0 <= p["baseline_inputs"] <= 200 or not -90 <= p["judgment_drift"] <= 300:
+            or not 0 <= p["baseline_inputs"] <= 200 or not -90 <= p["judgment_drift"] <= 300 \
+            or not 0 <= p["compute_slowdown"] <= 100 or p["compute_slow_years"] < 0:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
                          "baseline input growth in [0, 200]%.")
     return p
@@ -226,17 +231,33 @@ def progress_multiple(previous_software, new_software, cycle_years, baseline_rat
     return np.maximum(new_software - previous_software, 0) / (cycle_years * baseline_rate)
 
 
-def reference_software(years, rate, compute_rate, parallel, initial_throughput, difficulty):
-    """Exact software progress with the same resources and frozen AI skills."""
-    growth = parallel * compute_rate
-    effort = np.divide(np.expm1(growth * years), growth,
-                       out=np.array(years, dtype=float).copy(), where=growth != 0)
+def log_level(t, early, late, at):
+    """Log of an input growing at `early` a year until `at`, then `late`."""
+    return early * np.minimum(t, at) + late * np.maximum(np.subtract(t, at), 0)
+
+
+def grown(t, early, late, at):
+    """Integral from 0 to t of exp(log_level): the input accumulated."""
+    def e(g, x):
+        x = np.asarray(x, dtype=float) * np.ones_like(g)
+        return np.divide(np.expm1(g * x), g, out=x.copy(), where=g != 0)
+    head = np.minimum(t, at)
+    return e(early, head) + np.exp(early * head) * e(late, np.maximum(np.subtract(t, at), 0))
+
+
+def reference_software(years, rate, compute_rate, parallel, initial_throughput, difficulty,
+                       late_rate=None, at=np.inf):
+    """Exact software progress with the same resources and frozen AI skills;
+    inputs grow at `compute_rate`, then `late_rate` from `at`."""
+    late = compute_rate if late_rate is None else late_rate
+    effort = grown(years, parallel * np.asarray(compute_rate, dtype=float),
+                   parallel * np.asarray(late, dtype=float), at)
     amount = rate * initial_throughput * effort
     return np.log1p(difficulty * amount) / difficulty if np.all(difficulty > 0) else amount
 
 
 def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None,
-             compute_rates=None, historical_compute_rate=None):
+             compute_rates=None, historical_compute_rate=None, coding_capability=None):
     """Weekly research and successor cycles, with censored milestone draws.
 
     RSI is the first time research direction is at or under `full_human`% of
@@ -245,7 +266,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     (`capability_log`) covers the whole window. `compute_rates`, one log
     growth rate a year per draw, replaces `compute_growth` and its spread;
     `historical_compute_rate` is the compute growth behind today's steady pace
-    (default: each draw's own rate).
+    (default: each draw's own rate). `coding_capability`, a capability level
+    (log effective compute), counts coding as automated once a deployed model
+    reaches it, ahead of the inherited date; the result's `coding_at`.
 
     A run freezes its algorithm snapshot at its start, integrates allocated
     training compute during the run, then waits for validation before deployment.
@@ -317,6 +340,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
 
     record("Today", np.ones(n, bool), starts, np.ones(n), np.ones(n))
     coding_recorded = onset <= 0
+    # Coding counts as automated at the inherited date, or once a deployed
+    # model reaches `coding_capability`, whichever comes first.
+    coding = onset.copy()
     record("Full coding automation", onset == 0, starts, np.ones(n), np.ones(n))
     rsi0 = (onset <= 0) & (starts[:, 0] <= p["full_human"] / 100)
     events["RSI"][rsi0] = 0
@@ -375,6 +401,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         beta * software_rate * initial_throughput / parallel - hist_rate)
     input_rate = np.maximum(compute_rate + extra_rate, 0)
     extra_rate = input_rate - compute_rate
+    # From `slow_at`, compute keeps `compute_slowdown`% of its log growth; the
+    # other inputs keep their own, so research inputs slow by compute's share.
+    slow_at = p["compute_slow_years"]
+    compute_late = compute_rate * p["compute_slowdown"] / 100
+    input_late = np.maximum(compute_late + extra_rate, 0)
+    extra_late = input_late - compute_late
     # Amdahl: AI labor on research speeds up as the human share h falls, by
     # (h0 + (1 - h0)/s) / (h + (1 - h)/s), normalized to today's share h0.
     ai_speed = p["ai_speed"]
@@ -405,15 +437,15 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         train_end = run_start + train_time
         deploy_end = train_end + eval_time
         next_event = np.minimum(np.where(finished, deploy_end, train_end), fast_next)
-        next_event = np.minimum(next_event, np.where(onset > t + 1e-12, onset, np.inf))
+        next_event = np.minimum(next_event, np.where(coding > t + 1e-12, coding, np.inf))
         next_observation = workflow_grid[np.minimum(observation_index, len(workflow_grid) - 1)]
         next_event = np.minimum(next_event, next_observation)
         end = np.minimum(np.minimum(t + step, next_event), p["years"])
         active = t < p["years"] - 1e-12
         end = np.where(active, end, t)
         dt = np.maximum(end - t, 0)
-        compute_log = compute_rate * (t + dt / 2)
-        extra_log = extra_rate * (t + dt / 2)
+        compute_log = log_level(t + dt / 2, compute_rate, compute_late, slow_at)
+        extra_log = log_level(t + dt / 2, extra_rate, extra_late, slow_at)
         effective = deployed + fast_deployed
         human_now = workflow_state(effective, baseline_capability_rate, starts,
                                    halves, floor)
@@ -425,9 +457,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # The RSI anchor supplies a smooth reduction in coding human hours.
         # Its productivity gain and endogenous coding gains overlap: use the
         # larger, not their product. Existing assistance is normalized to 1.
-        coding_fraction = np.clip(np.divide(t + dt / 2, onset,
-            out=np.ones(n), where=onset > 0), 0, 1)
-        coding_fraction = np.where(onset <= 0, 0, coding_fraction)
+        coding_fraction = np.clip(np.divide(t + dt / 2, coding,
+            out=np.ones(n), where=coding > 0), 0, 1)
+        coding_fraction = np.where(coding <= 0, 0, coding_fraction)
         rsi_coding_log = np.log((1 - p["coding_today"] / 100) / .05) * coding_fraction
         coding_gain = np.maximum(rsi_coding_log, p["coding_slope"] * effective)
         if transfer:
@@ -469,7 +501,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         penalty = beta * (software - initial_stock)
         pace = np.exp(np.minimum(research_log - penalty, 700))
         reference_progress = reference_software(t, software_rate, input_rate,
-                                                parallel, initial_throughput, beta)
+                                                parallel, initial_throughput, beta,
+                                                input_late, slow_at)
         reference_pace = np.exp(np.minimum(np.log(initial_throughput)
             + parallel * (compute_log + extra_log) - beta * reference_progress, 700))
         if p["difficulty"] > 0:
@@ -487,9 +520,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         runaway_rsi = diverged & ~np.isfinite(events["RSI"]) & rsi_possible
         events["RSI"][runaway_rsi] = end[runaway_rsi]
         software = np.minimum(updated, 1e6)
-        train_budget = np.exp(compute_rate * t) * np.divide(
-            np.expm1(compute_rate * dt), compute_rate,
-            out=dt.copy(), where=compute_rate != 0)
+        train_budget = (grown(t + dt, compute_rate, compute_late, slow_at)
+                        - grown(t, compute_rate, compute_late, slow_at))
         used = np.where(finished, 0, shares[0] * train_budget)
         run_compute += used
         training_used += used
@@ -499,7 +531,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         pending[done] = np.maximum(deployed[done], candidate[done])
         pending_software[done] = np.where(adopted[done], (1 - fast_fraction) * snapshot[done], deployed_software[done])
         reference_snapshot = initial_stock + reference_software(run_start, software_rate, input_rate,
-                                                 parallel, initial_throughput, beta)
+                                                 parallel, initial_throughput, beta,
+                                                 input_late, slow_at)
         reference_candidate = (1 - fast_fraction) * reference_snapshot + np.log(
             np.maximum(run_compute / reference_train_compute, 1e-12))
         reference_pending_capability[done] = np.maximum(reference_deployed[done], reference_candidate[done])
@@ -513,7 +546,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         fast_deployed[fast_ready] = fast_fraction * fast_snapshot[fast_ready]
         reference_fast[fast_ready] = fast_fraction * (initial_stock[fast_ready] + reference_software(
             np.maximum(0, fast_next[fast_ready] - fast_time), software_rate[fast_ready],
-            input_rate[fast_ready], parallel, initial_throughput[fast_ready], beta[fast_ready]))
+            input_rate[fast_ready], parallel, initial_throughput[fast_ready], beta[fast_ready],
+            input_late[fast_ready], slow_at))
         fast_snapshot[fast_ready] = software[fast_ready]
         fast_next[fast_ready] += fast_time
         # For non-ready slow runs, only their already deployed algorithms count.
@@ -533,6 +567,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         deployed_software[ready] = pending_software[ready]
         last_deploy[ready] = end[ready]
         effective = deployed + fast_deployed
+        if coding_capability is not None:
+            capable = active & (effective >= coding_capability) & (coding > end)
+            coding[capable] = end[capable]
         rows = np.flatnonzero(ready | fast_ready)
         future = workflow_grid[None, :] >= end[rows, None] - 1e-12
         for history, values in ((capability_history, effective),
@@ -542,10 +579,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # A diverged draw's state is a numerical ceiling: record nothing from it.
         live = active & ~diverged
         human = workflow_state(effective, baseline_capability_rate, starts, halves, floor)
-        coding_hit = active & (end >= onset) & ~coding_recorded
+        coding_hit = active & (end >= coding) & ~coding_recorded
         record("Full coding automation", coding_hit, human, delivered_rate, advantage)
         coding_recorded |= coding_hit
-        hit = (live & (end >= onset) & (human[:, 0] <= p["full_human"] / 100)
+        hit = (live & (end >= coding) & (human[:, 0] <= p["full_human"] / 100)
                & ~np.isfinite(events["RSI"]))
         events["RSI"][hit] = end[hit]
         record("RSI", hit, human, delivered_rate, advantage)
@@ -570,8 +607,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         last_reference_pace[active] = reference_pace[active]
         stopped_at[active & diverged] = end[active & diverged]
         t = np.where(diverged, p["years"], end)
-    total_budget = np.divide(np.expm1(compute_rate * p["years"]), compute_rate,
-                             out=np.full(n, float(p["years"])), where=compute_rate != 0)
+    total_budget = grown(p["years"], compute_rate, compute_late, slow_at)
     stopped = workflow_grid[None, :] > stopped_at[:, None]
     pace_history = np.where(stopped, last_pace[:, None], pace_history)
     reference_pace_history = np.where(stopped, last_reference_pace[:, None], reference_pace_history)
@@ -609,7 +645,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                          if np.isfinite(v).any() else [np.nan] * 3 for v in history.T])
 
     return {
-        "params": p, "version": MODEL_VERSION, "onset": onset,
+        "params": p, "version": MODEL_VERSION, "onset": onset, "coding_at": coding,
         "events": events, "acceleration_events": acceleration_events,
         "time_origin": "today",
         "compute_limited": last_experiments <= last_labor,

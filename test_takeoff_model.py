@@ -150,7 +150,7 @@ def test_research_difficulty_is_sampled_with_the_other_rates(monkeypatch):
     original = tk.reference_software
 
     def capture(*args):
-        seen.append(np.asarray(args[-1]))
+        seen.append(np.asarray(args[5]))       # difficulty
         return original(*args)
 
     monkeypatch.setattr(tk, "reference_software", capture)
@@ -419,3 +419,33 @@ def test_the_spreads_leave_a_runaway_possible_not_certain():
     runaway = lambda r: np.mean(r["software_log"] >= 1e6 - 1)
     assert 0.02 < runaway(tk.simulate(p, n=400)) < 0.6
     assert runaway(tk.simulate(dict(p, **tk.POINT_ESTIMATE), n=400)) == 0
+
+
+def test_compute_slows_to_its_late_rate_from_the_slowdown_date():
+    """`grown` integrates the two-rate path exactly, and keeping 100% of the
+    growth reproduces the single rate."""
+    r, late, at = np.array([1.1]), np.array([0.55]), 2.0
+    s = np.linspace(0, 5, 200001)
+    level = np.exp(tk.log_level(s, r[0], late[0], at))
+    assert tk.grown(5.0, r, late, at)[0] == pytest.approx(np.trapezoid(level, s), rel=1e-6)
+    assert tk.grown(5.0, r, r, at)[0] == pytest.approx(np.expm1(5.5) / 1.1)
+    base = dict(**tk.POINT_ESTIMATE, years=6, compute_slow_years=2.0)
+    kept = tk.simulate(dict(base, compute_slowdown=100), n=1)
+    never = tk.simulate(dict(base, compute_slow_years=50.0), n=1)
+    slowed = tk.simulate(dict(base, compute_slowdown=50), n=1)
+    np.testing.assert_allclose(kept["budget"], never["budget"])
+    np.testing.assert_allclose(kept["software_log"], never["software_log"])
+    assert slowed["budget"][0] < kept["budget"][0]
+    assert slowed["software_log"][0] < kept["software_log"][0]
+
+
+def test_a_model_at_the_coding_capability_has_automated_coding():
+    """RSI waits for coding, but coding counts as automated once a deployed
+    model reaches `coding_capability`, even with no inherited date."""
+    p = dict(**tk.POINT_ESTIMATE, years=8)
+    never = tk.simulate(p, n=1, onset_years=np.array([np.inf]))
+    assert np.isinf(never["events"]["RSI"][0]) and np.isinf(never["coding_at"][0])
+    early = tk.simulate(p, n=1, onset_years=np.array([np.inf]), coding_capability=1.0)
+    assert np.isfinite(early["coding_at"][0])
+    assert early["events"]["RSI"][0] >= early["coding_at"][0]
+    assert np.isinf(early["onset"][0])           # the inherited date is kept as given

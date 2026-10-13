@@ -75,7 +75,10 @@ ramps to the inherited milestone; overlapping endogenous coding gains use a maxi
 than multiplying the two. Fast and successor improvements partition discoveries and each
 validate a start-of-cycle snapshot. A same-compute reference freezes today's AI skills.
 RSI gates on coding plus research direction under the human-hours bar
-(`test_rsi_turns_on_research_direction_alone`). Research acceleration
+(`test_rsi_turns_on_research_direction_alone`). Coding counts as automated at the
+inherited date or once a deployed model reaches ECI 250 (`coding_capability`, from
+`_tk_eci_scale`), returned as `coding_at` with `onset` left exact
+(`test_a_model_at_the_coding_capability_has_automated_coding`). Research acceleration
 has its own chart and 2×/5× first-crossing events. `_tk_eci` reads each draw's capability
 path as ECI, scaled so today's modeled growth equals the ECI frontier's fitted rate (not
 the ~3× smaller measured exchange rate), floored at that trend for `_TK_ECI_FLOOR_YEARS`
@@ -115,7 +118,9 @@ the settings; its accelerating share reads the simulator's per-draw s and β.
 `_tk_dc_compute` samples the US largest-run projection (`_pc_projection`, as Pacing does)
 and averages each path over a fixed `_TK_DC_AVG_YEARS` (not the chart horizon, which
 must not move dates) into one rate per draw, passed as
-`simulate(compute_rates=…)`. The ECI scale then uses that series' historical fit as the
+`simulate(compute_rates=…)`. From the end of `_TK_COMPUTE_SLOW_YEAR` (2030) each rate keeps
+`compute_slowdown`% of itself (`grown`/`log_level`, exact two-rate integrals;
+`test_compute_slows_to_its_late_rate_from_the_slowdown_date`). The ECI scale then uses that series' historical fit as the
 compute growth behind today's trend, so only a projected change in compute growth moves ECI
 (`test_compute_follows_the_data_center_projection_unless_toggled_off`).
 

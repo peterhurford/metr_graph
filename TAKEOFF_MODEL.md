@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v12-literature-spread`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v13-compute-slowdown`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -24,8 +24,9 @@ share to 5% at the coding milestone. This supplies an incremental coding-product
 channel. Endogenous coding gains and this ramp overlap, so the model uses their maximum,
 not their product. Past coding dates are already satisfied, with existing assistance
 normalized into today's baseline. Never-arriving coding dates still have research paths.
-RSI requires the coding date to have arrived; this anchoring constraint is not a joint
-statistical fit of coding and research capabilities.
+RSI requires the coding date to have arrived, or a deployed model at ECI 250: a model at
+ultraintelligence has automated coding whatever the inherited date says. This anchoring
+constraint is not a joint statistical fit of coding and research capabilities.
 
 ## Fast and slow feedback
 
@@ -42,7 +43,10 @@ lowest, so it is where this term is largest.
 Compute growth comes from the Data Centers tab by default: each draw takes one sampled US
 largest-training-run trajectory (recorded steps, catalogued plans under slip, then the
 fitted trend) averaged over a fixed five years, whatever the chart horizon. Off, it is the
-flat `compute_growth`.
+flat `compute_growth`. From the end of 2030, where Epoch's analysis finds today's scaling
+feasible, compute keeps `compute_slowdown`% (default 50) of its log growth, about 3× a year
+becoming 1.7×. That is an assumption: no published estimate gives the post-2030 rate. The
+other research inputs keep their own growth, so research inputs slow by compute's share.
 
 Research judgment is gated by who directs research: people still in the direction stage
 keep today's judgment, and AI judgment (rising with capability, uncapped) applies to the

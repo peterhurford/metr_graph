@@ -17664,8 +17664,13 @@ def _render_anchor_links(scroll_to, tab_slug):
 
 # ── Takeoff: conditional research-feedback scenarios ─────────────────────
 
+# Model settings the app sets itself rather than offering as widgets.
+_TK_NOT_WIDGETS = ("onset_low", "onset_high", "years", "compute_slow_years")
+# Compute growth slows from the end of this year (the edge of Epoch's
+# feasibility analysis); `tk_compute_slowdown` sets by how much.
+_TK_COMPUTE_SLOW_YEAR = 2030
 _TK_DEFAULTS = {"tk_" + k: v for k, v in takeoff.DEFAULTS.items()
-                if k not in ("onset_low", "onset_high", "years")}
+                if k not in _TK_NOT_WIDGETS}
 _TK_DEFAULTS.update({
     "tk_end_year": 2030, "tk_cal_weight": 50.0, "tk_cal_compute": 2.0,
     "tk_cal_capability": 2.0, "tk_cal_yield": 1.0, "tk_cal_validated": 0.0,
@@ -18067,16 +18072,23 @@ def _tk_dist_fig(rsi, ultra, gap, today, view_years, sim_end):
     hi = max(1.0, np.ceil(np.quantile(finite, 0.99))) if finite.size else 5.0
     g_edges = np.arange(lo, hi + month, month)
     g_mids = (g_edges[:-1] + g_edges[1:]) / 2
+    spans = [_tk_span(v, sim_end) for v in g_mids]
     fig.add_trace(go.Scatter(
-        x=g_mids, y=_tk_density(gap, g_edges) / 12 * 100, mode="lines",
+        x=g_mids, y=_tk_density(gap, g_edges) / 12 * 100, mode="lines", customdata=spans,
         name="RSI \u2192 ultraintelligence", line=dict(color="#8e44ad", width=2.5),
         fill="tozeroy", legendgroup="gap",
-        hovertemplate="%{x:.1f} yr: %{y:.1f}% of scenarios<extra></extra>"), row=1, col=2)
+        hovertemplate="%{customdata}: %{y:.1f}% of scenarios<extra></extra>"), row=1, col=2)
     fig.add_trace(go.Scatter(
         x=g_mids, y=100 * takeoff.cdf(gap, g_mids), mode="lines", showlegend=False,
         name="RSI \u2192 ultraintelligence", line=dict(color="#8e44ad", width=2.5),
-        legendgroup="gap", hovertemplate="Within %{x:.1f} yr: %{y:.0f}%<extra></extra>"),
-        row=2, col=2)
+        customdata=spans, legendgroup="gap",
+        hovertemplate="Within %{customdata}: %{y:.0f}%<extra></extra>"), row=2, col=2)
+    # Six months gets its own tick only where the axis is short enough to fit it.
+    ticks = [v for v in (-2, -1, 0, 0.5, 1, 2, 3, 4, 5, 6, 8, 10)
+             if g_edges[0] <= v <= g_edges[-1] and (v != 0.5 or g_edges[-1] - g_edges[0] <= 4)]
+    fig.update_xaxes(tickvals=ticks, col=2, tickangle=0, ticktext=[
+        "0" if v == 0 else f"{v:g} yr" if abs(v) >= 1 else _tk_span(v, sim_end)
+        for v in ticks])
     fig.add_vline(x=0, line_color="#999", line_width=1, row=1, col=2)
     fig.add_vline(x=0, line_color="#999", line_width=1, row=2, col=2)
     fig.update_yaxes(title_text="% of scenarios per month", row=1, col=1, rangemode="tozero")
@@ -18085,7 +18097,7 @@ def _tk_dist_fig(rsi, ultra, gap, today, view_years, sim_end):
     fig.update_yaxes(range=[0, 100], row=2, col=2)
     fig.update_xaxes(range=[mids[0], mids[-1]], col=1)
     fig.update_xaxes(range=[g_edges[0], g_edges[-1]], col=2)
-    fig.update_xaxes(title_text="Years from RSI to ECI " f"{_TK_ULTRA_ECI:g}", row=2, col=2)
+    fig.update_xaxes(title_text=f"Time from RSI to ECI {_TK_ULTRA_ECI:g}", row=2, col=2)
     fig.update_layout(height=560, margin=dict(l=55, r=20, t=40, b=40),
                       legend=dict(orientation="h", y=-0.12))
     return fig
@@ -18113,6 +18125,17 @@ def _tk_takeoff_b(params, draws=None):
             "after_100x": float(2 ** (beta / later - 1)) if later > 0 else None}
 
 
+def _tk_eci_scale(params, hist=None):
+    """(US-best frontier rows, today's ECI, its fitted points a year, today's
+    modeled capability growth): ECI = now + ppy / base_rate * capability."""
+    frontier = _eci_entity_data("US best")[1]
+    days = np.array([(m['date'] - frontier[0]['date']).days for m in frontier], dtype=float)
+    ppy = fit_line(days, np.array([m['eci_score'] for m in frontier]))[1] * 365.25
+    base_rate = (np.log(2) * 12 / params["software_months"]
+                 + (hist if hist is not None else np.log(params["compute_growth"])))
+    return frontier, frontier[-1]['eci_score'], ppy, base_rate
+
+
 def _tk_eci(result, params):
     """Each scenario's capability path read as ECI, anchored on the US frontier.
 
@@ -18123,13 +18146,7 @@ def _tk_eci(result, params):
     'paths' (draws x months), 'at_rsi' (per draw, NaN if not reached),
     'frontier' (US-best frontier rows)}.
     """
-    frontier = _eci_entity_data("US best")[1]
-    days = np.array([(m['date'] - frontier[0]['date']).days for m in frontier], dtype=float)
-    ppy = fit_line(days, np.array([m['eci_score'] for m in frontier]))[1] * 365.25
-    hist = result.get("hist_compute")
-    base_rate = (np.log(2) * 12 / params["software_months"]
-                 + (hist if hist is not None else np.log(params["compute_growth"])))
-    now = frontier[-1]['eci_score']
+    frontier, now, ppy, base_rate = _tk_eci_scale(params, result.get("hist_compute"))
     cap = result["workflow_progress"]["capability_log"]
     years = result["workflow_progress"]["years"]
     # Today's trend is a floor for the first year, covering the months before
@@ -18304,11 +18321,13 @@ def _tk_rsi_activity(rows, today, n):
 
 @st.cache_data(show_spinner=False, max_entries=12)
 def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, experiment_slopes,
-                 baseline_yield=1.0, compute_rates=None, historical_compute_rate=None):
+                 baseline_yield=1.0, compute_rates=None, historical_compute_rate=None,
+                 coding_capability=None):
     # The source digest invalidates results when the imported simulator changes.
     result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
                              experiment_slopes=experiment_slopes, compute_rates=compute_rates,
-                             historical_compute_rate=historical_compute_rate)
+                             historical_compute_rate=historical_compute_rate,
+                             coding_capability=coding_capability)
     grid = result["workflow_progress"]["years"]
     paths = np.exp(experiment_starts[:, None] + experiment_slopes[:, None] * grid)
     result["workflow_progress"]["rsi_activity_quantiles"] = np.quantile(
@@ -18453,6 +18472,13 @@ def render_takeoff():
                              "chart horizon. Off: the flat rate below.")
             number("Compute growth per year (×)", "compute_growth", 1.0, 5.0, 0.1,
                    "Used when the data-center projection is off.")
+            number(f"Compute growth kept after {_TK_COMPUTE_SLOW_YEAR} (%)",
+                   "compute_slowdown", 0.0, 100.0, 5.0,
+                   "Share of each scenario's log compute growth that continues from the "
+                   f"end of {_TK_COMPUTE_SLOW_YEAR}: 50 turns about 3\u00d7 a year into "
+                   "about 1.7\u00d7. Epoch finds today's scaling feasible through 2030; "
+                   "past it, power and spending limits bind, and no published estimate "
+                   "gives the rate. 100 keeps today's growth.")
             number("Research pace today (× 2025)", "pace_today", 0.5, 5.0, 0.1,
                    "Where chart 1 starts: how much faster useful research is today than "
                    "in 2025. The default is an assumption, not a measurement. "
@@ -18613,7 +18639,7 @@ def render_takeoff():
         return
     onset_years = onset_days / 365.25
     params = {k: st.session_state["tk_" + k] for k in takeoff.DEFAULTS
-              if k not in ("onset_low", "onset_high", "years")}
+              if k not in _TK_NOT_WIDGETS}
     # Difficulty is set through the returns to research, r = lambda / difficulty,
     # with lambda held at the reference exponent so the parallelization setting
     # moves returns to inputs alone, not how fast ideas get harder.
@@ -18621,6 +18647,8 @@ def render_takeoff():
     # Every path begins today and ends at the selected calendar horizon.
     # Past coding dates stay intact; we do not invent pre-today research history.
     params["years"] = horizon
+    params["compute_slow_years"] = max(
+        (datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31) - today).total_seconds() / (365.25 * 86400), 0)
     try:
         takeoff.validate(params)
     except ValueError as exc:
@@ -18655,9 +18683,12 @@ def render_takeoff():
     dc = (_tk_dc_compute(today, n)
           if st.session_state["tk_dc_compute"] else None)
     compute_rates, hist_compute = dc if dc else (None, None)
+    # A model at ultraintelligence has automated coding whatever the RSI tab's
+    # date says, so RSI no longer waits on a late inherited date past it.
+    _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute)
     result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
                           experiment_starts, experiment_slopes, pace_yield, compute_rates,
-                          hist_compute)
+                          hist_compute, (_TK_ULTRA_ECI - eci_now) * eci_base / eci_ppy)
     # The ECI trend reflects the compute growth behind it: the data-center
     # series' own historical fit when its projection is in use.
     result["hist_compute"] = hist_compute
@@ -18696,13 +18727,14 @@ def render_takeoff():
           f"First month a scenario's ECI reaches {_TK_ULTRA_ECI:g} (today's frontier: "
           f"{eci['now']:.0f}).")
     a, b = st.columns(2)
-    _gap_card(a, "Coding automation \u2192 RSI", result["onset"], rsi,
-              "Time from each scenario's coding-automation date to its RSI date.")
+    _gap_card(a, "Coding automation \u2192 RSI", result["coding_at"], rsi,
+              "Time from each scenario's coding-automation date (the RSI tab's, or the "
+              f"month its ECI reaches {_TK_ULTRA_ECI:g} if sooner) to its RSI date.")
     _gap_card(b, "RSI \u2192 ultraintelligence", rsi, eci["ultra"],
               "How fast the takeoff is: time from each scenario's RSI date to its "
-              f"ECI reaching {_TK_ULTRA_ECI:g}. Negative where ECI gets there first: "
-              "nearly always a scenario whose inherited coding-automation date, which "
-              "RSI waits for, comes late.")
+              f"ECI reaching {_TK_ULTRA_ECI:g}. A model that reaches ECI "
+              f"{_TK_ULTRA_ECI:g} counts as having automated coding, so RSI never waits on "
+              "a later coding date from the RSI tab.")
     medians = [(label, takeoff.quantile(samples, 0.5, horizon))
                for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
                                       ("Ultraintelligence", eci["ultra"]))]
@@ -18804,8 +18836,7 @@ def render_takeoff():
         ("time from RSI to ultraintelligence",
          f"Among the {100 * np.mean(reached):.0f}% of scenarios reaching RSI by "
          f"{end_date:%Y}; one not reaching ultraintelligence by then stays in the "
-         "denominator. Below zero, ECI got there first, nearly always because the "
-         "scenario's inherited coding-automation date, which RSI waits for, came late."))
+         "denominator."))
     st.plotly_chart(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_years,
                                  end_date), width="stretch")
     with st.expander("About this model"):
