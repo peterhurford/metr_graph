@@ -14,7 +14,7 @@ streamlit run visualize_projection.py    # http://localhost:8501
 pytest -v                                    # all tests
 pytest test_visualize_projection.py -v       # unit tests (fake Streamlit)
 pytest test_integration.py -v                # integration tests (AppTest)
-pytest test_visualize_projection.py::TestPretty::test_known_name -v  # single test
+pytest test_visualize_projection.py::TestPacing::test_defaults_cover_reset_keys_and_url_tracking -v  # single test
 pytest -v -n0                                # serial — needed for --pdb / live output
 _VP_SAMPLES=5000 pytest -v                   # production sample count (see below)
 ```
@@ -123,7 +123,7 @@ is an explicit argument to `_tk_simulate`'s Streamlit cache. Preserve this depen
 changing the simulator schema. Local seeded RNG and common draws support paired scenarios.
 A diverged draw records nothing further and is `numerically_limited` only while RSI
 could still arrive inside the horizon
-(`test_runaway_is_unresolved_only_while_rsi_could_still_arrive`); the tab
+(`test_a_runaway_reaches_rsi_unless_the_floor_blocks_it`); the tab
 captions up to `_TK_LIMITED_MAX` of them as not arriving and errors above that.
 Unit tests cover accounting, snapshots, fast feedback, calibration, ordering, censoring,
 convergence, and RNG isolation. AppTests cover the layout, calibration, matched hours,

@@ -4310,10 +4310,6 @@ class TestDcCtyPlanSlip:
         assert q is not None and 0.1 < q < 0.9
 
 
-def _all_tracked_keys():
-    return vp._all_tracked()[0]
-
-
 class TestPacing:
     """The Pacing tab: threshold menu, crossing math, and the entity roster."""
 
