@@ -1372,6 +1372,7 @@ class TestTakeoffTab:
                               "Ultraintelligence: ECI 250"]
         cis = [c.value for c in at.caption if c.value.startswith("80% CI: ")]
         assert len(cis) >= 3
+        assert len([c for c in at.caption if c.value.startswith("90% CI: ")]) == 3
         assert any("RSI projections under construction" in w.value for w in at.warning)
 
     def test_takeoff_refreshes_an_old_imported_model(self, monkeypatch):

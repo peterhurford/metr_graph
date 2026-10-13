@@ -18343,8 +18343,9 @@ def render_takeoff():
         col.metric(label, _tk_date(takeoff.quantile(samples, 0.5, horizon), today),
                    help=help + f" {100 * np.mean(samples <= horizon):.0f}% of scenarios "
                                f"by {end_date:%b %Y}.")
-        col.caption(f"80% CI: {_tk_date(takeoff.quantile(samples, 0.1, horizon), today)}"
-                    f" \u2013 {_tk_date(takeoff.quantile(samples, 0.9, horizon), today)}")
+        for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
+            col.caption(f"{level}% CI: {_tk_date(takeoff.quantile(samples, lo, horizon), today)}"
+                        f" \u2013 {_tk_date(takeoff.quantile(samples, hi, horizon), today)}")
 
     a, b, c = st.columns(3)
     _card(a, "Full coding automation (RSI tab)", result["onset"],
