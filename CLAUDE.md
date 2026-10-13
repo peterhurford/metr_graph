@@ -135,11 +135,16 @@ Four defaults are read off RSI data at import (`TestTakeoffRsiCalibration`), eac
 keeping the model's stage pattern and rescaling it. Today's human share per stage matches
 the R&D automation index's latest month, read through `_TK_AL_HUMAN_HOURS` (assumed human
 time per AL level); the stage halving times match that share's past-year halving. The
-judgment elasticity (`taste_slope`) is the next-step study's yearly odds growth, read as
-Bradley-Terry strength; the coding elasticity is the staff survey's yearly output growth.
-Both go through `_tk_elasticity` against the experiment calibration's capability growth.
-A higher coding elasticity leaves less experiment growth for judgment to explain, so it
-*delays* the late milestones.
+judgment elasticity (`taste_slope`) is the next-step study's yearly odds growth raised to
+`_TK_ODDS_TO_JUDGMENT` (0.5: picking the better step more often is not proportionally more
+research); the coding elasticity is the staff survey's yearly output growth. Both go
+through `_tk_elasticity` against capability growth over the experiment window, which
+comes from evidence (`_tk_evidence_window_growth`: the data-center compute fit times the
+software trend, ~7.8×/yr), never a free assumption: an elasticity measured against one
+capability rate and applied at another is inflated by their ratio. The experiment fit
+runs the model's own research equation over the window, crediting compute, coding help and
+the automation index's falling human share (`_tk_automation_growth`) before judgment. The
+two judgment estimates then agree (~0.29 and ~0.27).
 
 `_rsi_experiment_draws` uses a local fixed seed so the RSI fan, threshold card, and Takeoff
 reuse the same paths without perturbing global RNG. `_tk_rsi_activity` shifts these to today
