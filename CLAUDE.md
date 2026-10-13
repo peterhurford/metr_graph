@@ -95,10 +95,11 @@ it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `_TK_FACTOR_VIEW`. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
-The sidebar leads with the four parameters a one-at-a-time sweep (uncapped judgment) found
-move ultraintelligence 2–7 months: parallelization, r, the judgment elasticity, ρ; the
-rest, data-center compute included (~1 month), sit in one *Advanced* expander. Retarget
-that grouping if a rerun of the sweep reorders them.
+The sidebar leads with the four parameters of a one-at-a-time sweep: the judgment
+elasticity (half/double: −8/+6 months to ultraintelligence), r (2/0.5: −5/+7),
+parallelization (0.3/0.8: −3/+4) and ρ (0/−1: ±1, small since the v12 spreads draw ρ per
+scenario anyway); the rest, data-center compute included (~1 month), sit in one *Advanced*
+expander. Retarget that grouping if a rerun of the sweep reorders them.
 AI judgment is gated by the direction stage's human share, uncapped
 (`test_ai_judgment_only_counts_where_ai_directs_research`). `judgment_drift` (default 0)
 changes its elasticity by that fraction per 10× of capability (`judgment_gain_log`), so b

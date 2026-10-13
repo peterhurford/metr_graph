@@ -18428,9 +18428,10 @@ def render_takeoff():
                "Where the charts stop. Dates, intervals and shares come from scenarios "
                f"simulated through {_TK_SIM_END_YEAR}, whatever this says.")
         with st.expander("What decides ultraintelligence", expanded=True):
-            st.caption("Across a plausible range, each moves the ultraintelligence date "
-                       "by 2\u20137 months; everything under Advanced moves it a few "
-                       "months at most.")
+            st.caption("Across a plausible range, the first three each move the "
+                       "ultraintelligence date 3\u20138 months; \u03c1 about a month, since "
+                       "every scenario already spreads it widely. Everything under "
+                       "Advanced moves it a few months at most.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
