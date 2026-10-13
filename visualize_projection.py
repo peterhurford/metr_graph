@@ -14982,27 +14982,21 @@ def _pc_ramp_for(timing_label, ramp_days):
 # late-but-uncertain milestone widens the answer instead of just shifting it.
 # Keyed by slug because the card labels are built from the target constants.
 _PC_RSI_WEIGHTS = {
-    # The remaining cards' weights were scaled by 4/3 to sum to 100 when the ECI
-    # and revenue cards were zeroed; the two output-volume proxies and METR p80
-    # absorb the rounding.
-    "metr_p50": 7.0,
-    "metr_p80": 13.0,
-    # The ECI and revenue cards stay on the tab but carry no weight: general
-    # capability and earnings are not measures of AI doing AI research.
+    # Equal credence across the ten research cards. The ECI and revenue cards
+    # stay on the tab but carry no weight: general capability and earnings are
+    # not measures of AI doing AI research.
+    "metr_p50": 10.0,
+    "metr_p80": 10.0,
     "eci_187_5": 0.0,
     "eci_200": 0.0,
-    "rli_90": 13.0,
-    "cobench_85": 7.0,
-    "staff_10x": 7.0,
-    # Lines merged and experiments launched are things a coding model inflates
-    # directly, so these output-volume proxies sit below the automation index.
-    "code_30x": 6.0,
-    "experiments_10x": 6.0,
-    # AL5 is the headline rung and takes the largest single weight; AL4 is an
-    # intermediate rung that no longer has to stand in for full autonomy.
-    "rdauto_90": 7.0,
-    "al5_90": 20.0,
-    "nextstep_90": 14.0,
+    "rli_90": 10.0,
+    "cobench_85": 10.0,
+    "staff_10x": 10.0,
+    "code_30x": 10.0,
+    "experiments_10x": 10.0,
+    "rdauto_90": 10.0,
+    "al5_90": 10.0,
+    "nextstep_90": 10.0,
     "rev_1t": 0.0,
 }
 _PC_RSI_W_KEY = "pc_rsiw_"        # session-state prefix, one float per slug
@@ -15438,6 +15432,17 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
             "a chance that RSI never happens.")
 
 
+def _pc_card_rows(n):
+    """Row sizes for `n` milestone cards.
+
+    At most `_PC_CARDS_PER_ROW` per row (past that a label truncates
+    mid-word), then balanced rather than filled greedily, so thirteen cards
+    read 4-3-3-3 and not 4-4-4-1.
+    """
+    n_rows = max(-(-n // _PC_CARDS_PER_ROW), 1)
+    return [n // n_rows + (i < n % n_rows) for i in range(n_rows)]
+
+
 def _pc_clock_note(release_dated, timing_label):
     """The clock sentence appended to a milestone card's hover.
 
@@ -15638,14 +15643,8 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
         today, timing_label, condition, ramp_days)
     if _cap:
         st.subheader("Capabilities Milestones")
-        # At most `_PC_CARDS_PER_ROW` per row — past that a label truncates
-        # mid-word — then the rows are balanced rather than filled greedily,
-        # so thirteen cards read 4-3-3-3 and not 4-4-4-1.
-        _n_rows = max(-(-len(_cap) // _PC_CARDS_PER_ROW), 1)
-        _sizes = [len(_cap) // _n_rows + (i < len(_cap) % _n_rows)
-                  for i in range(_n_rows)]
         _start = 0
-        for _size in _sizes:
+        for _size in _pc_card_rows(len(_cap)):
             _chunk = _cap[_start:_start + _size]
             _start += _size
             for col, (slug, lab, _anchor, _days) in zip(st.columns(_size),

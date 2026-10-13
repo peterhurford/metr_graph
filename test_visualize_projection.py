@@ -6410,11 +6410,7 @@ class TestMilestoneCardLayout:
     """Thirteen cards have to stay legible: at most four per row, and the
     rows balanced rather than filled greedily."""
 
-    @staticmethod
-    def _rows(n, per_row=None):
-        per_row = per_row or vp._PC_CARDS_PER_ROW
-        n_rows = max(-(-n // per_row), 1)
-        return [n // n_rows + (i < n % n_rows) for i in range(n_rows)]
+    _rows = staticmethod(lambda n: vp._pc_card_rows(n))
 
     def test_no_row_is_wider_than_the_cap(self):
         for n in range(1, 25):
