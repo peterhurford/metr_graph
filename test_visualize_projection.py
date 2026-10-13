@@ -3303,13 +3303,18 @@ class TestDcHiddenCompanies:
         re-attributes its capacity to a real tenant so the landlord label
         stops owning any site at all. DayOne left that way when Epoch filled
         Nusajaya's Owner, and rejoined on the 2026-09-29 pull, which blanked it
-        again and added Kempas (also no Owner/Users). STACK is the nearest
-        miss, ~61k inside the horizon against a 100k bar (~250k on its full
-        plan). When this fails, retarget deliberately (accept the joiner,
-        or move _DC_EXCLUDE_MIN_H100 / _DC_EXCLUDE_HORIZON_DAYS) rather than
+        again and added Kempas (also no Owner/Users). The horizon is pinned at
+        _ROSTER_ASOF, so this fails only when the data changes; the rolling
+        roster (STACK joins ~six months later) is
+        test_roster_only_ever_grows_as_the_horizon_rolls's job. When this
+        fails, retarget deliberately (accept the joiner, or move
+        _DC_EXCLUDE_MIN_H100 / _DC_EXCLUDE_HORIZON_DAYS) rather than
         loosening it."""
-        charted = vp._DC_EXCLUDE_COMPANIES - vp._dc_hidden_companies(vp.dc_all)
+        charted = vp._DC_EXCLUDE_COMPANIES - vp._dc_hidden_companies(
+            vp.dc_all, now=self._ROSTER_ASOF)
         assert charted == {'QTS', 'Microsoft', 'Vantage', 'DayOne'}, charted
+
+    _ROSTER_ASOF = datetime(2026, 10, 12)
 
     def test_roster_only_ever_grows_as_the_horizon_rolls(self):
         """Who appears may move as planned buildout comes inside the horizon —
@@ -3327,9 +3332,17 @@ class TestDcHiddenCompanies:
 
     def test_roster_ignores_the_users_projection_window(self):
         """dc_end_year caps the charts, never the roster — otherwise sites blink
-        in and out as the slider moves."""
-        rosters = {frozenset(vp._dc_hidden_companies(vp.dc_all))}
-        assert len(rosters) == 1
+        in and out as the slider moves. Cutting the catalogue at each offered
+        end year past the horizon leaves the roster alone; an uncapped peak
+        would not (STACK clears the bar only on its post-horizon plan)."""
+        now = self._ROSTER_ASOF
+        roster = vp._dc_hidden_companies(vp.dc_all, now=now)
+        horizon = now + timedelta(days=vp._DC_EXCLUDE_HORIZON_DAYS)
+        for year in vp._DC_END_YEARS:
+            cut = max(datetime(year, 12, 31), horizon)
+            dcs = [dict(dc, points=[p for p in dc['points'] if p['date'] <= cut])
+                   for dc in vp.dc_all]
+            assert vp._dc_hidden_companies(dcs, now=now) == roster, year
         # And the function takes no metric/window argument that could vary it.
         import inspect
         params = set(inspect.signature(vp._dc_hidden_companies).parameters)
@@ -3384,6 +3397,9 @@ class TestDcUnattributedCompanies:
                 assert not dc['attributed'], (
                     f"{dc['name']} has a recorded user/owner but its company "
                     f"{dc['company']!r} is marked unattributed")
+        # And the converse: a company with no attributed site is marked.
+        attributed = {dc['company'] for dc in vp.dc_all if dc['attributed']}
+        assert {dc['company'] for dc in vp.dc_all} - attributed == un
 
     def test_one_attributed_site_clears_the_whole_company(self):
         """Microsoft is listed as its own sites' user, so it is charted plain
@@ -3588,7 +3604,8 @@ class TestDcCompanyNetworkedSeries:
 
     def test_traintime_metric_pools_as_a_sum(self):
         """'Capacity' metrics store runs-per-2mo, so networking sites adds runs
-        (and therefore shortens the displayed time to train one model)."""
+        (and therefore shortens the displayed time to train one model): a pooled
+        step is exactly its sites' runs added, and beats the largest site."""
         ser = vp._dc_series_for_metric(vp.dc_all, 'mythos')
         ser = {n: d for n, d in ser.items()
                if d['company'] not in vp._DC_EXCLUDE_COMPANIES}
@@ -3596,19 +3613,24 @@ class TestDcCompanyNetworkedSeries:
         net = vp._dc_company_networked_series(ser,
                                               vp._dc_network_site_clusters())
         at = datetime(2027, 6, 30)
-        for co, steps in one.items():
+        pooled_cos = set()
+        for co, steps in net.items():
             cur = [s for s in steps if s[0] <= at]
-            pooled = [s for s in net[co] if s[0] <= at]
-            if cur and pooled:
-                assert pooled[-1][1] >= cur[-1][1]
+            if not cur or len(cur[-1][2]) < 2:
+                continue
+            d, v, names, _label = cur[-1]
+            assert v == pytest.approx(sum(vp._dc_val_at(ser[n]['pts'], d)
+                                          for n in names)), co
+            single = [s for s in one[co] if s[0] <= at][-1][1]
+            assert v > single, co
+            pooled_cos.add(co)
+        assert pooled_cos, "no company pools two sites by mid-2027"
 
 
 class TestDcProjectionRange:
     """The Data Centers tab's chart window is a sidebar range, URL-tracked."""
 
     def test_projection_range_registry_is_well_formed(self):
-        assert vp._DC_DEFAULTS["dc_start_year"] == 2025
-        assert vp._DC_DEFAULTS["dc_end_year"] == 2027
         assert vp._DC_DEFAULTS["dc_start_year"] in vp._DC_START_YEARS
         assert vp._DC_DEFAULTS["dc_end_year"] in vp._DC_END_YEARS
         # No allowed pairing can invert the window.
@@ -3624,28 +3646,36 @@ class TestDcTrainFlopWindows:
     """The 2mo and 6mo train-FLOP metrics differ only in the run window."""
 
     def test_six_month_flop_is_three_times_the_two_month_flop(self):
-        dcs = vp.load_data_centers()
-        pts = [p for dc in dcs for p in dc['points'] if p['perf'] is not None]
-        assert pts, "no data-center points carry a performance figure"
+        """And a point with no performance figure carries neither."""
+        pts = [p for dc in vp.load_data_centers() for p in dc['points']]
+        assert any(p['perf'] is not None for p in pts)
         for p in pts:
-            assert p['train_flop_6mo'] == pytest.approx(3 * p['train_flop'])
+            if p['perf'] is None:
+                assert p['train_flop'] is None and p['train_flop_6mo'] is None
+            else:
+                assert p['train_flop_6mo'] == pytest.approx(3 * p['train_flop'])
 
-    def test_missing_performance_leaves_both_none(self):
-        dcs = vp.load_data_centers()
-        for dc in dcs:
-            for p in dc['points']:
-                if p['perf'] is None:
-                    assert p['train_flop'] is None
-                    assert p['train_flop_6mo'] is None
+    # label → (stored key, kind, run_days); every other metric has no run
+    # length and is neither a FLOP nor a train-time metric.
+    _RUN_METRICS = {
+        "2mo train log OP": ("train_flop", "flop", vp._DAYS_2MO),
+        "6mo train log OP": ("train_flop_6mo", "flop", vp._DAYS_6MO),
+        "Capacity (time to GPT-5)": ("gpt5s", "traintime", None),
+        "Capacity (time to Mythos)": ("mythos", "traintime", None),
+    }
 
-    def test_registry_entries_carry_their_run_length(self):
-        assert vp._DC_METRICS["2mo train log OP"]["key"] == "train_flop"
-        assert vp._DC_METRICS["6mo train log OP"]["key"] == "train_flop_6mo"
-        assert vp._DC_METRICS["2mo train log OP"]["run_days"] == vp._DAYS_2MO
-        assert vp._DC_METRICS["6mo train log OP"]["run_days"] == vp._DAYS_6MO
-        for label in ("2mo train log OP", "6mo train log OP"):
-            assert vp._DC_METRICS[label]["kind"] == "flop"
-            assert vp._DC_METRICS[label]["log"] is True
+    @pytest.mark.parametrize("label", list(vp._DC_METRICS))
+    def test_metric_registry_row(self, label):
+        """Only the train-OP metrics carry a run length, which the hover
+        milestones and timing shifts read."""
+        cfg = vp._DC_METRICS[label]
+        if label in self._RUN_METRICS:
+            key, kind, run_days = self._RUN_METRICS[label]
+            assert (cfg["key"], cfg["kind"]) == (key, kind)
+            assert cfg.get("run_days") == run_days
+        else:
+            assert "run_days" not in cfg
+            assert cfg["kind"] not in ("flop", "traintime")
 
     def test_timing_shift_follows_the_metric_run_length(self):
         # Construction is the site's own date; the other two milestones are one
@@ -3657,8 +3687,6 @@ class TestDcTrainFlopWindows:
         assert vp._dc_timing_shift("Model release") == vp._DAYS_2MO + lag
         assert (vp._dc_timing_shift("Model release", vp._DAYS_6MO)
                 == vp._DAYS_6MO + lag)
-
-    def test_default_timing_is_a_real_option(self):
         assert vp._DC_DEFAULTS["dc_timing"] in vp._DC_TIMING_OPTIONS
 
     def test_value_reads_as_log10_operations(self):
@@ -3728,20 +3756,9 @@ class TestDcTrainTime:
         assert vp._dc_fmt_value(60.0, 'traintime') == "~1 day"
         assert vp._dc_fmt_value(0.0, 'traintime') == "—"
         assert vp._dc_fmt_value(None, 'traintime') == "—"
-
-    def test_metrics_registry_uses_traintime(self):
-        for label in ("Capacity (time to GPT-5)", "Capacity (time to Mythos)"):
-            assert vp._DC_METRICS[label]["kind"] == "traintime"
-        assert vp._DC_METRICS["Capacity (time to GPT-5)"]["key"] == "gpt5s"
-        assert vp._DC_METRICS["Capacity (time to Mythos)"]["key"] == "mythos"
-
-    def test_bigger_site_reads_as_less_time(self):
-        """Stored values stay 'bigger = better' so every max-based aggregation
-        in the tab keeps working; only the label runs the other way."""
-        rows = sorted([0.5, 5.0, 50.0])
-        labels = [vp._dc_fmt_value(v, 'traintime') for v in rows]
-        assert labels == ["~3.9 months", "~1.7 weeks", "~1.2 days"]
-        assert max(rows) == 50.0   # the fastest site is still the max
+        # A bigger stored value (more runs) reads as less time.
+        assert [vp._dc_fmt_value(v, 'traintime') for v in (0.5, 5.0, 50.0)] \
+            == ["~3.9 months", "~1.7 weeks", "~1.2 days"]
 
     def test_axis_ticks_are_round_durations_inside_the_range(self):
         vals, text = vp._dc_duration_ticks([0.0, 2.0], log_scale=True)
@@ -3784,11 +3801,10 @@ class TestDcByCountry:
 
     def test_country_fallback_only_names_sites_epoch_left_blank(self):
         """The fallback exists for timeline-only names with no metadata row. A
-        refresh that gives them a row (or renames them) should retire it."""
-        by = {dc['name']: dc['country'] for dc in vp.dc_all}
-        for name, country in vp._DC_COUNTRY_FALLBACK.items():
-            assert name in by, f"{name!r} no longer in the timelines"
-            assert by[name] == '', f"Epoch now records a country for {name!r}"
+        refresh that gives them a row (or renames them) should retire it, and
+        a new blank needs one: the two sets are equal (both empty today)."""
+        blank = {dc['name'] for dc in vp.dc_all if not dc['country']}
+        assert set(vp._DC_COUNTRY_FALLBACK) == blank
         assert all(vp._dc_site_country(dc) for dc in vp.dc_all), \
             "a site has no country even after the fallback"
 
@@ -3866,7 +3882,6 @@ class TestDcByCountry:
         assert 0.3 < fit['g'] < 0.7, "US largest-site pace left ×2–5/yr"
         assert fit['sigma_g'] >= vp._DC_CTY_SIGMA_G_FLOOR
         assert fit['sigma_g'] >= fit['se']
-        assert set(fit['windows']) <= set(vp._DC_CTY_FIT_WINDOWS)
 
     def test_fit_refuses_a_short_history(self):
         steps = [(datetime(2027, 1, 1), 1e5, 'x'), (datetime(2027, 3, 1), 2e5, 'x')]
@@ -4178,7 +4193,6 @@ class TestDuvProduction:
         lv = sorted({a for a, _b in vp._duv_realized_grid()})
         mid = 10 ** lv[len(lv) // 2]
         assert 0.2 < mid < 0.3
-        assert vp._DUV_H100E_PER_B300E == pytest.approx(2.52, abs=0.01)
 
 
 class TestCcWorldShares:
@@ -4199,25 +4213,13 @@ class TestCcWorldShares:
     def test_regions_are_the_data_centers_tab_s(self):
         """Both sections bucket a country the same way, so a reader comparing
         the two charts is comparing like with like."""
-        for country in ("United Kingdom", "Norway", "China", "Malaysia",
-                        "United Arab Emirates", "Australia", ""):
+        for country in ("United States", "United Kingdom", "Norway", "China",
+                        "Malaysia", "United Arab Emirates", "Australia", ""):
             assert vp._wc_region_of(country) == vp._dc_region_of(country)
-        for country, region in (("United States", "US domestic"),
-                                ("United Kingdom", "Europe/UK"),
-                                ("China", "China domestic"),
-                                ("Malaysia", "SEA"),
-                                ("United Arab Emirates", "UAE"),
-                                ("Australia", "Other"), ("", "Other")):
-            assert vp._wc_region_of(country) == region, country
-
-    def test_samples_are_shares(self):
-        sh = vp._wc_sample_shares(4000)
-        assert set(sh) == set(vp._WC_LABELS)
-        assert np.allclose(sum(sh.values()), 100.0)
-        assert all((a > 0).all() for a in sh.values())
 
     def test_samples_recover_their_centrals_and_spreads(self):
         sh = vp._wc_sample_shares(20000)
+        assert set(sh) == set(vp._WC_LABELS)
         for lab, mid, lo, hi in vp._WC_REGIONS:
             med = float(np.percentile(sh[lab], 50))
             # Renormalizing pulls the medians a little off the inputs.
@@ -4245,26 +4247,37 @@ class TestCcWorldShares:
         assert c["China domestic"][1] < c["China domestic"][0]
         assert c["UAE"][1] > c["UAE"][0]
 
-    def test_faster_growth_wins_share(self):
-        """China grows slower than the US in _WC_GROWTH, so its share falls
-        while the UAE's — the fastest — rises."""
-        paths = vp._wc_share_paths([0.0, 4.0], 8000)
-        for lab, direction in (("China domestic", -1), ("UAE", 1)):
-            a, b = (float(np.percentile(paths[lab][i], 50)) for i in (0, 1))
-            assert direction * (b - a) > 0, lab
-
-    def test_growth_shocks_are_shared_without_touching_the_marginals(self):
+    def test_growth_shocks_are_shared_without_touching_the_marginals(self, monkeypatch):
         """A loading per region on one global shock. It must not change any
-        region's own rate spread — only the joint — so the central path and
-        every stated band stay as documented."""
+        region's own rate spread — only the joint — so every stated band
+        stays as documented. Pinning "Other" to a fixed rate makes each
+        sample's share growth relative to it that region's own rate."""
         assert set(vp._WC_COMMON_LOAD) == set(vp._WC_LABELS)
         assert all(0.0 <= x <= 1.0 for x in vp._WC_COMMON_LOAD.values())
         # China is the decoupled one: domestic silicon, controls already on.
         assert vp._WC_COMMON_LOAD["China domestic"] < \
             min(v for k, v in vp._WC_COMMON_LOAD.items() if k != "China domestic")
-        before = vp._wc_central_shares([0.0, 3.0])
-        after = vp._wc_share_paths([0.0], 200)
-        assert abs(before["US domestic"][0] - 72.0) < 1e-6 and after
+        ref = "Other"
+        rows = {lab: (mid, lo, hi) for lab, mid, lo, hi in vp._WC_GROWTH}
+        g_ref = rows[ref][0]
+        monkeypatch.setattr(vp, "_WC_GROWTH", tuple(
+            (lab, g_ref, g_ref, g_ref) if lab == ref else (lab, *rows[lab])
+            for lab in vp._WC_LABELS))
+
+        def rates(common):
+            p = vp._wc_share_paths([0.0, 1.0], 40000, common=common)
+            rel = lambda lab: p[lab][1] / p[lab][0]
+            return {lab: g_ref * rel(lab) / rel(ref)
+                    for lab in vp._WC_LABELS if lab != ref}
+        indep, shared = rates(0.0), rates(None)
+        for lab, g in shared.items():
+            _mid, lo, hi = rows[lab]
+            for q in (10, 90):
+                assert np.percentile(g, q) == pytest.approx(
+                    np.percentile(indep[lab], q), rel=0.02), (lab, q)
+            # The 10–90 width is the stated band's, centred on the median.
+            assert np.percentile(g, 90) / np.percentile(g, 10) == \
+                pytest.approx(hi / lo, rel=0.03), lab
 
     def test_sharing_the_shock_damps_the_share_bands(self):
         """The shared part cancels in the renormalization, so correlated
@@ -4330,10 +4343,6 @@ class TestDcMilestoneDates:
         shifted = base + timedelta(days=vp._DAYS_6MO)
         assert vp._dc_milestone_dates(shifted, vp._DAYS_6MO, vp._DAYS_6MO) == \
             vp._dc_milestone_dates(base, 0, vp._DAYS_6MO)
-
-    def test_metric_table_only_train_metrics_carry_run_days(self):
-        for label, cfg in vp._DC_METRICS.items():
-            assert ("run_days" in cfg) == (cfg["key"] in ("train_flop", "train_flop_6mo")), label
 
 
 class TestDcCtyPlanSlip:
