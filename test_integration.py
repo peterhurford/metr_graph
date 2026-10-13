@@ -1498,6 +1498,28 @@ class TestTakeoffTab:
         assert at.number_input(key="tk_transfer").value == 60
         assert "tk_transfer" not in at.query_params
 
+    def test_compute_follows_the_data_center_projection_unless_toggled_off(self, monkeypatch):
+        """On by default: each draw's compute growth comes from the US
+        largest-run projection. Off: the flat sidebar rate, with its spread."""
+        import takeoff_model as tk
+        seen = []
+        original = tk.simulate
+
+        def capture(*args, **kwargs):
+            seen.append(kwargs.get("compute_rates"))
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(tk, "simulate", capture)
+        import streamlit as st
+        st.cache_data.clear()             # an earlier case may have cached this run
+        at = self._app()
+        rates = seen[-1]
+        assert rates is not None and len(set(np.round(rates, 6))) > 10
+        assert 1.5 < np.exp(np.median(rates)) < 5
+        at.checkbox(key="tk_dc_compute").uncheck().run()
+        _assert_no_error(at, "Takeoff / flat compute")
+        assert seen[-1] is None
+
     def test_invalid_budget_is_recoverable(self, monkeypatch):
         import takeoff_model as tk
         captured = []

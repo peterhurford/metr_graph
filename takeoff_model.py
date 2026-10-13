@@ -196,13 +196,15 @@ def reference_software(years, rate, compute_rate, parallel, initial_throughput, 
     return np.log1p(difficulty * amount) / difficulty if np.all(difficulty > 0) else amount
 
 
-def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None):
+def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None,
+             compute_rates=None):
     """Weekly research and successor cycles, with censored milestone draws.
 
     RSI is the first time every research stage is at or under `full_human`%
     of baseline human hours with the coding date arrived. Every draw runs to
     the horizon (only a numerically divergent one stops), so its capability
-    path (`capability_log`) covers the whole window.
+    path (`capability_log`) covers the whole window. `compute_rates`, one log
+    growth rate a year per draw, replaces `compute_growth` and its spread.
 
     A run freezes its algorithm snapshot at its start, integrates allocated
     training compute during the run, then waits for validation before deployment.
@@ -237,6 +239,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     factors = np.exp(spread * z)
     software_rate = np.log(2) * 12 / p["software_months"] * factors[0]
     compute_rate = np.log(p["compute_growth"]) * factors[1]
+    if compute_rates is not None:
+        compute_rate = np.asarray(compute_rates, dtype=float).copy()
+        if compute_rate.shape != (n,) or not np.isfinite(compute_rate).all() \
+                or (compute_rate < 0).any():
+            raise ValueError("Provide one finite, non-negative compute growth rate per draw.")
     train_time = p["training_months"] / 12 * factors[2]
     eval_time = p["validation_months"] / 12 * factors[3]
     taste_slope = p["taste_slope"] * factors[5]

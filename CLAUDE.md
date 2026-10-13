@@ -87,6 +87,12 @@ v8 gates AI judgment by the direction stage's human share and caps it (`taste_ca
 `test_ai_judgment_only_counts_where_ai_directs_research`). Superintelligence is the first
 month a draw's ECI reaches `_TK_ASI_ECI` (290). ECI at RSI is fixed by construction:
 human hours depend only on capability, so RSI is a capability threshold.
+`tk_dc_compute` (default on) feeds compute growth from the Data Centers tab:
+`_tk_dc_compute` samples the US largest-run projection (`_pc_projection`, as Pacing does)
+and averages each path from today to the horizon into one rate per draw, passed as
+`simulate(compute_rates=…)`. The ECI scale then uses that series' historical fit as the
+compute growth behind today's trend, so only a projected change in compute growth moves ECI
+(`test_compute_follows_the_data_center_projection_unless_toggled_off`).
 
 Evidence calibration uses the endpoint growth in `openai_experiment_velocity.csv`, adjusts
 for assumed historical compute and coding gains, and fits a quality elasticity blended with

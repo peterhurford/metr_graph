@@ -17470,7 +17470,7 @@ _TK_DEFAULTS.update({
     "tk_end_year": 2031, "tk_cal_weight": 50.0, "tk_cal_compute": 2.0,
     "tk_cal_capability": 2.0, "tk_cal_yield": 1.0, "tk_cal_validated": 0.0,
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
-    "tk_pace_today": 1.7, "tk_returns": 1.0,
+    "tk_pace_today": 1.7, "tk_returns": 1.0, "tk_dc_compute": True,
 })
 
 # Human hours a task at each automation level still takes, as a share of
@@ -17785,8 +17785,9 @@ def _tk_eci(result, params):
     frontier = _eci_entity_data("US best")[1]
     days = np.array([(m['date'] - frontier[0]['date']).days for m in frontier], dtype=float)
     ppy = fit_line(days, np.array([m['eci_score'] for m in frontier]))[1] * 365.25
+    hist = result.get("hist_compute")
     base_rate = (np.log(2) * 12 / params["software_months"]
-                 + np.log(params["compute_growth"]))
+                 + (hist if hist is not None else np.log(params["compute_growth"])))
     now = frontier[-1]['eci_score']
     cap = result["workflow_progress"]["capability_log"]
     paths = now + ppy / base_rate * cap
@@ -17941,6 +17942,35 @@ def _tk_acceleration_fig(result):
     return fig
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
+def _tk_dc_compute(today, end_year, n):
+    """Compute growth from the Data Centers tab's US projection.
+
+    Returns (per-draw log growth a year, the historical log growth a year).
+    Each draw is one sampled US largest-training-run trajectory, projected
+    exactly as the Pacing tab does it (recorded steps, plans under slip, then
+    the fitted trend), averaged from today to the horizon. The historical rate
+    is that series' own fit: the compute growth today's ECI trend reflects.
+    """
+    series = _dc_series_for_metric(dc_all, 'train_flop')
+    country_of = {dc['name']: _dc_site_country(dc) for dc in dc_all}
+    names = _dc_country_groups(series, country_of, 'abroad').get(_DC_CTY_US, [])
+    steps = _dc_country_steps(series, names, 'site', {})
+    if not steps:
+        return None
+    end = datetime(end_year, 12, 31)
+    grid, paths = _pc_projection([(_DC_CTY_US, 'country', steps, names)], dc_all, today,
+                                 since=_DC_DEFAULTS["dc_cty_since"], horizon=end)
+    sampled = np.asarray(paths[_DC_CTY_US], dtype=float)
+    years = (grid[-1] - grid[0]).days / 365.25
+    rates = np.log(sampled[:, -1] / sampled[:, 0]) / years
+    fit = _dc_cty_fit(steps, since=_DC_DEFAULTS["dc_cty_since"],
+                      t_end=today + timedelta(days=_DC_CTY_PLAN_HORIZON_DAYS))
+    hist = fit['g'] * np.log(10) if fit else float(np.median(rates))
+    rng = np.random.default_rng(20261012)
+    return np.maximum(rng.choice(rates, n), 0.0), float(hist)
+
+
 def _tk_rsi_activity(rows, today, n):
     draws = _rsi_experiment_draws(rows, n=n)
     if draws is None:
@@ -17952,10 +17982,10 @@ def _tk_rsi_activity(rows, today, n):
 
 @st.cache_data(show_spinner=False, max_entries=12)
 def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, experiment_slopes,
-                 baseline_yield=1.0):
+                 baseline_yield=1.0, compute_rates=None):
     # The source digest invalidates results when the imported simulator changes.
     result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
-                             experiment_slopes=experiment_slopes)
+                             experiment_slopes=experiment_slopes, compute_rates=compute_rates)
     grid = result["workflow_progress"]["years"]
     paths = np.exp(experiment_starts[:, None] + experiment_slopes[:, None] * grid)
     result["workflow_progress"]["rsi_activity_quantiles"] = np.quantile(
@@ -18152,7 +18182,13 @@ def render_takeoff():
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
         with st.expander("Compute and successor cycles"):
-            number("Compute growth per year (×)", "compute_growth", 1.0, 5.0, 0.1)
+            st.checkbox("Use the Data Centers tab's compute projection", key="tk_dc_compute",
+                        help="Each scenario's compute grows at the average rate of one "
+                             "sampled US largest-training-run trajectory from the Data "
+                             "Centers tab (planned sites under slip, then the fitted "
+                             "trend) from today to the horizon. Off: the flat rate below.")
+            number("Compute growth per year (×)", "compute_growth", 1.0, 5.0, 0.1,
+                   "Used when the data-center projection is off.")
             number("Training duration (months)", "training_months", 0.5, 12.0, 0.5)
             number("Validation and deployment delay (months)", "validation_months", 0.0, 12.0, 0.5)
             number("Compute for training (%)", "training_share", 5, 90, 5)
@@ -18229,8 +18265,14 @@ def render_takeoff():
     # around it. Reporting only: the simulated dynamics never see it.
     pace_today = float(st.session_state["tk_pace_today"])
     pace_yield = pace_today / float(np.median(np.exp(experiment_starts)))
+    dc = (_tk_dc_compute(today, int(st.session_state["tk_end_year"]), n)
+          if st.session_state["tk_dc_compute"] else None)
+    compute_rates, hist_compute = dc if dc else (None, None)
     result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
-                          experiment_starts, experiment_slopes, pace_yield)
+                          experiment_starts, experiment_slopes, pace_yield, compute_rates)
+    # The ECI trend reflects the compute growth behind it: the data-center
+    # series' own historical fit when its projection is in use.
+    result["hist_compute"] = hist_compute
     limited = float(np.mean(result["numerically_limited"]))
     if limited > _TK_LIMITED_MAX:
         st.error("These assumptions exceed the simulation’s numerical range in "
@@ -18268,7 +18310,8 @@ def render_takeoff():
     st.subheader("What the RSI tab feeds in")
     _fn_caption(
         "Each trend sets one rate below. The automation index is drawn into chart "
-        "2, and the RSI tab's blend dates coding automation in chart 3.",
+        "2, the RSI tab's blend dates coding automation, and compute growth comes "
+        "from the Data Centers tab's US projection (sidebar toggle).",
         ("sets one rate",
          "Growth rates are divided by the experiment calibration's assumed "
          "capability growth to give elasticities. Win odds are read as research "

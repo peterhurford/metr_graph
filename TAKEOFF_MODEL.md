@@ -40,6 +40,10 @@ Labor speeds up as the human share h of research hours falls, by Amdahl's law:
 share, through the same transfer discount as coding and judgment. RSI is where h is
 lowest, so it is where this term is largest.
 
+Compute growth comes from the Data Centers tab by default: each draw takes one sampled US
+largest-training-run trajectory (recorded steps, catalogued plans under slip, then the
+fitted trend) averaged from today to the horizon. Off, it is the flat `compute_growth`.
+
 Research judgment is gated by who directs research: people still in the direction stage
 keep today's judgment, and AI judgment (rising with capability, capped at `taste_cap`,
 default 10x today) applies to the rest, so quality = h_dir + (1 - h_dir) x AI judgment.
