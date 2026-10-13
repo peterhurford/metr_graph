@@ -2,12 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Current branch constraint
-
-The user directed ongoing work onto `codex/grounded-takeoff`. Checkpoint `6e22ad2` preserves
-the RSI-linked takeoff explorer before the grounded-outcomes revision. Continue on this branch;
-do not commit or push to master without explicit user authorization.
-
 ## Running the App
 
 ```bash

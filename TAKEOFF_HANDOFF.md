@@ -1,27 +1,6 @@
 # Takeoff model handoff — September 8, 2026
 
-Resume on **`codex/grounded-takeoff`**, available as
-`origin/codex/grounded-takeoff`. Do not merge, commit, or push the model to master
-without new authorization. The user authorized switching to master, pulling it,
-and adding a local TODO reminder after saving this checkpoint; that is not
-authorization to publish the Takeoff model on master.
-
-## Resume safely
-
-1. Check `git status` and preserve any unrelated work before switching branches.
-2. `git fetch origin`
-3. If master has a local TODO reminder, preserve it before switching: the Takeoff
-   branch tracks its own TODO file. For example,
-   `git stash push --include-untracked -m "Master TODO resume note" -- TODO.md`.
-   If TODO is ignored, use `--all` instead of `--include-untracked` for that path.
-   Leave this master-specific stash unapplied on Takeoff.
-4. `git switch codex/grounded-takeoff` (or, in a new clone,
-   `git switch --track origin/codex/grounded-takeoff`).
-5. `git pull --ff-only origin codex/grounded-takeoff`
-6. Read this file, `TAKEOFF_MODEL.md`, `TAKEOFF_PARAMETERS.md`, and `CLAUDE.md`.
-
-If the local branch has additional work or has diverged, inspect it instead of
-resetting it. Do not overwrite a dirty working tree.
+Work is on `master`.
 
 ## What is saved
 

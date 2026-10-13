@@ -1,4 +1,4 @@
-Read the handoff and TAKEOFF_MODEL.md, check out codex/grounded-takeoff, and resume from the saved state. Do not modify master.
+Read the handoff and TAKEOFF_MODEL.md, and resume from the saved state.
 
 Handoff: [TAKEOFF_HANDOFF.md](TAKEOFF_HANDOFF.md). Parameter guide: [TAKEOFF_PARAMETERS.md](TAKEOFF_PARAMETERS.md).
 Parked v5 review (numbers, sensitivities, paper assessment, open questions): [TAKEOFF_NOTES_2026-09.md](TAKEOFF_NOTES_2026-09.md).

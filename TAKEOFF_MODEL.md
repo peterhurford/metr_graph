@@ -1,7 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v10-uncapped-taste`. Work remains on `codex/grounded-takeoff`;
-checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v10-uncapped-taste`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
