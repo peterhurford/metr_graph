@@ -3155,7 +3155,7 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "RSI", "Takeoff", "UK Cyber", "Frontier Thresholds", "Employment", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing"]
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "RSI", "Takeoff", "Frontier Thresholds", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing", "UK Cyber", "Employment"]
 _SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "RSI": "rsi", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute/capabilities/diffusion": "computecap", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 
@@ -9329,6 +9329,7 @@ def render_employment():
 
     # ── Main content ─────────────────────────────────────────────────────
     st.header("AI Employment Displacement Model")
+    st.warning("Warning: incomplete, not final.")
 
     # ── Fan chart ──────────────────────────────────────────────────────────
     fig = go.Figure()

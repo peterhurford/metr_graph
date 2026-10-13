@@ -36,7 +36,7 @@ No build system, no CI/CD, no package manager beyond requirements.txt (`streamli
 
 ## Architecture
 
-Thirteen-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `rsi`, `takeoff`, `ukcyber`, `thresholds`, `employment`, `revenue`, `datacenters`, `computecap`, `pacing`.
+Thirteen-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `rsi`, `takeoff`, `thresholds`, `revenue`, `datacenters`, `computecap`, `pacing`, `ukcyber`, `employment`.
 
 ### Takeoff scenario explorer
 
