@@ -40,7 +40,7 @@ Thirteen-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v11-judgment-drift`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v12-literature-spread`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -59,9 +59,13 @@ as `ladder_years`; Takeoff ignores them. RSI is the first time research directio
 or under `full_human`% of baseline human hours with the coding date arrived
 (`test_capability_paths_span_the_grid_and_rsi_waits_for_coding`).
 
-`difficulty` is drawn with the other rates
-(`test_research_difficulty_is_sampled_with_the_other_rates`); append new factor rows to
-`z`, never insert, so earlier draws stay paired across versions.
+Every factor is lognormal: `z` is fixed uniform draws mapped to normal scores. r,
+the judgment elasticity, its drift and ρ each carry their own literature-sized spread
+(`returns_spread`, `judgment_spread`, `drift_spread`, `substitution_spread`; sources in
+`TAKEOFF_MODEL.md` *Parameter uncertainty*), so FOOM is possible but not certain
+(`test_the_spreads_leave_a_runaway_possible_not_certain`). `POINT_ESTIMATE` zeroes every
+spread; deterministic tests use it. The per-draw values come back as `result["draws"]`.
+Append new factor rows to `z`, never insert, so earlier draws stay paired across versions.
 
 The model starts with partial automation, today's already-assisted software progress,
 and an assumed existing undeployed backlog shared with the reference. Coding productivity
@@ -94,15 +98,16 @@ AI judgment is gated by the direction stage's human share, uncapped
 (`test_ai_judgment_only_counts_where_ai_directs_research`). `judgment_drift` (default 0)
 changes its elasticity by that fraction per 10× of capability (`judgment_gain_log`), so b
 can fall or rise as AI improves; the b card's hover gives b at 100× when it is set. A draw
-that runs away numerically counts as reaching RSI then (unless the human floor sits above
-the bar): its capability has passed any coding milestone
+that runs away numerically counts as reaching RSI then (under a human floor above the bar,
+never): its capability has passed any coding milestone
 (`test_a_runaway_reaches_rsi_unless_the_floor_blocks_it`). Ultraintelligence is the first
 month a draw's ECI reaches `_TK_ULTRA_ECI` (250). ECI at RSI is fixed by construction:
 human hours depend only on capability, so RSI is a capability threshold.
-A *Takeoff speed b* card beside the 2×/5× cards reads the AI Futures Model's statistic off the
-settings (`_tk_takeoff_b`): with AI directing research, uplift ∝ effort^(s/β), so successive
-uplift doublings take b = 2^(β/s − 1) as long (`TestTakeoffB`). It uses the blended judgment
-elasticity the simulator receives.
+Beside the 2×/5× cards, a *FOOM* card gives the share of scenarios reaching
+`_TK_FOOM_PACE` (100×) the 2025 pace by the horizon, and a *Takeoff speed b* card reads the AI
+Futures Model's statistic (`_tk_takeoff_b`): with AI directing research, uplift ∝ effort^(s/β),
+so successive uplift doublings take b = 2^(β/s − 1) as long (`TestTakeoffB`). Its median uses
+the settings; its accelerating share reads the simulator's per-draw s and β.
 `tk_dc_compute` (default on) feeds compute growth from the Data Centers tab:
 `_tk_dc_compute` samples the US largest-run projection (`_pc_projection`, as Pacing does)
 and averages each path over a fixed `_TK_DC_AVG_YEARS` (not the chart horizon, which

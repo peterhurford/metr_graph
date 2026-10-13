@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v11-judgment-drift`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v12-literature-spread`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -119,6 +119,28 @@ points per 10× training compute) would give a third of that slope, so the choic
 triples every post-RSI gain read as ECI; both readings belong next to any bar picked off it.
 Ultraintelligence is to be defined as an ECI level on this chart.
 
+## Parameter uncertainty
+
+Every factor is lognormal around its setting, from one fixed set of uniform draws per
+scenario mapped to normal scores, so paired comparisons survive any change of setting.
+`uncertainty` (default 40%) is the 1σ of each log for rates, cycle times and workflow
+hours. Four settings that decide whether takeoff runs away get their own spreads, sized
+to the literature:
+
+| Setting | 1σ | Range it gives | Source |
+|---|---|---|---|
+| Returns to research r | 0.65 in ln r | ~90%: 0.34–2.9× the setting | Forethought 0.33–3 around 1.0; Davidson & Houlden 0.4–3.6 around 1.2 |
+| Judgment elasticity | 0.5 in its log | 80%: 0.5–1.9× | The odds-to-judgment power is an assumption that could be half or double |
+| Judgment-rate change | 15 points per 10× | 80%: ±19 points | No measurement; sized so it adds to, rather than sets, the runaway share |
+| Labor–compute elasticity 1/(1−ρ) | 0.8 in its log | ~90%: 0.18–2.5 around 0.67 | Whitfill & Wu: ~0 (frontier experiments) to 2.6 (compute) |
+
+The judgment elasticity is still calibrated once at the ρ setting, not per draw.
+
+At the defaults about 32% of scenarios reach 100× the 2025 research pace by the end of
+2031 (the tab's FOOM card), and a quarter have judgment outrunning difficulty (b < 1),
+against the AI Futures Model's 38% and Forethought's ~60% chance that progress
+accelerates. With every spread at zero (`POINT_ESTIMATE`) no scenario reaches 100×.
+
 ## Evidence calibration
 
 Four priors come from the RSI tab. Today's human hours per stage are scaled so their
@@ -185,8 +207,9 @@ medians meeting every target do not establish joint automation. Completed paths 
 last modeled workflow values and last measured rates. A draw whose research runs past
 numerical range records nothing further. It counts as unresolved only while a milestone
 could still arrive inside the horizon — not when every open milestone waits on a coding
-date past it — and the tab reports up to 1% unresolved draws in its caption as not
-arriving, refusing to report above that.
+date past it, nor under a human floor above the RSI bar, where no draw can reach it — and
+the tab reports up to 1% unresolved draws in its caption as not arriving, refusing to
+report above that.
 
 Exports include the version, time origin, effective parameters, calibration assumptions,
 evidence dates, inherited RSI samples, and calendar/coding-relative event times. The source

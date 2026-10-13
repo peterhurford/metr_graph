@@ -2425,7 +2425,7 @@ class TestRsiDirection:
 
 class TestRsiExperiments:
     def test_research_pace_uses_2025_units_and_rebases_draws_before_quantiles(self):
-        params = dict(years=1, uncertainty=0)
+        params = dict(years=1, **vp.takeoff.POINT_ESTIMATE)
         onset = np.ones(20)
         starts = np.linspace(np.log(1.5), np.log(2.5), 20)
         slopes = np.full(20, np.log(2))
@@ -2457,7 +2457,7 @@ class TestRsiExperiments:
         days = (today - rows[-1]['date']).days
         np.testing.assert_array_equal(current, starts + daily * days)
         np.testing.assert_array_equal(annual, daily * 365.25)
-        params = dict(years=1, uncertainty=0)
+        params = dict(years=1, **vp.takeoff.POINT_ESTIMATE)
         onset = np.ones(20)
         a = vp._tk_simulate(params, onset, "test", current, annual)
         b = vp._tk_simulate(params, onset, "test", current + np.log(2), annual)
@@ -5331,6 +5331,12 @@ class TestTakeoffB:
         faster = vp._tk_takeoff_b(dict(p, taste_slope=1.0))
         assert faster["median"] == pytest.approx(2 ** -0.5)
         assert faster["accelerating"] == 1.0
+
+    def test_accelerating_share_reads_the_simulated_draws(self):
+        p = dict(taste_slope=0.3, difficulty=0.5, transfer=60)
+        draws = {"taste_slope": np.array([0.3, 0.3, 0.3, 0.3]),
+                 "difficulty": np.array([0.2, 0.5, 0.6, 0.7])}
+        assert vp._tk_takeoff_b(p, draws)["accelerating"] == 0.25
 
     def test_no_feedback_has_no_b(self):
         assert vp._tk_takeoff_b(dict(taste_slope=0.0, difficulty=0.5,

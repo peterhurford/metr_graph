@@ -17846,6 +17846,8 @@ _TK_LOOP_HTML = (
 
 # Pace levels a reader can hold onto; drawn as guides on the pace chart.
 _TK_PACE_GUIDES = (2, 5, 10)
+# Top of the pace chart's view; FOOM scenarios run off it.
+_TK_PACE_VIEW = 1000
 # Chart 1 opens a year back. Nothing is simulated before today, so the past
 # is reconstructed: each scenario's pace runs log-linearly from 1x at the
 # middle of 2025 (the baseline year, 1x by definition) to its own value today.
@@ -17921,6 +17923,22 @@ def _tk_pace_fig(result, today, markers=(), history=None):
                           "<extra>" + name + "</extra>"))
     for level in _TK_PACE_GUIDES:
         fig.add_hline(y=level, line_dash="dot", line_color="#999", line_width=1)
+    # Labelled by hand: on a log axis plotly reads an hline annotation's y as
+    # the exponent, parking it at 10^100.
+    fig.add_hline(y=_TK_FOOM_PACE, line_dash="dash", line_color="#c0392b", line_width=1)
+    fig.add_annotation(x=0, xref="paper", y=np.log10(_TK_FOOM_PACE), xanchor="left",
+                       yanchor="bottom", showarrow=False, text=f"FOOM ({_TK_FOOM_PACE}\u00d7)",
+                       font=dict(size=11, color="#c0392b"))
+    # A runaway's pace reaches ~1e300: hold the view to the readable range,
+    # letting those scenarios run off the top.
+    lows = [p["reference_2025_quantiles"][:, 0], p["pace_2025_quantiles"][:, 0]]
+    highs = [p["reference_2025_quantiles"][:, 2], p["pace_2025_quantiles"][:, 2]]
+    if history is not None:
+        lows.append(history[1][:, 0])
+        highs.append(history[1][:, 2])
+    low = max(min(float(np.nanmin(v)) for v in lows), 0.1) / 1.3
+    high = min(max(max(float(np.nanmax(v)) for v in highs), 2 * _TK_FOOM_PACE) * 1.3,
+               _TK_PACE_VIEW)
     for i, (label, when) in enumerate(markers):
         fig.add_vline(x=when, line_dash="dot", line_color="#b0b0b0", line_width=1)
         fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper",
@@ -17930,10 +17948,11 @@ def _tk_pace_fig(result, today, markers=(), history=None):
         height=420, margin=dict(l=55, r=20, t=30, b=40),
         xaxis=dict(range=[history[0][0] if history is not None else x[0], x[-1]]),
         yaxis=dict(type="log", title="Research pace (× the 2025 pace)",
-                   tickvals=[0.5, 1, 2, 5, 10, 20, 50, 100, 200],
+                   range=[np.log10(low), np.log10(high)],
+                   tickvals=[0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000],
                    ticktext=["0.5×", "1×", "2×", "5×",
                              "10×", "20×", "50×", "100×",
-                             "200×"]),
+                             "200×", "500×", "1,000×"]),
         legend=dict(orientation="h", y=-0.12), hovermode="x")
     return fig
 
@@ -18017,26 +18036,25 @@ def _tk_factors_fig(result, today):
     return fig
 
 
-def _tk_takeoff_b(params, n=20000):
+def _tk_takeoff_b(params, draws=None):
     """The AI Futures Model's takeoff statistic for these settings.
 
     With AI directing research, judgment grows as exp(s * software) and
     difficulty makes software grow as log(cumulative effort) / beta, so the
     research uplift goes as effort^(s / beta) and successive uplift doublings
-    take b = 2^(beta / s - 1) times as long. Returns {'median', 'accelerating'}
-    over the model's own spread on s and beta, or None without feedback.
+    take b = 2^(beta / s - 1) times as long. Returns {'median', 'accelerating',
+    'after_100x'}, or None without feedback. 'accelerating' (b < 1) reads the
+    simulator's own per-draw s and beta (`result["draws"]`) when given.
     """
     s, beta = params["taste_slope"], params["difficulty"]
     if s <= 0 or params["transfer"] <= 0:
         return None
-    rng = np.random.default_rng(0)
-    spread = params["uncertainty"] / 100
-    ratio = beta * np.exp(spread * rng.uniform(-1, 1, n)) / (
-        s * np.exp(spread * rng.uniform(-1, 1, n)))
-    b = 2 ** (ratio - 1)
+    if draws is None:
+        draws = {"taste_slope": np.array([s]), "difficulty": np.array([beta])}
     drift = params.get("judgment_drift", 0.0) / 100
     later = s * (1 + drift) ** 2          # the elasticity after 100x more capability
-    return {"median": float(2 ** (beta / s - 1)), "accelerating": float(np.mean(b < 1)),
+    return {"median": float(2 ** (beta / s - 1)),
+            "accelerating": float(np.mean(draws["taste_slope"] > draws["difficulty"])),
             "after_100x": float(2 ** (beta / later - 1)) if later > 0 else None}
 
 
@@ -18254,12 +18272,18 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
                         ("reference_2025_quantiles", progress["reference_pace"]),
                         ("cumulative_2025_quantiles", progress["validated_baseline_months"])):
         progress[key] = np.quantile(values * baseline, [.1, .5, .9], axis=0).T
-    result["pace_events_2025"] = {}
-    for threshold in (2, 5):
+    def first(threshold):
         reached = progress["pace"] * baseline >= threshold
-        result["pace_events_2025"][f"{threshold}× 2025 research pace"] = np.where(
-            reached.any(axis=1), grid[np.argmax(reached, axis=1)], np.inf)
+        return np.where(reached.any(axis=1), grid[np.argmax(reached, axis=1)], np.inf)
+    result["pace_events_2025"] = {f"{threshold}× 2025 research pace": first(threshold)
+                                  for threshold in (2, 5)}
+    result["foom"] = first(_TK_FOOM_PACE)
     return result
+
+
+# FOOM: research running at this multiple of the 2025 pace, a century of
+# 2025 progress a year.
+_TK_FOOM_PACE = 100
 
 
 def _tk_date(value, today):
@@ -18449,10 +18473,26 @@ def render_takeoff():
             st.caption(f"Remaining compute for agents: {agents}%.")
             st.markdown("**Uncertainty**")
             number("Parameter uncertainty (%)", "uncertainty", 0, 100, 5,
-                   "Independent bounded log-space variation around research rates, compute "
-                   "growth, cycle times, workflow human hours, workflow learning rates, "
-                   "research-quality slope and research difficulty. "
-                   "40 means factors between exp(−0.4) and exp(0.4), not a confidence level.")
+                   "Independent lognormal spread on research rates, compute growth, cycle "
+                   "times, workflow human hours and workflow learning rates: 40 is a "
+                   "1\u03c3 of 0.4 in each log, an 80% range of 0.6\u20131.7\u00d7.")
+            number("Spread on returns to research r (%)", "returns_spread", 0, 200, 5,
+                   "1\u03c3 of ln r across scenarios, around the setting above. 65 "
+                   "spans Forethought's 0.33\u20133 (and Davidson & Houlden's "
+                   "0.4\u20133.6 around 1.2) as a ~90% range.")
+            number("Spread on judgment elasticity (%)", "judgment_spread", 0, 200, 5,
+                   "1\u03c3 of the log judgment elasticity. 50 is an 80% range of "
+                   "0.5\u20131.9\u00d7: the fit converts win odds to research at an "
+                   "assumed power that could be half or double.")
+            number("Spread on judgment-rate change (points)", "drift_spread", 0, 200, 5,
+                   "1\u03c3, in percentage points per 10\u00d7 capability, of the "
+                   "change in judgment rate. No study measures it; above 0 it is the "
+                   "channel by which judgment compounds into a runaway.")
+            number("Spread on labor\u2013compute substitutability (%)",
+                   "substitution_spread", 0, 200, 5,
+                   "1\u03c3 of the log elasticity of substitution 1/(1\u2212\u03c1). "
+                   "80 gives a ~90% range of 0.2\u20132.5 around the \u03c1 setting, "
+                   "Whitfill & Wu's two specifications (near 0 and 2.6).")
             number("Simulation seed", "seed", 0, 4294967295, 1)
 
     st.header("Takeoff")
@@ -18582,12 +18622,14 @@ def render_takeoff():
     _fn_caption(
         "Research pace as a multiple of 2025. Verticals mark milestone medians.",
         ("Research pace", "Useful work before validation, including work in "
-         "progress while successors train. Medians, with the middle 80% shaded."))
+         "progress while successors train. Medians, with the middle 80% shaded. "
+         f"The axis stops at {_TK_PACE_VIEW:,}\u00d7; scenarios that run away "
+         "leave the top of the chart."))
     st.plotly_chart(_tf(_tk_pace_fig(
         result, today, markers,
         history=_tk_pace_history(np.exp(experiment_starts) * pace_yield, today))),
         width="stretch")
-    cols = st.columns(len(result["pace_events_2025"]) + 1)
+    cols = st.columns(len(result["pace_events_2025"]) + 2)
     for col, (name, values) in zip(cols, result["pace_events_2025"].items()):
         col.metric(f"Research at {name.split()[0]} the 2025 pace",
                    _tk_date(takeoff.quantile(values, .5, horizon), today),
@@ -18595,7 +18637,17 @@ def render_takeoff():
                         f"{100 * np.mean(values <= horizon):.0f}% of scenarios get "
                         f"there by {end_date:%b %Y}. Needs neither full automation "
                         "nor a sustained streak.")
-    b = _tk_takeoff_b(params)
+    foom = result["foom"] <= horizon
+    cols[-2].metric(
+        f"FOOM: research at {_TK_FOOM_PACE}\u00d7", f"{100 * np.mean(foom):.0f}%",
+        help=f"Share of scenarios whose research pace reaches {_TK_FOOM_PACE}\u00d7 the "
+             f"2025 pace by {end_date:%b %Y}: a century of 2025 progress a year"
+             + (f", first reached in {_tk_date(float(np.median(result['foom'][foom])), today)} "
+                "at the median among them" if foom.any() else "")
+             + ". Set by the parameter spreads under Advanced: the literature leaves "
+             "whether takeoff runs away open (Forethought puts ~60% on acceleration, "
+             "the AI Futures Model 38%).")
+    b = _tk_takeoff_b(params, result["draws"])
     cols[-1].metric(
         "Takeoff speed b", "no feedback" if b is None else f"{b['median']:.2f}",
         help=None if b is None else
@@ -18607,7 +18659,9 @@ def render_takeoff():
            f"; with the judgment-rate change set, b is {b['after_100x']:.2f} once AI is "
            "100\u00d7 more capable")
         + ". Their Dec 2025 "
-        "median is 1.21 (38% accelerate); AI 2027's was 0.64\u20130.78.")
+        "median is 1.21 (38% accelerate); AI 2027's was 0.64\u20130.78. b counts "
+        "judgment alone; the FOOM card also counts runaways driven by AI labor "
+        "where it substitutes for compute, and by judgment gains compounding.")
     st.markdown("**What moves the pace**")
     _fn_caption(
         "Multiply the three factors and you get the dotted line.",

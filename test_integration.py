@@ -1196,6 +1196,23 @@ class TestTakeoffTab:
         _assert_no_error(at, "Takeoff / flat compute")
         assert seen[-1] is None
 
+    def test_foom_card_moves_with_the_parameter_spreads(self):
+        """FOOM is neither ruled in nor out at the defaults, and goes to zero
+        when every spread is."""
+        import takeoff_model as tk
+        at = self._app()
+        label = next(m.label for m in at.metric if m.label.startswith("FOOM"))
+        share = lambda: float(next(m.value for m in at.metric if m.label == label)[:-1])
+        assert 5 < share() < 80
+        # Runaways reach ~1e300; the pace chart's view stays capped.
+        pace = json.loads(at.get("plotly_chart")[1].proto.spec)
+        assert pace["layout"]["yaxis"]["range"][1] <= np.log10(1000) + 1e-9
+        for key in tk.POINT_ESTIMATE:
+            at.number_input(key="tk_" + key).set_value(0)
+        at.run()
+        _assert_no_error(at, "Takeoff / point estimates")
+        assert share() < 1
+
     def test_zero_transfer_runs_at_the_reference_pace(self, monkeypatch):
         """With no AI feedback, research runs at the frozen-AI reference pace."""
         import takeoff_model as tk
@@ -1211,7 +1228,9 @@ class TestTakeoffTab:
         at.number_input(key="tk_transfer").set_value(0).run()
         _assert_no_error(at, "Takeoff / zero feedback")
         progress = captured[-1]["workflow_progress"]
-        np.testing.assert_allclose(progress["pace"], progress["reference_pace"], rtol=1e-4)
+        # The weekly integration's error grows with difficulty, whose lognormal
+        # tail reaches several times the setting.
+        np.testing.assert_allclose(progress["pace"], progress["reference_pace"], rtol=2e-3)
 
     def test_parallelization_does_not_move_difficulty(self, monkeypatch):
         """Difficulty is set from r alone; parallelization moves only returns to inputs."""

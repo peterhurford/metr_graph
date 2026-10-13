@@ -8,7 +8,7 @@ import takeoff_model as tk
 
 def test_workflow_trajectory_observes_deployments_and_keeps_all_draws():
     """Human hours fall only after deployments, and every draw stays in the bands."""
-    result = tk.simulate(dict(years=2, uncertainty=0), n=3,
+    result = tk.simulate(dict(years=2, **tk.POINT_ESTIMATE), n=3,
                          onset_years=np.array([0, 20, np.inf]))
     progress = result["workflow_progress"]
     grid = progress["years"]
@@ -26,7 +26,7 @@ def test_workflow_trajectory_observes_deployments_and_keeps_all_draws():
     assert np.all(human >= tk.DEFAULTS["human_floor"] / 100)
     assert np.all(human[-1] < human[0])
     # Even a never-arriving coding milestone retains a research trajectory.
-    never = tk.simulate(dict(years=2, uncertainty=0), n=1,
+    never = tk.simulate(dict(years=2, **tk.POINT_ESTIMATE), n=1,
                         onset_years=np.array([np.inf]))["workflow_progress"]
     assert np.all(never["human_quantiles"][-1] < never["human_quantiles"][0])
 
@@ -45,7 +45,7 @@ def test_seeded_draws_and_rng_isolation():
 
 def test_baseline_growth_and_zero_transfer_remove_feedback():
     """With zero transfer, AI skill slopes cannot change the software path."""
-    p = dict(transfer=0, compute_growth=1.0, uncertainty=0, years=2, baseline_inputs=0)
+    p = dict(transfer=0, compute_growth=1.0, **tk.POINT_ESTIMATE, years=2, baseline_inputs=0)
     a = tk.simulate(p, n=1)
     rate = np.log(2) * 12 / tk.DEFAULTS["software_months"]
     beta = tk.DEFAULTS["difficulty"]
@@ -57,7 +57,7 @@ def test_baseline_growth_and_zero_transfer_remove_feedback():
 
 def test_compute_budget_conservation():
     for growth in [1.0, 2.0]:
-        p = dict(compute_growth=growth, uncertainty=0, years=2,
+        p = dict(compute_growth=growth, **tk.POINT_ESTIMATE, years=2,
                  training_share=30, experiment_share=50)
         r = tk.simulate(p, n=5)
         np.testing.assert_allclose(r["allocated"].sum(axis=0), r["budget"])
@@ -69,7 +69,7 @@ def test_compute_budget_conservation():
 
 
 def test_validation_reserves_but_does_not_spend_training_compute():
-    r = tk.simulate(dict(compute_growth=1.0, uncertainty=0, transfer=0,
+    r = tk.simulate(dict(compute_growth=1.0, **tk.POINT_ESTIMATE, transfer=0,
                          years=2, training_months=3.0, validation_months=3.0),
                     n=1, step=1/120)
     # Four 3-month runs in two years; half the reserved training allocation
@@ -79,7 +79,7 @@ def test_validation_reserves_but_does_not_spend_training_compute():
 
 
 def test_algorithms_wait_for_the_next_run_and_validation():
-    p = dict(compute_growth=1.0, uncertainty=0, training_months=3.0,
+    p = dict(compute_growth=1.0, **tk.POINT_ESTIMATE, training_months=3.0,
              validation_months=0.0, transfer=0, fast_share=0, pipeline_months=0)
     first = tk.simulate(dict(p, years=0.25), n=1, step=1/120)
     assert first["software_log"][0] > 0
@@ -92,7 +92,7 @@ def test_algorithms_wait_for_the_next_run_and_validation():
 
 def test_later_coding_does_not_postpone_the_start_of_research():
     """Research improves before the coding date; only RSI waits for it."""
-    p = dict(years=.5, uncertainty=0)
+    p = dict(years=.5, **tk.POINT_ESTIMATE)
     a = tk.simulate(p, n=1, onset_years=np.array([1.]))
     b = tk.simulate(p, n=1, onset_years=np.array([10.]))
     assert a["software_log"][0] >= b["software_log"][0] > 0
@@ -104,8 +104,11 @@ def test_external_onset_preserves_past_dates_and_censored_tail():
     onset = np.array([-1.0, .25, 2.0, 20.0, np.inf])
     b = tk.simulate(n=5, onset_years=onset)
     np.testing.assert_array_equal(b["onset"], onset)
+    # A runaway reaches RSI whatever its coding date says
+    # (test_a_runaway_reaches_rsi_unless_the_floor_blocks_it).
+    held = b["software_log"] < 1e6
     for name in tk.MILESTONES:
-        assert np.all(b["events"][name] >= np.maximum(onset, 0))
+        assert np.all(b["events"][name][held] >= np.maximum(onset, 0)[held])
     assert np.isnan(b["outcomes"]["Full coding automation"]["human_mean"][-1])
     assert np.all(np.isfinite(b["outcomes"]["Today"]["human_mean"]))
     durations = tk.after_coding(b["events"][tk.MILESTONES[-1]], onset)
@@ -115,7 +118,7 @@ def test_external_onset_preserves_past_dates_and_censored_tail():
 
 def test_rsi_needs_low_human_work_and_the_coding_date():
     """With every stage already under the bar, RSI arrives with coding automation."""
-    p = dict(uncertainty=0, onset_low=0, onset_high=0, human_floor=0.0, human_direction=0.0,
+    p = dict(**tk.POINT_ESTIMATE, onset_low=0, onset_high=0, human_floor=0.0, human_direction=0.0,
              human_experiments=0.0, human_verification=0.0)
     assert tk.simulate(p, n=1)["events"]["RSI"][0] == 0
     later = tk.simulate(p, n=1, onset_years=np.array([.5]))["events"]["RSI"][0]
@@ -125,7 +128,7 @@ def test_rsi_needs_low_human_work_and_the_coding_date():
 def test_rsi_turns_on_research_direction_alone():
     """RSI is direction handed off: other stages still needing people do not
     block it, and a low average does not count while direction is above it."""
-    base = dict(years=0.1, uncertainty=0, human_floor=0.0)
+    base = dict(years=0.1, **tk.POINT_ESTIMATE, human_floor=0.0)
     onset = np.array([0.0])
     handed_off = tk.simulate(dict(base, human_direction=0.0, human_experiments=60.0,
                                   human_verification=60.0), n=1, onset_years=onset)
@@ -152,17 +155,18 @@ def test_research_difficulty_is_sampled_with_the_other_rates(monkeypatch):
 
     monkeypatch.setattr(tk, "reference_software", capture)
     tk.simulate(dict(years=0.5), n=500)
-    drawn = next(d for d in seen if d.shape == (500,))
-    lo, hi = 0.5 * np.exp(-0.4), 0.5 * np.exp(0.4)
-    assert lo <= drawn.min() < 0.4 and 0.6 < drawn.max() <= hi
+    drawn = np.log(next(d for d in seen if d.shape == (500,)))
+    # Lognormal around the setting, at the returns-to-research spread.
+    assert np.median(drawn) == pytest.approx(np.log(0.5), abs=0.1)
+    assert drawn.std() == pytest.approx(tk.DEFAULTS["returns_spread"] / 100, abs=0.1)
     tk.simulate(dict(years=0.5, difficulty=0), n=5)  # the undiscounted branch still runs
 
 
 def test_a_runaway_reaches_rsi_unless_the_floor_blocks_it():
     """A diverged draw has automated coding whatever its inherited date says, so
-    it reaches RSI, even before that date. Under a floor above the bar it is
-    unresolved only if coding falls inside the horizon."""
-    explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, uncertainty=0, years=12)
+    it reaches RSI, even before that date. Under a floor above the bar no draw
+    can reach RSI, so a runaway is a non-arrival, not unresolved."""
+    explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, **tk.POINT_ESTIMATE, years=12)
     early = tk.simulate(explosive, n=1, onset_years=np.array([11.0]))
     assert early["software_log"][0] == 1e6
     assert early["events"]["RSI"][0] < 11.0
@@ -171,14 +175,13 @@ def test_a_runaway_reaches_rsi_unless_the_floor_blocks_it():
     assert reached["software_log"][0] == 1e6          # it did diverge
     assert np.isfinite(reached["events"]["RSI"][0])
     assert not reached["numerically_limited"][0]
-    # A floor above the bar keeps RSI open when the draw diverges.
     blocked = dict(explosive, human_floor=6.0)
     waiting = tk.simulate(blocked, n=1, onset_years=np.array([20.0]))
     assert not waiting["numerically_limited"][0]
     assert np.isinf(waiting["events"]["RSI"][0])
-    open_ = tk.simulate(blocked, n=1, onset_years=np.array([0.5]))
-    assert open_["numerically_limited"][0]
-    assert np.isinf(open_["events"]["RSI"][0])
+    inside = tk.simulate(blocked, n=1, onset_years=np.array([0.5]))
+    assert not inside["numerically_limited"][0]
+    assert np.isinf(inside["events"]["RSI"][0])
 
 
 def test_workflow_halving_time_has_a_measurable_interpretation():
@@ -190,7 +193,7 @@ def test_workflow_halving_time_has_a_measurable_interpretation():
 
 
 def test_fast_feedback_precedes_successors_and_is_not_double_counted():
-    p = dict(uncertainty=0, transfer=0, compute_growth=1, baseline_inputs=0, fast_share=25,
+    p = dict(**tk.POINT_ESTIMATE, transfer=0, compute_growth=1, baseline_inputs=0, fast_share=25,
              fast_months=1, training_months=3, validation_months=1, years=.25)
     r = tk.simulate(p, n=1, onset_years=np.array([10.]))
     earlier = tk.simulate(dict(p, years=2/12), n=1, onset_years=np.array([10.]))
@@ -207,14 +210,14 @@ def test_fast_feedback_precedes_successors_and_is_not_double_counted():
 
 def test_acceleration_can_arrive_without_autonomous_research():
     """Research can reach 2x its pace in draws that never reach RSI."""
-    r = tk.simulate(dict(years=5, uncertainty=0, human_floor=6), n=1,
+    r = tk.simulate(dict(years=5, **tk.POINT_ESTIMATE, human_floor=6), n=1,
                     onset_years=np.array([20.]))
     assert np.isfinite(r["acceleration_events"]["2× research progress"][0])
     assert np.isinf(r["events"]["RSI"][0])
 
 
 def test_rates_need_a_full_window_and_cumulative_progress_never_falls():
-    r = tk.simulate(dict(years=2, uncertainty=0), n=3)
+    r = tk.simulate(dict(years=2, **tk.POINT_ESTIMATE), n=3)
     h = r["workflow_progress"]
     early = h["years"] < .25 - 1e-12
     assert np.isnan(h["rate"][:, early]).all()
@@ -225,7 +228,7 @@ def test_rates_need_a_full_window_and_cumulative_progress_never_falls():
 
 
 def test_ongoing_research_pace_does_not_wait_for_successor_deliveries():
-    r = tk.simulate(dict(years=.5, uncertainty=0, baseline_inputs=0, fast_share=0,
+    r = tk.simulate(dict(years=.5, **tk.POINT_ESTIMATE, baseline_inputs=0, fast_share=0,
                          training_months=12, validation_months=3, transfer=0,
                          compute_growth=1), n=2)
     h = r["workflow_progress"]
@@ -237,7 +240,7 @@ def test_ongoing_research_pace_does_not_wait_for_successor_deliveries():
 
 
 def test_inherited_activity_informs_effort_without_a_second_compute_multiplier():
-    p = dict(years=1, uncertainty=0, rsi_trend_weight=100)
+    p = dict(years=1, **tk.POINT_ESTIMATE, rsi_trend_weight=100)
     slow = tk.simulate(p, n=1, experiment_slopes=np.array([0.0]))
     fast = tk.simulate(p, n=1, experiment_slopes=np.array([np.log(16)]))
     assert fast["software_log"][0] > slow["software_log"][0]
@@ -278,7 +281,7 @@ def test_matched_stage_fit_uses_hours_not_intervention_incidence():
 def test_resource_growth_alone_creates_no_compute_matched_advantage():
     """Faster progress from compute alone is matched by the same-compute reference."""
     r = tk.simulate(dict(transfer=0, difficulty=0.0, compute_growth=5.0,
-                         uncertainty=0, years=5, baseline_inputs=0), n=1)
+                         **tk.POINT_ESTIMATE, years=5, baseline_inputs=0), n=1)
     assert r["progress_multiple"][0] > 1
     assert r["compute_matched_advantage"][0] == pytest.approx(1, rel=1e-4)
 
@@ -305,7 +308,9 @@ def test_capability_paths_span_the_grid_and_rsi_waits_for_coding():
     assert np.isfinite(capability).all()
     assert np.all(np.diff(capability, axis=1) >= -1e-12)
     assert np.all(capability[:, -1] > 0)
-    assert np.all(r["events"]["RSI"] >= np.maximum(r["onset"], 0))
+    held = r["software_log"] < 1e6       # a runaway reaches RSI regardless
+    assert held.mean() > 0.5
+    assert np.all(r["events"]["RSI"][held] >= np.maximum(r["onset"], 0)[held])
 
 
 def test_cdf_and_quantile_keep_censored_draws():
@@ -322,14 +327,22 @@ def test_weekly_steps_converge_to_half_week_steps():
     p = dict(years=8)
     weekly = tk.simulate(p, n=200)
     half_week = tk.simulate(p, n=200, step=1/104)
+    # A runaway's date is the step its stock crosses the numerical ceiling,
+    # so only draws that stay in range must agree exactly.
+    held = (weekly["software_log"] < 1e6) & (half_week["software_log"] < 1e6)
+    assert held.mean() > 0.5
     for name in tk.MILESTONES:
-        np.testing.assert_array_equal(weekly["events"][name], half_week["events"][name])
-    np.testing.assert_allclose(weekly["software_log"], half_week["software_log"], rtol=3e-5)
+        np.testing.assert_array_equal(weekly["events"][name][held],
+                                      half_week["events"][name][held])
+    # Near a blow-up the stock is stiff; compare the ones well short of it.
+    calm = held & (weekly["software_log"] < 1e3)
+    np.testing.assert_allclose(weekly["software_log"][calm], half_week["software_log"][calm],
+                               rtol=3e-5)
 
 
 def test_longer_validation_delays_milestones():
-    a = tk.simulate(dict(uncertainty=0, validation_months=0.5), n=1)
-    b = tk.simulate(dict(uncertainty=0, validation_months=3.0), n=1)
+    a = tk.simulate(dict(**tk.POINT_ESTIMATE, validation_months=0.5), n=1)
+    b = tk.simulate(dict(**tk.POINT_ESTIMATE, validation_months=3.0), n=1)
     for name in tk.MILESTONES:
         assert b["events"][name][0] > a["events"][name][0]
 
@@ -354,15 +367,16 @@ def test_pace_factors_multiply_back_to_the_pace():
     p = r["workflow_progress"]
     f = p["pace_factors"]
     log_rebuilt = f["resources"] + f["judgment"] - f["difficulty"]
-    ok = log_rebuilt < 699      # the pace itself is capped at exp(700)
-    assert ok.mean() > 0.9
+    # The pace itself is capped at exp(700); a runaway's factors overflow.
+    ok = np.isfinite(log_rebuilt) & (log_rebuilt < 699)
+    assert ok.mean() > 0.7
     np.testing.assert_allclose(np.exp(log_rebuilt[ok]), p["pace"][ok], rtol=1e-6)
 
 
 def test_ai_judgment_only_counts_where_ai_directs_research():
     """With people directing all research, AI judgment changes nothing; with a
     zero transfer, neither does any judgment elasticity."""
-    base = dict(uncertainty=0, years=3, transfer=100)
+    base = dict(**tk.POINT_ESTIMATE, years=3, transfer=100)
     human_led = dict(base, human_direction=100.0, human_floor=100.0,
                      human_experiments=100.0, human_verification=100.0)
     a = tk.simulate(dict(human_led, taste_slope=0.2), n=1)
@@ -385,3 +399,27 @@ def test_judgment_drift_bends_the_judgment_rate_per_10x():
                     - tk.judgment_gain_log(np.log(10), 0.3, 0.5)) / h
     assert slope_at_10x == pytest.approx(0.45, rel=1e-4)
 
+
+
+def test_point_estimate_draws_the_settings_themselves():
+    """With every spread at zero each draw uses the settings; by default r,
+    judgment, its drift and rho each vary per draw."""
+    p = dict(years=0.1, taste_slope=0.3, judgment_drift=10.0, substitution=-0.5)
+    point = tk.simulate(dict(p, **tk.POINT_ESTIMATE), n=50)["draws"]
+    np.testing.assert_allclose(point["taste_slope"], 0.3)
+    np.testing.assert_allclose(point["difficulty"], tk.DEFAULTS["difficulty"])
+    np.testing.assert_allclose(point["judgment_drift"], 0.1)
+    np.testing.assert_allclose(point["substitution"], -0.5)
+    spread = tk.simulate(p, n=50)["draws"]
+    assert all(np.ptp(v) > 0 for v in spread.values())
+    # rho stays inside the range `validate` accepts.
+    assert (spread["substitution"] >= -5).all() and (spread["substitution"] <= 0.9).all()
+
+
+def test_the_spreads_leave_a_runaway_possible_not_certain():
+    """At the app's measured judgment elasticity (~0.28), some draws run away
+    and most do not; at point estimates none does."""
+    p = dict(taste_slope=0.28, years=5)
+    runaway = lambda r: np.mean(r["software_log"] >= 1e6 - 1)
+    assert 0.02 < runaway(tk.simulate(p, n=400)) < 0.6
+    assert runaway(tk.simulate(dict(p, **tk.POINT_ESTIMATE), n=400)) == 0

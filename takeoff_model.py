@@ -6,12 +6,13 @@ All randomness is local and seeded; every setting uses the same base draws.
 """
 
 import hashlib
+from statistics import NormalDist
 from pathlib import Path
 
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v11-judgment-drift"
+MODEL_VERSION = "takeoff-v12-literature-spread"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -51,7 +52,16 @@ DEFAULTS = {
     # judgment gains compound as AI gets more capable (b falls), below 0 they
     # fade (b rises). 0 keeps today's measured rate throughout.
     "judgment_drift": 0.0,
+    # Per-draw spread on the four settings that decide whether takeoff runs
+    # away (TAKEOFF_MODEL.md, *Parameter uncertainty*): 1-sigma of ln r,
+    # 1-sigma of ln(judgment elasticity), 1-sigma of the drift in percentage
+    # points, and 1-sigma of ln(elasticity of substitution 1 / (1 - rho)).
+    "returns_spread": 65.0, "judgment_spread": 50.0,
+    "drift_spread": 15.0, "substitution_spread": 80.0,
 }
+# Every spread at zero: each draw uses the settings themselves.
+POINT_ESTIMATE = {"uncertainty": 0, "returns_spread": 0, "judgment_spread": 0,
+                  "drift_spread": 0, "substitution_spread": 0}
 PRESETS = {
     "Central": {},
     "Fast": {"software_months": 6.0, "training_months": 1.0,
@@ -78,6 +88,9 @@ def validate(params):
         raise ValueError("Reserve positive compute shares for training, experiments, and agents.")
     if not 0 <= p["transfer"] <= 100 or not 0 <= p["uncertainty"] <= 100:
         raise ValueError("Transfer and uncertainty must be between 0 and 100%.")
+    if not all(0 <= p[k] <= 200 for k in ("returns_spread", "judgment_spread",
+                                          "drift_spread", "substitution_spread")):
+        raise ValueError("Parameter spreads must be between 0 and 200%.")
     if p["software_months"] <= 0 or p["training_months"] <= 0 \
             or p["validation_months"] < 0 or p["compute_growth"] < 1:
         raise ValueError("Use positive doubling/run times and compute growth of at least 1×.")
@@ -165,20 +178,30 @@ def judgment_gain_log(effective, slope, drift):
     compute): the integral of an elasticity that starts at `slope` and changes
     by `drift` (a fraction) per 10x of capability."""
     k = np.log1p(drift) / np.log(10)
-    if abs(k) < 1e-12:
-        return slope * effective
-    return slope * np.expm1(k * effective) / k
+    flat = np.abs(k) < 1e-12
+    safe = np.where(flat, 1.0, k)
+    # Capped short of overflow: a draw that far out has already diverged.
+    return np.where(flat, slope * effective,
+                    slope * np.expm1(np.minimum(safe * effective, 700)) / safe)
 
 
 def _ces_log(x, y, rho):
     """Log of the CES mean of exp(x) and exp(y), equal to 1 when both are 1."""
-    if abs(rho) < 1e-9:
-        return (x + y) / 2
-    return (np.logaddexp(rho * x, rho * y) - np.log(2)) / rho
+    flat = np.abs(rho) < 1e-9
+    safe = np.where(flat, 1.0, rho)
+    return np.where(flat, (x + y) / 2,
+                    (np.logaddexp(safe * x, safe * y) - np.log(2)) / safe)
 
 
 def _ces(a, b, rho):
     return np.exp(_ces_log(np.log(a), np.log(b), rho))
+
+
+def normal_scores(uniform):
+    """Standard-normal quantiles of draws uniform on [-1, 1]: the same
+    rank in every draw, so paired scenarios stay paired."""
+    u = np.clip((np.asarray(uniform) + 1) / 2, 1e-12, 1 - 1e-12)
+    return np.vectorize(NormalDist().inv_cdf, otypes=[float])(u)
 
 
 def workflow_state(capability_log, baseline_rate, starts, half_months, floor):
@@ -242,8 +265,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         experiment_slopes = np.asarray(experiment_slopes, dtype=float)
         if experiment_slopes.shape != (n,) or not np.isfinite(experiment_slopes).all():
             raise ValueError("Provide one finite log experiment-growth rate per year per draw.")
-    # Common quantiles preserve paired scenario comparisons. Bounded log-space
-    # variation: ±uncertainty is a multiplicative factor exp(±uncertainty/100).
+    # Common quantiles preserve paired scenario comparisons. Lognormal
+    # variation: `uncertainty`/100 is the 1-sigma of each factor's log.
     onset = rng.uniform(p["onset_low"], p["onset_high"], n) / 12
     if onset_years is not None:
         onset = np.asarray(onset_years, dtype=float).copy()
@@ -252,7 +275,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # Rows fill in order, so appending a factor leaves the earlier draws unchanged.
     # Rows 4, 6, 7 and 11 fed retired milestones; they stay drawn so the others
     # keep their values.
-    z = rng.uniform(-1, 1, (16, n))
+    z = normal_scores(rng.uniform(-1, 1, (18, n)))
     spread = p["uncertainty"] / 100
     factors = np.exp(spread * z)
     software_rate = np.log(2) * 12 / p["software_months"] * factors[0]
@@ -264,7 +287,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             raise ValueError("Provide one finite, non-negative compute growth rate per draw.")
     train_time = p["training_months"] / 12 * factors[2]
     eval_time = p["validation_months"] / 12 * factors[3]
-    taste_slope = p["taste_slope"] * factors[5]
+    taste_slope = p["taste_slope"] * np.exp(p["judgment_spread"] / 100 * z[5])
+    drift = np.maximum(p["judgment_drift"] / 100 + p["drift_spread"] / 100 * z[16], -0.9)
+    # rho through the elasticity of substitution 1 / (1 - rho), lognormal
+    # around the setting's, held inside the range `validate` accepts.
+    elasticity = np.exp(-np.log1p(-p["substitution"]) + p["substitution_spread"] / 100 * z[17])
+    rho = np.clip(1 - 1 / elasticity, -5, 0.9)
     # Human-work priors share the realized capability path, while retaining
     # separate bottlenecks for each critical workflow.
     starts = np.minimum(np.array([p["human_" + s] for s in WORKFLOW_KEYS])[None, :]
@@ -331,11 +359,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     shares = np.array([p["training_share"], p["experiment_share"],
                        100 - p["training_share"] - p["experiment_share"]]) / 100
     transfer = p["transfer"] / 100
-    beta = p["difficulty"] * factors[15]
+    # difficulty = lambda / r, so a lognormal r gives a lognormal difficulty.
+    beta = p["difficulty"] * np.exp(p["returns_spread"] / 100 * z[15])
     parallel = p["parallelization"]
-    rho = p["substitution"]
-    initial_throughput = _ces((shares[2] / 0.2) ** parallel,
-                              (shares[1] / 0.4) ** parallel, rho)
+    initial_throughput = np.broadcast_to(_ces((shares[2] / 0.2) ** parallel,
+                                              (shares[1] / 0.4) ** parallel, rho), (n,)).copy()
     # Today's pace has held steady while compute grew at its historical rate.
     # The other research inputs grow (or lag) by whatever holds that steady
     # state, d(software)/dt = rate * pace with pace = inputs^parallel /
@@ -354,17 +382,17 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     amdahl0 = np.log(human0 + (1 - human0) / ai_speed)
     # Ongoing useful research production is distinct from batched deliveries.
     # Today's production baseline already includes existing AI assistance.
-    pace_history = np.full_like(capability_history, initial_throughput)
-    reference_pace_history = np.full_like(capability_history, initial_throughput)
+    pace_history = np.repeat(initial_throughput[:, None], len(workflow_grid), axis=1)
+    reference_pace_history = pace_history.copy()
     # log pace = resources + judgment - difficulty, recorded with the pace so
     # the chart can show what moves it. Resources carry the trend blend.
     factor_history = {k: np.zeros_like(capability_history)
                       for k in ("resources", "judgment", "difficulty")}
-    factor_history["resources"][:] = np.log(initial_throughput)
+    factor_history["resources"][:] = np.log(initial_throughput)[:, None]
     last_factors = {k: v[:, 0].copy() for k, v in factor_history.items()}
     observation_index = np.ones(n, dtype=int)
-    last_pace = np.full(n, initial_throughput)
-    last_reference_pace = np.full(n, initial_throughput)
+    last_pace = initial_throughput.copy()
+    last_reference_pace = initial_throughput.copy()
     # Today's model's training compute: a three-month run at the reference
     # 40% allocation. This constant must not depend on the chosen run duration.
     reference_train_compute = 0.4 * 3 / 12
@@ -408,7 +436,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                                      np.log(transfer) + coding_gain)
             ai_taste_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
                                         np.log(transfer) + judgment_gain_log(
-                                            effective, taste_slope, p["judgment_drift"] / 100))
+                                            effective, taste_slope, drift))
             with np.errstate(divide="ignore"):   # a share of 0 or 1 drops a term
                 quality_log = np.logaddexp(np.log(direction),
                                            np.log1p(-direction) + ai_taste_log)
@@ -455,10 +483,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         diverged = active & (updated > 1e6)
         # A runaway has automated coding whatever its inherited date says, and
         # its direction share is at the floor: RSI is reached unless the floor
-        # sits above the bar. Otherwise unresolved while RSI could still arrive.
-        runaway_rsi = diverged & ~np.isfinite(events["RSI"]) & (floor <= p["full_human"] / 100)
+        # sits above the bar, where no draw can ever reach it.
+        rsi_possible = floor <= p["full_human"] / 100
+        runaway_rsi = diverged & ~np.isfinite(events["RSI"]) & rsi_possible
         events["RSI"][runaway_rsi] = end[runaway_rsi]
-        limited |= diverged & ~np.isfinite(events["RSI"]) & (onset <= p["years"])
+        limited |= diverged & ~np.isfinite(events["RSI"]) & (onset <= p["years"]) & rsi_possible
         software = np.minimum(updated, 1e6)
         train_budget = np.exp(compute_rate * t) * np.divide(
             np.expm1(compute_rate * dt), compute_rate,
@@ -486,7 +515,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         fast_deployed[fast_ready] = fast_fraction * fast_snapshot[fast_ready]
         reference_fast[fast_ready] = fast_fraction * (initial_stock[fast_ready] + reference_software(
             np.maximum(0, fast_next[fast_ready] - fast_time), software_rate[fast_ready],
-            input_rate[fast_ready], parallel, initial_throughput, beta[fast_ready]))
+            input_rate[fast_ready], parallel, initial_throughput[fast_ready], beta[fast_ready]))
         fast_snapshot[fast_ready] = software[fast_ready]
         fast_next[fast_ready] += fast_time
         # For non-ready slow runs, only their already deployed algorithms count.
@@ -612,6 +641,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         "progress_multiple": delivered_rate,
         "compute_matched_advantage": advantage,
         "numerically_limited": limited,
+        "draws": {"taste_slope": taste_slope, "difficulty": beta,
+                  "judgment_drift": drift, "substitution": rho},
     }
 
 
