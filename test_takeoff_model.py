@@ -161,7 +161,7 @@ def test_research_difficulty_is_sampled_with_the_other_rates(monkeypatch):
 def test_runaway_is_unresolved_only_while_rsi_could_still_arrive():
     """A diverged draw is unresolved only if RSI is open and coding is inside the horizon."""
     explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, uncertainty=0, years=12,
-                     taste_cap=1e300)
+                     )
     reached = tk.simulate(explosive, n=1, onset_years=np.array([0.5]))
     assert reached["software_log"][0] == 1e6          # it did diverge
     assert np.isfinite(reached["events"]["RSI"][0])
@@ -365,15 +365,13 @@ def test_pace_factors_multiply_back_to_the_pace():
 
 def test_ai_judgment_only_counts_where_ai_directs_research():
     """With people directing all research, AI judgment changes nothing; with a
-    ceiling of 1x, neither does any judgment elasticity."""
+    zero transfer, neither does any judgment elasticity."""
     base = dict(uncertainty=0, years=3, transfer=100)
     human_led = dict(base, human_direction=100.0, human_floor=100.0,
                      human_experiments=100.0, human_verification=100.0)
     a = tk.simulate(dict(human_led, taste_slope=0.2), n=1)
     b = tk.simulate(dict(human_led, taste_slope=2.0), n=1)
     np.testing.assert_allclose(a["software_log"], b["software_log"])
-    c = tk.simulate(dict(base, taste_cap=1.0, taste_slope=0.2), n=1)
-    d = tk.simulate(dict(base, taste_cap=1.0, taste_slope=2.0), n=1)
-    np.testing.assert_allclose(c["software_log"], d["software_log"])
     e = tk.simulate(dict(base, taste_slope=2.0), n=1)
-    assert e["software_log"][0] > d["software_log"][0]
+    f = tk.simulate(dict(base, taste_slope=0.2), n=1)
+    assert e["software_log"][0] > f["software_log"][0]

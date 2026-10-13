@@ -17778,7 +17778,8 @@ def _tk_eci(result, params):
 
     Today's modeled capability growth (software doubling plus compute growth)
     is mapped to the ECI tab's own fitted frontier rate, so a scenario growing
-    faster than today shows as faster ECI growth. Returns {'now', 'ppy',
+    faster than today shows as faster ECI growth, floored at today's trend
+    continued. Returns {'now', 'ppy',
     'paths' (draws x months), 'at_rsi' (per draw, NaN if not reached),
     'frontier' (US-best frontier rows)}.
     """
@@ -17790,8 +17791,11 @@ def _tk_eci(result, params):
                  + (hist if hist is not None else np.log(params["compute_growth"])))
     now = frontier[-1]['eci_score']
     cap = result["workflow_progress"]["capability_log"]
-    paths = now + ppy / base_rate * cap
     years = result["workflow_progress"]["years"]
+    # Today's trend is a floor: a scenario never runs behind it, so slower
+    # compute growth or a first model still in training never reads as
+    # capability going backwards against the trend.
+    paths = np.maximum(now + ppy / base_rate * cap, now + ppy * years[None, :])
     rsi = result["events"]["RSI"]
     idx = np.clip(np.searchsorted(years, rsi, side="right") - 1, 0, len(years) - 1)
     at_rsi = np.where(np.isfinite(rsi) & (rsi <= years[-1]),
@@ -18087,10 +18091,6 @@ def render_takeoff():
                    "parallelization exponent divided by r.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
-            number("Ceiling on AI research judgment (\u00d7 today)", "taste_cap", 1.0, 1000.0, 1.0,
-                   "AI judgment grows with capability up to this multiple of today's "
-                   "research quality, and applies only to the share of research "
-                   "direction AI does; people still directing keep today's judgment.")
             st.checkbox("Use the Data Centers tab's compute projection", key="tk_dc_compute",
                         help="Each scenario's compute grows at the average rate of one "
                              "sampled US largest-training-run trajectory from the Data "
@@ -18384,8 +18384,8 @@ def render_takeoff():
 
     st.subheader("3. What it does to capability (ECI)")
     _fn_caption(
-        "Each scenario's model capability, read as Epoch's ECI. The dashed line "
-        "is today's ECI trend continued; the gap above it is the takeoff.",
+        "Each scenario's model capability, read as Epoch's ECI, never below "
+        "today's trend continued (dashed); the gap above it is the takeoff.",
         ("read as Epoch's ECI",
          f"The ECI frontier has climbed {eci['ppy']:.1f} points a year; today's "
          "modeled capability growth is mapped to exactly that, so any faster "

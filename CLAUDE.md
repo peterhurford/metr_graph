@@ -46,7 +46,7 @@ Thirteen-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v9-direction-rsi`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v10-uncapped-taste`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -87,11 +87,11 @@ difficulty = parallelization / r. The pace-factor chart (`_tk_factors_fig`) is c
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
 The sidebar leads with the five parameters a one-at-a-time sweep found move
-superintelligence 9–19 months (ρ, r, parallelization, judgment ceiling, data-center
-compute); the rest sit in one *Advanced* expander. Retarget that grouping if a rerun of
+superintelligence 9–19 months (ρ, r, parallelization, data-center compute; the judgment
+ceiling was the fifth, since removed); the rest sit in one *Advanced* expander. Retarget that grouping if a rerun of
 the sweep reorders them.
-v8 gates AI judgment by the direction stage's human share and caps it (`taste_cap`,
-`test_ai_judgment_only_counts_where_ai_directs_research`). Superintelligence is the first
+AI judgment is gated by the direction stage's human share, uncapped
+(`test_ai_judgment_only_counts_where_ai_directs_research`). Superintelligence is the first
 month a draw's ECI reaches `_TK_ASI_ECI` (290). ECI at RSI is fixed by construction:
 human hours depend only on capability, so RSI is a capability threshold.
 `tk_dc_compute` (default on) feeds compute growth from the Data Centers tab:

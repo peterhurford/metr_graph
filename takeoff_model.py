@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v9-direction-rsi"
+MODEL_VERSION = "takeoff-v10-uncapped-taste"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -47,10 +47,6 @@ DEFAULTS = {
     # Share of the non-AI input growth that would hold today's pace with AI
     # frozen (researchers, spending); 0 leaves compute the only growing input.
     "baseline_inputs": 100.0,
-    # Ceiling on AI research judgment, as a multiple of today's research
-    # quality. Judgment applies only to the share of research direction AI
-    # does, so it takes over as people leave the direction stage.
-    "taste_cap": 10.0,
 }
 PRESETS = {
     "Central": {},
@@ -103,7 +99,7 @@ def validate(params):
             or p["rsi_trend_months"] <= 0:
         raise ValueError("RSI trend weights must be percentages and their half-life positive.")
     if not -5 <= p["substitution"] <= 0.9 or p["ai_speed"] < 1 \
-            or not 0 <= p["baseline_inputs"] <= 200 or p["taste_cap"] < 1:
+            or not 0 <= p["baseline_inputs"] <= 200:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
                          "baseline input growth in [0, 200]%.")
     return p
@@ -391,10 +387,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         if transfer:
             coding_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
                                      np.log(transfer) + coding_gain)
-            ai_taste_log = np.minimum(np.logaddexp(
-                np.log1p(-transfer) if transfer < 1 else -np.inf,
-                np.log(transfer) + taste_slope * effective), np.log(p["taste_cap"]))
-            quality_log = np.log(direction + (1 - direction) * np.exp(ai_taste_log))
+            ai_taste_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
+                                        np.log(transfer) + taste_slope * effective)
+            with np.errstate(divide="ignore"):   # a share of 0 or 1 drops a term
+                quality_log = np.logaddexp(np.log(direction),
+                                           np.log1p(-direction) + ai_taste_log)
             automation_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
                                           np.log(transfer) + amdahl_log)
         else:

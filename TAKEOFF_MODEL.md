@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v9-direction-rsi`. Work remains on `codex/grounded-takeoff`;
+Version: `takeoff-v10-uncapped-taste`. Work remains on `codex/grounded-takeoff`;
 checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
@@ -46,12 +46,10 @@ fitted trend) averaged over a fixed five years, whatever the chart horizon. Off,
 flat `compute_growth`.
 
 Research judgment is gated by who directs research: people still in the direction stage
-keep today's judgment, and AI judgment (rising with capability, capped at `taste_cap`,
-default 10x today) applies to the rest, so quality = h_dir + (1 - h_dir) x AI judgment.
-Uncapped, judgment compounding with capability was the takeoff engine whether or not
-people had left; gated and capped it peaks around RSI, and with r = 1 the pace then
-drifts back toward the input-growth rate, as semi-endogenous growth predicts for a level
-gain.
+keep today's judgment, and AI judgment (rising with capability, uncapped) applies to the
+rest, so quality = h_dir + (1 - h_dir) x AI judgment. Ungated, judgment compounding with
+capability drove takeoff whether or not people had left; gated, it takes over as
+research direction is handed off, which is RSI.
 
 Difficulty is set from the returns to research r (the tab's control, default 1.0, the
 revised Forethought central estimate): difficulty = parallelization / r, the
