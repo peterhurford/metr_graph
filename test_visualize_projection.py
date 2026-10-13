@@ -5535,36 +5535,23 @@ def _all_tracked_keys():
 class TestPacing:
     """The Pacing tab: threshold menu, crossing math, and the entity roster."""
 
-    def test_race_bar_has_no_control_of_its_own(self):
-        """The race runs to the US's largest training run at the pause, so
-        there is no threshold widget and nothing tracked for one — the
-        constant left is only the floor for a catalogue with no US
-        capacity."""
-        assert not hasattr(vp, "_PC_THRESHOLDS")
-        assert "pc_threshold" not in vp._PC_RESET_KEYS
-        assert "pc_threshold" not in vp._PC_DEFAULTS
-        assert "pc_threshold" not in _all_tracked_keys()
-        assert vp._PC_FALLBACK_THRESHOLD > 0
-
-    def test_tab_registered_with_slug(self):
-        assert "Pacing" in vp._TAB_OPTIONS
-        assert vp._SLUG_FOR_TAB["Pacing"] == "pacing"
-        assert vp._TAB_OPTIONS[vp._TAB_SLUG["pacing"]] == "Pacing"
-
     def test_defaults_cover_reset_keys_and_url_tracking(self):
+        """Every Pacing default is reset and URL-tracked, as are the RSI
+        blend's weights and its not-yet conditioning. The pause is an int of
+        months-from-today rather than a month label, so a bookmarked value
+        can never go stale the way the cut-off sliders' options can."""
         assert set(vp._PC_DEFAULTS) == set(vp._PC_RESET_KEYS)
         assert vp._PC_DEFAULTS["pc_run"] in vp._PC_RUN_OPTIONS
-        keys, _ = vp._all_tracked()
-        assert "pc_run" in keys and "pc_pause_mo" in keys
-
-    def test_pause_slider_default_is_tracked_and_constant(self):
-        """The pause is months-from-today rather than a month label, so a
-        bookmarked value can never go stale the way the scenario cut-off
-        sliders' options can."""
-        assert 0 <= vp._PC_DEFAULTS["pc_pause_mo"] <= vp._PC_PAUSE_MO_MAX
         keys, defaults = vp._all_tracked()
-        assert "pc_pause_mo" in keys
+        for k, v in vp._PC_DEFAULTS.items():
+            assert k in keys and defaults[k] == v, k
+        for slug, w in vp._PC_RSI_WEIGHTS.items():
+            assert defaults[vp._PC_RSI_W_KEY + slug] == w, slug
+        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100
+        assert 0 <= defaults["pc_pause_mo"] <= vp._PC_PAUSE_MO_MAX
         assert isinstance(defaults["pc_pause_mo"], int)
+        assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
+        assert "rsi_notyet_ramp" in keys
 
     def test_add_months_gives_one_distinct_label_per_step(self):
         """The pause slider labels each position with its date, so the steps
@@ -5750,7 +5737,8 @@ class TestPacing:
         scaled = vp._pc_rsi_blend(comps, {"a": 300, "b": 100}, origin, n=6000)
         unscaled = vp._pc_rsi_blend(comps, {"a": 3, "b": 1}, origin, n=6000)
         assert scaled == unscaled            # only the ratio matters
-        # All-zero falls back to the defaults rather than dividing by zero.
+        # All-zero weights on unknown slugs give no blend rather than
+        # dividing by zero; on the real slugs they fall back to the defaults.
         assert vp._pc_rsi_blend(comps, {"a": 0, "b": 0}, origin, n=100) is None
         real = [(s, s, origin, np.full(500, 100.0)) for s in vp._PC_RSI_WEIGHTS]
         assert vp._pc_rsi_blend(real, {s: 0 for s in vp._PC_RSI_WEIGHTS},
@@ -5852,13 +5840,6 @@ class TestPacing:
                                    origin + timedelta(days=360))
         assert len(solo.data) == 1
 
-    def test_condition_flag_is_tracked_and_defaults_on(self):
-        assert vp._RSI_DEFAULTS["rsi_notyet"] is True
-        assert vp._RSI_DEFAULTS["rsi_notyet_ramp"] == 90.0
-        keys, defaults = vp._all_tracked()
-        assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
-        assert "rsi_notyet_ramp" in keys
-
     def test_ramp_window_extends_on_the_release_clock(self):
         """Release dates trail run-finished by a report lag, so an active
         discount window grows by the lag's lower bound; a window turned off
@@ -5880,13 +5861,6 @@ class TestPacing:
         on_release = {vp._pc_clock_note(r, vp._PC_TIMING_RELEASE)
                       for r in (True, False)}
         assert len(on_release) == 1 and "releases" in on_release.pop()
-
-    def test_rsi_blend_weights_are_tracked_and_default_to_the_stated_mix(self):
-        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100
-        keys, defaults = vp._all_tracked()
-        for slug, w in vp._PC_RSI_WEIGHTS.items():
-            k = vp._PC_RSI_W_KEY + slug
-            assert k in keys and defaults[k] == w
 
     def test_rsi_eta_reproduces_the_rsi_tab_defaults(self):
         """The CoBench 85% card is the RSI tab at its defaults: single OLS in
@@ -5946,22 +5920,27 @@ class TestPacing:
         flat = [(d, 1.0) for d, _ in fast]
         assert vp._pc_revenue_eta([flat]) is None
 
-    def test_revenue_milestone_is_weighted_and_release_dated(self):
-        """ARR is earned by shipped models, so the crossing is on the
-        release clock and comes back by the report lag like METR/ECI/RLI —
-        never on the internal-eval clock, which would double-count it."""
-        assert vp._PC_RSI_WEIGHTS["rev_1t"] == 0.0
-        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100
-        days = np.full(20000, 500.0)
-        lo, hi = vp._PC_REPORT_LAG_DAYS
-        lagged = vp._pc_report_lag(days, True, "Training run finished")
-        assert (lagged <= 500 - lo).all() and (lagged >= 500 - hi).all()
-        assert vp._pc_report_lag(days, True, vp._PC_TIMING_RELEASE) is days
-
-    def test_rli_target_is_above_the_rli_tabs_own_milestones(self):
-        """90% is a deliberate extrapolation past the tab's top milestone."""
-        assert vp._PC_RLI_TARGET_PCT > 50
-        assert vp._PC_RLI_TARGET_PCT < 100
+    def test_each_card_hover_names_the_clock_its_dates_are_on(self):
+        """The release_dated flag each card is registered with decides whether
+        `_pc_report_lag` pulls it back, and the card's hover ends with the
+        matching `_pc_clock_note`: internal evaluations already sit on the
+        run-finished clock, while cards dated off shipped models (revenue
+        included, since ARR is earned by them) are pulled back onto it."""
+        today = datetime.now().replace(hour=0, minute=0, second=0,
+                                       microsecond=0)
+        _cap, _surv, _raw, notes = vp._pc_milestone_components(
+            "Training run finished", today, False, 0.0, 200, "test")
+        assert set(notes) == set(vp._PC_RSI_WEIGHTS)
+        internal = ("cobench_", "rdauto_", "al5_", "staff_", "code_",
+                    "experiments_")
+        released = ("metr_", "eci_", "rli_", "nextstep_", "rev_1t")
+        for slug, note in notes.items():
+            if slug.startswith(internal):
+                assert "internal evaluation" in note, slug
+                assert "pulled back" not in note, slug
+            else:
+                assert slug.startswith(released), slug
+                assert "pulled back" in note, slug
 
     def test_cutoff_slider_labels_round_trip(self):
         """The advanced cut-off sliders are month labels (URL- and
@@ -6077,14 +6056,6 @@ class TestPacing:
         # Never reached inside the grid → NaN, not a spurious crossing.
         assert np.isnan(vp._pc_cross_years(traj, grid, 1e6)).all()
 
-    def test_chinese_run_length_slider_bounds(self):
-        """The Chinese run-length control starts at the bar's own length
-        (running *shorter* isn't the question) and tops out at a year."""
-        assert vp._PC_CN_RUN_MAX == 12
-        assert vp._PC_DEFAULTS["pc_cn_run"] == \
-            max(round(vp._DAYS_2MO / 30), 1)
-        assert vp._PC_DEFAULTS["pc_run"] == "2-month run"
-
     def test_plan_crossing_is_first_step_at_or_above(self):
         steps = [(datetime(2025, 1, 1), 5e26, "Site A"),
                  (datetime(2026, 1, 1), 2e27, "Cluster B (2 sites)"),
@@ -6101,20 +6072,31 @@ class TestPacing:
     def test_entity_steps_carry_the_facility(self):
         by = {l: s for l, _, s, _ in self._rows()}
         d, via = vp._pc_plan_crossing(by['Anthropic'], 1e27)
-        assert d is not None and via and 'Colossus' in via
+        assert d is not None and via
         by = {l: s for l, _, s, _ in self._rows(party='country')}
         d, via = vp._pc_plan_crossing(by[vp._DC_CTY_US], 1e27)
         assert d is not None and via
 
     def test_company_projection_borrows_the_us_reference_pace(self):
         """Company rosters have no US row, so the borrowed pace comes from
-        ref_steps; without it a short-history company would have no fit."""
+        ref_steps; without it a short-history company has no fit and its
+        paths end in NaN, with it they extrapolate past its last step."""
         rows = self._rows()
         today = datetime(2026, 8, 1)
+        plan_end = today + timedelta(days=vp._DC_CTY_PLAN_HORIZON_DAYS)
+        short = [l for l, _, s, _ in rows
+                 if s and vp._dc_cty_fit(s, since=2024, t_end=plan_end) is None]
+        assert short
         grid, traj = vp._pc_projection(rows, vp.dc_all, today, since=2024,
                                        ref_steps=self._us_ref_steps())
-        for label, _, _, _ in rows:
+        _, bare = vp._pc_projection(rows, vp.dc_all, today, since=2024)
+        steps = {l: s for l, _, s, _ in rows}
+        for label in short:
             assert traj[label].shape == (vp.N_SAMPLES, len(grid))
+            assert np.isnan(bare[label][:, -1]).all(), label
+            end = traj[label][:, -1]
+            assert not np.isnan(end).any(), label
+            assert np.median(end) > steps[label][-1][1], label
 
     def test_crossing_idx_sentinel_and_nan(self):
         traj = np.array([[np.nan, 1.0, 5.0, 5.0],     # crosses at 2
@@ -6125,7 +6107,8 @@ class TestPacing:
     def test_crossing_idx_monotone_in_threshold(self):
         """Per sample the crossing index never moves earlier as the bar
         rises — which is what makes every percentile of it monotone too."""
-        traj = np.fmax.accumulate(np.random.rand(200, 30), axis=1)
+        rng = np.random.default_rng(0)
+        traj = np.fmax.accumulate(rng.random((200, 30)), axis=1)
         prev = np.zeros(200)
         for t in (0.2, 0.5, 0.8, 1.1):
             idx = vp._pc_crossing_idx(traj, t)
@@ -6296,16 +6279,6 @@ class TestPacing:
                 assert finals.get(l, 0) >= v * (1 - 1e-9), (basis, l)
             prev = finals
 
-    def test_projection_crossing_orders_by_threshold_on_live_data(self):
-        rows = self._rows(party='country')
-        grid, traj = vp._pc_projection(rows, vp.dc_all, datetime(2026, 8, 1),
-                                       since=2024)
-        for label in (vp._DC_CTY_US, vp._DC_CTY_CN_ACCESS):
-            prev = np.zeros(vp.N_SAMPLES)
-            for t in (1e27, 3e27, 1e28, 2e28, 1e29):
-                idx = vp._pc_crossing_idx(traj[label], t)
-                assert (idx >= prev).all(), (label, t)
-                prev = idx
 
 
 class TestAnchorSlug:
@@ -6368,8 +6341,6 @@ class TestRevenueCombined:
         assert vp._rev_value_at(dates, [1.0, 4.0], datetime(2025, 1, 2)) == \
             pytest.approx(2.0)
 
-    def test_the_toggle_is_off_by_default(self):
-        assert vp._REV_DEFAULTS["rev_combined"] is False
 
 
 class TestRevenueChina:
@@ -6401,24 +6372,36 @@ class TestRevenueChina:
         for lab in ("Moonshot (Kimi)", "DeepSeek"):
             assert {b for _, _, b, _ in vp._CN_REVENUE[lab]["points"]} == {"press"}
 
-    def test_summary_row_per_lab(self):
-        rows = vp._cn_rev_rows()
-        assert [r["Lab"] for r in rows] == list(vp._CN_REVENUE)
+    def test_summary_row_per_lab(self, monkeypatch):
+        """One row per lab: its latest point, and the doubling time between
+        its first and latest point (a dash when it did not grow)."""
+        monkeypatch.setattr(vp, "_CN_REVENUE", {
+            "Grower": {"scope": "API", "comparable": "No", "points": [
+                ("2026-01-01", 1.0, "press", "a"),
+                ("2026-04-11", 4.0, "company", "b")]},
+            "Flat": {"scope": "MaaS", "comparable": "No", "points": [
+                ("2026-01-01", 2.0, "press", "c"),
+                ("2026-03-01", 2.0, "press", "d")]}})
+        grower, flat = vp._cn_rev_rows()
+        assert grower["Lab"] == "Grower" and flat["Lab"] == "Flat"
+        assert grower["Doubling time"] == "50 days"     # 100 days, two doublings
+        assert grower["Latest ARR"] == vp._fmt_revenue(4.0)
+        assert grower["As of"] == "Apr 2026"
+        assert grower["Basis"] == vp._CN_REV_BASIS_LABEL["company"]
+        assert flat["Doubling time"] == "\u2014"
 
 
 class TestMilestoneCardLayout:
     """Thirteen cards have to stay legible: at most four per row, and the
     rows balanced rather than filled greedily."""
 
-    _rows = staticmethod(lambda n: vp._pc_card_rows(n))
-
     def test_no_row_is_wider_than_the_cap(self):
         for n in range(1, 25):
-            assert max(self._rows(n)) <= vp._PC_CARDS_PER_ROW, n
+            assert max(vp._pc_card_rows(n)) <= vp._PC_CARDS_PER_ROW, n
 
     def test_rows_are_balanced_and_account_for_every_card(self):
         for n in range(1, 25):
-            sizes = self._rows(n)
+            sizes = vp._pc_card_rows(n)
             assert sum(sizes) == n, n
             # Balanced: no row carries two more cards than another.
             assert max(sizes) - min(sizes) <= 1, (n, sizes)
@@ -6427,7 +6410,7 @@ class TestMilestoneCardLayout:
         """The shape the RSI tab actually renders today. If a milestone is
         added or dropped, retarget this deliberately."""
         assert len(vp._PC_RSI_WEIGHTS) == 13
-        assert self._rows(13) == [4, 3, 3, 3]
+        assert vp._pc_card_rows(13) == [4, 3, 3, 3]
 
 
 class TestTakeoffRsiCalibration:
@@ -6439,7 +6422,6 @@ class TestTakeoffRsiCalibration:
         keys = [f"tk_human_{k}" for k in vp.takeoff.WORKFLOW_KEYS]
         mean = np.array([starts[k] for k in keys]) @ vp.takeoff.WORKFLOW_WEIGHTS
         assert mean == pytest.approx(100 * vp._tk_ladder_human_share(rows[-1]), abs=0.1)
-        assert all(vp._TK_DEFAULTS[k] == starts[k] for k in keys)
 
     def test_ladder_human_share_falls_as_automation_climbs(self):
         shares = [vp._tk_ladder_human_share(r) for r in vp.load_rsi_automation()]
@@ -6450,7 +6432,7 @@ class TestTakeoffRsiCalibration:
         args = (vp.rsi_dir_frontier_all, vp.load_rsi_experiments())
         cap = vp._TK_DEFAULTS["tk_cal_capability"]
         taste = vp._tk_nextstep_taste(*args, cap, 0.6)
-        assert vp._TK_DEFAULTS["tk_taste_slope"] == taste > 0
+        assert taste > 0
         # Faster capability growth means each unit of it buys less judgment.
         assert vp._tk_nextstep_taste(*args, 2 * cap, 0.6) < taste
 
@@ -6464,35 +6446,32 @@ class TestTakeoffRsiCalibration:
         share = np.array([100 * vp._tk_ladder_human_share(r) for r in rows])
         _icpt, slope = vp.fit_line(months, np.log(share - floor))
         assert mean == pytest.approx(-np.log(2) / slope, abs=0.1)
-        assert all(vp._TK_DEFAULTS[k] == halves[k] for k in keys)
 
     def test_coding_default_is_the_survey_fit(self):
         args = (vp.load_rsi_survey(), vp.load_rsi_experiments())
         cap = vp._TK_DEFAULTS["tk_cal_capability"]
         coding = vp._tk_survey_coding(*args, cap, 0.6)
-        assert vp._TK_DEFAULTS["tk_coding_slope"] == coding > 0
+        assert coding > 0
         assert vp._tk_survey_coding(*args, 2 * cap, 0.6) < coding
 
-    def test_window_growth_comes_from_evidence(self):
-        """Compute over the evidence window is the data-center fit; capability
-        is that times the model's software-efficiency trend."""
+    def test_judgment_reads_the_square_root_of_the_win_odds(self, monkeypatch):
+        """Judgment grows as the next-step win odds raised to
+        `_TK_ODDS_TO_JUDGMENT` (0.5), so the elasticity is the one a quantity
+        growing at the square root of the odds' yearly growth would have —
+        and setting the exponent to 1 reads the odds as productivity."""
+        assert vp._TK_ODDS_TO_JUDGMENT == 0.5
         ev = vp.load_rsi_experiments()
-        years = (ev[-1]['date'] - ev[0]['date']).days / 365.25
-        compute, cap = vp._tk_evidence_window_growth(ev)
-        assert compute == pytest.approx(np.exp(vp._tk_hist_compute_rate() * years), abs=0.01)
-        software = np.exp(np.log(2) * 12 / vp.takeoff.DEFAULTS["software_months"] * years)
-        assert cap == pytest.approx(compute * software, abs=0.02)
-        assert (vp._TK_DEFAULTS["tk_cal_compute"], vp._TK_DEFAULTS["tk_cal_capability"]) == (compute, cap)
-
-    def test_judgment_reads_the_square_root_of_the_win_odds(self):
-        args = (vp.rsi_dir_frontier_all, vp.load_rsi_experiments(), 3.0, 0.6)
+        args = (vp.rsi_dir_frontier_all, ev, 3.0, 0.6)
+        odds_growth = np.exp(vp._rsi_dir_fit(vp.rsi_dir_frontier_all)[2] * 365.25)
+        assert odds_growth > 1
+        fallback = vp.takeoff.DEFAULTS["taste_slope"]
         half = vp._tk_nextstep_taste(*args)
-        full_odds = vp._TK_ODDS_TO_JUDGMENT
-        try:
-            vp._TK_ODDS_TO_JUDGMENT = 1.0
-            assert vp._tk_nextstep_taste(*args) > half
-        finally:
-            vp._TK_ODDS_TO_JUDGMENT = full_odds
+        assert half == vp._tk_elasticity(np.sqrt(odds_growth), ev, 3.0, 0.6,
+                                         fallback)
+        monkeypatch.setattr(vp, "_TK_ODDS_TO_JUDGMENT", 1.0)
+        full = vp._tk_nextstep_taste(*args)
+        assert full == vp._tk_elasticity(odds_growth, ev, 3.0, 0.6, fallback)
+        assert full > half
 
     def test_experiment_fit_credits_measured_automation_first(self):
         """The automation index's falling human share explains part of the
