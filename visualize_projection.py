@@ -17779,7 +17779,7 @@ def _tk_eci(result, params):
     Today's modeled capability growth (software doubling plus compute growth)
     is mapped to the ECI tab's own fitted frontier rate, so a scenario growing
     faster than today shows as faster ECI growth, floored at today's trend
-    continued. Returns {'now', 'ppy',
+    continued for `_TK_ECI_FLOOR_YEARS`. Returns {'now', 'ppy',
     'paths' (draws x months), 'at_rsi' (per draw, NaN if not reached),
     'frontier' (US-best frontier rows)}.
     """
@@ -17792,10 +17792,13 @@ def _tk_eci(result, params):
     now = frontier[-1]['eci_score']
     cap = result["workflow_progress"]["capability_log"]
     years = result["workflow_progress"]["years"]
-    # Today's trend is a floor: a scenario never runs behind it, so slower
-    # compute growth or a first model still in training never reads as
-    # capability going backwards against the trend.
-    paths = np.maximum(now + ppy / base_rate * cap, now + ppy * years[None, :])
+    # Today's trend is a floor for the first year only, covering the months
+    # before the next model ships; after that a scenario runs on its own
+    # dynamics, so one where research slows can fall behind the trend.
+    trend = now + ppy * years
+    paths = now + ppy / base_rate * cap
+    paths = np.where(years[None, :] <= _TK_ECI_FLOOR_YEARS,
+                     np.maximum(paths, trend[None, :]), paths)
     rsi = result["events"]["RSI"]
     idx = np.clip(np.searchsorted(years, rsi, side="right") - 1, 0, len(years) - 1)
     at_rsi = np.where(np.isfinite(rsi) & (rsi <= years[-1]),
@@ -17803,6 +17806,9 @@ def _tk_eci(result, params):
     return {"now": now, "ppy": ppy, "paths": paths, "at_rsi": at_rsi,
             "frontier": frontier, "asi": _tk_first_reach(paths, years, _TK_ASI_ECI)}
 
+
+# Years from today during which projected ECI is floored at today's trend.
+_TK_ECI_FLOOR_YEARS = 1.0
 
 # Superintelligence, as an ECI level each scenario's capability path must reach.
 _TK_ASI_ECI = 290.0
@@ -18384,14 +18390,15 @@ def render_takeoff():
 
     st.subheader("3. What it does to capability (ECI)")
     _fn_caption(
-        "Each scenario's model capability, read as Epoch's ECI, never below "
-        "today's trend continued (dashed); the gap above it is the takeoff.",
+        "Each scenario's model capability, read as Epoch's ECI, against today's "
+        "trend continued (dashed); the gap above it is the takeoff.",
         ("read as Epoch's ECI",
          f"The ECI frontier has climbed {eci['ppy']:.1f} points a year; today's "
          "modeled capability growth is mapped to exactly that, so any faster "
          "growth in a scenario reads as faster ECI growth. Capability is effective "
          "training compute (compute \u00d7 algorithmic efficiency) of the best "
-         "deployed model."))
+         "deployed model. For the first year it is floored at the trend, since "
+         "no new model has shipped yet."))
     st.plotly_chart(_tf(_tk_eci_fig(result, today, eci, markers)), width="stretch")
     at_rsi = eci["at_rsi"][np.isfinite(eci["at_rsi"])]
     if at_rsi.size:

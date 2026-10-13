@@ -1334,8 +1334,9 @@ class TestTakeoffTab:
                     if isinstance(y, dict) else np.asarray(y, dtype=float))
 
         traces = {d.get("name"): d for d in eci["data"]}
-        assert np.all(_ys(traces["Projected ECI: 10th percentile"])
-                      >= _ys(traces["Today's trend continued"]) - 1e-9)
+        first_year = slice(0, 13)        # monthly grid: today plus 12 months
+        assert np.all(_ys(traces["Projected ECI: 10th percentile"])[first_year]
+                      >= _ys(traces["Today's trend continued"])[first_year] - 1e-9)
         pace = json.loads(at.get("plotly_chart")[1].proto.spec)
         assert {"Modeled research pace", "If AI stopped improving today"} <= {
             d.get("name") for d in pace["data"]}
