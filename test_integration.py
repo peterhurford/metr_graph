@@ -1355,7 +1355,7 @@ class TestTakeoffTab:
         assert [(m.label, m.value) for m in at.metric] == before
         labels = [m.label for m in at.metric]
         assert labels[:3] == ["Full coding automation (RSI tab)",
-                              "RSI: every stage \u2264 5% human",
+                              "RSI: AI directs research",
                               "Superintelligence: ECI 290"]
         cis = [c.value for c in at.caption if c.value.startswith("80% CI: ")]
         assert len(cis) >= 3
@@ -1417,7 +1417,7 @@ class TestTakeoffTab:
         at = self._app()
         assert at.number_input(key="tk_full_human").value == 5.0
         assert any("2. People step out of the loop" in s.value for s in at.subheader)
-        rsi_label = "RSI: every stage \u2264 5% human"
+        rsi_label = "RSI: AI directs research"
         assert next(m.value for m in at.metric if m.label == rsi_label) != "Beyond horizon"
         at.number_input(key="tk_human_floor").set_value(6.0).run()
         _assert_no_error(at, "Takeoff / persistent human bottleneck")

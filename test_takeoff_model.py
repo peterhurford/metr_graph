@@ -122,15 +122,18 @@ def test_rsi_needs_low_human_work_and_the_coding_date():
     assert .5 <= later < .5 + 1 / 12
 
 
-def test_one_human_bottleneck_cannot_be_averaged_away():
-    """An average under the RSI bar does not count while one stage is above it."""
-    p = dict(years=0.1, uncertainty=0, human_floor=0.0, human_direction=0.0,
-             human_experiments=0.0, human_verification=9.0)
-    r = tk.simulate(p, n=1)
-    initial = r["outcomes"]["Today"]
-    assert initial["human_mean"][0] < tk.DEFAULTS["full_human"] / 100
-    assert initial["human_worst"][0] > tk.DEFAULTS["full_human"] / 100
-    assert np.isinf(r["events"]["RSI"][0])
+def test_rsi_turns_on_research_direction_alone():
+    """RSI is direction handed off: other stages still needing people do not
+    block it, and a low average does not count while direction is above it."""
+    base = dict(years=0.1, uncertainty=0, human_floor=0.0)
+    onset = np.array([0.0])
+    handed_off = tk.simulate(dict(base, human_direction=0.0, human_experiments=60.0,
+                                  human_verification=60.0), n=1, onset_years=onset)
+    assert handed_off["events"]["RSI"][0] == 0
+    still_human = tk.simulate(dict(base, human_direction=9.0, human_experiments=0.0,
+                                   human_verification=0.0), n=1, onset_years=onset)
+    assert still_human["outcomes"]["Today"]["human_mean"][0] < tk.DEFAULTS["full_human"] / 100
+    assert np.isinf(still_human["events"]["RSI"][0])
 
 
 def test_persistent_human_floor_above_the_bar_prevents_rsi():
@@ -277,19 +280,19 @@ def test_matched_stage_fit_uses_hours_not_intervention_incidence():
 def test_resource_growth_alone_creates_no_compute_matched_advantage():
     """Faster progress from compute alone is matched by the same-compute reference."""
     r = tk.simulate(dict(transfer=0, difficulty=0.0, compute_growth=5.0,
-                         uncertainty=0, years=5), n=1)
+                         uncertainty=0, years=5, baseline_inputs=0), n=1)
     assert r["progress_multiple"][0] > 1
     assert r["compute_matched_advantage"][0] == pytest.approx(1, rel=1e-4)
 
 
 def test_rsi_outcomes_meet_the_human_hours_bar():
-    """Every draw reaching RSI has every stage at or under the bar there."""
+    """Every draw reaching RSI has research direction at or under the bar there."""
     r = tk.simulate(n=100)
     observed = r["outcomes"]["RSI"]
     reached = np.isfinite(r["events"]["RSI"])
     assert reached.any()
-    assert np.all(observed["human_worst"][reached] <= tk.DEFAULTS["full_human"] / 100)
-    assert np.isnan(observed["human_worst"][~reached]).all()
+    assert np.all(observed["human_direction"][reached] <= tk.DEFAULTS["full_human"] / 100)
+    assert np.isnan(observed["human_direction"][~reached]).all()
 
 
 def test_capability_paths_span_the_grid_and_rsi_waits_for_coding():
@@ -309,7 +312,7 @@ def test_capability_paths_span_the_grid_and_rsi_waits_for_coding():
 
 def test_coding_automation_precedes_rsi_and_non_arrivals_are_retained():
     """RSI never precedes coding, and draws missing the horizon stay as +inf."""
-    r = tk.simulate(dict(tk.PRESETS["Bottlenecked"], years=2), n=200)
+    r = tk.simulate(dict(tk.PRESETS["Bottlenecked"], years=1), n=200)
     rsi = r["events"]["RSI"]
     assert np.all(r["onset"] <= rsi)
     assert np.isinf(rsi).mean() > .5

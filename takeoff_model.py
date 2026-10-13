@@ -11,14 +11,15 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v8-gated-taste"
+MODEL_VERSION = "takeoff-v9-direction-rsi"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
 WORKFLOW_KEYS = ("direction", "experiments", "verification")
 WORKFLOW_WEIGHTS = np.array([0.25, 0.5, 0.25])
-# RSI: every research stage needs at most `full_human`% of baseline human
-# hours, once coding is automated. Capability past it is read as ECI.
+# RSI: research direction (the stage that chooses what to try next) needs at
+# most `full_human`% of baseline human hours, once coding is automated.
+# Capability past it is read as ECI.
 MILESTONES = ("RSI",)
 DEFAULTS = {
     "onset_low": 6, "onset_high": 24, "years": 10, "seed": 20260906,
@@ -197,14 +198,16 @@ def reference_software(years, rate, compute_rate, parallel, initial_throughput, 
 
 
 def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None,
-             compute_rates=None):
+             compute_rates=None, historical_compute_rate=None):
     """Weekly research and successor cycles, with censored milestone draws.
 
-    RSI is the first time every research stage is at or under `full_human`%
-    of baseline human hours with the coding date arrived. Every draw runs to
-    the horizon (only a numerically divergent one stops), so its capability
-    path (`capability_log`) covers the whole window. `compute_rates`, one log
-    growth rate a year per draw, replaces `compute_growth` and its spread.
+    RSI is the first time research direction is at or under `full_human`% of
+    baseline human hours with the coding date arrived. Every draw runs to the
+    horizon (only a numerically divergent one stops), so its capability path
+    (`capability_log`) covers the whole window. `compute_rates`, one log
+    growth rate a year per draw, replaces `compute_growth` and its spread;
+    `historical_compute_rate` is the compute growth behind today's steady pace
+    (default: each draw's own rate).
 
     A run freezes its algorithm snapshot at its start, integrates allocated
     training compute during the run, then waits for validation before deployment.
@@ -257,13 +260,14 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     baseline_capability_rate = software_rate + compute_rate
     events = {name: np.full(n, np.inf) for name in MILESTONES}
     outcomes = {name: {key: np.full(n, np.nan) for key in
-                      ("human_mean", "human_worst", "progress_multiple",
-                       "compute_matched_advantage")}
+                      ("human_mean", "human_worst", "human_direction",
+                       "progress_multiple", "compute_matched_advantage")}
                 for name in ("Today", "Full coding automation") + MILESTONES}
 
     def record(name, mask, human, progress, advantage):
         for key, values in (("human_mean", human @ WORKFLOW_WEIGHTS),
                             ("human_worst", human.max(axis=1)),
+                            ("human_direction", human[:, 0]),
                             ("progress_multiple", progress),
                             ("compute_matched_advantage", advantage)):
             outcomes[name][key][mask] = values[mask]
@@ -271,7 +275,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     record("Today", np.ones(n, bool), starts, np.ones(n), np.ones(n))
     coding_recorded = onset <= 0
     record("Full coding automation", onset == 0, starts, np.ones(n), np.ones(n))
-    rsi0 = (onset <= 0) & (starts.max(axis=1) <= p["full_human"] / 100)
+    rsi0 = (onset <= 0) & (starts[:, 0] <= p["full_human"] / 100)
     events["RSI"][rsi0] = 0
     record("RSI", rsi0, starts, np.ones(n), np.ones(n))
     # Undeployed discoveries already in progress today. The matched reference
@@ -317,12 +321,17 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     rho = p["substitution"]
     initial_throughput = _ces((shares[2] / 0.2) ** parallel,
                               (shares[1] / 0.4) ** parallel, rho)
-    # Non-AI input growth that holds today's pace with AI frozen: the steady
-    # state of d(software)/dt = rate * pace with pace = inputs^parallel /
-    # exp(beta * software). Applied to both research inputs, never training.
-    extra_rate = p["baseline_inputs"] / 100 * np.maximum(
-        beta * software_rate * initial_throughput / parallel - compute_rate, 0)
-    input_rate = compute_rate + extra_rate
+    # Today's pace has held steady while compute grew at its historical rate.
+    # The other research inputs grow (or lag) by whatever holds that steady
+    # state, d(software)/dt = rate * pace with pace = inputs^parallel /
+    # exp(beta * software), so with AI frozen only a change in compute growth
+    # from its historical rate moves the pace. Never applied to training.
+    hist_rate = (compute_rate if historical_compute_rate is None
+                 else np.full(n, float(historical_compute_rate)))
+    extra_rate = p["baseline_inputs"] / 100 * (
+        beta * software_rate * initial_throughput / parallel - hist_rate)
+    input_rate = np.maximum(compute_rate + extra_rate, 0)
+    extra_rate = input_rate - compute_rate
     # Amdahl: AI labor on research speeds up as the human share h falls, by
     # (h0 + (1 - h0)/s) / (h + (1 - h)/s), normalized to today's share h0.
     ai_speed = p["ai_speed"]
@@ -488,7 +497,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         coding_hit = active & (end >= onset) & ~coding_recorded
         record("Full coding automation", coding_hit, human, delivered_rate, advantage)
         coding_recorded |= coding_hit
-        hit = (live & (end >= onset) & (human.max(axis=1) <= p["full_human"] / 100)
+        hit = (live & (end >= onset) & (human[:, 0] <= p["full_human"] / 100)
                & ~np.isfinite(events["RSI"]))
         events["RSI"][hit] = end[hit]
         record("RSI", hit, human, delivered_rate, advantage)

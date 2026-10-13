@@ -46,7 +46,7 @@ Thirteen-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v8-gated-taste`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v9-direction-rsi`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -61,7 +61,7 @@ This remains shared with the RSI tab. The display horizon does not clip its tail
 `_TK_LADDER_SLUGS` (the AL5 card) is zeroed in the coding blend by `_pc_rsi_onset` — the
 exact-CDF invariant is against the RSI blend with that weight at zero
 (`test_coding_automation_inherits_the_exact_final_rsi_cdf`). It still returns the AL5 dates
-as `ladder_years`; Takeoff ignores them. RSI is the first time every research stage is at
+as `ladder_years`; Takeoff ignores them. RSI is the first time research direction is at
 or under `full_human`% of baseline human hours with the coding date arrived
 (`test_capability_paths_span_the_grid_and_rsi_waits_for_coding`).
 
@@ -74,7 +74,8 @@ and an assumed existing undeployed backlog shared with the reference. Coding pro
 ramps to the inherited milestone; overlapping endogenous coding gains use a maximum rather
 than multiplying the two. Fast and successor improvements partition discoveries and each
 validate a start-of-cycle snapshot. A same-compute reference freezes today's AI skills.
-RSI gates on coding plus every stage under the human-hours bar. Research acceleration
+RSI gates on coding plus research direction under the human-hours bar
+(`test_rsi_turns_on_research_direction_alone`). Research acceleration
 has its own chart and 2×/5× first-crossing events. `_tk_eci` reads each draw's capability
 path as ECI, scaled so today's modeled growth equals the ECI frontier's fitted rate (not
 the ~3× smaller measured exchange rate); `_TK_ECI_VIEW_MAX` caps the chart's view.
@@ -83,6 +84,12 @@ falls (`ai_speed`), non-AI input growth holding the frozen-AI pace (`baseline_in
 steady-state pipeline, and an `r` control (`tk_returns`) from which the app sets
 difficulty = parallelization / r. The pace-factor chart (`_tk_factors_fig`) is capped at
 `_TK_FACTOR_VIEW`. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
+`baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
+series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
+The sidebar leads with the five parameters a one-at-a-time sweep found move
+superintelligence 9–19 months (ρ, r, parallelization, judgment ceiling, data-center
+compute); the rest sit in one *Advanced* expander. Retarget that grouping if a rerun of
+the sweep reorders them.
 v8 gates AI judgment by the direction stage's human share and caps it (`taste_cap`,
 `test_ai_judgment_only_counts_where_ai_directs_research`). Superintelligence is the first
 month a draw's ECI reaches `_TK_ASI_ECI` (290). ECI at RSI is fixed by construction:

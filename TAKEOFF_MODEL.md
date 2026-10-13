@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v8-gated-taste`. Work remains on `codex/grounded-takeoff`;
+Version: `takeoff-v9-direction-rsi`. Work remains on `codex/grounded-takeoff`;
 checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
@@ -55,9 +55,13 @@ gain.
 Difficulty is set from the returns to research r (the tab's control, default 1.0, the
 revised Forethought central estimate): difficulty = parallelization / r, the
 semi-endogenous relation in which each doubling of cumulative effort buys r doublings of
-efficiency. Non-AI inputs (researchers, spending) grow at `baseline_inputs`% of the rate
-that holds today's pace with AI frozen, as the past trend has; at 100% the same-compute
-reference stays at today's pace instead of decaying.
+efficiency. Today's pace has held steady while compute grew at its historical rate (the
+data-center series' own fit, 3.1x/yr), so the other research inputs are set to whatever
+growth or lag reproduces that steady state (`baseline_inputs`% of it): with AI frozen,
+only a projected change in compute growth moves the pace. This settles the tension
+between fast historical compute growth and a steady trend by calibration; it cannot say
+whether the gap is experiment compute growing slower than frontier runs or a weaker
+compute-to-progress link.
 
 Discoveries are measured in log fixed-quality algorithmic efficiency. By default, 25%
 can be delivered through fast improvements (tooling, kernels, and small updates) and 75%
@@ -99,8 +103,8 @@ cumulative series. Table crossings refer to 2×/5× 2025 production pace. The in
 three-month delivered-rate and actual/reference diagnostics remain available for model
 analysis and validated milestone definitions; they are not the chart's ongoing pace.
 
-**RSI** is the first time every research stage needs at most 5% of its baseline human
-hours, with the coding date arrived. Human hours are a readout, not an input: they never
+**RSI** is the first time research direction (the stage that chooses what to try next)
+needs at most 5% of its baseline human hours, with the coding date arrived. Human hours are a readout, not an input: they never
 feed back into research speed. Every draw runs to the horizon (only a numerically
 divergent one stops), so its capability path continues past RSI.
 The stages are direction, experiment design/interpretation, and verification/integration.

@@ -17891,7 +17891,7 @@ def _tk_humans_fig(result, today, ladder=None):
             hovertemplate="%{x|%b %Y}<br>%{y:.0f}%<extra>" + name + "</extra>"))
     full_human = result["params"]["full_human"]
     fig.add_hline(y=full_human, line_dash="dash", line_color="#777",
-                  annotation_text=f"RSI: every stage at or under {full_human:g}%",
+                  annotation_text=f"RSI: research direction at or under {full_human:g}%",
                   annotation_position="top right")
     if ladder:
         fig.add_trace(go.Scatter(
@@ -17982,10 +17982,11 @@ def _tk_rsi_activity(rows, today, n):
 
 @st.cache_data(show_spinner=False, max_entries=12)
 def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, experiment_slopes,
-                 baseline_yield=1.0, compute_rates=None):
+                 baseline_yield=1.0, compute_rates=None, historical_compute_rate=None):
     # The source digest invalidates results when the imported simulator changes.
     result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
-                             experiment_slopes=experiment_slopes, compute_rates=compute_rates)
+                             experiment_slopes=experiment_slopes, compute_rates=compute_rates,
+                             historical_compute_rate=historical_compute_rate)
     grid = result["workflow_progress"]["years"]
     paths = np.exp(experiment_starts[:, None] + experiment_slopes[:, None] * grid)
     result["workflow_progress"]["rsi_activity_quantiles"] = np.quantile(
@@ -18062,7 +18063,50 @@ def render_takeoff():
         st.caption("Coding automation inherits the final RSI projection. "
                    "Adjust its weights and timing on the RSI tab.")
         number("Project through (year end)", "end_year", datetime.now().year, 2050, 1)
-        with st.expander("Feedback starting today", expanded=True):
+        with st.expander("What decides superintelligence", expanded=True):
+            st.caption("Each moves the superintelligence date by 9\u201319 months "
+                       "across its plausible range; everything under Advanced moves "
+                       "it 4 months or less.")
+            number("Labor\u2013compute substitutability (\u03c1)", "substitution", -3.0, 0.5, 0.1,
+                   "How research labor and experiment compute combine (CES exponent). "
+                   "\u22121 is a harmonic mean, where unlimited labor at most doubles "
+                   "output; 0 lets either fully make up for the other. Contested: "
+                   "compute-bottleneck views sit near \u22121, views where AI "
+                   "economizes on experiments nearer 0.")
+            number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
+                   "How many doublings of algorithmic efficiency each doubling of "
+                   "cumulative research effort buys; below 1 ideas get harder faster "
+                   "than effort grows. Default 1.0 is Forethought's revised central "
+                   "estimate (range 0.33\u20133); Davidson & Houlden's was 1\u20134, or "
+                   "0.5\u20132 with hardware fixed. Sets research difficulty as the "
+                   "parallelization exponent divided by r.")
+            number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
+                   "0.5 gives square-root returns to more coding labor or experiment compute.")
+            number("Ceiling on AI research judgment (\u00d7 today)", "taste_cap", 1.0, 1000.0, 1.0,
+                   "AI judgment grows with capability up to this multiple of today's "
+                   "research quality, and applies only to the share of research "
+                   "direction AI does; people still directing keep today's judgment.")
+            st.checkbox("Use the Data Centers tab's compute projection", key="tk_dc_compute",
+                        help="Each scenario's compute grows at the average rate of one "
+                             "sampled US largest-training-run trajectory from the Data "
+                             "Centers tab (planned sites under slip, then the fitted "
+                             "trend) from today to the horizon. Off: the flat rate below.")
+            number("Compute growth per year (×)", "compute_growth", 1.0, 5.0, 0.1,
+                   "Used when the data-center projection is off.")
+        with st.expander("What decides RSI"):
+            number("Human work at RSI (%)", "full_human", 0.0, 25.0, 1.0,
+                   "RSI is when research direction (choosing what to try next) falls "
+                   "to this share of its baseline human hours, after coding is "
+                   "automated.")
+            st.caption("RSI otherwise follows the coding-automation date, and research "
+                       "direction's starting share and halving time under Advanced.")
+        with st.expander("Advanced (small effects)"):
+            number("Research pace today (× 2025)", "pace_today", 0.5, 5.0, 0.1,
+                   "Where chart 1 starts: how much faster useful research is today than "
+                   "in 2025. The default is an assumption, not a measurement. "
+                   "Scenarios keep their spread around it. This sets the chart's units "
+                   "and the 2×/5× dates, not the simulated dynamics or automation dates.")
+            st.markdown("**Feedback starting today**")
             number("Undeployed research today (months of baseline progress)",
                    "pipeline_months", 0.0, 12.0, 0.5,
                    "Assumed backlog of useful discoveries awaiting fast validation or "
@@ -18079,12 +18123,8 @@ def render_takeoff():
             number("Fast validation cycle (months)", "fast_months", 0.25, 12.0, 0.25,
                    "Each cycle validates discoveries available at its start. Like successor "
                    "training, unfinished work cannot improve the available research system.")
-        with st.expander("Evidence calibration"):
-            number("Research pace today (× 2025)", "pace_today", 0.5, 5.0, 0.1,
-                   "Where chart 1 starts: how much faster useful research is today than "
-                   "in 2025. The default is an assumption, not a measurement. "
-                   "Scenarios keep their spread around it. This sets the chart's units "
-                   "and the 2×/5× dates, not the simulated dynamics or automation dates.")
+            st.markdown("**Evidence calibration**")
+            
             number("Weight on inherited RSI activity trend (%)", "rsi_trend_weight", 0.0, 100.0, 5.0,
                    "Blend the RSI experiment projection with modeled research effort. "
                    "These are alternative estimates, not multiplicative gains. Zero keeps "
@@ -18121,11 +18161,8 @@ def render_takeoff():
                           on_click=_tk_fit_workflow, args=(key,))
             if st.session_state.get("_tk_fit_message"):
                 st.caption(st.session_state["_tk_fit_message"])
-        with st.expander("Human work", expanded=True):
-            number("Human work at RSI (%)", "full_human", 0.0, 25.0, 1.0,
-                   "RSI is when every research stage falls to this share of its baseline "
-                   "human hours, after coding is automated. A strong average cannot hide "
-                   "a bottleneck.")
+            st.markdown("**Human work**")
+            
             for stage, key in zip(takeoff.WORKFLOW_STAGES, takeoff.WORKFLOW_KEYS):
                 number(f"{stage}: human work today (%)", "human_" + key, 0.0, 100.0, 5.0,
                        "Default set from the RSI tab's R&D automation index: its latest "
@@ -18137,12 +18174,12 @@ def render_takeoff():
                        "Default: the R&D automation index's past-year halving, spread "
                        "across stages in an assumed pattern.")
             number("Persistent human-work floor (%)", "human_floor", 0.0, 25.0, 1.0)
-        with st.expander("Validated research progress"):
+            st.markdown("**Validated research progress**")
             number("Baseline software doubling time (months)", "software_months", 3.0, 60.0, 1.0,
                    "Validated algorithmic progress today, measured as training "
                    "compute saved at fixed quality, at the reference 40/40/20 compute split. "
                    "Includes AI assistance already present today; it is not multiplied in again.")
-        with st.expander("Research feedback"):
+            st.markdown("**Research feedback**")
             number("Research-quality elasticity prior", "taste_slope", 0.0, 2.0, 0.1,
                    "Research quality scales as capability raised to this power. The "
                    "default is fitted from the RSI tab's next-step study: its win odds "
@@ -18153,23 +18190,9 @@ def render_takeoff():
             number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
                    "Discounts coding and judgment gains beyond today. Zero removes "
                    "AI feedback; baseline research and compute can still improve models.")
-            number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
-                   "How many doublings of algorithmic efficiency each doubling of "
-                   "cumulative research effort buys; below 1 ideas get harder faster "
-                   "than effort grows. Default 1.0 is Forethought's revised central "
-                   "estimate (range 0.33\u20133); Davidson & Houlden's was 1\u20134, or "
-                   "0.5\u20132 with hardware fixed. Sets research difficulty as the "
-                   "parallelization exponent divided by r.")
-            number("Labor\u2013compute substitutability (\u03c1)", "substitution", -3.0, 0.5, 0.1,
-                   "How research labor and experiment compute combine (CES exponent). "
-                   "\u22121 is a harmonic mean, where unlimited labor at most doubles "
-                   "output; 0 lets either fully make up for the other. Contested: "
-                   "compute-bottleneck views sit near \u22121, views where AI "
-                   "economizes on experiments nearer 0.")
-            number("Ceiling on AI research judgment (\u00d7 today)", "taste_cap", 1.0, 1000.0, 1.0,
-                   "AI judgment grows with capability up to this multiple of today's "
-                   "research quality, and applies only to the share of research "
-                   "direction AI does; people still directing keep today's judgment.")
+            
+            
+            
             number("AI speed on automated work (\u00d7)", "ai_speed", 1.0, 1000.0, 5.0,
                    "How much faster AI does the research work it has taken over. As "
                    "the human share h falls, research labor speeds up by "
@@ -18179,16 +18202,10 @@ def render_takeoff():
                    "Growth in researchers and spending. 100% is the growth that would "
                    "hold today's research pace with AI frozen, as the past trend has; "
                    "0 leaves compute as the only growing input.")
-            number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
-                   "0.5 gives square-root returns to more coding labor or experiment compute.")
-        with st.expander("Compute and successor cycles"):
-            st.checkbox("Use the Data Centers tab's compute projection", key="tk_dc_compute",
-                        help="Each scenario's compute grows at the average rate of one "
-                             "sampled US largest-training-run trajectory from the Data "
-                             "Centers tab (planned sites under slip, then the fitted "
-                             "trend) from today to the horizon. Off: the flat rate below.")
-            number("Compute growth per year (×)", "compute_growth", 1.0, 5.0, 0.1,
-                   "Used when the data-center projection is off.")
+            
+            st.markdown("**Compute and successor cycles**")
+            
+            
             number("Training duration (months)", "training_months", 0.5, 12.0, 0.5)
             number("Validation and deployment delay (months)", "validation_months", 0.0, 12.0, 0.5)
             number("Compute for training (%)", "training_share", 5, 90, 5)
@@ -18196,7 +18213,7 @@ def render_takeoff():
             agents = 100 - st.session_state["tk_training_share"] \
                 - st.session_state["tk_experiment_share"]
             st.caption(f"Remaining compute for agents: {agents}%.")
-        with st.expander("Uncertainty"):
+            st.markdown("**Uncertainty**")
             number("Parameter uncertainty (%)", "uncertainty", 0, 100, 5,
                    "Independent bounded log-space variation around research rates, compute "
                    "growth, cycle times, workflow human hours, workflow learning rates, "
@@ -18269,7 +18286,8 @@ def render_takeoff():
           if st.session_state["tk_dc_compute"] else None)
     compute_rates, hist_compute = dc if dc else (None, None)
     result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
-                          experiment_starts, experiment_slopes, pace_yield, compute_rates)
+                          experiment_starts, experiment_slopes, pace_yield, compute_rates,
+                          hist_compute)
     # The ECI trend reflects the compute growth behind it: the data-center
     # series' own historical fit when its projection is in use.
     result["hist_compute"] = hist_compute
@@ -18292,9 +18310,9 @@ def render_takeoff():
     a, b, c = st.columns(3)
     _card(a, "Full coding automation (RSI tab)", result["onset"],
           "The RSI tab's blend, AL5 card excluded.")
-    _card(b, "RSI: every stage \u2264 " f"{params['full_human']:g}% human", rsi,
-          "Every research stage at or under the human-hours bar, after coding "
-          "automation.")
+    _card(b, "RSI: AI directs research", rsi,
+          f"Research direction at or under {params['full_human']:g}% of its baseline "
+          "human hours, after coding automation: the AI chooses what to try next.")
     _card(c, f"Superintelligence: ECI {_TK_ASI_ECI:g}", eci["asi"],
           f"First month a scenario's ECI reaches {_TK_ASI_ECI:g} (today's frontier: "
           f"{eci['now']:.0f}).")
@@ -18350,8 +18368,8 @@ def render_takeoff():
 
     st.subheader("2. People step out of the loop")
     _fn_caption(
-        "RSI is when every stage is under the bar, after coding is automated.",
-        ("every stage is under the bar",
+        "RSI is when research direction is under the bar, after coding is automated.",
+        ("research direction is under the bar",
          "Checked per scenario, not on the medians. How fast human hours fall "
          "with capability is calibrated on the automation index, but the split "
          "across stages is assumed."))
@@ -18405,8 +18423,7 @@ def render_takeoff():
         st.caption("Medians among scenarios reaching each milestone by the calendar horizon. "
                    "Human hours are relative to comparable baseline projects, not a staffing "
                    "forecast. The average weights direction, experiments, "
-                   "and verification 25/50/25; the automation trigger checks every stage "
-                   "separately. Progress "
+                   "and verification 25/50/25; RSI checks direction alone. Progress "
                    "counts efficiency gains at fixed quality, after fast validation or successor "
                    "deployment. Historical coding dates have no reconstructed outcome measurements. "
                    "These are simulated outcomes, not observed measurements.")
@@ -18422,11 +18439,11 @@ def render_takeoff():
 
     with st.expander("What triggers RSI?"):
         st.markdown(
-            "The inherited coding date must have arrived, and every research stage "
-            f"(direction, experiment design and interpretation, verification and "
-            f"integration) must need **at most {params['full_human']:g}% of its baseline "
-            "human hours**, in the same scenario. An easy stage cannot make up for a "
-            "bottleneck elsewhere, and a floor above the bar rules RSI out.")
+            "The inherited coding date must have arrived, and research direction, "
+            "the stage that chooses what to try next, must need **at most "
+            f"{params['full_human']:g}% of its baseline human hours**. Experiment work "
+            "and verification can still involve people; a floor above the bar rules "
+            "RSI out.")
     with st.expander("Evidence used and remaining assumptions", expanded=True):
         st.write(f"OpenAI experiments per researcher: {evidence[0]['mult']:.2f}× on "
                  f"{evidence[0]['date']:%b %d, %Y} → {evidence[-1]['mult']:.2f}× on "
@@ -18476,7 +18493,7 @@ def render_takeoff():
             "improvements → better tools and successors → faster research. Humans may "
             "remain involved throughout this feedback loop.\n\n"
             "**Milestones.** Coding automation is inherited from the RSI tab. RSI is "
-            "low human involvement in every research stage. Capability after that is "
+            "low human involvement in research direction. Capability after that is "
             "read as ECI, anchored on today's ECI trend.\n\n"
             "**Research.** Coding labor and experiment compute combine through a harmonic "
             "mean, so a shortage of either constrains output. Research judgment multiplies "
