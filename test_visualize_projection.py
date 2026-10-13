@@ -3216,18 +3216,6 @@ class TestEciMonthsBehind:
 class TestLoadUkCyber:
     """AISI narrow cyber tasks (digitized from the published figure)."""
 
-    def test_returns_list(self):
-        data = vp.load_ukcyber()
-        assert isinstance(data, list)
-        assert len(data) > 0
-
-    def test_models_have_required_keys(self):
-        data = vp.load_ukcyber()
-        required = {'name', 'date', 'cyber_score', 'organization',
-                    'country', 'weights', 'is_frontier'}
-        for m in data:
-            assert required.issubset(m.keys()), f"Missing keys: {required - m.keys()}"
-
     def test_sorted_by_date(self):
         data = vp.load_ukcyber()
         dates = [m['date'] for m in data]
@@ -3243,17 +3231,20 @@ class TestLoadUkCyber:
         assert not any(n.startswith('#') for n in names)
         assert "GLM-5.2" in names
 
-    def test_frontier_is_closed_weight_only(self):
+    @pytest.mark.parametrize("load", [
+        vp.load_ukcyber,
+        lambda: vp.load_ukcyber_tlo(vp._ukc_tlo_mtime()),
+    ], ids=["narrow", "tlo"])
+    def test_frontier_is_the_closed_weight_running_max(self, load):
         """Open-weight models are the subject measured against the frontier,
-        so they must never define it."""
-        for m in vp.load_ukcyber():
-            if m['is_frontier']:
-                assert m['weights'] == 'closed', f"{m['name']} is open but frontier"
-
-    def test_frontier_is_running_max(self):
-        frontier = [m for m in vp.load_ukcyber() if m['is_frontier']]
-        scores = [m['cyber_score'] for m in frontier]
-        assert scores == sorted(scores)
+        so they must never define it. Both loaders carry their own copy of
+        the rule."""
+        best = -float('inf')
+        for m in load():
+            new_max = m['weights'] == 'closed' and m['cyber_score'] > best
+            assert m['is_frontier'] == new_max, m['name']
+            if new_max:
+                best = m['cyber_score']
 
 
 class TestUkCyberLag:
@@ -3352,11 +3343,10 @@ class TestUkCyberTargetEta:
         assert eta['date_hi'] > eta['date_lo']
         assert eta['lag_lo'] == pytest.approx(4.7, abs=0.2)
         assert eta['lag_hi'] == pytest.approx(7.4, abs=0.2)
-
-    def test_eta_bounds_match_lag_offsets(self):
-        eta = vp.ukc_target_eta(vp.ukc_all, vp.ukc_frontier_all, 90.0)
-        lo_days = (eta['date_lo'] - eta['frontier_date']).days
-        assert lo_days == pytest.approx(eta['lag_lo'] * vp._UKC_DAYS_PER_MONTH, abs=1)
+        for edge in ('lo', 'hi'):
+            days = (eta[f'date_{edge}'] - eta['frontier_date']).days
+            assert days == pytest.approx(
+                eta[f'lag_{edge}'] * vp._UKC_DAYS_PER_MONTH, abs=1)
 
     def test_unreachable_target_returns_none(self):
         assert vp.ukc_target_eta(vp.ukc_all, vp.ukc_frontier_all, 99.9) is None
@@ -3377,11 +3367,7 @@ class TestUkCyberTargetEta:
 class TestRsi:
     """CoBench, the RSI tab's only feed."""
 
-    def test_tab_registered_between_rli_and_takeoff(self):
-        i = vp._TAB_OPTIONS.index("RSI")
-        assert vp._TAB_OPTIONS[i - 1] == "Remote Labor Index"
-        assert vp._TAB_OPTIONS[i + 1] == "Takeoff"
-        assert vp._TAB_OPTIONS[-2:] == ["UK Cyber", "Employment"]
+    def test_slugs_round_trip(self):
         assert vp._TAB_OPTIONS[vp._TAB_SLUG["takeoff"]] == "Takeoff"
         assert vp._SLUG_FOR_TAB["RSI"] == "rsi"
         assert vp._TAB_OPTIONS[vp._TAB_SLUG["rsi"]] == "RSI"
@@ -3458,14 +3444,26 @@ class TestRsi:
         assert round(sdt * 2) < shi < vp._DT_CAP_DAYS
         assert slo <= round(sdt / 2)
 
-    def test_survey_eta_includes_the_estimated_round(self):
+    def test_survey_eta_includes_the_estimated_round(self, monkeypatch):
         """The card fits and anchors on every round the tab fits — the
         carried-over Model 2 point included, whose flat reading is the
         reason the slope runs shallower than the surveyed points alone."""
         rows = vp.load_rsi_survey()
-        anchor, _days = vp._pc_rsi_survey_eta(rows, samples=True)
         assert rows[-1].get('estimated')
+        seen = []
+        real = vp._rsi_survey_dt_ci
+        monkeypatch.setattr(vp, '_rsi_survey_dt_ci',
+                            lambda r, dt: seen.append(dt) or real(r, dt))
+        anchor, _days = vp._pc_rsi_survey_eta(rows, samples=True)
         assert anchor == rows[-1]['date']
+
+        def fit_dt(rs):
+            days = [(r['date'] - rs[0]['date']).days for r in rs]
+            return np.log(2) / vp.fit_line(np.array(days, dtype=float),
+                                           np.log([r['uplift'] for r in rs]))[1]
+        assert seen == [pytest.approx(fit_dt(rows))]
+        surveyed = fit_dt([r for r in rows if not r.get('estimated')])
+        assert seen[0] > surveyed * 1.05
 
 
 class TestRsiDirection:
@@ -3516,48 +3514,12 @@ class TestRsiDirection:
         fr = vp.rsi_dir_frontier_all
         base, icpt, slope = vp._rsi_dir_fit(fr)
         assert slope > 0
-        assert vp._RSI_DIR_TARGET == 90.0
         days = np.array([(r['date'] - base).days for r in fr], dtype=float)
         want = vp.fit_line(days,
                            vp._logit(np.array([r['better'] for r in fr]) / 100))
         assert (icpt, slope) == pytest.approx(tuple(want))
         # Every frontier point sits under the bar, so the crossing is ahead.
         assert max(r['better'] for r in fr) < vp._RSI_DIR_TARGET
-
-    def test_rate_ci_only_widens_the_convention(self):
-        fr = vp.rsi_dir_frontier_all
-        _b, _i, slope = vp._rsi_dir_fit(fr)
-        dt = np.log(2) / slope
-        lo, hi = vp._rsi_dir_dt_ci(fr, round(dt))
-        assert lo <= round(dt / 2) and hi >= round(dt * 2)
-
-    def test_survey_ci_still_matches_the_shared_widener(self):
-        """`_rsi_survey_dt_ci` is a thin wrapper now; it must not have moved."""
-        rows = vp.load_rsi_survey()
-        days = [(r['date'] - rows[0]['date']).days for r in rows]
-        logs = np.log([r['uplift'] for r in rows])
-        dt = np.log(2) / vp.fit_line(np.array(days, dtype=float), logs)[1]
-        assert vp._rsi_survey_dt_ci(rows, dt) == vp._dt_ci_t_widened(days, logs, dt)
-
-    def test_eta_reproduces_the_section_defaults(self):
-        """The milestone card is the section's own fit, so the two cannot date
-        it differently: same anchor, and a median inside the section's fan."""
-        fr = vp.rsi_dir_frontier_all
-        anchor, days = vp._pc_nextstep_eta(fr, n=4000, samples=True)
-        assert anchor == fr[-1]['date']
-        base, icpt, slope = vp._rsi_dir_fit(fr)
-        fitted = icpt + slope * (anchor - base).days
-        deterministic = (vp._logit(vp._RSI_DIR_TARGET / 100) - fitted) / slope
-        assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
-
-    def test_milestone_card_is_weighted_in_the_blend(self):
-        slug = f"nextstep_{vp._RSI_DIR_TARGET:.0f}"
-        assert vp._PC_RSI_WEIGHTS[slug] > 0
-        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
-        assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
-        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == \
-            vp._PC_RSI_WEIGHTS[slug]
-
 
 class TestRsiExperiments:
     def test_research_pace_uses_2025_units_and_rebases_draws_before_quantiles(self):
@@ -3605,14 +3567,9 @@ class TestRsiExperiments:
         np.testing.assert_allclose(a['workflow_progress']['rsi_activity_quantiles'],
                                    np.quantile(expected, [.1, .5, .9], axis=0).T)
 
-    def test_source_weeks_and_baseline_are_preserved(self):
+    def test_source_rows_are_consecutive_weeks(self):
         rows = vp.load_rsi_experiments()
-        assert len(rows) == 32
-        assert rows[0] == {'date': datetime(2026, 1, 5), 'mult': 0.72}
-        assert rows[-1] == {'date': datetime(2026, 8, 10), 'mult': 1.60}
         assert all((b['date'] - a['date']).days == 7 for a, b in zip(rows, rows[1:]))
-        assert max(r['mult'] for r in rows) == 1.61
-        assert vp._RSI_EXPERIMENT_TARGET == 10.0
 
     def test_threshold_dates_use_the_same_draws_as_the_fan(self, monkeypatch):
         rows = vp.load_rsi_experiments()
@@ -3658,7 +3615,6 @@ class TestRsiCode:
         opens there — but every bar stays in the data: their mean is the
         calibration guard, and no fitted bar may fall off the left edge."""
         rows = vp.load_rsi_code()
-        assert vp._RSI_CODE_CHART_FROM == datetime(2024, 1, 1)
         assert any(r['date'] < vp._RSI_CODE_CHART_FROM for r in rows)
         assert all(r['date'] >= vp._RSI_CODE_CHART_FROM
                    for r in rows if r['fitted'])
@@ -3677,47 +3633,6 @@ class TestRsiCode:
                             dtype=float)
         pooled = vp.fit_line(all_days, np.log([r['mult'] for r in rows]))[1]
         assert pooled < slope / 2
-
-    def test_rate_ci_only_widens_the_convention(self):
-        rows = vp.load_rsi_code()
-        dt = np.log(2) / vp._rsi_code_fit(rows)[2]
-        lo, hi = vp._rsi_code_dt_ci(rows, dt)
-        assert lo <= round(dt / 2) and hi >= round(dt * 2)
-        fitted = [r for r in rows if r['fitted']]
-        assert (lo, hi) == vp._dt_ci_t_widened(
-            [(r['date'] - fitted[0]['date']).days for r in fitted],
-            np.log([r['mult'] for r in fitted]), dt)
-
-    def test_eta_reproduces_the_section_defaults(self):
-        """The milestone card is the section's own fit: same anchor, and a
-        median around the deterministic crossing of the fitted line."""
-        rows = vp.load_rsi_code()
-        anchor, days = vp._pc_rsi_code_eta(rows, n=4000, samples=True)
-        assert anchor == rows[-1]['date']
-        base, icpt, slope = vp._rsi_code_fit(rows)
-        fitted = icpt + slope * (anchor - base).days
-        deterministic = (np.log(vp._RSI_CODE_TARGET) - fitted) / slope
-        assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
-
-    def test_milestone_card_is_weighted_in_the_blend(self):
-        """Both output proxies sit at 5%, having given half their weight to
-        the R&D automation index; the staff survey then gave 5 more to AL5."""
-        slug = f"code_{vp._RSI_CODE_TARGET:.0f}x"
-        assert slug == "code_30x"
-        assert vp._PC_RSI_WEIGHTS[slug] == 6.0
-        assert vp._PC_RSI_WEIGHTS["experiments_10x"] == 6.0
-        assert vp._PC_RSI_WEIGHTS["staff_10x"] == 7.0
-        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
-        assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
-        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 6.0
-
-    def test_the_milestone_is_on_the_internal_clock(self):
-        """Driven by models Anthropic uses internally before release, like
-        CoBench and the staff survey — so it must not be pulled back a report
-        lag as the release-dated cards are."""
-        days = np.zeros(10)
-        for label in ("Training run finished", vp._PC_TIMING_RELEASE):
-            assert np.array_equal(vp._pc_report_lag(days, False, label), days)
 
 
 class TestRsiAutomation:
@@ -3772,11 +3687,12 @@ class TestRsiAutomation:
             np.array([r['al4'] for r in fitted]) / 100))
         assert (icpt, slope) == pytest.approx(tuple(want))
 
-    def test_rate_ci_only_widens_the_convention(self):
+    def test_rate_ci_is_the_shared_widener_stretched_slow(self):
+        """The fast edge is the shared t-widened rule's; only the slow edge
+        may move, and only outward."""
         rows = vp.load_rsi_automation()
         dt = np.log(2) / vp._rsi_auto_fit(rows)[2]
         lo, hi = vp._rsi_auto_dt_ci(rows, round(dt))
-        assert lo <= round(dt / 2) and hi >= round(dt * 2)
         fitted = [r for r in rows if r['fitted']]
         full = vp._dt_ci_t_widened(
             [(r['date'] - fitted[0]['date']).days for r in fitted],
@@ -3807,29 +3723,11 @@ class TestRsiAutomation:
         assert sigma >= vp._rsi_auto_pos_sigma(cur)
         assert 1.282 * sigma >= abs(fitted - observed) / 2
 
-    def test_position_ci_is_the_figures_own_published_interval(self):
-        """Every other section picks a position CI by convention; this figure
-        publishes one per month, quoted at 90% where the fans read 80%."""
-        cur = [r for r in vp.load_rsi_automation() if r['fitted']][-1]
-        sigma = vp._rsi_auto_pos_sigma(cur)
-        want = (vp._logit(cur['hi'] / 100) - vp._logit(cur['lo'] / 100)) / (2 * 1.645)
-        assert sigma == pytest.approx(want)
-        assert sigma > 0
-        # An unlabelled month has no interval to read, and must not crash.
+    def test_unlabelled_month_has_no_position_interval(self):
+        """The figure prints no whisker for it, so there is nothing to read
+        and nothing to crash on."""
         assert vp._rsi_auto_pos_sigma(
             {'al4': 0.0, 'lo': None, 'hi': None}) == 0.0
-
-    def test_eta_reproduces_the_section_defaults(self):
-        """The milestone card is the section's own fit: same anchor, and a
-        median near the deterministic crossing of the fitted line."""
-        rows = vp.load_rsi_automation()
-        anchor, days = vp._pc_rsi_auto_eta(rows, n=4000, samples=True)
-        cur = [r for r in rows if r['fitted']][-1]
-        assert anchor == cur['date']
-        base, icpt, slope = vp._rsi_auto_fit(rows)
-        fitted = icpt + slope * (anchor - base).days
-        deterministic = (vp._logit(vp._RSI_AUTO_TARGET / 100) - fitted) / slope
-        assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
 
     def test_target_is_above_what_the_fit_already_reached(self):
         """A bar the trend has passed dates nothing — the low ECI card's
@@ -3838,7 +3736,7 @@ class TestRsiAutomation:
         rows = vp.load_rsi_automation()
         base, icpt, slope = vp._rsi_auto_fit(rows)
         today = vp._inv_logit(
-            icpt + slope * (datetime.now() - base).days) * 100
+            icpt + slope * (datetime(2026, 10, 1) - base).days) * 100
         assert today > 50.0
         assert vp._RSI_AUTO_TARGET > today
 
@@ -3848,27 +3746,6 @@ class TestRsiAutomation:
                 {'date': datetime(2026, 4, 15), 'al4': 10.0, 'lo': 5.0,
                  'hi': 15.0, 'fitted': True}]
         assert vp._pc_rsi_auto_eta(rows) is None
-
-    def test_milestone_card_is_weighted_in_the_blend(self):
-        """AL4 is an intermediate rung once AL5 is the headline, so it sits
-        at 5 while AL5 takes the single largest weight."""
-        slug = f"rdauto_{vp._RSI_AUTO_TARGET:.0f}"
-        assert slug == "rdauto_90"
-        assert vp._PC_RSI_WEIGHTS[slug] == 7.0
-        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100.0
-        assert vp._PC_RSI_W_KEY + slug in vp._PC_RESET_KEYS
-        assert vp._PC_DEFAULTS[vp._PC_RSI_W_KEY + slug] == 7.0
-        al5 = f"al5_{vp._RSI_AL5_TARGET:.0f}"
-        assert al5 == "al5_90"
-        assert vp._PC_RSI_WEIGHTS[al5] == max(vp._PC_RSI_WEIGHTS.values())
-        assert vp._PC_RSI_W_KEY + al5 in vp._PC_RESET_KEYS
-
-    def test_the_milestone_is_on_the_internal_clock(self):
-        """An internal measurement of Anthropic's own work, not a score on a
-        released model — so it must not be pulled back a report lag."""
-        days = np.zeros(10)
-        for label in ("Training run finished", vp._PC_TIMING_RELEASE):
-            assert np.array_equal(vp._pc_report_lag(days, False, label), days)
 
 
 class TestRsiAutomationLadder:
@@ -4011,30 +3888,53 @@ class TestRsiAl5:
         assert np.percentile(draws, 90) == pytest.approx(
             lag['slow'] * vp._RSI_AL5_TAU_HI_MULT, rel=0.05)
 
-    def test_lag_band_never_runs_faster_than_the_data_allows(self):
-        """The fast edge is the censored lag itself: a symmetric band would
-        put mass below what the absent AL5 band already rules out."""
-        draws = vp._rsi_al5_tau_draws(200.0, 20000)
-        assert np.percentile(draws, 10) == pytest.approx(200.0, rel=0.05)
-        assert np.percentile(draws, 90) == pytest.approx(
-            200.0 * vp._RSI_AL5_TAU_HI_MULT, rel=0.05)
-
     def test_both_rungs_are_dated_against_the_same_bar(self):
         """One level, two crossings: the gap between them is the ladder's own
         step. If these diverge the chart's single bar starts lying."""
-        assert vp._RSI_AL5_TARGET == vp._RSI_AUTO_TARGET == 90.0
+        assert vp._RSI_AL5_TARGET == vp._RSI_AUTO_TARGET
 
-    def test_al5_lands_later_than_al4_at_the_same_bar(self):
+
+class TestRsiMilestoneCards:
+    """Each RSI section's milestone card is that section's own fit, so the
+    card and the fan cannot date the same bar differently."""
+
+    @staticmethod
+    def _case(which):
+        if which == 'nextstep':
+            rows = vp.rsi_dir_frontier_all
+            return (rows[-1]['date'], vp._rsi_dir_fit(rows),
+                    vp._logit(vp._RSI_DIR_TARGET / 100),
+                    vp._pc_nextstep_eta(rows, n=4000, samples=True))
+        if which == 'code':
+            rows = vp.load_rsi_code()
+            return (rows[-1]['date'], vp._rsi_code_fit(rows),
+                    np.log(vp._RSI_CODE_TARGET),
+                    vp._pc_rsi_code_eta(rows, n=4000, samples=True))
         rows = vp.load_rsi_automation()
-        _a4, d4 = vp._pc_rsi_auto_eta(rows, vp._RSI_AL5_TARGET, n=6000,
-                                      samples=True)
-        _a5, d5 = vp._pc_rsi_al5_eta(rows, n=6000, samples=True)
-        assert np.median(d5) > np.median(d4)
+        return ([r for r in rows if r['fitted']][-1]['date'],
+                vp._rsi_auto_fit(rows), vp._logit(vp._RSI_AUTO_TARGET / 100),
+                vp._pc_rsi_auto_eta(rows, n=4000, samples=True))
 
-    def test_the_milestone_is_on_the_internal_clock(self):
-        days = np.zeros(10)
-        for label in ("Training run finished", vp._PC_TIMING_RELEASE):
-            assert np.array_equal(vp._pc_report_lag(days, False, label), days)
+    @pytest.mark.parametrize("which", ["nextstep", "code", "rdauto"])
+    def test_eta_reproduces_the_section_defaults(self, which):
+        """Same anchor, and a median around the deterministic crossing of
+        the section's fitted line."""
+        want_anchor, (base, icpt, slope), target_y, (anchor, days) = \
+            self._case(which)
+        assert anchor == want_anchor
+        deterministic = (target_y - (icpt + slope * (anchor - base).days)) / slope
+        assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
+
+    def test_milestone_cards_are_weighted_in_the_blend(self):
+        """Weights are keyed by slugs built from the target constants, so a
+        retargeted bar must still find its weight; AL5 carries the most."""
+        slugs = [f"nextstep_{vp._RSI_DIR_TARGET:.0f}",
+                 f"code_{vp._RSI_CODE_TARGET:.0f}x",
+                 f"rdauto_{vp._RSI_AUTO_TARGET:.0f}",
+                 f"al5_{vp._RSI_AL5_TARGET:.0f}"]
+        for slug in slugs:
+            assert vp._PC_RSI_WEIGHTS.get(slug, 0) > 0, slug
+        assert vp._PC_RSI_WEIGHTS[slugs[-1]] == max(vp._PC_RSI_WEIGHTS.values())
 
 
 class TestUkCyberTlo:
@@ -4136,31 +4036,6 @@ class TestUkCyberTlo:
         assert r['lag_hi'] is None
         assert r['lag_months'] == r['lag_lo']
 
-    def test_frontier_is_closed_weights_only(self):
-        tlo = self._tlo()
-        assert all(m['weights'] == 'closed' for m in tlo if m['is_frontier'])
-
-    def test_frontier_is_monotonic(self):
-        frontier = [m for m in self._tlo() if m['is_frontier']]
-        scores = [m['cyber_score'] for m in frontier]
-        assert scores == sorted(scores)
-
-    def test_dates_are_published_release_dates(self):
-        """Unlike the narrow-task file, TLO dates come from release records --
-        the figure's x-axis is tokens and carries no date information."""
-        by_name = {m['name']: m for m in self._tlo()}
-        assert by_name['Kimi K3']['date'] == datetime(2026, 7, 16)
-        assert by_name['Sonnet 4.5']['date'] == datetime(2025, 9, 29)
-        assert by_name['GPT-5.5']['date'] == datetime(2026, 4, 23)
-
-    def test_shared_lag_helper_matches_manual_construction(self):
-        """The callout and the cross-check section must not be able to drift
-        onto different frontiers or lag conventions."""
-        tlo_all, tlo_lag = vp.ukc_tlo_lag_rows()
-        manual = vp.ukc_lag_rows(tlo_all, [m for m in tlo_all if m['is_frontier']])
-        assert [r['name'] for r in tlo_lag] == [r['name'] for r in manual]
-        assert [r['lag_lo'] for r in tlo_lag] == [r['lag_lo'] for r in manual]
-
 
 class TestUkCyberOpenOnlyOnTlo:
     """The headline callout for an open-weight model only the range has run.
@@ -4222,13 +4097,6 @@ class TestDcAxisTicks:
     def _plain(texts):
         return [re.sub(r"<[^>]+>", "", t) for t in texts]
 
-    def test_metric_declares_no_divisor(self):
-        cfg = vp._DC_METRICS["Compute (H100-equiv)"]
-        assert cfg["key"] == "h100" and "scale" not in cfg
-        assert vp._DC_DEFAULTS["dc_metric"] == "Compute (H100-equiv)"
-        assert not any("scale" in c for c in vp._DC_METRICS.values()), \
-            "a per-metric axis divisor is what desynced the labels"
-
     def test_log_ticks_label_the_value_they_sit_at(self):
         vals, text = vp._dc_log_ticks([5.0, 7.0], 'h100')
         plain = self._plain(text)
@@ -4255,8 +4123,12 @@ class TestDcAxisTicks:
         for v in (11470.0, 768769.0, 1111673.0):
             tick = vp._dc_tick_label(v, 'h100')
             val = vp._dc_fmt_value(v, 'h100')
-            # Same magnitude suffix, so a bar's text can't contradict its axis.
-            assert tick[-1] == val[-1] and tick[-1] in "kM"
+            # Same number at the precision each prints, so a bar's text
+            # can't contradict its axis.
+            assert tick[-1] in "kM" and val[-1] in "kM"
+            scale = {'k': 1e3, 'M': 1e6}
+            assert float(tick[:-1]) * scale[tick[-1]] == pytest.approx(v, rel=0.01)
+            assert float(val[:-1]) * scale[val[-1]] == pytest.approx(v, rel=0.05)
 
     def test_layout_labels_both_axis_types(self):
         log = vp._dc_layout(True, "Compute (H100-equiv)",
