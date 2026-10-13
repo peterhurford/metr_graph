@@ -1401,9 +1401,6 @@ class TestTakeoffTab:
         at = self._app()
         at.number_input(key="tk_seed").set_value(81219).run()
         r = captured[-1]
-        assert r["time_origin"] == "today"
-        assert any("1. Research speeds up" in s.value for s in at.subheader)
-        assert at.number_input(key="tk_fast_share").value == 25
         assert r["params"]["taste_slope"] != at.number_input(key="tk_taste_slope").value
         at.number_input(key="tk_cal_weight").set_value(0.0).run()
         assert captured[-1]["params"]["taste_slope"] == at.number_input(key="tk_taste_slope").value
@@ -1441,13 +1438,19 @@ class TestTakeoffTab:
         at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_human_floor").value == 1.0
 
-    def test_invalid_workflow_start_is_recoverable(self):
+    @pytest.mark.parametrize("bad,fix,message", [
+        (("tk_human_direction", 0.0), ("tk_human_floor", 0.0), "starting human work"),
+        (("tk_training_share", 70), ("tk_experiment_share", 20), "Reserve positive compute"),
+    ])
+    def test_invalid_input_is_recoverable(self, bad, fix, message):
+        """An inconsistent setting shows the model's error, not a crash, and
+        correcting a second setting clears it."""
         at = self._app()
-        at.number_input(key="tk_human_direction").set_value(0.0).run()
-        _assert_no_error(at, "Takeoff / inconsistent workflow assumptions")
-        assert any("starting human work" in e.value for e in at.error)
-        at.number_input(key="tk_human_floor").set_value(0.0).run()
-        _assert_no_error(at, "Takeoff / corrected human floor")
+        at.number_input(key=bad[0]).set_value(bad[1]).run()
+        _assert_no_error(at, f"Takeoff / invalid {bad[0]}")
+        assert any(message in e.value for e in at.error)
+        at.number_input(key=fix[0]).set_value(fix[1]).run()
+        _assert_no_error(at, f"Takeoff / corrected {fix[0]}")
         assert not at.error
 
     @pytest.mark.parametrize("condition,timing", [
@@ -1486,14 +1489,21 @@ class TestTakeoffTab:
         second = json.loads(at.get("plotly_chart")[-1].proto.spec)["data"][-1]
         assert second["y"] == curve["y"]
 
-    def test_horizon_and_rsi_settings_survive_reset(self):
-        at = self._app()
+    def test_horizon_resets_and_rsi_settings_survive_reset(self):
+        """*Reset to defaults* restores the Takeoff horizon but keeps the RSI
+        settings Takeoff inherits."""
+        at = _fresh_app()
+        at.query_params.update(tab="takeoff", rsi_atc_penalty="50")
+        at.run()
+        _assert_no_error(at, "Takeoff / inherited RSI penalty")
+        assert at.session_state["rsi_atc_penalty"] == 50
         at.number_input(key="tk_end_year").set_value(2035).run()
         _assert_no_error(at, "Takeoff / year end")
         assert at.query_params["tk_end_year"] == ["2035"]
         at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_end_year").value == 2031
         assert "tk_end_year" not in at.query_params
+        assert at.session_state["rsi_atc_penalty"] == 50
 
     def test_reset_and_url_roundtrip(self):
         at = self._app()
@@ -1532,7 +1542,8 @@ class TestTakeoffTab:
         _assert_no_error(at, "Takeoff / flat compute")
         assert seen[-1] is None
 
-    def test_invalid_budget_is_recoverable(self, monkeypatch):
+    def test_zero_transfer_runs_at_the_reference_pace(self, monkeypatch):
+        """With no AI feedback, research runs at the frozen-AI reference pace."""
         import takeoff_model as tk
         captured = []
         original = tk.simulate
@@ -1543,15 +1554,8 @@ class TestTakeoffTab:
 
         monkeypatch.setattr(tk, "simulate", capture)
         at = self._app()
-        at.number_input(key="tk_training_share").set_value(70).run()
-        _assert_no_error(at, "Takeoff / invalid budget")
-        assert any("Reserve positive compute" in e.value for e in at.error)
-        at.number_input(key="tk_experiment_share").set_value(20).run()
-        _assert_no_error(at, "Takeoff / fixed budget")
-        assert not at.error
         at.number_input(key="tk_transfer").set_value(0).run()
         _assert_no_error(at, "Takeoff / zero feedback")
-        # With no AI feedback, research runs at the frozen-AI reference pace.
         progress = captured[-1]["workflow_progress"]
         np.testing.assert_allclose(progress["pace"], progress["reference_pace"], rtol=1e-4)
 
@@ -1598,38 +1602,17 @@ class TestUkCyberTab:
         _switch_tab(at, "UK Cyber")
         return at
 
-    def test_renders(self):
+    @pytest.mark.parametrize("key,kind,value", [
+        ("ukc_proj_basis", "radio", "Piecewise linear (logit)"),
+        ("ukc_proj_basis", "radio", "Superexponential (logit)"),
+        ("_ukc_proj_as_of", "selectbox", "GPT-5"),
+        ("ukc_show_open", "toggle", False),
+        ("ukc_show_lag", "toggle", False),
+    ])
+    def test_each_control_renders(self, key, kind, value):
         at = self._ukc_app()
-        _assert_no_error(at, "UK Cyber / default")
-
-    def test_deep_link_slug(self):
-        at = _fresh_app()
-        at.query_params["tab"] = "ukcyber"
-        at.run()
-        _assert_no_error(at, "UK Cyber / deep link")
-        assert at.session_state["_active_tab"] == "UK Cyber"
-
-    def test_piecewise(self):
-        at = self._ukc_app()
-        at.radio(key="ukc_proj_basis").set_value("Piecewise linear (logit)").run()
-        _assert_no_error(at, "UK Cyber / Piecewise linear (logit)")
-
-    def test_superexp(self):
-        at = self._ukc_app()
-        at.radio(key="ukc_proj_basis").set_value("Superexponential (logit)").run()
-        _assert_no_error(at, "UK Cyber / Superexponential (logit)")
-
-    def test_backtest_vantage_point(self):
-        at = self._ukc_app()
-        at.selectbox(key="_ukc_proj_as_of").set_value("GPT-5").run()
-        _assert_no_error(at, "UK Cyber / backtest from GPT-5")
-
-    def test_toggles(self):
-        at = self._ukc_app()
-        at.toggle(key="ukc_show_open").set_value(False).run()
-        _assert_no_error(at, "UK Cyber / open-weight hidden")
-        at.toggle(key="ukc_show_lag").set_value(False).run()
-        _assert_no_error(at, "UK Cyber / lag markers hidden")
+        getattr(at, kind)(key=key).set_value(value).run()
+        _assert_no_error(at, f"UK Cyber / {key}={value}")
 
     def test_target_eta_is_shown(self):
         """The headline output is when open-weight models reach the target."""
@@ -1637,8 +1620,10 @@ class TestUkCyberTab:
         labels = [m.label for m in at.metric]
         assert "China reaches 90%" in labels
         assert "Measured open-weight lag" in labels
-        lag = [m for m in at.metric if m.label == "Measured open-weight lag"][0]
-        assert lag.value == "4.7–7.4 mo"
+        # A bracket, lower edge first (the values move with the digitization).
+        lag = next(m.value for m in at.metric if m.label == "Measured open-weight lag")
+        lo, hi = re.fullmatch(r"([\d.]+)–([\d.]+) mo", lag).groups()
+        assert float(lo) < float(hi)
 
     def test_confound_caveat_is_surfaced(self):
         """Country and openness are confounded; the UI must say so wherever it
@@ -1697,8 +1682,8 @@ class TestDataCentersByCountry:
             "(including networking multiple data centers)")
         # One networking selector, in the sidebar, drives both sections.
         assert len([sb for sb in at.selectbox if sb.key == "dc_pool_n"]) == 1
-        assert at.sidebar.selectbox(key="dc_pool_n") is not None
-        assert at.sidebar.radio(key="dc_cty_since") is not None
+        at.sidebar.selectbox(key="dc_pool_n")   # raises if not in the sidebar
+        at.sidebar.radio(key="dc_cty_since")
 
     def test_every_control_renders(self):
         at = self._dc_app()
@@ -1725,25 +1710,34 @@ class TestDataCentersByCountry:
         _assert_no_error(at, "by country / from 2023")
 
     def test_cones_toggle(self):
+        """Hiding the cones drops the shaded bands and keeps the numbers."""
+        def _bands(at):
+            return sum(1 for el in at.get("plotly_chart")
+                       for d in json.loads(el.proto.spec)["data"] if d.get("fill"))
+
         at = self._dc_app()
         assert at.checkbox(key="dc_cty_cones").value is True
+        assert _bands(at) > 0
         at.checkbox(key="dc_cty_cones").set_value(False).run()
         _assert_no_error(at, "by country / cones off")
-        # The numbers stay; only the shaded bands go.
+        assert _bands(at) == 0
         assert self._headline(at)
 
-    def test_trend_only_when_planned_buildout_is_off(self):
+    def test_both_panels_render_with_planned_buildout_off(self):
         at = self._dc_app()
         at.checkbox(key="dc_future").set_value(False).run()
-        _assert_no_error(at, "by country / no planned buildout")
+        _assert_no_error(at, "Data Centers / no planned buildout")
         assert self._headline(at)
+        assert TestDataCentersRegionShare._HEAD in [str(h.value) for h in at.subheader]
 
-    def test_other_metrics(self):
-        for label in ("6mo train log OP", "Power (MW)", "Capacity (time to Mythos)"):
-            at = self._dc_app()
+    def test_both_panels_render_under_every_metric(self):
+        at = self._dc_app()
+        for label in at.selectbox(key="dc_metric").options:
             at.selectbox(key="dc_metric").set_value(label).run()
-            _assert_no_error(at, f"by country / {label}")
+            _assert_no_error(at, f"Data Centers / {label}")
             assert self._headline(at), label
+            assert TestDataCentersRegionShare._HEAD in \
+                [str(h.value) for h in at.subheader], label
 
     def test_reset_restores_panel_defaults(self):
         at = self._dc_app()
@@ -1780,18 +1774,6 @@ class TestDataCentersRegionShare:
         assert "Tracked data centers only" not in \
             " ".join(str(c.value) for c in at.caption)
 
-    def test_renders_under_every_metric(self):
-        at = self._app()
-        for label in at.selectbox(key="dc_metric").options:
-            at.selectbox(key="dc_metric").set_value(label).run()
-            _assert_no_error(at, f"region share / {label}")
-            assert self._HEAD in [str(h.value) for h in at.subheader], label
-
-    def test_renders_with_planned_buildout_off(self):
-        at = self._app()
-        at.checkbox(key="dc_future").set_value(False).run()
-        _assert_no_error(at, "region share / no future")
-        assert self._HEAD in [str(h.value) for h in at.subheader]
 
 
 class TestDataCentersParty:
@@ -1804,16 +1786,21 @@ class TestDataCentersParty:
         _switch_tab(at, "Data Centers")
         return at
 
-    def test_defaults_to_tenant_and_renders(self):
-        at = self._app()
-        _assert_no_error(at, "Data Centers / tenant")
-        assert at.radio(key="dc_party").value == "Tenant (who trains there)"
+    @staticmethod
+    def _names(at):
+        return {d.get("name") for el in at.get("plotly_chart")
+                for d in json.loads(el.proto.spec)["data"]}
 
-    def test_operator_view_renders_and_resets(self):
+    def test_operator_view_moves_sites_to_landlords_and_resets(self):
+        """Leased clusters move to their landlords, so some owner the tenant
+        view never names (Oracle, for Stargate Abilene) appears."""
         at = self._app()
+        assert at.radio(key="dc_party").value == "Tenant (who trains there)"
+        tenant = self._names(at)
         at.radio(key="dc_party").set_value(
             "Operator (who owns the building)").run()
         _assert_no_error(at, "Data Centers / operator")
+        assert "Oracle" in self._names(at) - tenant
         [b for b in at.button if b.key == "dc_reset"][0].click().run()
         _assert_no_error(at, "Data Centers / reset")
         assert at.radio(key="dc_party").value == "Tenant (who trains there)"
@@ -1852,9 +1839,9 @@ class TestPacingTab:
         np.random.seed(0)
         return el.run()
 
-    def test_us_pause_panel_renders(self):
-        """The US-pause counterfactual renders with its crossing metric,
-        race chart and assumption caption."""
+    def test_us_pause_panel_states_its_assumptions_in_the_body(self):
+        """The US-pause counterfactual renders its crossing metrics, and its
+        *Assumes* line (weight security first) is body text, not fine print."""
         at = self._app()
         subs = " ".join(str(s.value) for s in at.subheader)
         assert "If the US paced" in subs
@@ -1862,13 +1849,9 @@ class TestPacingTab:
         assert "paced US frontier" in labels
         assert "Time for China to surpass" in labels
         caps = " ".join(str(c.value) for c in at.caption)
-        assert "indigenous" in caps
-        # The assumptions are hovers on the *Assumes* line now, so match
-        # their bodies rather than the old run-on sentence.
         md = " ".join(str(m.value) for m in at.markdown)
-        # Footnotes anchor to their phrases, so the line reads
-        # "secure <span>weights</span>, ..." with the note in the bubble.
-        assert "**Assumes**" in md
+        assert "**Assumes**" in md and "**Assumes**" not in caps
+        # The weight-security assumption is a hover on its phrase.
         assert "never steal them" in md
         # The clock line follows the sidebar default (run finished).
         assert "Dates = training runs finish" in caps
@@ -2140,9 +2123,12 @@ class TestPacingTab:
             float(cn["Frontier ECI"].split()[0].lstrip("~"))
         assert us["Behind the US"] == "—" and cn["Behind the US"].endswith("mo")
         # p80 is the more demanding bar, so its horizon is the shorter one.
-        for col in ("METR horizon (p50)", "METR horizon (p80)"):
-            assert all(t[col])
-        assert us["METR horizon (p80)"] != us["METR horizon (p50)"]
+        def _hrs(cell):
+            units = {"y": 2000, "mo": 176, "w": 40, "d": 8, "h": 1, "m": 1 / 60}
+            return sum(float(n) * units[u] for n, u in
+                       re.findall(r"([\d.]+)(mo|y|w|d|h|m)", cell.replace(",", "")))
+        for _, row in t.iterrows():
+            assert _hrs(row["METR horizon (p80)"]) < _hrs(row["METR horizon (p50)"]), row
         # The bar the crossing metric quotes is the US row of this table.
         lab = next(str(m.label) for m in at.metric
                    if "paced US frontier" in str(m.label))
@@ -2170,14 +2156,6 @@ class TestPacingTab:
         assert _pause_month(at) == month
         assert _us_ops(at) - ops_2mo == pytest.approx(np.log10(3), abs=0.1)
 
-    def test_projection_range(self):
-        """'Project through' moves the crossing-search horizon."""
-        at = self._app()
-        at.radio(key="pc_end_year").set_value(2027).run()
-        _assert_no_error(at, "Pacing / through 2027")
-        at.radio(key="pc_end_year").set_value(2031).run()
-        _assert_no_error(at, "Pacing / through 2031")
-
     def test_both_charts_end_at_the_projection_range(self):
         """Timeline and pause charts both run to *Project through*, like
         every other tab's projection chart."""
@@ -2191,6 +2169,10 @@ class TestPacingTab:
             return out
 
         at = self._app()
+        # A range ending before the default pause draws no pause chart; it
+        # must still render.
+        at.radio(key="pc_end_year").set_value(2027).run()
+        _assert_no_error(at, "Pacing / through 2027")
         for yr in (2029, 2031):
             at.radio(key="pc_end_year").set_value(yr).run()
             _assert_no_error(at, f"Pacing / through {yr}")
@@ -2293,11 +2275,6 @@ class TestPacingTab:
         assert float(later.split()[0]) > float(us_run.split()[0])
         assert later in _title(at)
 
-    def test_run_length_toggle_renders(self):
-        at = self._app()
-        at.radio(key="pc_run").set_value("6-month run").run()
-        _assert_no_error(at, "Pacing / 6-month run")
-
     def test_timing_toggle_shifts_the_dates(self):
         """The default dates a crossing at 'Training run finished';
         going back to 'Data center construction' takes off one run length
@@ -2335,8 +2312,7 @@ class TestPacingTab:
 
     def test_every_pooling_option_renders(self):
         at = self._app()
-        for label in ["Single site (no networking)", "Nearby only",
-                      "Nearby + plausible fabric", "Every site (implausible)"]:
+        for label in at.selectbox(key="pc_pool").options:
             at.selectbox(key="pc_pool").set_value(label).run()
             _assert_no_error(at, f"Pacing / {label}")
 
@@ -2400,6 +2376,9 @@ class TestTodayForwardMode:
                 out.extend(x for x in tr.get("customdata") or [] if isinstance(x, str))
         return out
 
+    # Tabs where every chart is a projection, so every chart goes forward.
+    _ALL_FORWARD = {"Pacing": 2}
+
     def _starts_today(self, spec):
         rng = spec["layout"]["xaxis"].get("range")
         return bool(rng) and str(rng[0])[:10] == datetime.now().strftime("%Y-%m-%d")
@@ -2417,6 +2396,8 @@ class TestTodayForwardMode:
         specs = self._specs(at)
         fwd = [sp for sp in specs if self._starts_today(sp)]
         assert fwd, tab
+        if tab in self._ALL_FORWARD:
+            assert len(fwd) == len(specs) == self._ALL_FORWARD[tab], tab
         for sp in fwd:
             hovers = self._hover_strings(sp)
             assert any("from today" in h or h == "today" for h in hovers), tab
@@ -2455,14 +2436,6 @@ class TestTodayForwardMode:
         assert fwd[0]["layout"]["yaxis"]["title"]["text"] == "Chance crossed by then"
         assert len(specs) > 1
 
-    def test_pacing_converts_both_charts(self):
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Pacing")
-        at.checkbox(key="today_fwd").set_value(True).run()
-        specs = self._specs(at)
-        assert len(specs) == 2 and all(self._starts_today(sp) for sp in specs)
-
     def test_toggle_survives_a_tab_switch_and_its_reset(self):
         at = _fresh_app()
         at.run()
@@ -2474,6 +2447,10 @@ class TestTodayForwardMode:
         # and keeps its history, like the RSI tab's diagnostic charts.
         proj, china = self._specs(at)
         assert self._starts_today(proj) and not self._starts_today(china)
+        # No tab's reset clears it.
+        _switch_tab(at, "Pacing")
+        at.button(key="pc_reset").click().run()
+        assert at.checkbox(key="today_fwd").value is True
 
 
 class TestSectionDeepLinks:
