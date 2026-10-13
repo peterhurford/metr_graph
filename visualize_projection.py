@@ -17942,14 +17942,19 @@ def _tk_acceleration_fig(result):
     return fig
 
 
+# Compute growth is averaged over this fixed window, so "Project through" sets
+# how far the charts run without changing any scenario's compute rate.
+_TK_DC_AVG_YEARS = 5
+
+
 @st.cache_data(show_spinner=False, max_entries=8)
-def _tk_dc_compute(today, end_year, n):
+def _tk_dc_compute(today, n):
     """Compute growth from the Data Centers tab's US projection.
 
     Returns (per-draw log growth a year, the historical log growth a year).
     Each draw is one sampled US largest-training-run trajectory, projected
     exactly as the Pacing tab does it (recorded steps, plans under slip, then
-    the fitted trend), averaged from today to the horizon. The historical rate
+    the fitted trend), averaged over `_TK_DC_AVG_YEARS` from today. The historical rate
     is that series' own fit: the compute growth today's ECI trend reflects.
     """
     series = _dc_series_for_metric(dc_all, 'train_flop')
@@ -17958,7 +17963,7 @@ def _tk_dc_compute(today, end_year, n):
     steps = _dc_country_steps(series, names, 'site', {})
     if not steps:
         return None
-    end = datetime(end_year, 12, 31)
+    end = today + timedelta(days=round(_TK_DC_AVG_YEARS * 365.25))
     grid, paths = _pc_projection([(_DC_CTY_US, 'country', steps, names)], dc_all, today,
                                  since=_DC_DEFAULTS["dc_cty_since"], horizon=end)
     sampled = np.asarray(paths[_DC_CTY_US], dtype=float)
@@ -18090,7 +18095,8 @@ def render_takeoff():
                         help="Each scenario's compute grows at the average rate of one "
                              "sampled US largest-training-run trajectory from the Data "
                              "Centers tab (planned sites under slip, then the fitted "
-                             "trend) from today to the horizon. Off: the flat rate below.")
+                             f"trend) over the next {_TK_DC_AVG_YEARS} years, whatever the "
+                             "chart horizon. Off: the flat rate below.")
             number("Compute growth per year (×)", "compute_growth", 1.0, 5.0, 0.1,
                    "Used when the data-center projection is off.")
         with st.expander("What decides RSI"):
@@ -18282,7 +18288,7 @@ def render_takeoff():
     # around it. Reporting only: the simulated dynamics never see it.
     pace_today = float(st.session_state["tk_pace_today"])
     pace_yield = pace_today / float(np.median(np.exp(experiment_starts)))
-    dc = (_tk_dc_compute(today, int(st.session_state["tk_end_year"]), n)
+    dc = (_tk_dc_compute(today, n)
           if st.session_state["tk_dc_compute"] else None)
     compute_rates, hist_compute = dc if dc else (None, None)
     result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,

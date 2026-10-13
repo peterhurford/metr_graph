@@ -42,7 +42,8 @@ lowest, so it is where this term is largest.
 
 Compute growth comes from the Data Centers tab by default: each draw takes one sampled US
 largest-training-run trajectory (recorded steps, catalogued plans under slip, then the
-fitted trend) averaged from today to the horizon. Off, it is the flat `compute_growth`.
+fitted trend) averaged over a fixed five years, whatever the chart horizon. Off, it is the
+flat `compute_growth`.
 
 Research judgment is gated by who directs research: people still in the direction stage
 keep today's judgment, and AI judgment (rising with capability, capped at `taste_cap`,

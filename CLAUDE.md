@@ -96,7 +96,8 @@ month a draw's ECI reaches `_TK_ASI_ECI` (290). ECI at RSI is fixed by construct
 human hours depend only on capability, so RSI is a capability threshold.
 `tk_dc_compute` (default on) feeds compute growth from the Data Centers tab:
 `_tk_dc_compute` samples the US largest-run projection (`_pc_projection`, as Pacing does)
-and averages each path from today to the horizon into one rate per draw, passed as
+and averages each path over a fixed `_TK_DC_AVG_YEARS` (not the chart horizon, which
+must not move dates) into one rate per draw, passed as
 `simulate(compute_rates=…)`. The ECI scale then uses that series' historical fit as the
 compute growth behind today's trend, so only a projected change in compute growth moves ECI
 (`test_compute_follows_the_data_center_projection_unless_toggled_off`).
