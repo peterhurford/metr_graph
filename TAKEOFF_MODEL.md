@@ -117,7 +117,7 @@ fixed number of points per unit of log effective compute, set so today's modeled
 equals the ECI frontier's fitted points per year. The measured exchange rate (about 6.4
 points per 10× training compute) would give a third of that slope, so the choice roughly
 triples every post-RSI gain read as ECI; both readings belong next to any bar picked off it.
-Superintelligence is to be defined as an ECI level on this chart.
+Ultraintelligence is to be defined as an ECI level on this chart.
 
 ## Evidence calibration
 

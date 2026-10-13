@@ -1,7 +1,7 @@
 # AI Capability Projections
 
 This interactive Streamlit dashboard has thirteen tabs covering benchmark capability,
-labor automation, cyber offense, revenue, compute buildout, takeoff to superintelligence,
+labor automation, cyber offense, revenue, compute buildout, takeoff to ultraintelligence,
 and public frontier-risk assessments. Empirical panels project trends with uncertainty
 bands; Takeoff explores scenarios; Frontier Thresholds records reported assessments
 and safeguard changes.
@@ -56,7 +56,7 @@ research stage, useful-project completion, and **validated research acceleration
 of autonomy**. Full automation is, per scenario, either low human involvement in every stage
 with high project completion or the RSI tab's AL5 date, which leaves the inherited coding
 blend; the tab tabulates both. Superhuman research additionally requires sustained progress acceleration
-and a same-compute advantage. Broad superintelligence retains a speculative capability gap.
+and a same-compute advantage. Broad ultraintelligence retains a speculative capability gap.
 
 **Evidence calibration** uses the local OpenAI experiment-velocity series, with explicit
 compute, capability, and useful-yield assumptions. A supplied validated-progress ratio can

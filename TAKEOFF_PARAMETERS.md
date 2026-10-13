@@ -62,7 +62,7 @@ further log progress by about 1.41×, holding inputs constant. This can outweigh
 growth in the frozen-AI reference. Sublinear elasticity, transfer discounts, square-root
 resource returns, and difficulty stack together; their combined conservatism is not fitted.
 Difficulty is the most sensitive parameter in the model: holding the rest at Central, broad
-superintelligence by end-2031 runs from 96% at 0.35 to 35% at 0.71 and 3% at 1.0. Varying
+ultraintelligence by end-2031 runs from 96% at 0.35 to 35% at 0.71 and 3% at 1.0. Varying
 it puts roughly 9% of scenarios below the compounding threshold.
 
 ## Milestone definitions

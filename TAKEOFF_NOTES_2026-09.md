@@ -38,14 +38,14 @@ intelligence-explosion literature the model was checked against. Resume from
 | — human-hours definition | as above | Sep 2028 / Mar 2029 / Jan 2030 |
 | — AL5 definition | — | Jul 2027 / Nov 2027 / Aug 2029 |
 | Superhuman AI research | Sep 2029 / Aug 2030 / beyond (83%) | Aug 2029 / Sep 2030 / beyond (77%) |
-| Broad superintelligence | Jan 2030 / Jan 2031 / beyond (76%) | Dec 2029 / Jan 2031 / beyond (71%) |
+| Broad ultraintelligence | Jan 2030 / Jan 2031 / beyond (76%) | Dec 2029 / Jan 2031 / beyond (71%) |
 
 - The two full-R&D definitions disagree by ~16 months at the median.
 - **The ladder weight moves nothing after full R&D automation**: superhuman and
-  superintelligence read 77% / 71% at every weight from 0 to 100. Human hours are a
+  ultraintelligence read 77% / 71% at every weight from 0 to 100. Human hours are a
   readout in this model and never feed back into research speed. The drop from
   83% / 76% is entirely from sampling difficulty.
-- The fizzle tail shows at later horizons: superintelligence by 2035 is 92% in v5
+- The fizzle tail shows at later horizons: ultraintelligence by 2035 is 92% in v5
   against 100% in v4; by 2040, 95%.
 - Research pace 2× today: Sep 2027 / Jan 2028 / Jun 2028. 5×: Aug 2028 / Feb 2029 /
   Nov 2029.
@@ -55,11 +55,11 @@ intelligence-explosion literature the model was checked against. Resume from
 ### Sensitivities
 
 - **Difficulty is the dominant parameter.** Fixed values, everything else Central:
-  superintelligence by 2031 is 96% at 0.35, 76% at 0.50, 35% at 0.71, 3% at 1.0.
+  ultraintelligence by 2031 is 96% at 0.35, 76% at 0.50, 35% at 0.71, 3% at 1.0.
 - **Semi-endogenous-growth parameters.** The model's `difficulty` is β and its
   asymptotic quality elasticity is ≈ `taste_slope` (the quantity channel saturates
   on experiment compute), so r = λ/β. Ho & Whitfill's medians (λ ≈ 1.40, β ≈ 1.01)
-  give superhuman 70% / superintelligence 64% by 2031, medians Nov 2030 / Apr 2031;
+  give superhuman 70% / ultraintelligence 64% by 2031, medians Nov 2030 / Apr 2031;
   r = 1.2 (1.2 / 1.0) gives 53% / 47%; r = 1.3 gives 63% / 56%. The Central margin
   (0.8 − 0.5 = 0.3) is close to their λ − β ≈ 0.39, but the model's 2031 shares run
   somewhat above theirs.
@@ -109,7 +109,7 @@ Where to push back:
 
 1. **The headline rests on a poorly measured number.** Ho & Whitfill's central r
    sits near 1.2–1.4 with sub-field intervals from ~0.4 to ~2.7, and they concede an
-   upward bias. In the model, difficulty 0.35 → 1.0 takes superintelligence by 2031
+   upward bias. In the model, difficulty 0.35 → 1.0 takes ultraintelligence by 2031
    from 96% to 3%.
 2. **Compute is more than a friction.** In the model the *quantity* of research is
    bottlenecked by experiment compute (the Whitfill & Wu point, structurally). Only

@@ -17877,7 +17877,7 @@ def _tk_eci(result, params):
     at_rsi = np.where(np.isfinite(rsi) & (rsi <= years[-1]),
                       paths[np.arange(len(rsi)), idx], np.nan)
     return {"now": now, "ppy": ppy, "paths": paths, "at_rsi": at_rsi,
-            "frontier": frontier, "asi": _tk_first_reach(paths, years, _TK_ASI_ECI)}
+            "frontier": frontier, "ultra": _tk_first_reach(paths, years, _TK_ULTRA_ECI)}
 
 
 # Years from today during which projected ECI is floored at today's trend, and
@@ -17885,8 +17885,8 @@ def _tk_eci(result, params):
 _TK_ECI_FLOOR_YEARS = 1.0
 _TK_ECI_FLOOR_FADE_YEARS = 1.0
 
-# Superintelligence, as an ECI level each scenario's capability path must reach.
-_TK_ASI_ECI = 290.0
+# Ultraintelligence, as an ECI level each scenario's capability path must reach.
+_TK_ULTRA_ECI = 290.0
 
 
 def _tk_first_reach(paths, years, level):
@@ -17897,7 +17897,7 @@ def _tk_first_reach(paths, years, level):
 
 # Past RSI some scenarios' efficiency compounds without limit, and ECI (linear
 # in log effective compute) runs into the thousands; the chart's view stops
-# here so the range a superintelligence bar would sit in stays readable.
+# here so the range an ultraintelligence bar would sit in stays readable.
 _TK_ECI_VIEW_MAX = 400
 
 
@@ -17935,8 +17935,8 @@ def _tk_eci_fig(result, today, eci, markers=()):
         fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper",
                            text=label, showarrow=False, xanchor="left",
                            font=dict(size=11, color="#888"))
-    fig.add_hline(y=_TK_ASI_ECI, line_dash="dash", line_color="#c0392b", line_width=1,
-                  annotation_text=f"Superintelligence: ECI {_TK_ASI_ECI:g}",
+    fig.add_hline(y=_TK_ULTRA_ECI, line_dash="dash", line_color="#c0392b", line_width=1,
+                  annotation_text=f"Ultraintelligence: ECI {_TK_ULTRA_ECI:g}",
                   annotation_position="top left", annotation_font_color="#c0392b")
     if q[-1, 2] > _TK_ECI_VIEW_MAX:
         fig.add_annotation(
@@ -18095,8 +18095,8 @@ def render_takeoff():
         st.caption("Coding automation inherits the final RSI projection. "
                    "Adjust its weights and timing on the RSI tab.")
         number("Project through (year end)", "end_year", datetime.now().year, 2050, 1)
-        with st.expander("What decides superintelligence", expanded=True):
-            st.caption("Across a plausible range, each moves the superintelligence date "
+        with st.expander("What decides ultraintelligence", expanded=True):
+            st.caption("Across a plausible range, each moves the ultraintelligence date "
                        "by 4\u201321 months; everything under Advanced moves it a few "
                        "months at most.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
@@ -18352,15 +18352,15 @@ def render_takeoff():
     _card(b, "RSI: AI directs research", rsi,
           f"Research direction at or under {params['full_human']:g}% of its baseline "
           "human hours, after coding automation: the AI chooses what to try next.")
-    _card(c, f"Superintelligence: ECI {_TK_ASI_ECI:g}", eci["asi"],
-          f"First month a scenario's ECI reaches {_TK_ASI_ECI:g} (today's frontier: "
+    _card(c, f"Ultraintelligence: ECI {_TK_ULTRA_ECI:g}", eci["ultra"],
+          f"First month a scenario's ECI reaches {_TK_ULTRA_ECI:g} (today's frontier: "
           f"{eci['now']:.0f}).")
     if limited:
         st.caption(f"{100 * limited:.2f}% of scenarios exceeded the simulation's range "
                    "and count as not reaching RSI.")
     medians = [(label, takeoff.quantile(samples, 0.5, horizon))
                for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
-                                      ("Superintelligence", eci["asi"]))]
+                                      ("Ultraintelligence", eci["ultra"]))]
     markers = [(label, today + timedelta(days=float(t * 365.25)))
                for label, t in medians if 0 <= t <= horizon]
 
@@ -18446,7 +18446,7 @@ def render_takeoff():
             "- **RSI** is research direction handed to AI: at most "
             f"{params['full_human']:g}% of its baseline human hours, after coding "
             "automation.\n"
-            f"- **Superintelligence** is ECI {_TK_ASI_ECI:g}, read off each scenario's "
+            f"- **Ultraintelligence** is ECI {_TK_ULTRA_ECI:g}, read off each scenario's "
             "capability path.\n"
             "- Rates are fitted to the RSI tab's series where it has one (top of the "
             "page); compute growth comes from the Data Centers tab. Everything else is "
