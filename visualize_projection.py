@@ -17835,7 +17835,10 @@ def _tk_takeoff_b(params, n=20000):
     ratio = beta * np.exp(spread * rng.uniform(-1, 1, n)) / (
         s * np.exp(spread * rng.uniform(-1, 1, n)))
     b = 2 ** (ratio - 1)
-    return {"median": float(2 ** (beta / s - 1)), "accelerating": float(np.mean(b < 1))}
+    drift = params.get("judgment_drift", 0.0) / 100
+    later = s * (1 + drift) ** 2          # the elasticity after 100x more capability
+    return {"median": float(2 ** (beta / s - 1)), "accelerating": float(np.mean(b < 1)),
+            "after_100x": float(2 ** (beta / later - 1)) if later > 0 else None}
 
 
 def _tk_eci(result, params):
@@ -18110,6 +18113,11 @@ def render_takeoff():
                    "Research quality scales as capability raised to this power. The "
                    "default is fitted from the RSI tab's next-step study: its win odds "
                    "against researchers grow as research judgment does.")
+            number("Change in judgment rate per 10\u00d7 capability (%)", "judgment_drift",
+                   -90.0, 300.0, 5.0,
+                   "Today's judgment rate is measured on today's models. Above 0, judgment "
+                   "gains compound as AI passes human level (b falls over time); below 0 "
+                   "they fade as easy wins run out (b rises). 0 holds today's rate.")
             number("Labor\u2013compute substitutability (\u03c1)", "substitution", -3.0, 0.5, 0.1,
                    "How research labor and experiment compute combine (CES exponent). "
                    "\u22121 is a harmonic mean, where unlimited labor at most doubles "
@@ -18394,7 +18402,11 @@ def render_takeoff():
         "Once AI directs research, each research speed-up doubling takes b times as "
         "long as the last, from judgment alone: below 1 it accelerates. The AI "
         "Futures Model's statistic, 2^(difficulty / judgment elasticity \u2212 1). "
-        f"Here {100 * b['accelerating']:.0f}% of scenarios accelerate. Their Dec 2025 "
+        f"Here {100 * b['accelerating']:.0f}% of scenarios accelerate"
+        + ("" if not params.get("judgment_drift") or b["after_100x"] is None else
+           f"; with the judgment-rate change set, b is {b['after_100x']:.2f} once AI is "
+           "100\u00d7 more capable")
+        + ". Their Dec 2025 "
         "median is 1.21 (38% accelerate); AI 2027's was 0.64\u20130.78.")
     st.markdown("**What moves the pace**")
     _fn_caption(

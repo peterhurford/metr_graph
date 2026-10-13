@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v10-uncapped-taste"
+MODEL_VERSION = "takeoff-v11-judgment-drift"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -47,6 +47,10 @@ DEFAULTS = {
     # Share of the non-AI input growth that would hold today's pace with AI
     # frozen (researchers, spending); 0 leaves compute the only growing input.
     "baseline_inputs": 100.0,
+    # Change in the judgment elasticity per 10x gain in capability (%): above 0
+    # judgment gains compound as AI gets more capable (b falls), below 0 they
+    # fade (b rises). 0 keeps today's measured rate throughout.
+    "judgment_drift": 0.0,
 }
 PRESETS = {
     "Central": {},
@@ -99,7 +103,7 @@ def validate(params):
             or p["rsi_trend_months"] <= 0:
         raise ValueError("RSI trend weights must be percentages and their half-life positive.")
     if not -5 <= p["substitution"] <= 0.9 or p["ai_speed"] < 1 \
-            or not 0 <= p["baseline_inputs"] <= 200:
+            or not 0 <= p["baseline_inputs"] <= 200 or not -90 <= p["judgment_drift"] <= 300:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
                          "baseline input growth in [0, 200]%.")
     return p
@@ -154,6 +158,16 @@ def after_coding(samples, onset):
     """Durations only where both calendar events are modeled; retain censoring."""
     return np.subtract(samples, onset, out=np.full_like(samples, np.inf),
                        where=np.isfinite(samples) & np.isfinite(onset))
+
+
+def judgment_gain_log(effective, slope, drift):
+    """Log judgment gain at capability `effective` (natural log of effective
+    compute): the integral of an elasticity that starts at `slope` and changes
+    by `drift` (a fraction) per 10x of capability."""
+    k = np.log1p(drift) / np.log(10)
+    if abs(k) < 1e-12:
+        return slope * effective
+    return slope * np.expm1(k * effective) / k
 
 
 def _ces_log(x, y, rho):
@@ -378,8 +392,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                                    halves, floor)
         share_now = human_now @ WORKFLOW_WEIGHTS
         amdahl_log = amdahl0 - np.log(share_now + (1 - share_now) / ai_speed)
-        # People still directing research keep today's judgment; AI's (capped)
-        # applies to the rest, so research quality is the direction-weighted mix.
+        # People still directing research keep today's judgment; AI's applies
+        # to the rest, so research quality is the direction-weighted mix.
         direction = human_now[:, 0]
         # The RSI anchor supplies a smooth reduction in coding human hours.
         # Its productivity gain and endogenous coding gains overlap: use the
@@ -393,7 +407,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             coding_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
                                      np.log(transfer) + coding_gain)
             ai_taste_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
-                                        np.log(transfer) + taste_slope * effective)
+                                        np.log(transfer) + judgment_gain_log(
+                                            effective, taste_slope, p["judgment_drift"] / 100))
             with np.errstate(divide="ignore"):   # a share of 0 or 1 drops a term
                 quality_log = np.logaddexp(np.log(direction),
                                            np.log1p(-direction) + ai_taste_log)
@@ -438,7 +453,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # Stop numerically divergent draws explicitly, rather than silently
         # treating a numerical ceiling as a capability plateau.
         diverged = active & (updated > 1e6)
-        # Unresolved only while RSI could still arrive inside the horizon.
+        # A runaway has automated coding whatever its inherited date says, and
+        # its direction share is at the floor: RSI is reached unless the floor
+        # sits above the bar. Otherwise unresolved while RSI could still arrive.
+        runaway_rsi = diverged & ~np.isfinite(events["RSI"]) & (floor <= p["full_human"] / 100)
+        events["RSI"][runaway_rsi] = end[runaway_rsi]
         limited |= diverged & ~np.isfinite(events["RSI"]) & (onset <= p["years"])
         software = np.minimum(updated, 1e6)
         train_budget = np.exp(compute_rate * t) * np.divide(

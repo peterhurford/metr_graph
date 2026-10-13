@@ -40,7 +40,7 @@ Thirteen-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v10-uncapped-taste`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v11-judgment-drift`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -91,7 +91,12 @@ move superintelligence 4–21 months: parallelization, r, the judgment elasticit
 rest, data-center compute included (~1 month), sit in one *Advanced* expander. Retarget
 that grouping if a rerun of the sweep reorders them.
 AI judgment is gated by the direction stage's human share, uncapped
-(`test_ai_judgment_only_counts_where_ai_directs_research`). Superintelligence is the first
+(`test_ai_judgment_only_counts_where_ai_directs_research`). `judgment_drift` (default 0)
+changes its elasticity by that fraction per 10× of capability (`judgment_gain_log`), so b
+can fall or rise as AI improves; the b card's hover gives b at 100× when it is set. A draw
+that runs away numerically counts as reaching RSI then (unless the human floor sits above
+the bar): its capability has passed any coding milestone
+(`test_a_runaway_reaches_rsi_unless_the_floor_blocks_it`). Superintelligence is the first
 month a draw's ECI reaches `_TK_ASI_ECI` (290). ECI at RSI is fixed by construction:
 human hours depend only on capability, so RSI is a capability threshold.
 A *Takeoff speed b* card beside the 2×/5× cards reads the AI Futures Model's statistic off the

@@ -375,3 +375,26 @@ def test_ai_judgment_only_counts_where_ai_directs_research():
     e = tk.simulate(dict(base, taste_slope=2.0), n=1)
     f = tk.simulate(dict(base, taste_slope=0.2), n=1)
     assert e["software_log"][0] > f["software_log"][0]
+
+
+def test_judgment_drift_bends_the_judgment_rate_per_10x():
+    """Zero drift is a constant elasticity; drift d multiplies the elasticity by
+    (1 + d) per 10x of capability, so the gain's slope at 10x is slope * (1 + d)."""
+    e = np.linspace(0, 6, 7)
+    np.testing.assert_allclose(tk.judgment_gain_log(e, 0.3, 0.0), 0.3 * e)
+    up, down = tk.judgment_gain_log(e, 0.3, 0.5), tk.judgment_gain_log(e, 0.3, -0.5)
+    assert np.all(up[1:] > 0.3 * e[1:]) and np.all(down[1:] < 0.3 * e[1:])
+    h = 1e-6
+    slope_at_10x = (tk.judgment_gain_log(np.log(10) + h, 0.3, 0.5)
+                    - tk.judgment_gain_log(np.log(10), 0.3, 0.5)) / h
+    assert slope_at_10x == pytest.approx(0.45, rel=1e-4)
+
+
+def test_a_runaway_reaches_rsi_unless_the_floor_blocks_it():
+    """A draw that diverges before its inherited coding date has automated
+    coding anyway: RSI is reached, and the draw is not left unresolved."""
+    explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, uncertainty=0, years=12)
+    early = tk.simulate(explosive, n=1, onset_years=np.array([11.0]))
+    assert early["software_log"][0] == 1e6
+    assert early["events"]["RSI"][0] < 11.0
+    assert not early["numerically_limited"][0]
