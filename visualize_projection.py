@@ -17957,14 +17957,17 @@ _TK_FACTOR_VIEW = 100
 
 def _tk_factors_fig(result, today):
     """What multiplies into the research pace, each relative to today (median
-    over scenarios): labor and compute, research judgment, and difficulty,
+    over scenarios): human labor, AI capabilities and compute (the labor and
+    experiments input, split exactly), research judgment, and difficulty,
     drawn as the divisor it is. Their product is the pace."""
     p = result["workflow_progress"]
     f = p["pace_factors"]
     x = _tk_dates(result, today)
     fig = go.Figure()
     for name, values, color, dash in (
-            ("Labor & compute", f["resources"], "#2980b9", None),
+            ("Human labor (calibrated)", f["labor"], "#16a085", None),
+            ("AI capabilities", f["ai"], "#d68910", None),
+            ("Compute", f["compute"], "#2980b9", None),
             ("Research judgment", f["judgment"], "#8e44ad", None),
             ("Harder ideas (divides)", -f["difficulty"], "#c0392b", None),
             ("Net research pace", np.log(p["pace"]), "#333", "dot")):
@@ -17983,7 +17986,7 @@ def _tk_factors_fig(result, today):
     return fig
 
 
-def _tk_compute_fig(result, today, slow_date, hist=None):
+def _tk_compute_fig(result, today, slow_date, hist=None, markers=()):
     """The compute going in: each scenario's largest training run as a
     multiple of today's (median, middle 80%), any post-RSI boost included,
     against the historical trend continued, with the date its growth slows
@@ -18010,9 +18013,16 @@ def _tk_compute_fig(result, today, slow_date, hist=None):
             line=dict(color="#7f8c8d", width=1.5, dash="dash"),
             hovertemplate="%{x|%b %Y}<br>%{y:.3g}× today<extra>Trend</extra>"))
     fig.add_vline(x=slow_date, line_dash="dot", line_color="#b0b0b0", line_width=1)
-    fig.add_annotation(x=slow_date, y=1.0, yref="paper", showarrow=False, xanchor="left",
+    fig.add_annotation(x=slow_date, y=0.0, yref="paper", showarrow=False, xanchor="left",
+                       yanchor="bottom",
                        text=f"Growth keeps {result['params']['compute_slowdown']:g}% "
                             "of its rate", font=dict(size=11, color="#888"))
+    fig.add_vline(x=today, line_color="#555", line_width=1.5)
+    for i, (label, when) in enumerate(markers):
+        fig.add_vline(x=when, line_dash="dot", line_color="#b0b0b0", line_width=1)
+        fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper",
+                           text=label, showarrow=False, xanchor="left",
+                           font=dict(size=11, color="#888"))
     fig.update_layout(
         height=340, margin=dict(l=55, r=20, t=30, b=40),
         xaxis=dict(range=[x[0], x[-1]]),
@@ -18933,18 +18943,6 @@ def _render_takeoff(loading):
     st.plotly_chart(_tk_evidence_fig({k: st.session_state["tk_" + k]
                                       for k in ("taste_slope", "coding_slope")}),
                     width="stretch")
-    st.markdown("**Compute going in**")
-    _fn_caption(
-        "The compute each scenario trains and experiments with, as a multiple of today's.",
-        ("compute each scenario",
-         "One growth rate per scenario: with the sidebar's data-center toggle on (the "
-         "default), the average over the next five years of one sampled US "
-         "largest-training-run path from the Data Centers tab; off, the flat rate set "
-         f"there. From the end of {_TK_COMPUTE_SLOW_YEAR} each keeps the sidebar's share "
-         "of its log growth. Training, experiments and agents split this one budget."))
-    st.plotly_chart(_tf(_tk_to(_tk_compute_fig(
-        result, today, datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31), result.get("hist_compute")),
-        view_end)), width="stretch")
 
     st.subheader("1. Research speeds up")
     _fn_caption(
@@ -18961,13 +18959,35 @@ def _render_takeoff(loading):
         width="stretch")
     st.markdown("**What moves the pace**")
     _fn_caption(
-        "Multiply the three factors and you get the dotted line.",
-        ("three factors",
-         "Labor and compute: AI coding labor and experiment compute, the scarcer "
-         "one limiting, blended with OpenAI's experiment trend in year one. "
-         "Research judgment rises with model capability. Harder ideas: each "
+        "Multiply the five factors and you get the dotted line.",
+        ("five factors",
+         "Human labor (calibrated): researchers and the other non-compute inputs, at the rate "
+         "that holds today's pace with AI frozen. It falls because compute alone "
+         "would speed research faster than the trend has, so the calibration has the "
+         "other inputs lag; it is that offset, not a forecast that research staff "
+         "shrink, and the model cannot say whether experiment compute or the "
+         "compute-to-progress link is what lags. AI capabilities: AI coding help "
+         "and AI taking over research hours, worth less when experiment compute is the "
+         "scarcer input. Compute: the compute below. These three are the labor and "
+         "experiment input split exactly, blended with OpenAI's experiment trend in "
+         "year one. Research judgment rises with model capability. Harder ideas: each "
          "improvement makes the next harder to find."))
     st.plotly_chart(_tf(_tk_to(_tk_factors_fig(result, today), view_end)), width="stretch")
+    st.markdown("**Compute going in**")
+    _fn_caption(
+        "The compute each scenario trains and experiments with, as a multiple of today's. "
+        "Verticals mark milestone medians.",
+        ("compute each scenario",
+         "One growth rate per scenario: with the sidebar's data-center toggle on (the "
+         "default), the average over the next five years of one sampled US "
+         "largest-training-run path from the Data Centers tab; off, the flat rate set "
+         f"there. From the end of {_TK_COMPUTE_SLOW_YEAR} each keeps the sidebar's share "
+         "of its log growth, and from its own RSI date it grows at the sidebar's "
+         f"\u00d7{float(st.session_state['tk_rsi_compute_boost']):g} of its rate. Training, "
+         "experiments and agents split this one budget."))
+    st.plotly_chart(_tf(_tk_to(_tk_compute_fig(
+        result, today, datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31), result.get("hist_compute"),
+        markers), view_end)), width="stretch")
 
     st.subheader("2. People step out of the loop")
     _fn_caption(

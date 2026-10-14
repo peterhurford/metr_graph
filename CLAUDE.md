@@ -166,9 +166,12 @@ URL sharing, stale imports, and exact inheritance from RSI.
 The tab reads as a story, top to bottom: the warning, *The takeoff model* (the loop
 `_TK_LOOP_HTML`, its three brakes, the headline cards for coding automation, RSI and
 ultraintelligence with 80%/90% CIs, the two gaps between them and the first-year progress),
-*The evidence* (the former RSI tab), then *Inside the takeoff model*: the evidence row and
-*Compute going in* (`_tk_compute_fig`, each draw's `workflow_progress["compute_log"]`, post-RSI boost included), **1. Research speeds
-up** (`_tk_pace_fig` plus the factor chart), **2. People step out of the loop**
+*The evidence* (the former RSI tab), then *Inside the takeoff model*: the evidence row, **1. Research speeds
+up** (`_tk_pace_fig`, the factor chart, whose labor-and-compute factor splits exactly into
+human labor, AI capabilities and compute (`pace_factors` `labor`/`ai`/`compute`, summing to
+`resources`; `test_pace_factors_multiply_back_to_the_pace`), then *Compute going in*
+(`_tk_compute_fig`, each draw's `workflow_progress["compute_log"]`, post-RSI boost included,
+with the milestone medians marked)), **2. People step out of the loop**
 (`_tk_humans_fig`), **3. What it does to capability (ECI)** (plus *2025-level progress in
 each year*, `_tk_yearly_fig`: ECI gained per calendar year over the frontier's fitted
 points a year, a different 2025 unit from chart 1's experiments) and **4. When it happens, and

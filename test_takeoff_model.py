@@ -410,6 +410,12 @@ def test_pace_factors_multiply_back_to_the_pace():
     ok = np.isfinite(log_rebuilt) & (log_rebuilt < 699)
     assert ok.mean() > 0.6
     np.testing.assert_allclose(np.exp(log_rebuilt[ok]), p["pace"][ok], rtol=1e-6)
+    # Labor and compute split exactly into compute, human labor and AI help.
+    np.testing.assert_allclose(f["compute"] + f["labor"] + f["ai"], f["resources"], atol=1e-9)
+    # With no AI transfer, AI help never moves.
+    r0 = tk.simulate(dict(transfer=0, years=4), n=50, onset_years=np.full(50, 1.0))
+    ai = r0["workflow_progress"]["pace_factors"]["ai"]
+    np.testing.assert_allclose(ai, ai[:, :1].repeat(ai.shape[1], axis=1), atol=1e-9)
 
 
 def test_ai_judgment_only_counts_where_ai_directs_research():

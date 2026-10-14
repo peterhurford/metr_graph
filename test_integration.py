@@ -982,7 +982,7 @@ class TestTakeoffTab:
         at = self._app()
         assert at.session_state["_active_tab"] == "Takeoff"
         assert any(h.value == "Takeoff" for h in at.header)
-        # RSI evidence, compute, pace, pace factors, people, ECI, yearly progress
+        # RSI evidence, pace, pace factors, compute, people, ECI, yearly progress
         # and the distributions.
         assert len(_tk_charts(at)) == 8
         # The evidence first, then the takeoff model.
@@ -1015,10 +1015,12 @@ class TestTakeoffTab:
         # One bar per full calendar year from next year to the sidebar's year.
         assert yearly["data"][0]["x"] == list(range(datetime.now().year + 1, 2031))
         assert yearly["layout"]["yaxis"]["title"]["text"] == "Years of 2025-level progress"
-        compute = json.loads(_tk_charts(at)[1].proto.spec)
+        compute = json.loads(_tk_charts(at)[3].proto.spec)
         assert {"Compute in the model", "Middle 80% of scenarios"} <= {
             d.get("name") for d in compute["data"]}
         assert compute["layout"]["yaxis"]["type"] == "log"
+        assert {"Coding automated", "RSI", "Ultraintelligence"} <= {
+            a.get("text") for a in compute["layout"]["annotations"]}
         eci = json.loads(_tk_charts(at)[5].proto.spec)
         [projected] = [d for d in eci["data"] if d.get("name") == "Projected ECI"]
         # The axis ends on the sidebar's year end; the line runs a month past it.
@@ -1037,7 +1039,7 @@ class TestTakeoffTab:
         first_year = slice(0, 13)        # monthly grid: today plus 12 months
         assert np.all(_ys(traces["Projected ECI: 10th percentile"])[first_year]
                       >= _ys(traces["Today's trend continued"])[first_year] - 1e-9)
-        pace = json.loads(_tk_charts(at)[2].proto.spec)
+        pace = json.loads(_tk_charts(at)[1].proto.spec)
         assert {"Modeled research pace", "If AI stopped improving today"} <= {
             d.get("name") for d in pace["data"]}
         # Today's pace is set, not inherited from the experiment proxy.
@@ -1051,9 +1053,9 @@ class TestTakeoffTab:
         # Draws run to the horizon, so there is no held-pace tail to label.
         assert not any("hold their last pace" in a.get("text", "")
                    for a in pace["layout"]["annotations"])
-        factors = json.loads(_tk_charts(at)[3].proto.spec)
+        factors = json.loads(_tk_charts(at)[2].proto.spec)
         assert [d["name"] for d in factors["data"]] == [
-            "Labor & compute", "Research judgment", "Harder ideas (divides)",
+            "Human labor (calibrated)", "AI capabilities", "Compute", "Research judgment", "Harder ideas (divides)",
             "Net research pace"]
         people = json.loads(_tk_charts(at)[4].proto.spec)
         # Three stages (band edges + median each), then the measured index history.
@@ -1263,7 +1265,7 @@ class TestTakeoffTab:
         labels = ["Coding automation \u2192 RSI", "RSI \u2192 ultraintelligence"]
         for label in labels:
             assert any(m.label == label for m in at.metric), label
-        pace = json.loads(_tk_charts(at)[2].proto.spec)
+        pace = json.loads(_tk_charts(at)[1].proto.spec)
         assert pace["layout"]["yaxis"]["range"][1] <= np.log10(1000) + 1e-9
         assert not any(m.label.startswith("FOOM") for m in at.metric)
 

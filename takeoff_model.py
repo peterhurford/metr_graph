@@ -422,10 +422,15 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     pace_history = np.repeat(initial_throughput[:, None], len(workflow_grid), axis=1)
     reference_pace_history = pace_history.copy()
     # log pace = resources + judgment - difficulty, recorded with the pace so
-    # the chart can show what moves it. Resources carry the trend blend.
+    # the chart can show what moves it. Resources carry the trend blend and
+    # split exactly as compute + labor + ai: CES is homogeneous, so the input
+    # growth labor and experiments share (compute, and the non-AI inputs)
+    # comes off it whole; the rest is AI help through the CES.
     factor_history = {k: np.zeros_like(capability_history)
-                      for k in ("resources", "judgment", "difficulty")}
+                      for k in ("resources", "judgment", "difficulty",
+                                "compute", "labor", "ai")}
     factor_history["resources"][:] = np.log(initial_throughput)[:, None]
+    factor_history["ai"][:] = np.log(initial_throughput)[:, None]
     last_factors = {k: v[:, 0].copy() for k, v in factor_history.items()}
     observation_index = np.ones(n, dtype=int)
     last_pace = initial_throughput.copy()
@@ -496,6 +501,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         experiment_log = parallel * (compute_log + extra_log + np.log(shares[1] / 0.4))
         research_log = _ces_log(labor_log, experiment_log, rho) + quality_log
         judgment_log = quality_log.copy()
+        compute_part = parallel * compute_log
+        labor_part = parallel * extra_log
         if experiment_slopes is not None and transfer:
             mid = t + dt / 2
             resource_log = np.log(initial_throughput) + parallel * input_rate * mid
@@ -507,6 +514,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             # not multiply the trend into feedback already calibrated from it.
             research_log = (1 - weight) * research_log + weight * proxy_log
             judgment_log = (1 - weight) * quality_log
+            compute_part = (1 - weight) * compute_part + weight * parallel * compute_rate * mid
+            labor_part = (1 - weight) * labor_part + weight * parallel * extra_rate * mid
         log_amount = np.log(software_rate) + research_log + np.log(
             dt, out=np.full(n, -np.inf), where=dt > 0)
         # Derivative of the same discovery process being integrated below,
@@ -613,9 +622,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         rows = np.flatnonzero(observed)
         pace_history[rows, observation_index[rows]] = pace[rows]
         boost_history[rows, observation_index[rows]] = boost_log[rows]
+        resources_log = research_log - judgment_log
         for key, values in (("judgment", judgment_log),
-                            ("resources", research_log - judgment_log),
-                            ("difficulty", penalty)):
+                            ("resources", resources_log),
+                            ("difficulty", penalty),
+                            ("compute", compute_part), ("labor", labor_part),
+                            ("ai", resources_log - compute_part - labor_part)):
             factor_history[key][rows, observation_index[rows]] = values[rows]
             last_factors[key][active] = values[active]
         reference_pace_history[rows, observation_index[rows]] = reference_pace[rows]
