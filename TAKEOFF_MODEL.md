@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v18-scale-dependent-gains`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v19-no-human-floor`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -124,7 +124,7 @@ needs at most 5% of its baseline human hours, with the coding date arrived. Huma
 feed back into research speed. Every draw runs to the horizon (only a numerically
 divergent one stops), so its capability path continues past RSI.
 The stages are direction, experiment design/interpretation, and verification/integration.
-The 1% floor and stage halving times remain adjustable. Halving times use months of capability
+A persistent human-work floor (default 0: no stage needs people forever) and the stage halving times remain adjustable. Halving times use months of capability
 progress at today's initial growth rate, not calendar months; accelerated capability progress
 compresses calendar durations. The available research system includes validated fast gains.
 

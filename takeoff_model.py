@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v18-scale-dependent-gains"
+MODEL_VERSION = "takeoff-v19-no-human-floor"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -32,7 +32,7 @@ DEFAULTS = {
     "uncertainty": 40,
     "human_direction": 40.0, "human_experiments": 30.0, "human_verification": 50.0,
     "half_direction": 6.0, "half_experiments": 9.0, "half_verification": 12.0,
-    "human_floor": 1.0, "full_human": 5.0,
+    "human_floor": 0.0, "full_human": 5.0,
     "fast_share": 25.0, "fast_months": 1.0,
     "coding_today": 70.0,
     # Steady state: the next model ships with one full cycle (training +
@@ -380,6 +380,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     events = {name: np.full(n, np.inf) for name in MILESTONES}
     outcomes = {name: {key: np.full(n, np.nan) for key in
                       ("human_mean", "human_worst", "human_direction",
+                       "human_experiments", "human_verification",
                        "progress_multiple", "compute_matched_advantage")}
                 for name in ("Today", "Full coding automation") + MILESTONES}
 
@@ -387,6 +388,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         for key, values in (("human_mean", human @ WORKFLOW_WEIGHTS),
                             ("human_worst", human.max(axis=1)),
                             ("human_direction", human[:, 0]),
+                            ("human_experiments", human[:, 1]),
+                            ("human_verification", human[:, 2]),
                             ("progress_multiple", progress),
                             ("compute_matched_advantage", advantage)):
             outcomes[name][key][mask] = values[mask]

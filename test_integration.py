@@ -1144,18 +1144,22 @@ class TestTakeoffTab:
         assert not any(m.label == "ECI when RSI arrives" for m in at.metric)
         assert at.query_params["tk_human_floor"] == ["6.0"]
         at.button(key="tk_reset").click().run()
-        assert at.number_input(key="tk_human_floor").value == 1.0
+        assert at.number_input(key="tk_human_floor").value == 0.0
 
     @pytest.mark.parametrize("bad,fix,message", [
-        (("tk_human_direction", 0.0), ("tk_human_floor", 0.0), "starting human work"),
-        (("tk_training_share", 70), ("tk_experiment_share", 20), "Reserve positive compute"),
+        # A floor above a stage's starting share is inconsistent.
+        ((("tk_human_experiments", 5.0), ("tk_human_floor", 10.0)),
+         ("tk_human_experiments", 30.0), "starting human work"),
+        ((("tk_training_share", 70),), ("tk_experiment_share", 20), "Reserve positive compute"),
     ])
     def test_invalid_input_is_recoverable(self, bad, fix, message):
         """An inconsistent setting shows the model's error, not a crash, and
         correcting a second setting clears it."""
         at = self._app()
-        at.number_input(key=bad[0]).set_value(bad[1]).run()
-        _assert_no_error(at, f"Takeoff / invalid {bad[0]}")
+        for key, value in bad:
+            at.number_input(key=key).set_value(value)
+        at.run()
+        _assert_no_error(at, f"Takeoff / invalid {bad[-1][0]}")
         assert any(message in e.value for e in at.error)
         at.number_input(key=fix[0]).set_value(fix[1]).run()
         _assert_no_error(at, f"Takeoff / corrected {fix[0]}")

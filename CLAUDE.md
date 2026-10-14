@@ -40,7 +40,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v18-scale-dependent-gains`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v19-no-human-floor`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
