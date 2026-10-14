@@ -10248,7 +10248,7 @@ def render_eci_gap():
                        range=[-0.5, _y_max * 1.15],
                        tickfont=dict(color='#222222'), title_font=dict(color='#222222')),
         )
-        st.plotly_chart(fig_h, use_container_width=True)
+        st.plotly_chart(fig_h, width="stretch")
     elif highlight_org is None:
         st.info("Select a company in the sidebar to see its gap vs frontier over time.")
 
@@ -11073,7 +11073,7 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
     fig.update_layout(**_dc_layout(log_scale, metric_label, x_start, x_end,
                                    y_range=_dc_yrange(vals, log_scale),
                                    height=500, show_legend=True, kind=kind))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # ── Fit readout ──
     def _pace_text(c):
@@ -11249,7 +11249,7 @@ def _dc_render_region_share(series, country_of, *, today, cap_date, x_start,
                                    show_legend=True))
     fig.update_layout(hovermode='x unified')
     fig.update_yaxes(ticksuffix='%')
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     _fn_caption(
         f"Share of every site's {_dc_share_label(metric_label, kind)}, "
@@ -11511,7 +11511,7 @@ def render_data_centers():
         log_scale, metric_label, x_start, x_end,
         y_range=_dc_yrange(_dc_visible_vals(env, x_start), log_scale),
         kind=kind))
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(fig1, width="stretch")
 
     comp = _dc_company_series(series)
     peaks = {co: max(v for _, v, _ in steps)
@@ -11572,7 +11572,7 @@ def render_data_centers():
         xaxis=snap_xaxis,
         yaxis=dict(autorange='reversed', tickfont=dict(color='#222222')),
     )
-    st.plotly_chart(fig_snap, use_container_width=True)
+    st.plotly_chart(fig_snap, width="stretch")
 
     # ══════════════════════════════════════════════════════════════════════
     # Section 3: Largest single data center by company over time
@@ -11640,7 +11640,7 @@ def render_data_centers():
     fig2.update_layout(**_dc_layout(log_scale, metric_label, x_start, x_end,
                                     y_range=_dc_yrange(comp_vals, log_scale),
                                     height=500, show_legend=True, kind=kind))
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width="stretch")
 
     st.caption("Data: Epoch AI, ‘Frontier Data Centers’ "
                "(epoch.ai/data/data-centers), CC-BY 4.0.")
@@ -11710,7 +11710,7 @@ def render_data_centers():
     fig_pool.update_layout(**_dc_layout(log_scale, metric_label, x_start, x_end,
                                         y_range=_dc_yrange(pool_vals, log_scale),
                                         height=500, show_legend=True, kind=kind))
-    st.plotly_chart(fig_pool, use_container_width=True)
+    st.plotly_chart(fig_pool, width="stretch")
 
     def _groups(basis):
         return ", ".join(lab for lab, b, _ in _DC_NETWORK_CLUSTERS if b == basis)
@@ -12410,7 +12410,7 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
                    title_font=dict(color='#222')),
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     phys_end = float(phys_contrib[-1])
     algo_end = float(pct[50][-1] - eci_now - phys_end)
     _fn_caption(
@@ -12837,7 +12837,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
         yaxis=dict(gridcolor='rgba(0,0,0,0.12)'))
     _cc_logop_yaxis(figc, "Training compute (log₁₀ OP)")
-    st.plotly_chart(figc, use_container_width=True)
+    st.plotly_chart(figc, width="stretch")
     _fn_caption(
         f"<b>Solid</b> = largest actual runs Epoch estimates: "
         f"~{_logop_lbl(us_run_lf)} (US) vs ~{_logop_num(cn_run_lf)} (China), a "
@@ -12940,7 +12940,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
-    st.plotly_chart(figf, use_container_width=True)
+    st.plotly_chart(figf, width="stretch")
     _fn_caption(
         f"ECI = <b>~{a_partial:.0f} pts per \u00d710 compute</b> on each "
         f"country's Chart-A compute growth, plus a shared algorithmic term of "
@@ -13023,7 +13023,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                        tickfont=dict(color='#222'),
                        title_font=dict(color='#222')),
             yaxis=dict(tickfont=dict(color='#222')))
-        st.plotly_chart(figw, use_container_width=True)
+        st.plotly_chart(figw, width="stretch")
         _in_band = (pure_band[0] - 0.5 <= inno_us_r <= pure_band[1] + 0.5
                     and pure_band[0] - 0.5 <= inno_cn_r <= pure_band[1] + 0.5)
         _fn_caption(
@@ -13199,7 +13199,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                        tickfont=dict(color='#222'), title_font=dict(color='#222')),
             yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                        tickfont=dict(color='#222'), title_font=dict(color='#222')))
-        st.plotly_chart(figd, use_container_width=True)
+        st.plotly_chart(figd, width="stretch")
         _fn_caption(
             (f"From today's frontiers (US {us_anchor:.0f}, China {cn_anchor:.0f}; "
              "actual points are history)."
@@ -13752,7 +13752,7 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
-    st.plotly_chart(figt, use_container_width=True)
+    st.plotly_chart(figt, width="stretch")
 
     # Cumulative odds by quarter — the same distribution read as "have they done it
     # yet?". Quarterly, not annual: the whole band lands inside ~a year, so
@@ -14275,7 +14275,7 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
         yaxis=dict(range=[-0.6, 1.6], tickmode='array', tickvals=[Y_ACT, Y_PRED],
                    ticktext=['Actual<br>release', 'Predicted<br>(DC + lag)'],
                    tickfont=dict(color='#222'), showgrid=False, zeroline=False))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # ── Verdict line ──
     # Frontier releases only: the sentence is a claim about record-setting
@@ -14389,7 +14389,7 @@ def _render_cc_world_shares(today, horizon):
                            autorange='reversed', showgrid=False)
     layout['legend'] = dict(layout['legend'], orientation='h', y=-0.3)
     fig.update_layout(**layout)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     st.caption(
         "Bars are the middle estimate, whiskers the 80% CI \u2014 "
         "which is mostly how much the sources disagree. Each whisker is one "
@@ -14463,7 +14463,7 @@ def _render_cc_world_shares(today, horizon):
     fig2.update_layout(**layout2)
     fig2.update_layout(hovermode='x unified')
     fig2.update_yaxes(ticksuffix='%')
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width="stretch")
     _back = _wc_central_shares([(datetime(2025, 5, 1) - today).days / 365.25])
     st.caption(
         "Anchored on today's split above. There is no measured history of "
@@ -14580,7 +14580,7 @@ def _render_cc_duv_ceiling(today):
     fig.add_annotation(x=today, yref='paper', y=1.0, text='Today',
                        showarrow=False, xanchor='right', yanchor='bottom',
                        font=dict(size=10, color='#777777'))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     end = datetime(_PC_END_YEARS[-1], 12, 31)
     c_imp = _duv_policy_cut(today, end)
     c_svc = _duv_policy_cut(today, end, ban_imports=True,
@@ -14736,7 +14736,7 @@ def render_compute_capabilities():
                    title_font=dict(color='#222')),
         yaxis=dict(gridcolor='rgba(0,0,0,0.12)'))
     _cc_logop_yaxis(figx, "Training compute (log₁₀ OP)")
-    st.plotly_chart(figx, use_container_width=True)
+    st.plotly_chart(figx, width="stretch")
     _fn_caption(
         "The compute needed to stay in a band slopes <i>down</i> over time "
         "\u2014 that downward slope is the efficiency rate.",
@@ -14818,7 +14818,7 @@ def render_compute_capabilities():
                        title_font=dict(color='#222')),
             yaxis=dict(title_text="ECI score", gridcolor='rgba(0,0,0,0.12)',
                        tickfont=dict(color='#222'), title_font=dict(color='#222')))
-        st.plotly_chart(figc, use_container_width=True)
+        st.plotly_chart(figc, width="stretch")
         _fn_caption(
             "Each dotted line slopes <i>up</i> \u2014 that's ECI gained per year at "
             "a constant compute budget.",
@@ -14987,7 +14987,7 @@ def render_compute_capabilities():
                    ticksuffix='%', gridcolor='rgba(0,0,0,0.12)',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
         yaxis=dict(showticklabels=False))
-    st.plotly_chart(figs, use_container_width=True)
+    st.plotly_chart(figs, width="stretch")
     _fn_caption(
         f"<b>Hatched band</b> = physical compute's contested share, "
         f"<b>{share_lo*100:.0f}\u2013{share_hi*100:.0f}%</b>; <b>solid "
@@ -17155,7 +17155,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
-    st.plotly_chart(_tf(fig), use_container_width=True)
+    st.plotly_chart(_tf(fig), width="stretch")
 
     _rate_src = ((f"({b_algo:.0f} algo + {a_partial:.0f} pts/×10 × the "
                   f"{'sidebar-pooled' if pooled else 'largest-site'} US "
@@ -17471,7 +17471,7 @@ def render_pacing():
                       margin=dict(l=10, r=10, t=30, b=10),
                       title=dict(text=f"First ≥{threshold_label} run, by "
                                       "entity", font=dict(size=15)))
-    st.plotly_chart(_tf(fig), use_container_width=True)
+    st.plotly_chart(_tf(fig), width="stretch")
     _fn_caption(
         "Filled dot = already crossed \u00b7 open dot = the plan's crossing "
         "\u00b7 diamond + band = projected median and 80% range"
