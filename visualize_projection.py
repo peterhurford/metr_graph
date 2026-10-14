@@ -18589,11 +18589,14 @@ def _render_takeoff(loading):
                    "year, against Forethought's 57%.")
             number("Compute growth after RSI (\u00d7 its rate)", "rsi_compute_boost",
                    0.5, 5.0, 0.25,
-                   "Multiplies each scenario's log compute growth from its own RSI date: "
-                   "AI speeding chip design, fabs and spending. 2 turns about 3\u00d7 a year "
-                   "into about 9\u00d7. 1 leaves compute as projected. No published "
-                   "estimate; AI Futures adjusts its takeoff faster for this by judgment. "
-                   "The frozen-AI comparison never gets it.")
+                   "Multiplies each scenario's log compute growth after its own RSI "
+                   "date: AI speeding chip design, fabs and spending. It waits the delay "
+                   "under Advanced (default 18 months: a chip generation, a fab's build), "
+                   "then ramps in over a year. 2 turns about 3\u00d7 a year into about "
+                   "9\u00d7, roughly undoing the post-2030 slowdown. 1 is no feedback. No "
+                   "published estimate gives the size; Forethought's chip-technology and "
+                   "chip-production loops say the direction and the lag. The frozen-AI "
+                   "comparison never gets it.")
         with st.expander("What decides RSI"):
             number("Human work at RSI (%)", "full_human", 0.0, 25.0, 1.0,
                    "RSI is when research direction (choosing what to try next) falls "
@@ -18618,6 +18621,14 @@ def _render_takeoff(loading):
                    "The automated coder projection's dates are unchanged. 0.7 is a judgment: "
                    "both read the same progress, but the projection's fits carry "
                    "benchmark-specific noise too.")
+            number("Delay before AI speeds compute growth (months after RSI)",
+                   "rsi_compute_delay", 0.0, 60.0, 3.0,
+                   "How long after a scenario's RSI the compute-growth multiplier "
+                   "starts: a chip generation is 1\u20132 years, a new fab 2\u20134.")
+            number("Ramp to the full multiplier (months)", "rsi_compute_ramp",
+                   0.0, 60.0, 3.0,
+                   "After the delay, the multiplier rises linearly to full strength over "
+                   "this long. 0 switches it on at once.")
             number(f"Compute growth kept after {_TK_COMPUTE_SLOW_YEAR} (%)",
                    "compute_slowdown", 0.0, 100.0, 5.0,
                    "Share of each scenario's log compute growth that continues from the "

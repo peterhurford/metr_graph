@@ -1281,7 +1281,8 @@ class TestTakeoffTab:
         assert ci80() != wide
 
     def test_zero_transfer_runs_at_the_reference_pace(self, monkeypatch):
-        """With no AI feedback, research runs at the frozen-AI reference pace."""
+        """With no AI feedback (no transfer, and no post-RSI compute boost, a
+        separate channel), research runs at the frozen-AI reference pace."""
         import takeoff_model as tk
         captured = []
         original = tk.simulate
@@ -1292,7 +1293,8 @@ class TestTakeoffTab:
 
         monkeypatch.setattr(tk, "simulate", capture)
         at = self._app()
-        at.number_input(key="tk_transfer").set_value(0).run()
+        at.number_input(key="tk_transfer").set_value(0)
+        at.number_input(key="tk_rsi_compute_boost").set_value(1.0).run()
         _assert_no_error(at, "Takeoff / zero feedback")
         progress = captured[-1]["workflow_progress"]
         # The weekly integration's error grows with difficulty, whose lognormal

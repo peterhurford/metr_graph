@@ -204,7 +204,8 @@ def test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference():
     RSI date, slowdown included; before RSI, and in the frozen-AI reference,
     nothing changes."""
     onset = np.array([0.5, 1.0, 2.0])
-    base = dict(tk.POINT_ESTIMATE, years=6)
+    base = dict(tk.POINT_ESTIMATE, years=6, rsi_compute_boost=1.0,
+                rsi_compute_delay=0.0, rsi_compute_ramp=0.0)
     a = tk.simulate(base, n=3, onset_years=onset)
     b = tk.simulate(dict(base, rsi_compute_boost=2.0), n=3, onset_years=onset)
     rsi, c = a["events"]["RSI"], a["compute"]
@@ -221,6 +222,22 @@ def test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference():
                                a["workflow_progress"]["reference_pace"])
     assert (b["workflow_progress"]["capability_log"][:, -1]
             > a["workflow_progress"]["capability_log"][:, -1]).all()
+
+
+def test_compute_boost_waits_its_delay_then_ramps_in():
+    """After RSI the boost is off for `rsi_compute_delay` months, then ramps
+    linearly to full over `rsi_compute_ramp`: the extra log compute is the
+    rate times (ramp / 2 + the time at full strength)."""
+    onset = np.array([0.5])
+    base = dict(tk.POINT_ESTIMATE, years=3.5, rsi_compute_boost=1.0)
+    a = tk.simulate(base, n=1, onset_years=onset)
+    b = tk.simulate(dict(base, rsi_compute_boost=2.0, rsi_compute_delay=12.0,
+                         rsi_compute_ramp=6.0), n=1, onset_years=onset)
+    rsi, rate = a["events"]["RSI"][0], a["compute"]["rate"][0]
+    gap = b["workflow_progress"]["compute_log"] - a["workflow_progress"]["compute_log"]
+    years = a["workflow_progress"]["years"]
+    assert np.all(gap[0, years <= rsi + 1.0] == 0)
+    assert gap[0, -1] == pytest.approx(rate * (0.25 + (3.5 - rsi - 1.5)), rel=1e-3)
 
 
 def test_workflow_halving_time_has_a_measurable_interpretation():
@@ -318,9 +335,12 @@ def test_matched_stage_fit_uses_hours_not_intervention_incidence():
 
 
 def test_resource_growth_alone_creates_no_compute_matched_advantage():
-    """Faster progress from compute alone is matched by the same-compute reference."""
+    """Faster progress from compute alone is matched by the same-compute
+    reference. The post-RSI boost is AI's doing, which the reference never
+    gets, so it is off here."""
     r = tk.simulate(dict(transfer=0, difficulty=0.0, compute_growth=5.0,
-                         **tk.POINT_ESTIMATE, years=5, baseline_inputs=0), n=1)
+                         **tk.POINT_ESTIMATE, years=5, baseline_inputs=0,
+                         rsi_compute_boost=1.0), n=1)
     assert r["progress_multiple"][0] > 1
     assert r["compute_matched_advantage"][0] == pytest.approx(1, rel=1e-4)
 

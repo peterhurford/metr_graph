@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v14-rsi-compute-boost`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v15-delayed-compute-feedback`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -52,9 +52,12 @@ fitted trend) averaged over a fixed five years, whatever the chart horizon. Off,
 flat `compute_growth`. From the end of 2030, where Epoch's analysis finds today's scaling
 feasible, compute keeps `compute_slowdown`% (default 50) of its log growth, about 3× a year
 becoming 1.7×. That is an assumption: no published estimate gives the post-2030 rate. From each scenario's own RSI
-date, `rsi_compute_boost` (default 1) multiplies its log compute growth, standing in for AI
-speeding chip design, fabs and spending; the frozen-AI reference never gets it. At 2x
-ultraintelligence comes 6 months sooner, at 0.5x 6 months later. The
+date, `rsi_compute_boost` (default 2) multiplies its log compute growth, standing in for AI
+speeding chip design, fabs and spending: Forethought's chip-technology and chip-production
+feedback loops. It waits 18 months (a chip generation, a fab's build) and ramps in over a
+year; the frozen-AI reference never gets it. The size is an assumption. With the delay the
+ultraintelligence median stays at Aug 2030, as with no feedback, and the 80% interval's late
+edge moves from Aug 2032 to Apr 2032; at once, 2x gives Feb 2030. The
 other research inputs keep their own growth, so research inputs slow by compute's share.
 
 Research judgment is gated by who directs research: people still in the direction stage

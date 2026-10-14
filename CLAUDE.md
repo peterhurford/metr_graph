@@ -40,7 +40,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v14-rsi-compute-boost`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v15-delayed-compute-feedback`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -101,9 +101,13 @@ The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, months 
 ultraintelligence): the judgment elasticity (half/double: +3/−5), r (0.5/2: +6/−5),
 parallelization (0.8/0.3: +3/−3), ρ (−1/0: +1/−2, small since the spreads draw ρ per
 scenario anyway), the training-run wait `fast_share` (12.5/50%: +1/−2; 100%: −6, and half
-the gap to Forethought) and `rsi_compute_boost` (0.5×/2×/3×: +6/−6/−9), which multiplies
-each draw's log compute growth from its own RSI date, never the frozen-AI reference
-(`test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference`). The rest,
+the gap to Forethought) and `rsi_compute_boost` (default 2×), which multiplies each draw's
+log compute growth after its own RSI date, waiting `rsi_compute_delay` (18 months) then
+ramping in over `rsi_compute_ramp` (12), never in the frozen-AI reference
+(`test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference`,
+`test_compute_boost_waits_its_delay_then_ramps_in`). Delayed, it leaves the
+ultraintelligence median where no feedback puts it (Aug 2030) and pulls the 80% interval's
+late edge from Aug 2032 to Apr 2032; switched on at once, 2× gives Feb 2030. The rest,
 data-center compute included (~1 month), sit in one *Advanced* expander. Retarget that
 grouping, and the expander's caption, if a rerun of the sweep reorders them.
 AI judgment is gated by the direction stage's human share, uncapped

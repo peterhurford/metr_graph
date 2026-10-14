@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v14-rsi-compute-boost"
+MODEL_VERSION = "takeoff-v15-delayed-compute-feedback"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -62,10 +62,12 @@ DEFAULTS = {
     # after today (the app sets end-2030, where Epoch's feasibility analysis
     # stops); an assumption, not a fitted rate.
     "compute_slowdown": 50.0, "compute_slow_years": 4.0,
-    # Multiplier on each draw's log compute growth from its own RSI date: AI
-    # speeding chips, fabs and spending. 1 leaves compute as projected; an
+    # Multiplier on each draw's log compute growth after its own RSI date: AI
+    # speeding chip design, fabs and spending. It waits `rsi_compute_delay`
+    # months (a chip generation, a fab's build), then ramps in linearly over
+    # `rsi_compute_ramp` months. 1 leaves compute as projected; the size is an
     # assumption, with no published estimate.
-    "rsi_compute_boost": 1.0,
+    "rsi_compute_boost": 2.0, "rsi_compute_delay": 18.0, "rsi_compute_ramp": 12.0,
 }
 # Every spread at zero: each draw uses the settings themselves.
 POINT_ESTIMATE = {"uncertainty": 0, "returns_spread": 0, "judgment_spread": 0,
@@ -126,7 +128,8 @@ def validate(params):
     if not -5 <= p["substitution"] <= 0.9 or p["ai_speed"] < 1 \
             or not 0 <= p["baseline_inputs"] <= 200 or not -90 <= p["judgment_drift"] <= 300 \
             or not 0 <= p["compute_slowdown"] <= 100 or p["compute_slow_years"] < 0 \
-            or not 0.5 <= p["rsi_compute_boost"] <= 5:
+            or not 0.5 <= p["rsi_compute_boost"] <= 5 \
+            or not 0 <= p["rsi_compute_delay"] <= 60 or not 0 <= p["rsi_compute_ramp"] <= 60:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
                          "baseline input growth in [0, 200]%.")
     return p
@@ -443,7 +446,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # cycle (which could move an entire milestone to the next successor).
     t = np.zeros(n)
     stopped_at = np.full(n, np.inf)
-    # Extra log compute from `rsi_compute_boost` since each draw's RSI; the
+    # Extra log compute from `rsi_compute_boost` after each draw's RSI; the
     # frozen-AI reference never gets it.
     boost = p["rsi_compute_boost"] - 1
     boost_log = np.zeros(n)
@@ -460,8 +463,14 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         end = np.where(active, end, t)
         dt = np.maximum(end - t, 0)
         base_compute_log = log_level(t + dt / 2, compute_rate, compute_late, slow_at)
+        # Share of the boost in force at mid-step: 0 until the delay after RSI
+        # has passed, then rising linearly to 1 over the ramp.
+        since = t + dt / 2 - events["RSI"] - p["rsi_compute_delay"] / 12
+        ramp = p["rsi_compute_ramp"] / 12
         boosting = np.isfinite(events["RSI"]) & (t >= events["RSI"] - 1e-12)
-        boost_step = np.where(boosting, boost * np.where(t + dt / 2 < slow_at, compute_rate,
+        in_force = np.where(boosting, np.clip(since / ramp, 0, 1) if ramp > 0
+                            else (since >= 0).astype(float), 0.0)
+        boost_step = np.where(boosting, boost * in_force * np.where(t + dt / 2 < slow_at, compute_rate,
                                                          compute_late) * dt, 0.0)
         compute_log = base_compute_log + boost_log + boost_step / 2
         extra_log = log_level(t + dt / 2, extra_rate, extra_late, slow_at)
