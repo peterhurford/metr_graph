@@ -18392,34 +18392,38 @@ def _tk_yrs(v):
 _TK_HUMAN_RESEARCHERS = 10_000
 _TK_HIRING_GROWTH = 1.3
 _TK_POST_RSI_DECLINE = 0.7
+# AI research-agent copies running today (an estimate); and how each copy's
+# worth grows with capability: as (ECI / today's)^this power, a judgment.
+_TK_AI_COPIES_TODAY = 75_000
+_TK_AI_COMPETENCE_POWER = 10
 
 
-def _tk_ai_fte(eci_level, speed):
-    """Human full-time equivalents one AI researcher is worth: its speed on
-    the work it does (the model's `ai_speed`) times its competence,
-    3 x (ECI / 200)^10 (about 0.5 at today's frontier, 3 at ECI 200). The
-    competence form is a stated judgment, not a fit."""
-    return speed * 3.0 * (np.asarray(eci_level, dtype=float) / 200.0) ** 10
-
-
-def _tk_workforce(result, eci, humans=_TK_HUMAN_RESEARCHERS):
+def _tk_workforce(result, eci, humans=_TK_HUMAN_RESEARCHERS, copies0=_TK_AI_COPIES_TODAY):
     """(humans, AIs, FTE) per draw and month. Humans start at `humans`, grow
     `_TK_HIRING_GROWTH` a year until the draw's RSI and shrink by
-    `_TK_POST_RSI_DECLINE` a year after it. AIs start where, at today's FTE
-    value, they do the automation index's share of today's research work,
-    then grow with agent compute and with more copies as algorithms improve.
-    FTE = humans + AIs x `_tk_ai_fte(ECI, ai_speed)`."""
+    `_TK_POST_RSI_DECLINE` a year after it. AI copies start at `copies0` and
+    grow with agent compute and with more copies as algorithms improve. Each
+    copy is worth, today, the automation index's share of today's research
+    work spread over those copies, and more as capability rises, as
+    (ECI / today's)^`_TK_AI_COMPETENCE_POWER`. FTE = humans + copies x worth."""
     wp = result["workflow_progress"]
     years = wp["years"][None, :]
     rsi = np.minimum(result["events"]["RSI"], 1e3)[:, None]
     people = humans * np.exp(np.log(_TK_HIRING_GROWTH) * np.minimum(years, rsi)
                              + np.log(_TK_POST_RSI_DECLINE) * np.maximum(years - rsi, 0))
-    speed = result["params"]["ai_speed"]
     h0 = np.clip(result["outcomes"]["Today"]["human_mean"], 1e-3, 1 - 1e-3)
-    ais0 = humans * (1 - h0) / h0 / _tk_ai_fte(eci["now"], speed)
+    worth0 = humans * (1 - h0) / h0 / copies0
     copies = result["params"]["ai_copies"] * np.maximum(wp["software_realized_log"], 0)
-    ais = ais0[:, None] * np.exp(wp["compute_log"] + copies)
-    return people, ais, people + ais * _tk_ai_fte(eci["paths"], speed)
+    ais = copies0 * np.exp(wp["compute_log"] + copies)
+    worth = worth0[:, None] * (eci["paths"] / eci["now"]) ** _TK_AI_COMPETENCE_POWER
+    return people, ais, people + ais * worth
+
+
+def _tk_copy_worth_today(result, humans=_TK_HUMAN_RESEARCHERS, copies0=_TK_AI_COPIES_TODAY):
+    """Median human FTEs one AI copy is worth today, from the automation
+    index's share of today's work spread over `copies0` copies."""
+    h0 = np.clip(result["outcomes"]["Today"]["human_mean"], 1e-3, 1 - 1e-3)
+    return float(np.median(humans * (1 - h0) / h0 / copies0))
 
 
 def _tk_count(v):
@@ -18438,7 +18442,7 @@ def _tk_workforce_fig(result, today, eci, markers=(), humans=_TK_HUMAN_RESEARCHE
     x = _tk_dates(result, today)
     fig = make_subplots(rows=1, cols=2, horizontal_spacing=0.09,
                         subplot_titles=["Researchers (heads)", "Human full-time equivalents"])
-    for col, series in ((1, (("AI researchers", ais, "#d68910"),
+    for col, series in ((1, (("AI researcher copies", ais, "#d68910"),
                              ("Human researchers", people, "#2980b9"))),
                         (2, (("Total (humans + AIs)", fte, "#8e44ad"),))):
         for name, values, color in series:
@@ -19290,18 +19294,17 @@ def _render_takeoff(loading):
          f"Human research staff start at {_TK_HUMAN_RESEARCHERS:,}, an order-of-magnitude "
          f"assumption for frontier labs, grow {_TK_HIRING_GROWTH - 1:.0%} a year while labs "
          f"keep hiring and shrink {1 - _TK_POST_RSI_DECLINE:.0%} a year after each scenario's "
-         "RSI, once autopilot makes them unneeded; both rates are assumptions. AI "
-         "researchers start where, at today's per-AI value, they do the automation index's "
-         "share of today's research work, then grow with the compute for running agents "
-         "and with more copies as algorithms improve."),
+         "RSI, once autopilot makes them unneeded; both rates are assumptions. AI research "
+         f"agents start at {_TK_AI_COPIES_TODAY:,} copies running today (an estimate) and grow "
+         "with the compute for running agents and with more copies as algorithms improve."),
         ("human full-time equivalents",
-         f"Each AI researcher counts as its speed ({result['params']['ai_speed']:g}\u00d7 a "
-         "person on the work it does, the model's setting) times its competence, "
-         "3 \u00d7 (ECI / 200)^10: about 0.5 at today's frontier, 3 at ECI 200, 28 at 250. "
-         "Speed is fixed, and today's AI head count is set by today's share of the work, so "
-         "speed changes how many AIs there are (fewer, faster ones), not the FTE total. The "
-         "competence form is a stated judgment, not a fit; the model's research speed "
-         "comes from its own labor equations, not from this chart."))
+         "Today the copies together do the automation index's share of research work, so "
+         f"each is worth about {_tk_copy_worth_today(result):.2f} of a person. Each grows in "
+         f"worth as (ECI / today's)^{_TK_AI_COMPETENCE_POWER}: about "
+         f"{(200 / eci['now']) ** _TK_AI_COMPETENCE_POWER:.0f}\u00d7 at ECI 200, about "
+         f"{(250 / eci['now']) ** _TK_AI_COMPETENCE_POWER:.0f}\u00d7 at 250. That "
+         "power is a stated judgment, not a fit; the model's research speed comes from its "
+         "own labor equations, not from this chart."))
     st.plotly_chart(_tf(_tk_to(_tk_workforce_fig(result, today, eci, markers), view_end)),
                     width="stretch")
 

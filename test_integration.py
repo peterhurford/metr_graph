@@ -1060,7 +1060,7 @@ class TestTakeoffTab:
             "Net research pace"]
         people = json.loads(_tk_charts(at)[4].proto.spec)
         workforce = json.loads(_tk_charts(at)[5].proto.spec)
-        assert {"AI researchers", "Human researchers", "Total (humans + AIs)"} <= {
+        assert {"AI researcher copies", "Human researchers", "Total (humans + AIs)"} <= {
             d.get("name") for d in workforce["data"]}
         # Three stages (band edges + median each), then the measured index history.
         assert len(people["data"]) == 10
