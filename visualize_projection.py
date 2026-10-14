@@ -16254,6 +16254,13 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     cn_at = float(np.nanmedian(at_pause))
     gap = float(np.nanmedian(np.asarray(target0) - at_pause))
     split = 'compute_domestic' in cum
+    # Distillation scales with China's remaining gap to its teacher, so it
+    # reaches zero as China catches it; the monthly sim sets each month's
+    # rate from the gap at the month's start, which leaves a sliver in the
+    # crossing month. Under a tenth of its pace at the pause, it reads as 0.
+    d0, d1 = rates['distillation']
+    if d1 < max(0.05, 0.1 * d0):
+        rates['distillation'] = (d0, 0.0)
     c0, c1, c2 = "ECI/yr at pause", "Average ECI/yr", "ECI/yr at crossing"
 
     def _fmt(v):
