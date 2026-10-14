@@ -17,7 +17,7 @@ streamlit run visualize_projection.py     # or: make app
 
 Opens at http://localhost:8501. Python 3.11 (`.python-version`).
 
-Pick a tab from the sidebar radio. Every tab deep-links: `?tab=pacing` opens the Pacing tab,
+Pick a tab from the sidebar radio. Every tab deep-links: `?tab=pausing` opens the Pausing tab,
 and the sidebar's *Share view* button copies a URL carrying your current control settings.
 
 ## The tabs
@@ -36,7 +36,7 @@ and the sidebar's *Share view* button copies a URL carrying your current control
 | Revenue | `revenue` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | OpenAI and Anthropic ARR |
 | Data Centers | `datacenters` | `data_centers.csv` + `data_center_timelines.csv` | H100-equivalents, power, cost, time-to-train; a US-vs-China buildout panel, world compute share by region, then Compute ⟷ ECI and the ECI forecast |
 | China | `china` (old `computecap` links still work) | Data centers + ECI | US vs China through the compute lens, and China's ETA to today's US frontier |
-| Pacing | `pacing` | Data centers | What a US pause buys: China's catch-up, then when each entity can first mount a run of the paused US scale |
+| Pausing | `pausing` (old `pacing` links still work) | Data centers | What a US pause buys: China's catch-up, then when each entity can first mount a run of the paused US scale |
 
 Each tab has its own render function (`grep '^def render_'`), its own sidebar controls, and a
 reset button backed by per-tab defaults and tracked keys. Takeoff's **Central** preset restores its defaults.
@@ -203,7 +203,7 @@ Conventions that will come up:
   where a metric exists, `_fn_caption(text, (phrase, note))` to make a phrase in a caption
   hoverable in place, and `_fn_line()` for a line that must not read as fine print.
   `test_footnotes_anchor_to_their_phrase` holds the app at zero unanchored footnotes.
-- **Don't fork shared machinery.** The Pacing and China tabs are built from the
+- **Don't fork shared machinery.** The Pausing and China tabs are built from the
   Data Centers tab's aggregation functions on purpose — two tabs quoting different numbers for
   the same quantity reads as a bug. Several tests exist only to keep the engines honest across
   tabs.

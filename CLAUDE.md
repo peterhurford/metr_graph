@@ -37,7 +37,7 @@ No build system, no CI/CD, no package manager beyond requirements.txt (`streamli
 
 ## Architecture
 
-Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `takeoff` (`rsi`, the merged RSI tab, is an alias for it),  `thresholds`, `revenue`, `datacenters`, `china` (`computecap`, its old name, is an alias), `pacing`, `ukcyber`, `employment`.
+Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `takeoff` (`rsi`, the merged RSI tab, is an alias for it),  `thresholds`, `revenue`, `datacenters`, `china` (`computecap`, its old name, is an alias), `pausing` (`pacing` likewise), `ukcyber`, `employment`.
 
 ### Takeoff scenario explorer
 
@@ -204,7 +204,7 @@ global `<style>` block enlarges metrics and captions under `.st-key-tk_headline`
 App-wide, `_BOOT_BAR` (right after the style block) shows a loading bar on a session's
 first run only (`_vp_booted`), cleared by the dispatch before any tab draws.
 `tk_dc_compute` (default on) feeds compute growth from the Data Centers tab:
-`_tk_dc_compute` samples the US largest-run projection (`_pc_projection`, as Pacing does)
+`_tk_dc_compute` samples the US largest-run projection (`_pc_projection`, as Pausing does)
 and averages each path over a fixed `_TK_DC_AVG_YEARS` (not the chart horizon, which
 must not move dates) into one rate per draw, passed as
 `simulate(compute_rates=…)`. From the end of `_TK_COMPUTE_SLOW_YEAR` (2030) each rate keeps
@@ -345,7 +345,7 @@ has no main-column headings, so it has no section to link to.
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`), the world-share charts (`_render_world_shares()`), and ends with *Compute ⟷ ECI* and *ECI Forecasts* (`_render_compute_eci()`, see below) |
 | China (slug `china`, was Compute/capabilities/diffusion) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | US vs China through the compute lens, and ends with the CTS lithography ceiling (`_render_cc_duv_ceiling()`) |
-| Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
+| Pausing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
 | Frontier Thresholds | `frontier_thresholds.render(st)` | `frontier_thresholds.json` | dated threshold events per lab and risk category; no projection (see *Frontier Thresholds* below) |
 
 ### Data Sources and How to Update
@@ -446,7 +446,7 @@ it. The rest of the app merges them the same way: `_cc_lab_for_site()` maps owne
 
 ### Tenant vs operator, and shared tenancy
 
-Both the Data Centers and Pacing tabs carry an *Attribute each site to* control
+Both the Data Centers and Pausing tabs carry an *Attribute each site to* control
 (`dc_party` / `pc_party`, options `_DC_PARTY_OPTIONS`). `load_data_centers()` records
 three attributions per site: `tenant` (= `company`: first-listed user → owner → name
 token), `operator` (owner → token), and `users` — **every** listed user, aliased and
@@ -574,7 +574,7 @@ purpose-built fabric is the criterion for the levels that claim a link exists.
 
 A sidebar checkbox (`today_fwd`, URL-tracked, reset by no tab) at the foot of
 the sidebar on the six projection tabs (`_TODAY_FWD_TABS` — METR, Epoch ECI,
-RLI, Takeoff, Revenue, Pacing), rendered by the dispatch after the tab's own
+RLI, Takeoff, Revenue, Pausing), rendered by the dispatch after the tab's own
 controls. On, a chart opens at today with no history and every hover date
 reads relative to today (`_rel_date_label`: days to 30, then the two largest
 of y/mo/d, calendar months). It is a post-process on the finished figure,
@@ -597,7 +597,7 @@ are load-bearing:
    to its history leaves the fan in a sliver at the top — and is kept when the
    curve mostly spans it (the blend's 0–100% CDF). Two-point hover-skipped
    traces are reference levels, not data; a log axis refits in log10, a
-   categorical one (the Pacing race timeline) is left alone. The legend moves
+   categorical one (the Pausing race timeline) is left alone. The legend moves
    above the plot, since the fan now starts under an inside top-left one.
 
 Guarded by `TestTodayForward` (unit) and `TestTodayForwardMode` (integration).
@@ -662,7 +662,7 @@ CDF (`_tk_charts`).
 then the staff survey, then
 merged code per person, OpenAI experiment velocity, then research direction, then
 *Capabilities Milestones* + *Automated coder projection* (`_pc_render_milestones()`,
-moved here from the Pacing tab). The CoBench section plots that eval — Anthropic's
+moved here from the Pausing tab). The CoBench section plots that eval — Anthropic's
 internal AI R&D benchmark — against release
 date, with a fitted trend, a projection fan and `_RSI_SUBSTITUTION_BAR` drawn as
 its bar (Anthropic's own stated score for a model that could fully substitute for
@@ -950,7 +950,7 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
 3. **Pooling follows the sidebar's one networking selector** (`dc_pool_n`), shared with
    the networked-sites chart so the China line reads in that chart's units: `'site'` mode
    when nothing pools, else the largest networked group per company. `_dc_country_steps()`
-   also has a `'country'` mode (every site summed — the Pacing-tab state-direction claim)
+   also has a `'country'` mode (every site summed — the Pausing-tab state-direction claim)
    that no control exposes yet; `test_pooling_modes_nest` holds site ≤ company ≤ country
    and that `cluster_of={}` reproduces the envelope. The pace and fit-since controls live
    in the sidebar's *Country projection* expander; the horizon is the tab's *Project
@@ -992,7 +992,7 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    doesn't drag the pace down.
 6. **Past the plans, China runs on an evidence band; everyone else borrows the US trend**
    (`_dc_cty_pace`, default option 'band'). Mainland and domestic-only use
-   `_CC_CN_COMPUTE_LO/HI` (shared with Pacing and the China tab); China-accessible,
+   `_CC_CN_COMPUTE_LO/HI` (shared with Pausing and the China tab); China-accessible,
    whose largest site is offshore Nvidia capacity, uses `_DC_CTY_CN_ACCESS_PACE`, derived from
    SemiAnalysis's offshore leasing path. Both are read as 80% intervals, widened by
    `|g_own − g_ref| / 1.28` so a country's own fit sits at the 80% edge. The derivations,
@@ -1070,7 +1070,7 @@ Four contracts, each guarded:
    from `dc_all`'s `operator`/`users` (already folded by `_DC_COMPANY_ALIASES`) plus the
    one CC-only identity `_CC_LAB_ALIASES` (`SpaceXAI` → `xAI`); it never re-reads the CSV.
    Attribution is **operator-first, then primary tenant** — Colossus 2 is *xAI's* buildout
-   though Anthropic is its first-listed user — deliberately unlike the DC/Pacing
+   though Anthropic is its first-listed user — deliberately unlike the DC/Pausing
    shared-tenancy rule, because the timing panel asks whose *buildout* predicts whose
    releases. Fallback-labelled sites (`attributed` False) never map to a lab.
    `TestCcDcDerivation` pins both the field-derivation and the Colossus precedence.
@@ -1098,7 +1098,7 @@ exchange rate × compute growth) is multiplied by `_cc_rate_calibration`: its
 observed frontier slope since `_CC_CALIB_SINCE` over that build-up rate (US ×1.31,
 China ×1.37 live), so projected lines fit their history. The distillation scenario's
 China rows are the calibrated rate less the channels the decomposition measures
-(distillation, then diffusion). The Pacing pause panel scales its US climb by the same
+(distillation, then diffusion). The Pausing tab's pause panel scales its US climb by the same
 US factor. `TestCcRateCalibration`.
 
 *Compute ⟷ ECI* (exchange rate, iso-ECI/iso-compute charts, the two engines) and
@@ -1206,11 +1206,11 @@ things are load-bearing:
    IFP's 2026 output (`_DUV_CN_2026_B300E` × `_DUV_H100E_PER_B300E`) at
    `_DUV_CN_OUTPUT_GROWTH` over a deterministic quantile grid (`_duv_realized_grid()`),
    takes min(trend, ceiling), and returns 1 − (growth under the policy ÷ growth with
-   neither ban) over today → the Pacing horizon. That path starts ~16× under even the
+   neither ban) over today → the Pausing horizon. That path starts ~16× under even the
    banned ceiling, so an import ban binds only once output grows into it: ~4% to 2031
    at the default. **That number is set almost entirely by the output growth rate**
    (0.5% at 1.5×/yr, ~11% at 4×), which is chip output, not installed compute, so it is
-   its own constant rather than `_WC_GROWTH`, and Pacing exposes it as `pc_duv_growth`
+   its own constant rather than `_WC_GROWTH`, and Pausing exposes it as `pc_duv_growth`
    (`test_faster_output_growth_reaches_the_ceiling_sooner`). Don't revert to the
    ceiling-to-ceiling ratio; it charged the ban ~24% for a limit China hasn't reached.
 3. **A servicing ban erodes the fleet in use, so it bites from 2027.**
@@ -1220,17 +1220,17 @@ things are load-bearing:
    `pc_duv_growth`, and
    `CHINA_COMPUTE_JUDGMENTS.md` §5 records it.
 
-On the Pacing tab the cut compounds with `pc_dom_slow`: effective slowdown =
+On the Pausing tab the cut compounds with `pc_dom_slow`: effective slowdown =
 1 − (1 − slider)(1 − cut), through the existing domestic-growth machinery. The
 *Assumes* line names each active DUVi lever even when its cut rounds to 0%.
 
 Guarded by `TestDuvProduction` (unit), `TestCcDuvCeilingTab` and
 `test_duvi_levers_compound_with_the_domestic_slider` (integration).
 
-### China's crossing simulation (Pacing pause panel)
+### China's crossing simulation (Pausing tab's pause panel)
 
 `_cc_cn_crossing_sim` dates when China's ECI frontier reaches a bar. The China tab's own
-"When does China reach ECI 166" section that used it was removed; the Pacing pause panel
+"When does China reach ECI 166" section that used it was removed; the Pausing tab's pause panel
 is its consumer. Load-bearing:
 
 1. **The pace band reality-checks the bottom-up rate** against China's observed slope
@@ -1241,7 +1241,7 @@ is its consumer. Load-bearing:
    sim option, unused. A rolling-origin backtest over China's 2025–26 releases puts ~80%
    of levels and dates inside the 80% band (`TestCcCrossingBacktest`); a rate spread
    alone covered ~16%, and a release wait on top skewed dates late. With `channels` the
-   offset is its own `level` entry, left out of Pacing's breakdown rows.
+   offset is its own `level` entry, left out of Pausing's breakdown rows.
 3. **The end-year gap card's hover gives the fit-window range** (`_cc_gap_end_range` over
    `_CC_CALIB_SENS_STARTS`): China's slope swings on DeepSeek-R1's Jan 2025 jump.
 4. **Three-channel algorithmic engine.** `_cc_cn_crossing_sim` splits the measured
@@ -1249,12 +1249,12 @@ is its consumer. Load-bearing:
    (nodist − pure, decays only after a pause, `_CC_DIFF_ABSORB_YRS` absorption ramp
    via `t_pause`) + distillation (algo − nodist, decays with gap/gap₀). With
    `pure_lo=None` or `t_pause=None` it reduces to the two-channel law, so the
-   moving-US crossing is unchanged; the split bites in the Pacing pause panel
+   moving-US crossing is unchanged; the split bites in the Pausing tab's pause panel
    and the scenario table's four rows.
    `_cc_cn_target_years` stays as the constant-rate comparison quoted in the caption.
    `TestCcCnCrossingSim` pins the limits (saturated = constant-rate; frozen US = slower;
    pause-to-frozen-bar later than the crossing with the US still moving). The pace band is shared via
-   `_cc_cn_pace_band` with the Pacing pause panel so the two crossings stay ordered.
+   `_cc_cn_pace_band` with the Pausing tab's pause panel so the two crossings stay ordered.
    The engines section carries a measured distillation control: `_cc_frontier_grade_algo`
    refits on frontier-grade models — within 5 ECI of the running frontier **and** trained
    within `_CC_FG_FLOP_MARGIN` of the running-max training run, against the
@@ -1273,11 +1273,11 @@ is its consumer. Load-bearing:
    `_cc_pure_innovation_band`) fall back to margin 5 before pooled — pooled there
    collapses the pure-innovation band to a point. Measured by country, distillation is
    a *level*, not a rate: `_cc_cn_level_offset` (the country dummy at matched compute
-   and date, quoted live in the control caption and the Pacing distillation checkbox)
+   and date, quoted live in the control caption and the Pausing distillation checkbox)
    puts Chinese models above their US compute-peers while the two iso-compute rates are
    indistinguishable; `TestCcCnLevelOffset` guards it.
 
-### Pacing tab
+### Pausing tab
 
 `render_pacing()` renders the pause counterfactual **first**
 (`_pc_render_us_pause()`) and the *Compute Thresholds* race second — the tab's

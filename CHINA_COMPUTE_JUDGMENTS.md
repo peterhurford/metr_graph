@@ -21,7 +21,7 @@ Coverage of China does not matter much for these tabs. What they plot and race i
 
 ### 1. Mainland and domestic-only China pace past the plans: `_CC_CN_COMPUTE_LO/HI` = 0.15–0.30 OOM/yr (×1.4–2.0)
 
-- **Where it's used:** the China tab's China band. Via `_dc_cty_pace` it is also the default extrapolation for `China` and `China (domestic only)` on the Data Centers by-country panel and in the Pacing race.
+- **Where it's used:** the China tab's China band. Via `_dc_cty_pace` it is also the default extrapolation for `China` and `China (domestic only)` on the Data Centers by-country panel and in the Pausing race.
 - **Why a band and not the borrowed US pace:** the US pace runs about ×3/yr in H100e. It carried China's largest site to about 3 GW by end-2029 and 7 GW by 2030, above every campus SemiAnalysis names:
   - ByteDance's Ulanqab and Horinger, about 1 GW planned each, approved to build over 2025–29, with 2–3 GW upside;
   - Shanxi and Wuhu, about 500 MW each;
@@ -61,7 +61,7 @@ Coverage of China does not matter much for these tabs. What they plot and race i
   - For comparison: the domestic band gives Jun 2030 (~17×), and the borrowed US pace gave Mar 2029 (5.8×).
 - **What it omits:**
   - GPUs rented from Western clouds ("hundreds of thousands"). They are dispersed, so they don't form one site.
-  - Any change to the legality of remote access. Pacing's `pc_stop_remote` lever is that downside case.
+  - Any change to the legality of remote access. Pausing's `pc_stop_remote` lever is that downside case.
 - **Revisit when:** remote-access rules change, a Chinese tenant is documented on a second large offshore campus (see 4), or SemiAnalysis revises the offshore leasing path.
 
 ### 3. World-share growth rates (`_WC_GROWTH`)
@@ -82,12 +82,12 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 
 - **Source:** Brown & Khan, CTS, *DUV Immersion Lithography* (Sep 2026): Table 45 (in `cts_duv_production.csv`) and Figure 9's IFP estimate of China's 2026 output.
 - **The ceiling:** China's AI chips made per year if lithography were the only limit, imports continuing (the report's "Robust" path) or banned from 2027. Its levels assume every other bottleneck solved, so they are never China's path.
-- **China's path:** IFP's 62k–160k B300e for 2026 (×2.52 H100e per B300e, the report's TrendForce conversion, so ~0.16–0.40M H100e), growing at `_DUV_CN_OUTPUT_GROWTH` (median 2.4×/yr, 10th–90th 1.5–3.8×), capped at the ceiling. The cut is 1 − (growth under the policy ÷ growth with neither ban) over today → the Pacing horizon, averaged over a quantile grid of start level and rate, at the AI-push allocation.
+- **China's path:** IFP's 62k–160k B300e for 2026 (×2.52 H100e per B300e, the report's TrendForce conversion, so ~0.16–0.40M H100e), growing at `_DUV_CN_OUTPUT_GROWTH` (median 2.4×/yr, 10th–90th 1.5–3.8×), capped at the ceiling. The cut is 1 − (growth under the policy ÷ growth with neither ban) over today → the Pausing horizon, averaged over a quantile grid of start level and rate, at the AI-push allocation.
 - **Why its own growth rate:** this is chip *output*, not installed compute, so it does not borrow `_WC_GROWTH` (1.9×). Ascend units go ~0.8M (2025) → ~1.5M (2026, Epoch, ×1.9); SemiAnalysis's 2027 median is 2M Ascend 950s (×1.3), its high case 4M (×2.7); per-chip performance rises on top, by an amount not pinned down here. Epoch's slow case keeps output near 1% of Nvidia's through 2028 on domestic HBM alone. The 2.4× median is a judgment across those.
-- **Import ban result, and what it hinges on:** China's path starts ~16× under even the banned ceiling, so the ban binds only once output grows into it. At the default: ~4% less growth to 2031, ~12% to 2035, a crossing moved by about a day. The cut is driven almost entirely by the growth rate: 0.5% to 2031 at 1.5×/yr, ~11% at 4×. The Pacing `pc_duv_growth` slider exposes it; don't quote "the ban barely matters near term" without the rate.
+- **Import ban result, and what it hinges on:** China's path starts ~16× under even the banned ceiling, so the ban binds only once output grows into it. At the default: ~4% less growth to 2031, ~12% to 2035, a crossing moved by about a day. The cut is driven almost entirely by the growth rate: 0.5% to 2031 at 1.5×/yr, ~11% at 4×. The Pausing `pc_duv_growth` slider exposes it; don't quote "the ban barely matters near term" without the rate.
 - **Servicing ban:** advanced-fab DUVi capacity falls `pc_duv_decay` per year from 2027 (default 15%, 0–50%), multiplying China's path whether or not the ceiling binds. ~27% cut to 2031 at the defaults; about +1 month on the crossing.
 - **The decay rate is a judgment with no source.** The report says servicing controls would degrade the fleet "though there is some uncertainty as to the magnitude". Low values assume China self-services and cannibalizes its ~190 legacy-fab scanners for parts; high ones that lasers, stages and optics fail without foreign consumables. Not checked against any measured attrition rate.
-- **Why AI push:** the Pacing panel's China is a state-directed catch-up. With the ceiling rarely binding before 2031, the allocation matters little to the import-ban cut.
+- **Why AI push:** the Pausing panel's China is a state-directed catch-up. With the ceiling rarely binding before 2031, the allocation matters little to the import-ban cut.
 - **Revisit when:** CTS re-versions the table; better estimates of China's realized output or its growth (IFP, Epoch, SemiAnalysis 2027 numbers) arrive; any evidence on scanner attrition without servicing; or a ban or servicing control is enacted.
 
 ## Checked and deliberately left alone
@@ -102,4 +102,4 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 
 ## Known limitation
 
-The bands are growth rates of *compute*. On the Data Centers tab's power and cost metrics the same pace overstates growth by roughly the compute-per-watt factor. For example, China-accessible's largest site reads ~2.4 GW of facility power at end-2029. The train-FLOP and H100e metrics, which Pacing uses, read it as intended.
+The bands are growth rates of *compute*. On the Data Centers tab's power and cost metrics the same pace overstates growth by roughly the compute-per-watt factor. For example, China-accessible's largest site reads ~2.4 GW of facility power at end-2029. The train-FLOP and H100e metrics, which Pausing uses, read it as intended.

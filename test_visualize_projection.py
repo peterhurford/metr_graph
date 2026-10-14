@@ -1409,7 +1409,7 @@ class TestCcDcDerivation:
         assert mapped > 0
 
     def test_colossus_is_xais_buildout_not_its_tenants(self):
-        """Operator outranks tenants here (unlike the DC/Pacing shared-tenancy
+        """Operator outranks tenants here (unlike the DC/Pausing shared-tenancy
         rule): Colossus 2 lists Anthropic first among its users, but the
         release-timing panel credits the buildout to its builder, xAI — which
         also pins the SpaceXAI→xAI alias against the live CSV."""
@@ -1996,7 +1996,7 @@ class TestCcCnLevelOffset:
 
     def test_live_offset_is_a_positive_level_in_points(self):
         """The measured distillation edge quoted in the CC control caption
-        and the Pacing distillation checkbox: China sits a few ECI above US
+        and the Pausing distillation checkbox: China sits a few ECI above US
         models at matched compute and date. If an Epoch refresh pushes it
         out of this range, re-check the captions before loosening."""
         lvl = vp._cc_cn_level_offset(vp.load_eci_compute())
@@ -2053,7 +2053,7 @@ class TestCcCnCrossingSim:
         assert np.nanmedian(y) <= 1.0 / 12.0 + 1e-9
 
     def test_pause_to_frozen_bar_lands_after_161_with_us_moving(self):
-        """The tab-level ordering on live data: the Pacing pause panel (frozen
+        """The tab-level ordering on live data: the Pausing tab's pause panel (frozen
         US best, distillation drying up) must cross later than the CC section's
         161 bar (US moving, distillation active) — same anchor, same pace band."""
         cc = vp.load_eci_compute()
@@ -4074,7 +4074,7 @@ class TestNoDuplicateDefinitions:
 
 
 class TestDuvProduction:
-    """The CTS lithography table and the ban ratio the Pacing lever reads."""
+    """The CTS lithography table and the ban ratio the Pausing lever reads."""
 
     def _data(self):
         return vp.load_duv_production(vp._duv_mtime())
@@ -4378,7 +4378,7 @@ class TestDcCtyPlanSlip:
 
 
 class TestPacing:
-    """The Pacing tab: threshold menu, crossing math, and the entity roster."""
+    """The Pausing tab: threshold menu, crossing math, and the entity roster."""
 
     def test_race_bar_is_the_us_median_run_at_the_pause(self):
         caps = {vp._DC_CTY_US: (1e26, 3e26, 9e26),
@@ -4388,7 +4388,7 @@ class TestPacing:
             vp._PC_FALLBACK_THRESHOLD
 
     def test_defaults_cover_reset_keys_and_url_tracking(self):
-        """Every Pacing default is reset and URL-tracked, as are the RSI
+        """Every Pausing default is reset and URL-tracked, as are the RSI
         blend's weights and its not-yet conditioning. The pause is an int of
         months-from-today rather than a month label, so a bookmarked value
         can never go stale the way the cut-off sliders' options can."""
@@ -5028,7 +5028,7 @@ class TestPacing:
             assert raw[dc['name']]['companies'] == [dc['company']], dc['name']
 
     def test_pool_menu_is_the_dc_tabs_and_nests(self):
-        """The pacing pooling selector reuses _DC_NETWORK_OPTIONS, and a wider
+        """The Pausing tab's pooling selector reuses _DC_NETWORK_OPTIONS, and a wider
         basis never shrinks an entity's final capacity."""
         assert vp._PC_DEFAULTS["pc_pool"] in vp._DC_NETWORK_OPTIONS
         assert vp._DC_NETWORK_OPTIONS[vp._PC_DEFAULTS["pc_pool"]] == 'fabric'

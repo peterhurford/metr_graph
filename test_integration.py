@@ -723,7 +723,7 @@ class TestComputeVsCapabilities:
         assert "china-accessible" in caps
 
     def test_run_length_toggle(self):
-        """Switching to the 6-month window (the Pacing tab's options,
+        """Switching to the 6-month window (the Pausing tab's options,
         verbatim) renders clean and relabels the capacity captions with the
         chosen window."""
         at = self._cc_app()
@@ -1614,24 +1614,24 @@ class TestDataCentersParty:
 
 
 # ===========================================================================
-# Pacing tab
+# Pausing tab
 # ===========================================================================
 
 class TestPacingTab:
-    """The Pacing tab: renders with its defaults, follows the threshold, and
+    """The Pausing tab: renders with its defaults, follows the threshold, and
     resets."""
 
     def _app(self):
         at = _fresh_app()
         at.run()
-        _switch_tab(at, "Pacing")
+        _switch_tab(at, "Pausing")
         return at
 
     @staticmethod
     def _state(at):
         """The plan panel's state-of-play table, picked by its columns."""
         return next(t.value for t in at.table
-                    if "At plan start" in t.value.columns)
+                    if "At pause start" in t.value.columns)
 
     @staticmethod
     def _entities(at):
@@ -1651,9 +1651,9 @@ class TestPacingTab:
         *Assumes* line (weight security first) is body text, not fine print."""
         at = self._app()
         subs = " ".join(str(s.value) for s in at.subheader)
-        assert "If the US paced" in subs
+        assert "If the US paused" in subs
         labels = " ".join(str(m.label) for m in at.metric)
-        assert "paced US frontier" in labels
+        assert "paused US frontier" in labels
         assert "Time for China to surpass" in labels
         caps = " ".join(str(c.value) for c in at.caption)
         md = " ".join(str(m.value) for m in at.markdown)
@@ -1686,18 +1686,18 @@ class TestPacingTab:
             return " ".join(str(m.value) for m in at.markdown).lower()
 
         self._paired(at.checkbox(key="pc_withhold").uncheck())
-        _assert_no_error(at, "Pacing / paused models served")
+        _assert_no_error(at, "Pausing / paused models served")
         assert _surpass_mo(at) <= base + 1
         assert "stays queryable" in _md(at)
         self._paired(at.checkbox(key="pc_withhold").check())
         assert "release freeze" in _md(at)
         self._paired(at.checkbox(key="pc_stop_dist").check())
-        _assert_no_error(at, "Pacing / distillation stopped")
+        _assert_no_error(at, "Pausing / distillation stopped")
         dist_off = _surpass_mo(at)
         assert dist_off > base
         assert "cut today" in _md(at)
         self._paired(at.checkbox(key="pc_stop_remote").check())
-        _assert_no_error(at, "Pacing / remote compute cut")
+        _assert_no_error(at, "Pausing / remote compute cut")
         assert _surpass_mo(at) >= dist_off - 1  # rounding guard
         assert ("largest domestic cluster" in _md(at)
                 or "domestic pace only" in _md(at))
@@ -1719,21 +1719,21 @@ class TestPacingTab:
         base = _surpass_mo(self._paired(at))
 
         self._paired(at.checkbox(key="pc_stop_dist").check())
-        _assert_no_error(at, "Pacing / distillation cut today")
+        _assert_no_error(at, "Pausing / distillation cut today")
         now_d = _surpass_mo(at)
         late = at.select_slider(key="pc_dist_when").options[-1]
         self._paired(at.select_slider(key="pc_dist_when").set_value(late))
-        _assert_no_error(at, "Pacing / distillation cut late")
+        _assert_no_error(at, "Pausing / distillation cut late")
         assert base - 1 <= _surpass_mo(at) <= now_d + 1
         md = " ".join(str(m.value) for m in at.markdown).lower()
         assert f"cut {late}".lower() in md
         at.checkbox(key="pc_stop_dist").uncheck().run()
 
         self._paired(at.checkbox(key="pc_stop_remote").check())
-        _assert_no_error(at, "Pacing / remote cut today")
+        _assert_no_error(at, "Pausing / remote cut today")
         now_r = _surpass_mo(at)
         self._paired(at.select_slider(key="pc_remote_when").set_value(late))
-        _assert_no_error(at, "Pacing / remote cut late")
+        _assert_no_error(at, "Pausing / remote cut late")
         assert base - 1 <= _surpass_mo(at) <= now_r + 1
         md = " ".join(str(m.value) for m in at.markdown)
         assert late in md
@@ -1759,12 +1759,12 @@ class TestPacingTab:
         mids = {}
         for L in (3, 4, 5, 6):
             self._paired(at.slider(key="pc_cn_run").set_value(L))
-            _assert_no_error(at, f"Pacing / {L}-month Chinese run")
+            _assert_no_error(at, f"Pausing / {L}-month Chinese run")
             mids[L] = _surpass_mo(at)
         cap = " ".join(str(c.value) for c in at.caption)
         assert "6-month Chinese run" in cap and "4 months of extra" in cap
         self._paired(at.slider(key="pc_cn_run").set_value(12))
-        _assert_no_error(at, "Pacing / 12-month Chinese run")
+        _assert_no_error(at, "Pausing / 12-month Chinese run")
         long_run = _surpass_mo(at)
         # A year of wall clock does not pay, and some moderate stretch beats it.
         assert long_run > base
@@ -1788,7 +1788,7 @@ class TestPacingTab:
             return int(m.group(1))
 
         at.checkbox(key="pc_duv_ban").check().run()
-        _assert_no_error(at, "Pacing / DUVi import ban")
+        _assert_no_error(at, "Pausing / DUVi import ban")
         imp = _slowed(at, "import ban")
         assert not at.slider(key="pc_duv_growth").disabled
         at.slider(key="pc_duv_growth").set_value(5.0).run()
@@ -1796,7 +1796,7 @@ class TestPacingTab:
         at.slider(key="pc_duv_growth").set_value(2.4).run()
 
         at.checkbox(key="pc_duv_service").check().run()
-        _assert_no_error(at, "Pacing / DUVi import and servicing bans")
+        _assert_no_error(at, "Pausing / DUVi import and servicing bans")
         assert not at.slider(key="pc_duv_decay").disabled
         both = _slowed(at, "import and servicing bans")
         # The import ban binds mostly next decade; servicing bites from 2027.
@@ -1848,7 +1848,7 @@ class TestPacingTab:
             assert v[2] == "not by 2031" or float(v[2].rstrip(" mo")) > 0, k
 
         self._paired(at.checkbox(key="pc_stop_dist").check())
-        _assert_no_error(at, "Pacing / why with distillation cut")
+        _assert_no_error(at, "Pausing / why with distillation cut")
         cut = _rows(at)
         assert cut["distillation"][0] < base["distillation"][0] / 2
         assert cut["total"][0] == pytest.approx(gap, abs=1.0)
@@ -1857,7 +1857,7 @@ class TestPacingTab:
         # Cutting remote access collapses exactly the row that prices it:
         # the shadow the breakdown subtracts becomes the run itself.
         self._paired(at.checkbox(key="pc_stop_remote").check())
-        _assert_no_error(at, "Pacing / why with remote access cut")
+        _assert_no_error(at, "Pausing / why with remote access cut")
         rem = _rows(at)
         assert rem["abroad"][0] == pytest.approx(0.0, abs=0.05)
         assert rem["abroad"][2] == "+0.0 mo"
@@ -1867,7 +1867,7 @@ class TestPacingTab:
         when = at.select_slider(key="pc_remote_when").options
         self._paired(at.select_slider(key="pc_remote_when").set_value(
             when[len(when) // 2]))
-        _assert_no_error(at, "Pacing / why with remote access cut later")
+        _assert_no_error(at, "Pausing / why with remote access cut later")
         later = _rows(at)
         # Between the two: more than a cut today leaves, no more than never
         # cutting. The upper bound carries a tolerance because the dated cut
@@ -1878,7 +1878,7 @@ class TestPacingTab:
         at.checkbox(key="pc_stop_remote").uncheck().run()
 
         self._paired(at.slider(key="pc_cn_run").set_value(6))
-        _assert_no_error(at, "Pacing / why with a 6-month run")
+        _assert_no_error(at, "Pausing / why with a 6-month run")
         run = _rows(at)
         assert run["run"][0] > 0
 
@@ -1893,7 +1893,7 @@ class TestPacingTab:
 
         def _cross_date(at):
             m = next(m for m in at.metric
-                     if "paced US frontier" in str(m.label))
+                     if "paused US frontier" in str(m.label))
             return _dt.strptime(str(m.value), "%b %Y")
 
         def _surpass_mo(at):
@@ -1903,10 +1903,10 @@ class TestPacingTab:
 
         self._paired(at.selectbox(key="pc_timing").set_value(
             "Data center construction"))
-        _assert_no_error(at, "Pacing / pause on construction clock")
+        _assert_no_error(at, "Pausing / pause on construction clock")
         d_con, s_con = _cross_date(at), _surpass_mo(at)
         self._paired(at.selectbox(key="pc_timing").set_value("Model release"))
-        _assert_no_error(at, "Pacing / pause on release clock")
+        _assert_no_error(at, "Pausing / pause on release clock")
         d_rel, s_rel = _cross_date(at), _surpass_mo(at)
         # 2-mo run + 30d prep ≈ 3 months later, ± a month's rounding.
         diff_mo = ((d_rel.year - d_con.year) * 12 + d_rel.month - d_con.month)
@@ -1923,7 +1923,7 @@ class TestPacingTab:
         for mo in (None, vp._PC_PAUSE_MO_MAX):
             if mo is not None:
                 at.select_slider(key="pc_pause_mo").set_value(mo).run()
-                _assert_no_error(at, f"Pacing / pause {mo}")
+                _assert_no_error(at, f"Pausing / pause {mo}")
             us = self._state(at).iloc[0]["Largest training run"].split()[0]
             titles = [json.loads(el.proto.spec)["layout"].get("title", {})
                       .get("text", "") for el in at.get("plotly_chart")]
@@ -1936,7 +1936,7 @@ class TestPacingTab:
         months, and a METR horizon read off the ECI bridge."""
         at = self._app()
         t = self._state(at)
-        assert list(t["At plan start"]) == [
+        assert list(t["At pause start"]) == [
             "United States", "China-accessible", "China (domestic only)"]
         us, cn = (t.iloc[i] for i in (0, 1))
         assert float(us["Largest training run"].split()[0]) > \
@@ -1953,7 +1953,7 @@ class TestPacingTab:
             assert _hrs(row["METR horizon (p80)"]) < _hrs(row["METR horizon (p50)"]), row
         # The bar the crossing metric quotes is the US row of this table.
         lab = next(str(m.label) for m in at.metric
-                   if "paced US frontier" in str(m.label))
+                   if "paused US frontier" in str(m.label))
         assert abs(float(lab.split("ECI")[-1].strip(" ~)"))
                    - float(us["Frontier ECI"].split()[0].lstrip("~"))) <= 1
 
@@ -1965,8 +1965,8 @@ class TestPacingTab:
 
         def _pause_month(at):
             lab = next(str(m.label) for m in at.metric
-                       if "paced US frontier" in str(m.label))
-            return lab.split("plan start ")[1].split(",")[0]
+                       if "paused US frontier" in str(m.label))
+            return lab.split("pause start ")[1].split(",")[0]
 
         def _us_ops(at):
             return float(self._state(at).iloc[0][
@@ -1974,7 +1974,7 @@ class TestPacingTab:
 
         month, ops_2mo = _pause_month(at), _us_ops(at)
         at.radio(key="pc_run").set_value("6-month run").run()
-        _assert_no_error(at, "Pacing / pause with 6-month run")
+        _assert_no_error(at, "Pausing / pause with 6-month run")
         assert _pause_month(at) == month
         assert _us_ops(at) - ops_2mo == pytest.approx(np.log10(3), abs=0.1)
 
@@ -1994,10 +1994,10 @@ class TestPacingTab:
         # A range ending before the default pause draws no pause chart; it
         # must still render.
         at.radio(key="pc_end_year").set_value(2027).run()
-        _assert_no_error(at, "Pacing / through 2027")
+        _assert_no_error(at, "Pausing / through 2027")
         for yr in (2029, 2031):
             at.radio(key="pc_end_year").set_value(yr).run()
-            _assert_no_error(at, f"Pacing / through {yr}")
+            _assert_no_error(at, f"Pausing / through {yr}")
             ends = _ends(at)
             assert len(ends) == 2, ends
             # The pause chart renders first and stops on the grid exactly;
@@ -2012,10 +2012,10 @@ class TestPacingTab:
         at = self._app()
         at.radio(key="pc_end_year").set_value(2028).run()
         at.select_slider(key="pc_pause_mo").set_value(48).run()
-        _assert_no_error(at, "Pacing / pause past the projection range")
+        _assert_no_error(at, "Pausing / pause past the projection range")
         info = " ".join(str(i.value) for i in at.info)
-        assert "does not reach the paced US frontier by 2028" in info
-        assert list(self._state(at)["At plan start"]) == [
+        assert "does not reach the paused US frontier by 2028" in info
+        assert list(self._state(at)["At pause start"]) == [
             "United States", "China-accessible", "China (domestic only)"]
 
     def test_us_pause_bar_follows_the_pause_slider(self):
@@ -2025,28 +2025,28 @@ class TestPacingTab:
 
         def _bar(at):
             lab = next(str(m.label) for m in at.metric
-                       if "paced US frontier" in str(m.label))
+                       if "paused US frontier" in str(m.label))
             return float(lab.split("ECI")[-1].strip(" ~)"))
 
         def _cross(at):
             return datetime.strptime(str(next(
                 m.value for m in at.metric
-                if "paced US frontier" in str(m.label))), "%b %Y")
+                if "paused US frontier" in str(m.label))), "%b %Y")
 
         sl = at.select_slider(key="pc_pause_mo")
         assert sl.value == _pc_pause_default_mo()   # months; labelled a date
         assert sl.options[18] == f"{_pc_add_months(datetime.now(), 18):%b %Y}"
         base, base_d = _bar(at), _cross(at)
         at.select_slider(key="pc_pause_mo").set_value(36).run()
-        _assert_no_error(at, "Pacing / pause 36 months out")
+        _assert_no_error(at, "Pausing / pause 36 months out")
         assert _bar(at) > base
         assert _cross(at) > base_d
         at.select_slider(key="pc_pause_mo").set_value(18).run()
 
     def test_renders_with_headline_and_table(self):
         at = self._app()
-        _assert_no_error(at, "Pacing")
-        assert "Pacing" in [str(h.value) for h in at.header]
+        _assert_no_error(at, "Pausing")
+        assert "Pausing" in [str(h.value) for h in at.header]
         # The US-vs-China headline is a country line; the default roster is
         # companies, so it appears only under the 'Country' attribution.
         assert not [m for m in at.markdown if "China-accessible" in str(m.value)]
@@ -2062,7 +2062,7 @@ class TestPacingTab:
     def test_country_attribution_races_countries(self):
         at = self._app()
         at.radio(key="pc_party").set_value("Country").run()
-        _assert_no_error(at, "Pacing / country")
+        _assert_no_error(at, "Pausing / country")
         head = [str(m.value) for m in at.markdown
                 if "China-accessible" in str(m.value)]
         assert len(head) == 1 and "United States" in head[0]
@@ -2075,7 +2075,7 @@ class TestPacingTab:
     def test_race_bar_is_the_us_run_at_the_pause(self):
         """No threshold control: the race runs to the *Largest training
         run* the state-of-play table gives the US, so the chart title and
-        that cell quote one number — and a later plan start raises both."""
+        that cell quote one number — and a later pause start raises both."""
         at = self._app()
         import json
 
@@ -2092,7 +2092,7 @@ class TestPacingTab:
             " (")[0]
         assert us_run in _title(at)
         at.select_slider(key="pc_pause_mo").set_value(42).run()
-        _assert_no_error(at, "Pacing / bar at a later pause")
+        _assert_no_error(at, "Pausing / bar at a later pause")
         later = self._state(at).iloc[0]["Largest training run"].split(" (")[0]
         assert float(later.split()[0]) > float(us_run.split()[0])
         assert later in _title(at)
@@ -2116,7 +2116,7 @@ class TestPacingTab:
         np.random.seed(0)
         at.selectbox(key="pc_timing").set_value(
             "Data center construction").run()
-        _assert_no_error(at, "Pacing / construction")
+        _assert_no_error(at, "Pausing / construction")
         shifted = dict(zip(self._entities(at)["Entity"],
                            self._entities(at)["Plan crosses"]))
         import datetime as _dt
@@ -2130,20 +2130,20 @@ class TestPacingTab:
             moved += 1
         assert moved > 0
         at.selectbox(key="pc_timing").set_value("Model release").run()
-        _assert_no_error(at, "Pacing / model release")
+        _assert_no_error(at, "Pausing / model release")
 
     def test_every_pooling_option_renders(self):
         at = self._app()
         for label in at.selectbox(key="pc_pool").options:
             at.selectbox(key="pc_pool").set_value(label).run()
-            _assert_no_error(at, f"Pacing / {label}")
+            _assert_no_error(at, f"Pausing / {label}")
 
     def test_operator_attribution_changes_the_roster(self):
         at = self._app()
         tenant_ents = set(self._entities(at)["Entity"])
         at.radio(key="pc_party").set_value(
             "Operator (who owns the building)").run()
-        _assert_no_error(at, "Pacing / operator")
+        _assert_no_error(at, "Pausing / operator")
         op_ents = set(self._entities(at)["Entity"])
         # Leased clusters move to their landlords, so some operator the
         # tenant roster never names appears.
@@ -2155,7 +2155,7 @@ class TestPacingTab:
         at.radio(key="pc_party").set_value(
             "Operator (who owns the building)").run()
         [b for b in at.button if b.key == "pc_reset"][0].click().run()
-        _assert_no_error(at, "Pacing / reset")
+        _assert_no_error(at, "Pausing / reset")
         assert at.select_slider(key="pc_pause_mo").value == \
             _pc_pause_default_mo()
         assert at.radio(key="pc_party").value == "Tenant (who trains there)"
@@ -2171,7 +2171,7 @@ class TestTodayForwardMode:
     tab's diagnostic charts are left alone."""
 
     TABS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "Takeoff",
-            "Revenue", "Pacing"]
+            "Revenue", "Pausing"]
     _DATE = re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) "
                        r"(\d{1,2}, )?\d{4}\b|\b\d{4}-\d{2}-\d{2}\b")
 
@@ -2199,7 +2199,7 @@ class TestTodayForwardMode:
         return out
 
     # Tabs where every chart is a projection, so every chart goes forward.
-    _ALL_FORWARD = {"Pacing": 2}
+    _ALL_FORWARD = {"Pausing": 2}
 
     def _starts_today(self, spec):
         rng = spec["layout"].get("xaxis", {}).get("range")
@@ -2273,7 +2273,7 @@ class TestTodayForwardMode:
         assert self._starts_today(proj) and len(rest) == 3
         assert not any(self._starts_today(sp) for sp in rest)
         # No tab's reset clears it.
-        _switch_tab(at, "Pacing")
+        _switch_tab(at, "Pausing")
         at.button(key="pc_reset").click().run()
         assert at.checkbox(key="today_fwd").value is True
 
@@ -2284,7 +2284,7 @@ class TestSectionDeepLinks:
     `st.query_params` write."""
 
     _SLUGS = {"datacenters": "per-company-does-the-buildout-predict-release-timing",
-              "pacing": "if-the-us-paced-when-does-china-catch-up",
+              "pausing": "if-the-us-paused-when-does-china-catch-up",
               "rsi": "cobench"}
 
     def _script(self, at):

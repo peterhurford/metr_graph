@@ -483,11 +483,11 @@ def _bt_color_for(r):
 # than threaded through each tab's hover builder, so a chart is opted in by one
 # call before `st.plotly_chart` and nothing else about it changes. Only the
 # projection charts carry it (METR, ECI, RLI, the RSI blend's CDF, revenue and
-# both Pacing charts) — a diagnostic chart of past data has no "forward".
+# both Pausing charts) — a diagnostic chart of past data has no "forward".
 _TODAY_FWD_KEY = "today_fwd"
 _TODAY_FWD_DEFAULTS = {_TODAY_FWD_KEY: False}
 _TODAY_FWD_TABS = ("METR Horizon", "Epoch ECI", "Remote Labor Index", "Takeoff",
-                   "Revenue", "Pacing")
+                   "Revenue", "Pausing")
 # The visible data must cover at least this share of the recorded y-range,
 # else the axis is refit to it: a chart whose y-range was sized to its
 # history leaves the forward part in a sliver at the top, while a bounded
@@ -2410,7 +2410,7 @@ _DC_CTY_CN_DOMESTIC = "China (domestic only)"
 #     sites end-2026→2027, and the US 2.3× world-share rate over their power
 #     growth) = ×1.6–2.2/yr. Faster than the domestic band, slower than the
 #     US. It omits GPUs rented from Western clouds (dispersed, so not one
-#     site) and assumes remote access stays legal; Pacing's remote-cut lever
+#     site) and assumes remote access stays legal; Pausing's remote-cut lever
 #     is the downside case.
 _DC_CTY_CN_LABELS = (_DC_CTY_CN, _DC_CTY_CN_ACCESS, _DC_CTY_CN_DOMESTIC)
 _DC_CTY_CN_ACCESS_PACE = (0.20, 0.35)   # OOM/yr as an 80% interval: ×1.6–2.2
@@ -2887,7 +2887,7 @@ def _dc_country_steps(series, names, mode, cluster_of):
                      pooled exactly as _dc_company_networked_series() does it
                      (detail = "company — cluster" or the site)
     mode 'country' — every site in the country summed (detail = site count):
-                     the state-direction claim the Pacing tab makes for China,
+                     the state-direction claim the Pausing tab makes for China,
                      an upper bound for anyone else
     """
     sub = {n: series[n] for n in names if n in series}
@@ -3025,7 +3025,7 @@ def _dc_cty_pace(label, own, us_fit, mode='band'):
     The US, and any country with a fit under mode 'own', use their own fit.
     Under mode 'band' China's rows (_DC_CTY_CN_LABELS) use an evidence band
     read as an 80% interval: China-accessible _DC_CTY_CN_ACCESS_PACE, the
-    others the export-control band _CC_CN_COMPUTE_LO/HI, so this tab, Pacing
+    others the export-control band _CC_CN_COMPUTE_LO/HI, so this tab, Pausing
     and the China tab share one domestic China pace; everyone else
     borrows the US pace. A borrowed pace is widened to keep the country's own fit inside
     the 80% cone. source is 'own', 'band' or 'us'; pace is None when there
@@ -3180,13 +3180,15 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "Takeoff", "Frontier Thresholds", "Revenue", "Data Centers", "China", "Pacing", "UK Cyber", "Employment"]
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing"}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "Takeoff", "Frontier Thresholds", "Revenue", "Data Centers", "China", "Pausing", "UK Cyber", "Employment"]
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "China": "china", "Pausing": "pausing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 # The RSI tab merged into Takeoff; its links still land there.
 _TAB_SLUG["rsi"] = _TAB_SLUG["takeoff"]
 # The China tab was Compute/capabilities/diffusion; old links still land.
 _TAB_SLUG["computecap"] = _TAB_SLUG["china"]
+# The Pausing tab was Pausing; old links still land.
+_TAB_SLUG["pacing"] = _TAB_SLUG["pausing"]
 
 # Read ?tab= from URL for deep-linking
 _url_tab = st.query_params.get("tab", "").lower()
@@ -10450,7 +10452,7 @@ _DUV_SOURCE_URL = "https://techstatecraft.org/duv"
 _DUV_ALLOCS = (("trend", "today's allocation"),
                ("push", "AI push"),
                ("ceiling", "every DUVi on AI"))
-_DUV_BAN_ALLOC = "push"   # the allocation the Pacing lever reads
+_DUV_BAN_ALLOC = "push"   # the allocation the Pausing lever reads
 # China's realized 2026 AI chip output, the report's Figure 9 (IFP): 62k–160k
 # B300e, read as a 10th–90th range. To H100e at the report's own conversion,
 # TrendForce's 13.9M GB300e ≈ 35M H100e (dense FP16).
@@ -10462,7 +10464,7 @@ _DUV_POLICY_YEAR = 2027.0             # the ban and the servicing cut both bite
 # Epoch has Ascend units ~0.8M (2025) → ~1.5M (2026, ×1.9); SemiAnalysis's 2027
 # median is 2M Ascend 950s (×1.3), its high case 4M (×2.7); per-chip
 # performance rises on top. The import-ban cut is most sensitive to this, so
-# Pacing exposes it (`pc_duv_growth`).
+# Pausing exposes it (`pc_duv_growth`).
 _DUV_CN_OUTPUT_GROWTH = 2.4
 _DUV_CN_OUTPUT_SPREAD = 1.6
 _DUV_CN_OUTPUT_GROWTH_RANGE = (1.2, 5.0)
@@ -11699,7 +11701,7 @@ def _cc_trainflop_frontier(dcs, cap_date, with_names=False,
 
     `key`/`run_days` pick the training-run window — the loader's 2-month
     'train_flop' (default) or 6-month 'train_flop_6mo' column, exactly the
-    DC/Pacing tabs' metric pair. Returns [(date, flop), …] sorted by date,
+    DC/Pausing tabs' metric pair. Returns [(date, flop), …] sorted by date,
     with every point shifted forward by one training run (a run on a site
     available at D only finishes at D+run), matching the Data Centers tab.
     Monotonic non-decreasing.
@@ -12078,7 +12080,7 @@ def _cc_cn_pace_band(cn_fr, r_central):
     """Pace-factor (lo, hi, obs) reality-checking a bottom-up rate against
     China's observed frontier slope over _CC_GAP_WINDOWS; obs is None when
     the observed slopes are unavailable. Shared by the CC China-crossing
-    section and the Pacing US-pause panel so the two can't disagree."""
+    section and the Pausing tab's pause panel so the two can't disagree."""
     obs = [s for s in (_cc_frontier_eci_slope(cn_fr, cut)
                        for _, cut in _CC_GAP_WINDOWS) if s and s > 0]
     if obs and r_central > 0:
@@ -12486,7 +12488,7 @@ _CC_GAP_WINDOWS = [
 # the evidence) — TestCcCnComputeBand pins that against
 # the live data; if a refresh breaks it, retarget these deliberately. It is
 # also mainland China's pace past the catalogued plans on the Data Centers and
-# Pacing tabs (_dc_cty_pace), so moving it moves those projections too.
+# Pausing tabs (_dc_cty_pace), so moving it moves those projections too.
 _CC_CN_COMPUTE_LO = 0.15   # ~1.4×/yr — export controls bite
 _CC_CN_COMPUTE_HI = 0.30   # ~2×/yr — China's recent disclosed pace holds
 
@@ -13269,7 +13271,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                           "that the rates are indicative, not measured."))
 
 
-# ── China's crossing simulation (used by the Pacing pause panel) ─────────
+# ── China's crossing simulation (used by the Pausing tab's pause panel) ─────────
 
 def _cc_cn_target_years(anchor_eci, target, algo_lo, algo_mid, algo_hi,
                         a_partial, g_lo, g_hi, pace_lo=0.85, pace_hi=1.15,
@@ -13371,7 +13373,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
 
     Pass a dict as `channels` to have it filled with the four rate terms'
     *cumulative* ECI contributions, each an (n, len(grid)) array summing to
-    `traj − anchor_eci` — what the Pacing tab's breakdown reads to say which
+    `traj − anchor_eci` — what the Pausing tab's breakdown reads to say which
     channel closed the gap. Off by default: four more arrays of traj's size.
     `comp_shadow` (comp_cap, dead) adds a fifth, `compute_domestic`: the
     compute term recomputed with each sample's own pace capped at `comp_cap`
@@ -13659,7 +13661,7 @@ def _cc_lab_for_site(operator, primary_user):
     then the primary listed tenant — so Colossus 2 stays *xAI's* buildout even
     though Anthropic and Cursor are listed as users. This panel asks whose
     buildout predicts whose releases, so the builder outranks its tenants;
-    that is deliberately different from the DC/Pacing tabs' shared-tenancy
+    that is deliberately different from the DC/Pausing tabs' shared-tenancy
     rule, which credits a shared site to every listed tenant.
     """
     op = _CC_LAB_ALIASES.get(operator, operator)
@@ -14366,7 +14368,7 @@ def _render_cc_duv_ceiling(today):
         "others. Chips made per year, not the largest single training run "
         "the rest of this tab tracks. China's actual output is far under "
         "both ceilings, so an import ban binds only once its own trend "
-        "reaches the banned line: the Pacing tab's lever puts that at "
+        "reaches the banned line: the Pausing tab's lever puts that at "
         f"~{c_imp:.0%} less growth to {end.year}, or ~{c_svc:.0%} with "
         "servicing banned too. Source: Brown & Khan, Center for Technology "
         f"& Statecraft, [*DUV Immersion Lithography*]({_DUV_SOURCE_URL}) "
@@ -14385,11 +14387,11 @@ def _render_cc_duv_ceiling(today):
          "SemiAnalysis put Ascend unit growth at \u00d71.3\u20132.7/yr, with "
          "faster chips on top. The lever caps this trend at each ceiling "
          "and compares growth with and without the policy. The import-ban "
-         "cut is sensitive to this rate; Pacing exposes it."),
+         "cut is sensitive to this rate; Pausing exposes it."),
         ("with servicing banned too",
          f"At the default {_DUV_SERVICE_DECAY_PCT}%/yr loss of advanced-fab "
          "DUVi capacity from 2027. The report gives no rate; it is the "
-         "Pacing tab's judgment, set under Advanced."))
+         "Pausing tab's judgment, set under Advanced."))
 
 
 def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
@@ -14796,7 +14798,7 @@ def render_compute_capabilities():
 
     with st.sidebar:
         st.header("China")
-        # Run-length options are the Pacing tab's, verbatim.
+        # Run-length options are the Pausing tab's, verbatim.
         if st.session_state.get("cc_run") not in _PC_RUN_OPTIONS:
             st.session_state.pop("cc_run", None)
         run_label = st.selectbox(
@@ -14967,10 +14969,10 @@ def _sync_session_to_url():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# Pacing — when does each entity first command a threshold-scale run?
+# Pausing — when does each entity first command a threshold-scale run?
 # ══════════════════════════════════════════════════════════════════════════
 
-# The bar a pacing agreement (or an observer) might care about, in total 8-bit
+# The bar a pause agreement (or an observer) might care about, in total 8-bit
 # ops of one training job. For scale: GPT-5 ≈ 2e25, Mythos ≈ 1e27.
 # The race's bar is normally the US's own largest run at the pause; this is
 # only the floor for a catalogue with no US capacity to read.
@@ -14978,7 +14980,7 @@ _PC_FALLBACK_THRESHOLD = 1e28
 _PC_RUN_OPTIONS = {"6-month run": "train_flop_6mo", "2-month run": "train_flop"}
 _PC_HORIZON = datetime(2031, 12, 1)   # crossing-search grid end
 _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
-# The Pacing tab adds a third attribution: entities are countries, with China
+# The Pausing tab adds a third attribution: entities are countries, with China
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
 # Four of the milestones are dated off *released, publicly benchmarked* models
@@ -16151,7 +16153,7 @@ _PC_CHANNEL_LABELS = {
     'compute_abroad': "Compute — remote access to clusters abroad",
     'innovation': "Indigenous innovation — never dries up",
     'diffusion': "Diffusion — published US methods, drying up after "
-                 "pacing plan",
+                 "the pause",
     'distillation': "Distillation — training against US model outputs",
 }
 
@@ -16237,7 +16239,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     st.table(rows)
     _fn_caption(
         f"The {total_mo:.1f} months run from China's last frontier model, not "
-        "from the pacing plan start. <b>ECI closed</b> and "
+        "from the pause start. <b>ECI closed</b> and "
         "<b>Without it</b> answer different questions."
         + ("".join(" " + n for n in notes) if notes else ""),
         ("ECI closed", "Each term's cumulative contribution at its own sample's "
@@ -16311,11 +16313,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # state-of-play table lands here — between the date the caller drew and
     # the question the rest of the panel answers.
     state_box = st.container()
-    st.subheader("If the US paced: when does China catch up?")
+    st.subheader("If the US paused: when does China catch up?")
     st.markdown("##### Policy levers")
     cb1, cb2, cb3 = st.columns(3)
     withhold = cb1.checkbox(
-        "US does not give access to strongest models at plan start",
+        "US does not give access to strongest models at pause start",
         key="pc_withhold",
         value=True,
         help="A release freeze: once the final threshold run starts, the US "
@@ -16676,7 +16678,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         years = _pc_cross_years(traj, grid_yrs, target0) + cn_extra
         traj = traj + cn_gain
         grid_yrs = grid_yrs + cn_extra
-    # ── State of play at plan start: what each side has when the music
+    # ── State of play at pause start: what each side has when the music
     # stops, written into the slot under the slider. Compute comes from the
     # threshold race's own projection (so the two sections cannot disagree),
     # capability from the same sampled ECI paths the chart draws, and the
@@ -16688,7 +16690,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                          for q in (10, 50, 90))
         c = caps.get(label)
         return {
-            "At plan start": label,
+            "At pause start": label,
             "Largest training run": (
                 f"{_log_op(c[1])} log OP ({_log_op(c[0])}–{_log_op(c[2])})"
                 if c else "—"),
@@ -16752,7 +16754,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 days=float(np.percentile(ok_ca, 50)) * 365.25)
     yr_ok = years[np.isfinite(years)]
     if len(yr_ok) < 100:
-        st.info(f"China does not reach the paced US frontier by "
+        st.info(f"China does not reach the paused US frontier by "
                 f"{horizon.year} in most samples — widen *Project through*."
                 if horizon is not None else
                 "Sampled rates were too weak to give a crossing date.")
@@ -16772,8 +16774,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  - _CC_RUN_COMPLETION_LAG.days) / 30.44
     s10, s50, s90 = (float(np.percentile(_delta_mo, p)) for p in (10, 50, 90))
     m1, m2 = st.columns(2)
-    m1.metric(f"China reaches paced US frontier "
-              f"(plan start {d_pause_v:%b %Y}, ECI ~{lvl50:.0f})",
+    m1.metric(f"China reaches paused US frontier "
+              f"(pause start {d_pause_v:%b %Y}, ECI ~{lvl50:.0f})",
               f"{v50:%b %Y}", f"{v10:%b %Y} – {v90:%b %Y} (80%)",
               delta_color="off")
     m2.metric("Time for China to surpass",
@@ -16886,7 +16888,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     fig.add_annotation(x=v50, y=1.0, yref='paper', yanchor='bottom',
                        text='80% crossing window', showarrow=False,
                        font=dict(size=10, color='#7F1010'))
-    # US: actual frontier, then the climb to the bar, flat once it paces.
+    # US: actual frontier, then the climb to the bar, flat once it pauses.
     fig.add_trace(go.Scatter(
         x=[d + off_cn for d, s, n in us_fr], y=[s for d, s, n in us_fr],
         mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
@@ -16904,10 +16906,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     fig.add_trace(go.Scatter(
         x=[max(d_pause_v, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
         line=dict(color='#1F77B4', width=4.5), opacity=0.4,
-        name=f'US paced at {lvl50:.0f}', hoverinfo='skip'))
+        name=f'US paused at {lvl50:.0f}', hoverinfo='skip'))
     if d_pause_v > anchor_d + off_cn:
         fig.add_annotation(x=d_pause_v, y=lvl50,
-                           text=f'US paces ~{d_pause_v:%b %Y}',
+                           text=f'US pauses ~{d_pause_v:%b %Y}',
                            showarrow=False, yshift=12,
                            font=dict(size=10, color='#1F77B4'))
     # China: actual frontier, then the sim's fan.
@@ -17033,7 +17035,7 @@ def render_pacing():
 
     # ── Sidebar ──
     with st.sidebar:
-        st.header("Pacing")
+        st.header("Pausing")
         # A bookmarked URL can carry a stale label; drop it rather than raise.
         if st.session_state.get("pc_run") not in _PC_RUN_OPTIONS:
             st.session_state.pop("pc_run", None)
@@ -17089,7 +17091,7 @@ def render_pacing():
     party = _PC_PARTY_OPTIONS[party_label]
     pc_horizon = datetime(pc_end_year, 12, 1)
 
-    st.header("Pacing")
+    st.header("Pausing")
     st.warning("Warning: under construction, not final.")
 
     # ── Series shared by both halves of the tab ──
@@ -17122,7 +17124,7 @@ def render_pacing():
     if st.session_state.get("pc_pause_mo") not in _months:
         st.session_state.pop("pc_pause_mo", None)
     pause_mo = st.select_slider(
-        "US starts pacing plan", options=_months,
+        "US pauses on", options=_months,
         value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
         format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
         help="The US stops training new frontier models on this date and "
@@ -18547,7 +18549,7 @@ def _tk_dc_compute(today, n):
 
     Returns (per-draw log growth a year, the historical log growth a year).
     Each draw is one sampled US largest-training-run trajectory, projected
-    exactly as the Pacing tab does it (recorded steps, plans under slip, then
+    exactly as the Pausing tab does it (recorded steps, plans under slip, then
     the fitted trend), averaged over `_TK_DC_AVG_YEARS` from today. The historical rate
     is that series' own fit: the compute growth today's ECI trend reflects.
     """
@@ -19571,7 +19573,7 @@ if not os.environ.get("_VP_TESTING"):
         render_data_centers()
     elif active_tab == "China":
         render_compute_capabilities()
-    elif active_tab == "Pacing":
+    elif active_tab == "Pausing":
         render_pacing()
 
     # Rendered after the tab's own controls, at the foot of the sidebar. The
