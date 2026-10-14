@@ -18385,30 +18385,49 @@ def _tk_yrs(v):
     return "runaway" if not np.isfinite(v) else f"{v:.1f} yr"
 
 
-# Frontier AI research staff today: an order-of-magnitude assumption, since the
-# model tracks shares of research hours, not headcounts.
+# Frontier AI research staff today, an order-of-magnitude assumption since the
+# model tracks shares of research hours, not headcounts; their yearly growth
+# while labs keep hiring (until RSI) and after it, as autopilot makes them
+# unneeded. Assumptions for the workforce chart only.
 _TK_HUMAN_RESEARCHERS = 10_000
+_TK_HIRING_GROWTH = 1.3
+_TK_POST_RSI_DECLINE = 0.7
 
 
-def _tk_ai_fte(eci_level):
-    """Human full-time equivalents one AI researcher is worth at an ECI level:
-    3 x (ECI / 200)^10, about 0.5 at today's frontier and 3 at ECI 200. A
-    stated judgment, not a fit."""
-    return 3.0 * (np.asarray(eci_level, dtype=float) / 200.0) ** 10
+def _tk_ai_fte(eci_level, speed):
+    """Human full-time equivalents one AI researcher is worth: its speed on
+    the work it does (the model's `ai_speed`) times its competence,
+    3 x (ECI / 200)^10 (about 0.5 at today's frontier, 3 at ECI 200). The
+    competence form is a stated judgment, not a fit."""
+    return speed * 3.0 * (np.asarray(eci_level, dtype=float) / 200.0) ** 10
 
 
 def _tk_workforce(result, eci, humans=_TK_HUMAN_RESEARCHERS):
-    """(humans, AIs, FTE) per draw and month. Humans hold at `humans`. AIs start
-    where, at today's FTE value, they do the automation index's share of
-    today's research work, then grow with agent compute and with more copies
-    as algorithms improve. FTE = humans + AIs x `_tk_ai_fte(ECI)`."""
+    """(humans, AIs, FTE) per draw and month. Humans start at `humans`, grow
+    `_TK_HIRING_GROWTH` a year until the draw's RSI and shrink by
+    `_TK_POST_RSI_DECLINE` a year after it. AIs start where, at today's FTE
+    value, they do the automation index's share of today's research work,
+    then grow with agent compute and with more copies as algorithms improve.
+    FTE = humans + AIs x `_tk_ai_fte(ECI, ai_speed)`."""
     wp = result["workflow_progress"]
+    years = wp["years"][None, :]
+    rsi = np.minimum(result["events"]["RSI"], 1e3)[:, None]
+    people = humans * np.exp(np.log(_TK_HIRING_GROWTH) * np.minimum(years, rsi)
+                             + np.log(_TK_POST_RSI_DECLINE) * np.maximum(years - rsi, 0))
+    speed = result["params"]["ai_speed"]
     h0 = np.clip(result["outcomes"]["Today"]["human_mean"], 1e-3, 1 - 1e-3)
-    ais0 = humans * (1 - h0) / h0 / _tk_ai_fte(eci["now"])
+    ais0 = humans * (1 - h0) / h0 / _tk_ai_fte(eci["now"], speed)
     copies = result["params"]["ai_copies"] * np.maximum(wp["software_realized_log"], 0)
     ais = ais0[:, None] * np.exp(wp["compute_log"] + copies)
-    people = np.full_like(ais, float(humans))
-    return people, ais, people + ais * _tk_ai_fte(eci["paths"])
+    return people, ais, people + ais * _tk_ai_fte(eci["paths"], speed)
+
+
+def _tk_count(v):
+    """A head or FTE count with k, M, B or T."""
+    for div, unit in ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "k")):
+        if abs(v) >= div:
+            return f"{v / div:.3g}{unit}"
+    return f"{v:.3g}"
 
 
 def _tk_workforce_fig(result, today, eci, markers=(), humans=_TK_HUMAN_RESEARCHERS):
@@ -18434,7 +18453,8 @@ def _tk_workforce_fig(result, today, eci, markers=(), humans=_TK_HUMAN_RESEARCHE
                                      name=name + " 90%"), row=1, col=col)
             fig.add_trace(go.Scatter(
                 x=x, y=q[1], mode="lines", name=name, line=dict(color=color, width=2.5),
-                hovertemplate="%{x|%b %Y}<br>%{y:,.3s}<extra>" + name + "</extra>"),
+                text=[_tk_count(v) for v in q[1]],
+                hovertemplate="%{x|%b %Y}<br>%{text}<extra>" + name + "</extra>"),
                 row=1, col=col)
     for i, (label, when) in enumerate(markers):
         for col in (1, 2):
@@ -18443,8 +18463,8 @@ def _tk_workforce_fig(result, today, eci, markers=(), humans=_TK_HUMAN_RESEARCHE
         fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper", xref="x",
                            text=label, showarrow=False, xanchor="left",
                            font=dict(size=11, color="#888"))
-    fig.update_yaxes(type="log", row=1, col=1, title_text="Researchers")
-    fig.update_yaxes(type="log", row=1, col=2)
+    fig.update_yaxes(type="log", row=1, col=1, title_text="Researchers", exponentformat="B")
+    fig.update_yaxes(type="log", row=1, col=2, exponentformat="B")
     fig.update_xaxes(range=[x[0], x[-1]])
     fig.update_layout(height=380, margin=dict(l=55, r=20, t=40, b=40),
                       legend=dict(orientation="h", y=-0.15), hovermode="x")
@@ -18755,9 +18775,11 @@ def _render_takeoff(loading):
             number("Labor\u2013compute substitutability (\u03c1)", "substitution", -3.0, 0.5, 0.1,
                    "How research labor and experiment compute combine (CES exponent). "
                    "\u22121 is a harmonic mean, where unlimited labor at most doubles "
-                   "output; 0 lets either fully make up for the other. Contested: "
-                   "compute-bottleneck views sit near \u22121, views where AI "
-                   "economizes on experiments nearer 0.")
+                   "output; at the default \u22120.5 it at most quadruples it, so even "
+                   "billions of AI researchers hit experiment compute; 0 or above "
+                   "removes that cap, which is what a FOOM needs (the scenarios that "
+                   "FOOM drew \u03c1 near +0.2). Contested: compute-bottleneck views sit "
+                   "near \u22121, views where AI economizes on experiments nearer 0.")
             number("Algorithmic gains that pay off only at scale (%)", "scale_dependent",
                    0.0, 100.0, 5.0,
                    "Median share of each algorithmic gain worth anything only once models "
@@ -19265,15 +19287,19 @@ def _render_takeoff(loading):
         "How many researchers there are, human and AI, and what they add up to in human "
         "full-time equivalents.",
         ("How many researchers",
-         f"Human research staff are held at {_TK_HUMAN_RESEARCHERS:,}, an order-of-magnitude "
-         "assumption for frontier labs; after RSI they are no longer needed but are kept "
-         "on the chart. AI researchers start where, at today's per-AI value, they do the "
-         "automation index's share of today's research work, then grow with the compute "
-         "for running agents and with more copies as algorithms improve."),
+         f"Human research staff start at {_TK_HUMAN_RESEARCHERS:,}, an order-of-magnitude "
+         f"assumption for frontier labs, grow {_TK_HIRING_GROWTH - 1:.0%} a year while labs "
+         f"keep hiring and shrink {1 - _TK_POST_RSI_DECLINE:.0%} a year after each scenario's "
+         "RSI, once autopilot makes them unneeded; both rates are assumptions. AI "
+         "researchers start where, at today's per-AI value, they do the automation index's "
+         "share of today's research work, then grow with the compute for running agents "
+         "and with more copies as algorithms improve."),
         ("human full-time equivalents",
-         "Each AI researcher counts as 3 \u00d7 (ECI / 200)^10 people: about 0.5 at today's "
-         "frontier, 3 at ECI 200, 28 at 250. A stated judgment, not a fit; the model's "
-         "research speed comes from its own labor equations, not from this chart."))
+         f"Each AI researcher counts as its speed ({result['params']['ai_speed']:g}\u00d7 a "
+         "person on the work it does, the model's setting) times its competence, "
+         "3 \u00d7 (ECI / 200)^10: about 0.5 at today's frontier, 3 at ECI 200, 28 at 250. "
+         "The competence form is a stated judgment, not a fit; the model's research speed "
+         "comes from its own labor equations, not from this chart."))
     st.plotly_chart(_tf(_tk_to(_tk_workforce_fig(result, today, eci, markers), view_end)),
                     width="stretch")
 

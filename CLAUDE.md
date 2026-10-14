@@ -215,10 +215,13 @@ human labor, AI capabilities and compute (`pace_factors` `labor`/`ai`/`compute`,
 `resources`; `test_pace_factors_multiply_back_to_the_pace`), then *Compute going in*
 (`_tk_compute_fig`, each draw's `workflow_progress["compute_log"]`, post-RSI boost included,
 with the milestone medians marked)), **2. People step out of the loop**
-(`_tk_humans_fig`), **3. The research workforce** (`_tk_workforce_fig`: heads, humans held at
-`_TK_HUMAN_RESEARCHERS` and AI researchers anchored to the automation index's share of today's
-work, growing with agent compute and copies; and human FTEs at `_tk_ai_fte`, 3 × (ECI/200)^10
-per AI, a readout, never an input), **4. What it does to capability (ECI)** (plus *2025-level ECI progress in
+(`_tk_humans_fig`), **3. The research workforce** (`_tk_workforce_fig`: heads, humans from
+`_TK_HUMAN_RESEARCHERS` growing `_TK_HIRING_GROWTH` a year to each draw's RSI and shrinking
+by `_TK_POST_RSI_DECLINE` after, and AI researchers anchored so that at today's per-AI value
+they do the automation index's share of today's work, growing with agent compute and
+copies; and human FTEs, each AI worth `_tk_ai_fte` = `ai_speed` × 3 × (ECI/200)^10. Counts
+read k/M/B/T (`_tk_count`, axis `exponentformat="B"`), carried in `text` so today-forward
+can still relabel the dates. A readout, never an input), **4. What it does to capability (ECI)** (plus *2025-level ECI progress in
 each year*, `_tk_yearly_fig`: ECI gained per calendar year over what the frontier gained
 in `_TK_YEARLY_BASE_YEAR` (`_tk_year_gain`, 13.5 points, below the 15.7-point fitted trend
 the ECI chart uses, so these bars read ~1.16× that trend's), a different 2025 unit from
