@@ -44,7 +44,7 @@ DEFAULTS = {
     "rsi_trend_weight": 50.0, "rsi_trend_months": 12.0, "rsi_useful_growth": 100.0,
     # Labor and experiment compute combine as a CES mean with this exponent:
     # -1 is the harmonic mean (strong complements), 0 Cobb-Douglas.
-    "substitution": -0.5,
+    "substitution": -0.2,
     # Speed of AI on work it has taken over, relative to the people it
     # replaced; sets how much a falling human share speeds research (Amdahl).
     "ai_speed": 30.0,

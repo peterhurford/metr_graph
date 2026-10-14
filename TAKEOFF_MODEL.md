@@ -37,7 +37,8 @@ again. Only the pairing changes; the dates' distribution is the RSI tab's exactl
 ## Fast and slow feedback
 
 Research combines labor and experiment compute through a CES mean (`substitution`, default
--0.5; -1 is the old harmonic mean, under which unlimited labor at most doubles output),
+-0.2, elasticity 0.83 as in Erdil et al.'s chess estimate and Davidson's illustration, under
+which unlimited labor at most multiplies output about 30x; -0.5 caps it at 4x, -1 at 2x),
 multiplies by research quality, and discounts increasingly difficult discoveries. Agents,
 experiments, and training have disjoint shares of one growing compute budget.
 
@@ -172,7 +173,7 @@ to the literature:
 | Returns to research r | 0.65 in ln r | ~90%: 0.34–2.9× the setting | Forethought 0.33–3 around 1.0; Davidson & Houlden 0.4–3.6 around 1.2 |
 | Judgment elasticity | 0.5 in its log | 80%: 0.5–1.9× | The odds-to-judgment power is an assumption that could be half or double |
 | Judgment-rate change | 15 points per 10× | 80%: ±19 points | No measurement; sized so it adds to, rather than sets, the runaway share |
-| Labor–compute elasticity 1/(1−ρ) | 0.8 in its log | ~90%: 0.18–2.5 around 0.67 | Whitfill & Wu: ~0 (frontier experiments) to 2.6 (compute) |
+| Labor–compute elasticity 1/(1−ρ) | 0.8 in its log | ~90%: 0.22–3.1 around 0.83 | Erdil et al. 0.83 (chess), Davidson's −0.2; Whitfill & Wu ~0 (frontier experiments) to 2.6 (compute) |
 | Software ceiling | uniform | 6–16 orders of magnitude above today's efficiency | Forethought: 6–16 above full automation, returns falling linearly to 0 there |
 
 | Scale-dependent share of algorithmic gains | 1.0 in log-odds | 80%: ~22–78% around 50% | Gundlach et al. 2025: most historical gains grew with compute |

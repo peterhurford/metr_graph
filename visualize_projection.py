@@ -18956,11 +18956,12 @@ def _render_takeoff(loading):
             number("Labor\u2013compute substitutability (\u03c1)", "substitution", -3.0, 0.5, 0.1,
                    "How research labor and experiment compute combine (CES exponent). "
                    "\u22121 is a harmonic mean, where unlimited labor at most doubles "
-                   "output; at the default \u22120.5 it at most quadruples it, so even "
-                   "billions of AI researchers hit experiment compute; 0 or above "
-                   "removes that cap, which is what a FOOM needs (the scenarios that "
-                   "FOOM drew \u03c1 near +0.2). Contested: compute-bottleneck views sit "
-                   "near \u22121, views where AI economizes on experiments nearer 0.")
+                   "output; at the default \u22120.2 (elasticity 0.83: Erdil et al.'s "
+                   "chess estimate, Davidson's illustration) it at most multiplies it "
+                   "about 30\u00d7; at \u22120.5, 4\u00d7; 0 or above removes the cap, "
+                   "which is what a FOOM needs. Contested: Whitfill & Wu's frontier-"
+                   "experiments fit sits near complements, their baseline near 2.6; each "
+                   "scenario draws its own over that whole range.")
             number("Algorithmic gains that pay off only at scale (%)", "scale_dependent",
                    0.0, 100.0, 5.0,
                    "Median share of each algorithmic gain worth anything only once models "

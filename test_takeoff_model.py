@@ -572,8 +572,10 @@ def test_weekly_steps_converge_to_half_week_steps():
 
 
 def test_longer_validation_delays_milestones():
-    a = tk.simulate(dict(**tk.POINT_ESTIMATE, validation_months=0.5), n=1)
-    b = tk.simulate(dict(**tk.POINT_ESTIMATE, validation_months=3.0), n=1)
+    # An early coding date, so RSI waits on research direction, not on coding.
+    early = np.array([0.1])
+    a = tk.simulate(dict(**tk.POINT_ESTIMATE, validation_months=0.5), n=1, onset_years=early)
+    b = tk.simulate(dict(**tk.POINT_ESTIMATE, validation_months=3.0), n=1, onset_years=early)
     for name in tk.MILESTONES:
         assert b["events"][name][0] > a["events"][name][0]
 
