@@ -18967,13 +18967,14 @@ def _render_takeoff(loading):
         st.caption("Coding automation comes from the automated coder projection; "
                    "its settings are in the RSI evidence section.")
         with st.expander("What decides ultraintelligence", expanded=True):
-            st.caption("Across a plausible range, the first three each move the "
-                       "ultraintelligence date 1\u20136 months; \u03c1, more AI researchers "
-                       "and the scale-dependent share about 2\u20133 each; the training-run "
-                       "wait 2\u20135 (12 sooner if no gain waits). Compute growth after RSI, "
-                       "delayed 18 months, barely moves it; with no delay, 2\u00d7 brings it "
-                       "5 months sooner. Everything under Advanced moves it a few months "
-                       "at most.")
+            st.caption("Across a plausible range, r moves the ultraintelligence date "
+                       "\u22125 to +6 months, judgment \u22123 to +2, parallelization not at "
+                       "all; \u03c1, more AI copies, the scale-dependent share, faster cycles "
+                       "and autopilot about 2\u20133 each; the training-run wait 1\u20133 (7 "
+                       "sooner if no gain waits). Compute growth after RSI, delayed 18 "
+                       "months, barely moves it; with no delay, 2\u00d7 brings it 5 months "
+                       "sooner. Everything else under Advanced moves it a few months at "
+                       "most.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,

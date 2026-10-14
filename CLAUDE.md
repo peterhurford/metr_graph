@@ -143,13 +143,11 @@ it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `_TK_FACTOR_VIEW`. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
-The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, two ECI rates,
-software ceiling, scale-dependent gains, autopilot, copies, ladder-driven human hours;
-months to ultraintelligence from Apr 2030, each scenario on its own AL5 gap): the judgment
-elasticity (half/double: +2/−3), r (0.5/2: +6/−5), parallelization (0.8/0.3: +2/−1), ρ
-(−1/0: +2/−3), `ai_copies` (0/2: +2/−2), the training-run wait `fast_share` (12.5/50%:
-+2/−5; 100%: −12, since fast gains also skip the wait for scale), `scale_dependent`
-(25/75%: −2/+2) and `rsi_compute_boost` (default 2×;
+The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, today's
+defaults; months to ultraintelligence from Nov 2029): r (0.5/2: +6/−5), the judgment
+elasticity (half/double: +2/−3), parallelization (0.8/0.3: 0/0), ρ (−0.5/0: +2/−1),
+`ai_copies` (0/2: +3/−2), the training-run wait `fast_share` (12.5/50%: +1/−3; 100%: −7),
+`scale_dependent` (25/75%: −3/+3), `serial_speedup` and `rsi_autopilot` (off: +3, +2) and `rsi_compute_boost` (default 2×;
 under *Advanced*, the software ceiling moves it −2 if removed, +2 at 3–8 orders of
 magnitude). The boost multiplies each draw's log compute growth after its own
 RSI date, waiting `rsi_compute_delay` (18 months) then
