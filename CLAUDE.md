@@ -1277,17 +1277,16 @@ date distribution rather than the gap metrics above it. Three things are load-be
    a `pace_lo`/`pace_hi` band derived from China's observed slope over `_CC_GAP_WINDOWS`.
    That reality check is the main uncertainty — the two iso-compute fits sit within a point
    of each other and alone would give a spuriously tight band.
-3. **The crossing waits for a release.** The frontier is a step function, so clearing the
-   bar needs a model to ship: `release_gap_days` (`_cc_release_gap_days()`, median recent
-   inter-release gap) adds an exponential wait on top of the smooth crossing. That's why the
-   median-crossing diamond sits *right* of where the fan meets the target line — the fan is
-   the smooth capability path, the diamond and vertical band are release-inclusive. Not a
-   plotting bug; don't "fix" it by aligning them. The *months-behind* card is ship-to-ship
-   on both sides and must stay so: a "smooth" variant that interpolated the US released
-   steps was tried and read low — across a same-day release pair the interpolation
-   collapses to the ship date, silently carrying the US's real wait (GPT-5.5 Pro's run
-   finished ~2 mo before it shipped, per the Mythos model card; the wait is paid in prep
-   and overshoot, invisible in released steps) while charging China none.
+3. **Release steps are carried by level noise, not a release wait.** The frontier is a
+   step function; item 5's level offset models it, and the crossing adds no exponential
+   wait on top (`release_gap_days` stays a sim option, unused here). Together the two
+   skewed a dated backtest late; level noise alone puts ~80% of China's 2025–26 release
+   dates inside the 80% range with misses on both sides (`TestCcCrossingBacktest`). The
+   *months-behind* card is ship-to-ship on both sides and must stay so: a "smooth" variant
+   that interpolated the US released steps was tried and read low — across a same-day
+   release pair the interpolation collapses to the ship date, silently carrying the US's
+   real wait (GPT-5.5 Pro's run finished ~2 mo before it shipped, per the Mythos model
+   card) while charging China none.
 4. **Three-channel algorithmic engine.** `_cc_cn_crossing_sim` splits the measured
    rate into innovation (`_cc_pure_innovation_band`, never decays) + diffusion
    (nodist − pure, decays only after a pause, `_CC_DIFF_ABSORB_YRS` absorption ramp

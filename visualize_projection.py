@@ -13497,7 +13497,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     distillation gap. With `channels`, it is recorded as its own `level`
     entry so the channels still sum to `traj - anchor_eci`.
 
-    Returns (years, grid_yrs, traj): crossing years incl. the release wait
+    Returns (years, grid_yrs, traj): crossing years incl. any release wait
     (NaN = not crossed within horizon), the monthly time grid, and the
     (n, len(grid)) capability paths.
     """
@@ -13739,7 +13739,9 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
                  f"({min(obs):.1f}–{max(obs):.1f} vs ~{r_central:.1f} ECI/yr "
                  "bottom-up)") if obs else "with a ±15% pace factor")
 
-    # How long a crossing can sit waiting on a release, from the recent cadence.
+    # Recent release cadence: the level offset phases in over one gap. No
+    # separate release wait is added on top; the offset already carries the
+    # steps, and a dated backtest found the two together skewed late.
     gap_d = _cc_release_gap_days(cn_fr, since=today - timedelta(days=730))
 
     # Distillation-aware headline; the constant-rate model is the comparison.
@@ -13749,13 +13751,12 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
         us_rate=max(us_eci_smid, 0.0), a_partial=a_partial,
         g_lo=g_lo, g_hi=g_hi, algo_lo=a_lo, algo_mid=a_mid, algo_hi=a_hi,
         inno_lo=inno_lo, inno_hi=inno_hi,
-        pace_lo=pace_lo, pace_hi=pace_hi, release_gap_days=gap_d,
+        pace_lo=pace_lo, pace_hi=pace_hi,
         level_sd=_cc_frontier_level_sd(cn_fr),
         level_ramp_yrs=(gap_d or 47.5) / 365.25)
     years_const, rates = _cc_cn_target_years(anchor_eci, target, a_lo, a_mid,
                                              a_hi, a_partial, g_lo, g_hi,
-                                             pace_lo=pace_lo, pace_hi=pace_hi,
-                                             release_gap_days=gap_d)
+                                             pace_lo=pace_lo, pace_hi=pace_hi)
     yr_ok = years[np.isfinite(years)]
     if len(yr_ok) < 100:
         st.info("Sampled growth rates were too weak to give a crossing date.")
@@ -13771,8 +13772,9 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
     # Lag behind the US at the *same* level: when did (or will) the US frontier
     # first hit this bar? Measured off actual models where one exists, else
     # extrapolated at the US mid rate. Ship-to-ship on BOTH sides: China's
-    # crossing keeps its release wait because the US release date embeds the
-    # US's own — GPT-5.5 Pro shipped at 161.7 roughly two months after its run
+    # crossing is dated against release dates (the level offset is backtested
+    # on them), and the US release date embeds the US's own wait —
+    # GPT-5.5 Pro shipped at 161.7 roughly two months after its run
     # finished (Mythos model card), the wait paid in prep and overshoot,
     # invisible in the released steps. A "smooth" variant that interpolated
     # the US steps was tried and read ~1.4 mo low: across a same-day release
@@ -13875,7 +13877,7 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
         marker=dict(size=11, color='#7F1010', symbol='diamond',
                     line=dict(color='white', width=1)),
         name=f'Median crossing ({d50:%b %Y})',
-        hovertemplate=f'Median crossing (incl. release wait)<br>{d50:%b %Y}'
+        hovertemplate=f'Median crossing<br>{d50:%b %Y}'
                       '<extra></extra>'))
     figt.update_layout(
         height=440, plot_bgcolor='white', paper_bgcolor='white',
@@ -13912,8 +13914,7 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
         f"<b>{target - anchor_eci:.1f} points</b> short, closing at a median "
         f"<b>~{rate_med:.0f} ECI/yr</b> \u2014 of which compute is the small "
         "term. This assumes model access stays open: the algorithmic part "
-        "includes distillation from US models, fading as the gap closes."
-        + (" A crossing also waits for a release." if gap_d else ""),
+        "includes distillation from US models, fading as the gap closes.",
         ("closing at a median", f"{algo_note}, plus "
                                 f"~{a_partial * 0.5 * (g_lo + g_hi):.1f} ECI/yr "
                                 f"from compute ({a_partial:.0f} pts per "
@@ -13923,7 +13924,9 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
                                 f"carries a \u00b1{_cc_frontier_level_sd(cn_fr):.1f} "
                                 "ECI level offset: China's frontier moves in "
                                 "release-sized steps around its trend, which "
-                                "a rate spread alone does not cover."),
+                                "a rate spread alone does not cover. Backtested "
+                                "on China's 2025\u201326 releases, about 80% "
+                                "of their dates fall inside the 80% range."),
         ("compute is the small term", "Even doubling China's compute growth "
                                       f"(+{g_hi:.2f} OOM/yr) adds only "
                                       f"~{a_partial * g_hi:.1f} ECI/yr against "
@@ -13935,11 +13938,7 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
                                      "(the solid line above) as China nears the "
                                      "moving US frontier "
                                      f"({(y50 - float(np.nanmedian(years_const))) * 52.18:+.0f}"
-                                     " weeks vs constant-rate)."),
-        *([("waits for a release", f"One every ~{gap_d:.0f} days lately, an "
-                                   "exponential wait \u2014 which is why the "
-                                   "diamond sits right of where the fan meets "
-                                   "the bar.")] if gap_d else []))
+                                     " weeks vs constant-rate)."))
     _fn_caption(
         f"ECI {target:.0f} is a <i>fixed</i> bar \u2014 the US frontier as of "
         f"{us_hit_txt} \u2014 so crossing it means matching where the US is "

@@ -1937,6 +1937,41 @@ class TestCcCrossingBacktest:
         assert coverage(0.0) < 0.4
         assert 0.65 <= coverage(vp._cc_frontier_level_sd(cn_fr)) <= 0.95
 
+        # Dates, as the catch-up card reports them: from each origin, the
+        # date China first reached each later release's level should land
+        # inside the 80% crossing range about 80% of the time, with misses
+        # on both sides. A release wait on top skews it late.
+        def date_coverage(wait):
+            inside = early = late = 0
+            origins = [datetime(2025, 1, 1)] + [d for d, s, n in cn_fr
+                                                if d.year >= 2025][:-1]
+            for d0 in origins:
+                c0 = best_at(cn_fr, d0)
+                for d_hit, target in [(d, s) for d, s, n in cn_fr
+                                      if d > d0 and s > c0]:
+                    np.random.seed(0)
+                    yrs, _, _ = vp._cc_cn_crossing_sim(
+                        c0, target, us_anchor=best_at(us_fr, d0),
+                        us_rate=us_rate, a_partial=a, g_lo=g_lo, g_hi=g_hi,
+                        algo_lo=min(us_algo, cn_algo), algo_mid=cn_algo,
+                        algo_hi=max(us_algo, cn_algo), inno_lo=inno[0],
+                        inno_hi=inno[1], pace_lo=pace_lo, pace_hi=pace_hi,
+                        horizon_yrs=3.0, n=800,
+                        release_gap_days=gap_d if wait else None,
+                        level_sd=vp._cc_frontier_level_sd(cn_fr),
+                        level_ramp_yrs=gap_d / 365.25)
+                    lo, hi = np.percentile(yrs[np.isfinite(yrs)], [10, 90])
+                    t = (d_hit - d0).days / 365.25
+                    early += t < lo
+                    late += t > hi
+                    inside += lo <= t <= hi
+            return inside / (inside + early + late), early, late
+
+        cov, early, late = date_coverage(wait=False)
+        assert 0.65 <= cov <= 0.95 and early > 0 and late > 0
+        _, early_w, late_w = date_coverage(wait=True)
+        assert early_w > 2 * late_w
+
 
 class TestCcCnLevelOffset:
     def test_recovers_a_constructed_level_premium(self):
