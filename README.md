@@ -34,8 +34,8 @@ and the sidebar's *Share view* button copies a URL carrying your current control
 | Frontier Thresholds | `thresholds` | `frontier_thresholds.json` (supplied timeline through September 6, 2026) | Lab/domain event timeline separating assessments, precautions, alerts, policy changes, reassessments, and operational responses |
 | Employment | `employment` | RLI frontier + assumptions | Unemployment / jobs displaced under slider assumptions |
 | Revenue | `revenue` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | OpenAI and Anthropic ARR |
-| Data Centers | `datacenters` | `data_centers.csv` + `data_center_timelines.csv` | H100-equivalents, power, cost, time-to-train; ends with a US-vs-China buildout panel |
-| Compute/capabilities/diffusion | `computecap` | Data centers + ECI | Training-compute frontier against capability, and China's ETA to today's US frontier |
+| Data Centers | `datacenters` | `data_centers.csv` + `data_center_timelines.csv` | H100-equivalents, power, cost, time-to-train; a US-vs-China buildout panel, then Compute ⟷ ECI and the ECI forecast |
+| China | `china` (old `computecap` links still work) | Data centers + ECI | US vs China through the compute lens, and China's ETA to today's US frontier |
 | Pacing | `pacing` | Data centers | What a US pause buys: China's catch-up, then when each entity can first mount a run of the paused US scale |
 
 Each tab has its own render function (`grep '^def render_'`), its own sidebar controls, and a
@@ -203,7 +203,7 @@ Conventions that will come up:
   where a metric exists, `_fn_caption(text, (phrase, note))` to make a phrase in a caption
   hoverable in place, and `_fn_line()` for a line that must not read as fine print.
   `test_footnotes_anchor_to_their_phrase` holds the app at zero unanchored footnotes.
-- **Don't fork shared machinery.** The Pacing and Compute/capabilities tabs are built from the
+- **Don't fork shared machinery.** The Pacing and China tabs are built from the
   Data Centers tab's aggregation functions on purpose — two tabs quoting different numbers for
   the same quantity reads as a bug. Several tests exist only to keep the engines honest across
   tabs.

@@ -29,7 +29,7 @@ Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tes
 - **`epoch_capabilities_index.csv`** — Epoch ECI data, written by **`convert_eci.py`** from Epoch's `eci_scores.csv` + `all_ai_models.csv`
 - **`data_centers.csv`** / **`data_center_timelines.csv`** — Epoch Frontier Data Centers: one metadata row per site, many dated capacity rows per site
 - **`CHINA_COMPUTE_JUDGMENTS.md`** — the record behind every hand-set China/SEA compute pace and share: value, evidence, derivation, revisit triggers
-- **`cts_duv_production.csv`** — CTS lithography report's Table 45: US AI chip output vs China's lithography-bounded ceiling, DUVi imports continuing or banned (see *Compute/capabilities/diffusion — lithography ceiling*)
+- **`cts_duv_production.csv`** — CTS lithography report's Table 45: US AI chip output vs China's lithography-bounded ceiling, DUVi imports continuing or banned (see *China tab — lithography ceiling*)
 - **`.streamlit/config.toml`** — turns on websocket compression (~4× less chart JSON on the wire)
 - **`aisi_cyber_narrow.csv`** / **`aisi_cyber_tlo.csv`** — AISI narrow cyber success rates (12 models); AISI/CAISI cyber-range "The Last Ones" avg steps of 32 (10 models). Both **chart-digitized, not published feeds** — see each file's `#` header
 
@@ -37,7 +37,7 @@ No build system, no CI/CD, no package manager beyond requirements.txt (`streamli
 
 ## Architecture
 
-Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `takeoff` (`rsi`, the merged RSI tab, is an alias for it),  `thresholds`, `revenue`, `datacenters`, `computecap`, `pacing`, `ukcyber`, `employment`.
+Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `takeoff` (`rsi`, the merged RSI tab, is an alias for it),  `thresholds`, `revenue`, `datacenters`, `china` (`computecap`, its old name, is an alias), `pacing`, `ukcyber`, `employment`.
 
 ### Takeoff scenario explorer
 
@@ -343,8 +343,8 @@ has no main-column headings, so it has no section to link to.
 | Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE`; `_CN_REVENUE` | ARR in billions; optional summed line (`rev_combined`, off by default) via `_rev_combined_series()`; then a data-only Chinese-lab chart (`_render_rev_china()`: MiniMax, Zhipu API, Alibaba MaaS, Moonshot, DeepSeek), run rates only, each point classed company-stated or press-reported (`TestRevenueChina`); closes on US vs China (`_render_rev_us_china()`): each side summed by `_rev_sum_series` (China from the date every lab reports, each lab held flat past its last report), with the ratio and the date the US labs stood at China's total, then the top-N vs top-N ratio over time (`_rev_ratio_path`), held flat and nowcast to today at each lab's last-interval growth (`_rev_value_nowcast`) (`TestRevenueUsChina`) |
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
-| Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`) and ends with the region-share stack (`_dc_render_region_share()`) |
-| Compute/capabilities/diffusion (slug `computecap`) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | train-FLOP frontier vs ECI; carries China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`), then the global compute distribution, today and projected (`_render_cc_world_shares()`), and ends with the CTS lithography ceiling (`_render_cc_duv_ceiling()`) |
+| Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`), the region-share stack (`_dc_render_region_share()`), and ends with *Compute ⟷ ECI* and *ECI Forecasts* (`_render_compute_eci()`, see below) |
+| China (slug `china`, was Compute/capabilities/diffusion) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | US vs China through the compute lens; carries China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`), then the global compute distribution, today and projected (`_render_cc_world_shares()`), and ends with the CTS lithography ceiling (`_render_cc_duv_ceiling()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
 | Frontier Thresholds | `frontier_thresholds.render(st)` | `frontier_thresholds.json` | dated threshold events per lab and risk category; no projection (see *Frontier Thresholds* below) |
 
@@ -467,7 +467,7 @@ Load-bearing:
    sites first.
 2. **The raw `dc_all` keeps single membership.** `dc.get('companies', [company])`
    fallback means any code path not going through `_dc_with_party` — notably the
-   Compute/capabilities/diffusion tab — behaves exactly as before. `test_shared_site_counts_
+   China tab and the Compute ⟷ ECI section — behaves exactly as before. `test_shared_site_counts_
    under_every_tenant` pins both halves.
 3. **Hidden/unattributed sets are recomputed on the view**, so under 'operator' the
    size gate re-admits owners like Oracle (Stargate Abilene) that the tenant view
@@ -509,7 +509,7 @@ Four things are load-bearing:
    QTS and DayOne carry the mark. Solid-vs-dashed is already actual-vs-planned, hence a
    glyph rather than a line style. The scope caption is built from the companies actually
    plotted, so it can't drift from the data.
-4. **The Compute/capabilities/diffusion tab keeps the unconditional exclusion.** `_cc_trainflop_
+4. **Compute ⟷ ECI and the China tab keep the unconditional exclusion.** `_cc_trainflop_
    frontier()` still drops every name in `_DC_EXCLUDE_COMPANIES`: it is the compute half of
    a compute-vs-capability comparison, so each point has to be attributable to a lab that
    ships models, and QTS/DayOne sites have no recorded tenant at all. Crediting their
@@ -1025,7 +1025,7 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    doesn't drag the pace down.
 6. **Past the plans, China runs on an evidence band; everyone else borrows the US trend**
    (`_dc_cty_pace`, default option 'band'). Mainland and domestic-only use
-   `_CC_CN_COMPUTE_LO/HI` (shared with Pacing and Compute/capabilities); China-accessible,
+   `_CC_CN_COMPUTE_LO/HI` (shared with Pacing and the China tab); China-accessible,
    whose largest site is offshore Nvidia capacity, uses `_DC_CTY_CN_ACCESS_PACE`, derived from
    SemiAnalysis's offshore leasing path. Both are read as 80% intervals, widened by
    `|g_own − g_ref| / 1.28` so a country's own fit sits at the 80% edge. The derivations,
@@ -1047,7 +1047,7 @@ The tab's *Project through* year caps the recorded data for every country alike;
 planned buildout off gives a trend-only projection from today. `TestDcByCountry` (unit)
 and `TestDataCentersByCountry` (integration).
 
-### Compute/capabilities/diffusion — the buildout-vs-release-timing panel
+### Data Centers — the buildout-vs-release-timing panel
 
 `_cc_company_buildout()` (bottom of the Data Centers tab) is a **pure timing test**: each
 capacity step of a lab's largest single data center, shifted forward `_CC_RELEASE_LAG_DAYS`
@@ -1094,7 +1094,7 @@ Load-bearing:
 
 `TestCcForwardMatch`, `TestCcResponsibleCluster` and `TestCcCompanyAllReleases` guard all of the above.
 
-### Compute/capabilities/diffusion — how it derives from the Data Centers tab
+### Compute ⟷ ECI and the China tab — how they derive from the Data Centers catalogue
 
 The CC tab's compute inputs are the DC tab's machinery, not a parallel implementation.
 Four contracts, each guarded:
@@ -1112,7 +1112,7 @@ Four contracts, each guarded:
    steps — one milestone per date (the old hand-rolled scan could emit two same-date
    records in dict order).
 3. **Dates mean "Training run finished".** The +2mo shifts in `_cc_trainflop_frontier()`
-   and `render_compute_capabilities()` go through `_dc_timing_shift("Training run
+   and `_render_compute_eci()` go through `_dc_timing_shift("Training run
    finished")`, the DC tab's own milestone vocabulary.
 4. **Country paces are cross-checked, not forked.** `_cc_country_pace_check()` runs the
    by-country engine (`_dc_country_steps` + `_dc_cty_fit`, no pooling, plan-horizon
@@ -1126,19 +1126,23 @@ Four contracts, each guarded:
    and the China-accessible fit is a from-zero ramp the DC tab itself flags as hot. If a
    refresh breaks either test, retarget the constants deliberately.
 
-Provenance is stated in captions deep-linking `?tab=datacenters`; the frontier
-itself is deliberately not charted (`test_dc_derivation_is_stated`). Lab-only
-exclusion unchanged (`test_compute_capabilities_frontier_stays_lab_only`).
-Sidebar: *Project through* (`cc_end_year`, default 2029) moves the projection
-horizon only — the catalogue cap never drops below end-2028 and every fit era ends
-by Jan 2029, so segment fits never change (`test_project_through_horizon`); the
-China-ETA panel keeps its own adaptive horizon. *Run length* (`cc_run`,
+*Compute ⟷ ECI* (exchange rate, iso-ECI/iso-compute charts, the two engines) and
+*ECI Forecasts* (`_cc_eci_forecast`) close the Data Centers tab via
+`_render_compute_eci()`, on a fixed 2-month run, `dc_future`, and a horizon of
+end-`max(2029, dc_end_year)`; the catalogue cap never drops below end-2028 and every
+fit era ends by Jan 2029, so the segment fits don't move with it
+(`TestDataCentersComputeEci`). The frontier itself is deliberately not charted.
+The China tab's provenance captions deep-link `?tab=datacenters`
+(`test_dc_derivation_is_stated`). Lab-only exclusion unchanged
+(`test_compute_capabilities_frontier_stays_lab_only`). China sidebar: *Project
+through* (`cc_end_year`, default 2029) moves the US-vs-China horizon
+(`test_project_through_horizon`); the China-ETA panel keeps its own adaptive horizon. *Run length* (`cc_run`,
 `_PC_RUN_OPTIONS`, default 2-month) switches to `train_flop_6mo` + one-run shift —
 a constant scale-and-slide, same leaders (`test_run_window_scales_levels_only`);
 China's capacity band scales by the window ratio; `_cc_country_pace_check` stays
 on 2-month (paces identical).
 
-### Compute/capabilities/diffusion — global compute distribution (last section)
+### China tab — global compute distribution (last section)
 
 `_render_cc_world_shares()` answers what every chart above it cannot: how the
 world's *installed* AI compute divides between the US, mainland China, SEA, the
@@ -1210,7 +1214,7 @@ not a reading of the CSVs. Six things are load-bearing:
 No controls: an editable-centrals expander was tried and removed. Guarded by
 `TestCcWorldShares` (unit) and `TestCcWorldSharesTab` (integration).
 
-### Compute/capabilities/diffusion — lithography ceiling (last section)
+### China tab — lithography ceiling (last section)
 
 `_render_cc_duv_ceiling()` charts `cts_duv_production.csv` as published: US-and-allied
 AI chips made per year against China's **lithography-bounded ceiling**, with DUVi imports
@@ -1247,7 +1251,7 @@ On the Pacing tab the cut compounds with `pc_dom_slow`: effective slowdown =
 Guarded by `TestDuvProduction` (unit), `TestCcDuvCeilingTab` and
 `test_duvi_levers_compound_with_the_domestic_slider` (integration).
 
-### Compute/capabilities/diffusion — China's ETA to a target ECI
+### China tab — China's ETA to a target ECI
 
 `_render_cc_china_target()` answers "when does China cross `_CC_CN_TARGET_ECI`" with a
 date distribution rather than the gap metrics above it. Three things are load-bearing:

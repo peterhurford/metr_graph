@@ -622,33 +622,64 @@ class TestRevenueDefaults:
 # Compute vs Capabilities tab
 # ===========================================================================
 
-class TestComputeVsCapabilities:
-    """The Compute vs Capabilities tab renders both requested views."""
+class TestDataCentersComputeEci:
+    """Compute ⟷ ECI and ECI Forecasts, at the bottom of the Data Centers tab."""
 
-    def _cc_app(self):
+    def test_renders_the_exchange_rate_and_forecast(self):
         at = _fresh_app()
         at.run()
-        _switch_tab(at, "Compute/capabilities/diffusion")
-        return at
-
-    def test_renders_every_section(self):
-        """Section 1 (exchange rate + two-engine flow with its metrics),
-        section 2 (ECI forecasts to end-2029 with the four-row China
-        distillation table), section 3 (US vs. China) and the three-channel
-        decomposition with its consistency check all render."""
-        at = self._cc_app()
+        _switch_tab(at, "Data Centers")
         text = (" ".join(str(m.value) for m in at.markdown) +
-                " ".join(str(h.value) for h in at.subheader) +
-                " ".join(str(w.value) for w in at.warning)).lower()
-        for s in ("exchange rate", "two engines", "eci forecasts", "us vs. china",
-                  "distillation scenario", "no external distillation",
-                  "indigenous only", "where frontier growth comes from",
-                  "diffusion", "distillation"):
+                " ".join(str(h.value) for h in at.subheader)).lower()
+        for s in ("exchange rate", "two engines", "eci forecasts",
+                  "time to reach the same eci"):
             assert s in text, s
         labels = " ".join(str(m.label) for m in at.metric)
         for s in ("End 2029", "Physical compute", "Algorithmic efficiency",
                   "Share of growth of compute"):
             assert s in labels, s
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert "2mo-capacity" in md
+        # A longer chart range extends the forecast past 2029.
+        at.radio(key="dc_end_year").set_value(2031).run()
+        _assert_no_error(at, "Data Centers / through 2031")
+        assert "End 2031" in " ".join(str(m.label) for m in at.metric)
+
+    def test_not_on_the_china_tab(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "China")
+        heads = [str(h.value) for h in at.subheader]
+        assert "Compute ⟷ ECI" not in heads and "ECI Forecasts" not in heads
+        assert "China" in [str(h.value) for h in at.header]
+
+    def test_old_slug_lands_on_the_china_tab(self):
+        at = _fresh_app()
+        at.query_params["tab"] = "computecap"
+        at.run()
+        assert [r for r in at.radio if r.label == "Tab"][0].value == "China"
+
+
+class TestComputeVsCapabilities:
+    """The China tab (was Compute/capabilities/diffusion)."""
+
+    def _cc_app(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "China")
+        return at
+
+    def test_renders_every_section(self):
+        """US vs. China with the four-row distillation table and the
+        three-channel decomposition with its consistency check render."""
+        at = self._cc_app()
+        text = (" ".join(str(m.value) for m in at.markdown) +
+                " ".join(str(h.value) for h in at.subheader) +
+                " ".join(str(w.value) for w in at.warning)).lower()
+        for s in ("us vs. china", "distillation scenario", "no external distillation",
+                  "indigenous only", "where frontier growth comes from",
+                  "diffusion", "distillation"):
+            assert s in text, s
         caps = " ".join(str(c.value) for c in at.caption)
         assert "consistency check" in caps
 
@@ -665,8 +696,8 @@ class TestComputeVsCapabilities:
 
     def test_dc_derivation_is_stated(self):
         """The tab says where its compute inputs come from: the
-        Physical-compute provenance caption and the US-vs-China cross-check
-        caption both name the Data Centers tab, and the China band is quoted
+        US-vs-China cross-check caption names the Data Centers tab, and the
+        China band is quoted
         against the catalogued paces rather than asserted in a vacuum."""
         at = self._cc_app()
         caps = " ".join(str(c.value) for c in at.caption).lower()
@@ -676,40 +707,34 @@ class TestComputeVsCapabilities:
 
     def test_run_length_toggle(self):
         """Switching to the 6-month window (the Pacing tab's options,
-        verbatim) renders clean and relabels the capacity captions and the
-        ceiling caveat with the chosen window."""
+        verbatim) renders clean and relabels the capacity captions with the
+        chosen window."""
         at = self._cc_app()
         at.selectbox(key="cc_run").set_value("6-month run").run()
         _assert_no_error(at, "Compute vs Capabilities / 6-month run")
         caps = " ".join(str(c.value) for c in at.caption)
         assert "6-month run" in caps
-        # The ceiling caveat is a hover on the caveats line (markdown), not
-        # a warning box — st.warning takes no HTML.
-        md = " ".join(str(m.value) for m in at.markdown)
-        assert "6mo-capacity" in md
 
     def test_project_through_horizon(self):
         """The Projection range expander's 'Project through' year moves the
-        forecast horizon: milestone cards, the end-year gap metric and the
-        captions all follow it, at both ends of the offered range."""
+        end-year gap metric, at both ends of the offered range."""
         at = self._cc_app()
         at.radio(key="cc_end_year").set_value(2031).run()
         _assert_no_error(at, "Compute vs Capabilities / through 2031")
         labels = " ".join(str(m.label) for m in at.metric)
-        assert "End 2031" in labels
         assert "ECI gap end-2031" in labels
         at.radio(key="cc_end_year").set_value(2027).run()
         _assert_no_error(at, "Compute vs Capabilities / through 2027")
         labels = " ".join(str(m.label) for m in at.metric)
-        assert "End 2027" in labels and "End 2029" not in labels
+        assert "ECI gap end-2027" in labels and "ECI gap end-2029" not in labels
 
     def test_reset(self):
         at = self._cc_app()
-        at.checkbox(key="cc_future").set_value(False).run()
-        _assert_no_error(at, "Compute vs Capabilities / no future")
+        at.radio(key="cc_end_year").set_value(2031).run()
+        _assert_no_error(at, "Compute vs Capabilities / through 2031")
         at.button(key="cc_reset").click().run()
         _assert_no_error(at, "after cc reset")
-        assert at.checkbox(key="cc_future").value is True
+        assert at.radio(key="cc_end_year").value == 2029
 
 
 # ===========================================================================
@@ -722,7 +747,7 @@ class TestCcWorldSharesTab:
     def _app(self):
         at = _fresh_app()
         at.run()
-        _switch_tab(at, "Compute/capabilities/diffusion")
+        _switch_tab(at, "China")
         return at
 
     _HEAD = "Global compute distribution"
@@ -759,7 +784,7 @@ class TestCcDuvCeilingTab:
     def test_renders_last_and_says_it_is_a_ceiling(self):
         at = _fresh_app()
         at.run()
-        _switch_tab(at, "Compute/capabilities/diffusion")
+        _switch_tab(at, "China")
         _assert_no_error(at, "CC / DUV ceiling")
         assert [str(h.value) for h in at.subheader][-1] == self._HEAD
         text = " ".join(str(m.value) for m in at.markdown)
@@ -1487,12 +1512,22 @@ class TestDataCentersByCountry:
             return sum(1 for el in at.get("plotly_chart")
                        for d in json.loads(el.proto.spec)["data"] if d.get("fill"))
 
+        def _cone_bands(at):
+            # The ECI forecast at the bottom of the tab has fan bands of its
+            # own, unaffected by this toggle.
+            return sum(1 for el in at.get("plotly_chart")
+                       for d in (lambda t: [] if any(
+                           x.get("name") == "Median projection" for x in t)
+                           else t)(json.loads(el.proto.spec)["data"])
+                       if d.get("fill"))
+
         at = self._dc_app()
         assert at.checkbox(key="dc_cty_cones").value is True
-        assert _bands(at) > 0
+        assert _cone_bands(at) > 0
+        before = _bands(at)
         at.checkbox(key="dc_cty_cones").set_value(False).run()
         _assert_no_error(at, "by country / cones off")
-        assert _bands(at) == 0
+        assert _cone_bands(at) == 0 and _bands(at) < before
         assert self._headline(at)
 
     def test_both_panels_render_with_planned_buildout_off(self):
@@ -1538,7 +1573,8 @@ class TestDataCentersRegionShare:
         at = self._app()
         _assert_no_error(at, "Data Centers / region share")
         heads = [str(h.value) for h in at.subheader]
-        assert heads[-1] == self._HEAD
+        # The Compute ⟷ ECI section follows it; ECI Forecasts closes the tab.
+        assert heads[-3:] == [self._HEAD, "Compute ⟷ ECI", "ECI Forecasts"]
         # The coverage caveat is body text above the chart, not fine print.
         warn = [str(m.value) for m in at.markdown
                 if "Tracked data centers only" in str(m.value)]

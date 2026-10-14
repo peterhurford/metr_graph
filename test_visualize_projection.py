@@ -3838,7 +3838,7 @@ class TestDcByCountry:
 
     def test_china_extrapolates_on_the_export_control_band(self):
         """Past its plans mainland China runs on _CC_CN_COMPUTE_LO/HI, the
-        pace the Compute/capabilities tab uses, and China-accessible on the
+        pace the China tab uses, and China-accessible on the
         offshore buildout's _DC_CTY_CN_ACCESS_PACE; each is widened to keep
         its own fit in the 80% cone, and every other country still borrows
         the US trend. The offshore band sits above the export-controlled one

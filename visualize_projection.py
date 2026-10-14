@@ -881,8 +881,8 @@ def load_eci_frontier(_mtime=None, country=None, orgs=None, full_window=False):
 def load_eci_compute(_mtime=None):
     """Models that have BOTH an ECI score and a training-compute (FLOP) figure.
 
-    Used by the Compute/capabilities/diffusion tab to regress ECI on log10(training
-    FLOP) and time. Returns a list of dicts sorted by date:
+    Used by the Data Centers tab's Compute ⟷ ECI section and the China tab to
+    regress ECI on log10(training FLOP) and time. Returns a list of dicts sorted by date:
     {date, eci, log10_flop, name, organization, country, is_eci_frontier}.
     The frontier flag is the running-max ECI within this compute-having subset,
     one release per date (`_mark_eci_frontier`).
@@ -2188,7 +2188,7 @@ _DC_METRICS = {
 #   • Training finished  — +one training run (the metric's `run_days`: a run
 #                          started at availability finishes that much later)
 #   • Model release      — + run + ~1mo post-training/eval lag (matches the
-#                          Compute/capabilities/diffusion tab's model-release dating)
+#                          buildout-vs-release panel's model-release dating)
 _DC_TIMING_OPTIONS = (
     "Data center construction",
     "Training run finished",
@@ -2401,7 +2401,7 @@ _DC_CTY_CN_DOMESTIC = "China (domestic only)"
 # Datacenter Model (Sep 2026) names — ByteDance's Ulanqab and Horinger at
 # ~1 GW planned each through 2029, 2–3 GW upside.
 #   • Mainland and domestic-only: _CC_CN_COMPUTE_LO/HI, the export-control
-#     band the Compute/capabilities tab uses (chip- and networking-gated).
+#     band the China tab uses (chip- and networking-gated).
 #   • China-accessible: _DC_CTY_CN_ACCESS_PACE below. Its largest site is
 #     offshore (DayOne Johor, Nvidia, not export-gated), so its pace is the
 #     offshore buildout's: SemiAnalysis has Chinese firms' leased power in
@@ -3054,7 +3054,7 @@ def _dc_cty_pace(label, own, us_fit, mode='band'):
     Under mode 'band' China's rows (_DC_CTY_CN_LABELS) use an evidence band
     read as an 80% interval: China-accessible _DC_CTY_CN_ACCESS_PACE, the
     others the export-control band _CC_CN_COMPUTE_LO/HI, so this tab, Pacing
-    and Compute/capabilities share one domestic China pace; everyone else
+    and the China tab share one domestic China pace; everyone else
     borrows the US pace. A borrowed pace is widened to keep the country's own fit inside
     the 80% cone. source is 'own', 'band' or 'us'; pace is None when there
     is nothing to extrapolate on. `test_china_extrapolates_on_the_export_
@@ -3208,11 +3208,13 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "Takeoff", "Frontier Thresholds", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing", "UK Cyber", "Employment"]
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute/capabilities/diffusion": "computecap", "Pacing": "pacing"}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "Takeoff", "Frontier Thresholds", "Revenue", "Data Centers", "China", "Pacing", "UK Cyber", "Employment"]
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 # The RSI tab merged into Takeoff; its links still land there.
 _TAB_SLUG["rsi"] = _TAB_SLUG["takeoff"]
+# The China tab was Compute/capabilities/diffusion; old links still land.
+_TAB_SLUG["computecap"] = _TAB_SLUG["china"]
 
 # Read ?tab= from URL for deep-linking
 _url_tab = st.query_params.get("tab", "").lower()
@@ -10595,10 +10597,10 @@ def _duv_policy_cut(start, end, ban_imports=True, decay=0.0,
     return float(np.mean(cuts)) if cuts else None
 
 
-# Compute/capabilities/diffusion tab
-_CC_RESET_KEYS = ["cc_future", "cc_run", "cc_end_year", "cc_bd_anchor",
+# China tab (slug `china`; was Compute/capabilities/diffusion, `computecap`)
+_CC_RESET_KEYS = ["cc_run", "cc_end_year", "cc_bd_anchor",
                   "cc_company"]
-_CC_DEFAULTS = {"cc_future": True, "cc_run": "2-month run",
+_CC_DEFAULTS = {"cc_run": "2-month run",
                 "cc_end_year": 2029, "cc_bd_anchor": "Today",
                 "cc_company": "OpenAI"}
 
@@ -11308,7 +11310,7 @@ def render_data_centers():
                 "Extrapolate along", list(_DC_CTY_PACE_OPTIONS),
                 key="dc_cty_pace",
                 help="Past the catalogued plans. The evidence band puts "
-                     "mainland China on the Compute/capabilities tab's "
+                     "mainland China on the China tab's "
                      "export-control pace, "
                      f"×{10 ** _CC_CN_COMPUTE_LO:.1f}–"
                      f"×{10 ** _CC_CN_COMPUTE_HI:.1f}/yr, and "
@@ -11401,7 +11403,7 @@ def render_data_centers():
             f"({_and_list([_dc_co_label(c, unattributed) for c in _shown_hosts])})"
             + (" \u2014 \u2020 marks one with no recorded tenant"
                if _shown_unattr else "")
-            + ". The Compute/capabilities/diffusion tab excludes all hosts.",
+            + ". The Compute \u27f7 ECI section below excludes all hosts.",
             *([("no recorded tenant", "The landlord is named, not a lab.")]
               if _shown_unattr else []),
             ("excludes all hosts", "Its frontier has to be attributable to a "
@@ -11767,9 +11769,14 @@ def render_data_centers():
         today=_today, cap_date=cap_date, x_start=x_start,
         metric_label=metric_label, kind=kind, include_future=include_future)
 
+    # What the compute buys: the Compute ⟷ ECI exchange rate and the ECI
+    # forecast. Its horizon runs to at least end-2029 whatever the chart range.
+    _render_compute_eci(_today, include_future,
+                        datetime(max(2029, dc_end_year), 12, 31))
+
 
 # ══════════════════════════════════════════════════════════════════════════
-# Compute/capabilities/diffusion — does data-center FLOP predict ECI?
+# Compute ⟷ ECI (bottom of Data Centers) and the China tab — does data-center FLOP predict ECI?
 # ══════════════════════════════════════════════════════════════════════════
 
 def _cc_logop_yaxis(fig, title):
@@ -14617,42 +14624,19 @@ def _render_cc_duv_ceiling(today):
          "Pacing tab's judgment, set under Advanced."))
 
 
-def render_compute_capabilities():
-    _today = datetime.now()
+def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
+    """Compute ⟷ ECI exchange rate, the two engines, and the ECI forecast.
 
-    with st.sidebar:
-        st.header("Compute/capabilities/diffusion")
-        include_future = st.checkbox("Include planned future buildout",
-                                     value=True, key="cc_future")
-        # Run-length options are the Pacing tab's, verbatim.
-        if st.session_state.get("cc_run") not in _PC_RUN_OPTIONS:
-            st.session_state.pop("cc_run", None)
-        run_label = st.selectbox(
-            "Run length", list(_PC_RUN_OPTIONS),
-            index=list(_PC_RUN_OPTIONS).index(_CC_DEFAULTS["cc_run"]),
-            key="cc_run")
-        with st.expander("Projection range"):
-            cc_end_year = st.radio(
-                "Project through", _CC_END_YEARS, horizontal=True,
-                index=_CC_END_YEARS.index(_CC_DEFAULTS["cc_end_year"]),
-                key="cc_end_year")
-        if st.button("Reset", key="cc_reset"):
-            for k in _CC_RESET_KEYS:
-                st.session_state.pop(k, None)
-            st.session_state.update(_CC_DEFAULTS)
-            st.rerun()
-
-    st.header("Compute/capabilities/diffusion")
-    horizon = datetime(cc_end_year, 12, 31)
-    run_key = _PC_RUN_OPTIONS[run_label]
-    run_days = _DAYS_6MO if run_key == 'train_flop_6mo' else _DAYS_2MO
+    The bottom of the Data Centers tab. Fits the lab-only train-FLOP frontier
+    (`_cc_trainflop_frontier`) at `run_days`, dated to run-finished.
+    """
+    run_key = 'train_flop_6mo' if run_days == _DAYS_6MO else 'train_flop'
     run_mo = run_days // 30
-    # Shift capacity dates to the "Training run finished" milestone (the DC
-    # tab's selector wording): a site online at D has trained a model by D+run.
-    # The catalogue cap follows the horizon but never drops below end-2028, so
-    # the segment fits (whose eras all end by Jan 2029) are identical whatever
-    # year is selected — "Project through" moves the projections, not the rates.
-    cap_date = ((datetime(max(2028, cc_end_year), 12, 31) if include_future
+    # Shift capacity dates to the "Training run finished" milestone: a site
+    # online at D has trained a model by D+run. The catalogue cap never drops
+    # below end-2028, so the segment fits (whose eras all end by Jan 2029) do
+    # not move with the horizon.
+    cap_date = ((datetime(max(2028, horizon.year), 12, 31) if include_future
                  else _today)
                 + timedelta(days=_dc_timing_shift("Training run finished",
                                                   run_days)))
@@ -14661,9 +14645,8 @@ def render_compute_capabilities():
     if not frontier:
         st.warning("No data-center data available.")
         return
-    # The compute frontier itself is not charted here — its segment fits
-    # supply the capacity growth rates the later sections project on, and the
-    # captions name the Data Centers tab as their source.
+    # The compute frontier itself is not charted; its segment fits supply the
+    # capacity growth rates the sections below project on.
     fits = _cc_segment_fits(frontier, _today)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -14897,8 +14880,8 @@ def render_compute_capabilities():
     e3.metric("Share of growth of compute", f"{share_lo*100:.0f}–{share_hi*100:.0f}%",
               "≈ ⅓ to ½")
     _fn_caption(
-        f"The \u00d7{10**g_recent:.1f}/yr capacity pace comes from the [Data "
-        "Centers tab](?tab=datacenters), on lab-attributable sites only.",
+        f"The \u00d7{10**g_recent:.1f}/yr capacity pace comes from the "
+        "catalogue above, on lab-attributable sites only.",
         ("lab-attributable sites only",
          f"The \u201c{fits[-2]['label'] if len(fits) >= 2 else ''}\u201d fit of "
          "the largest-lab-site train-FLOP series, restricted to sites "
@@ -15033,25 +15016,55 @@ def render_compute_capabilities():
                                "rates use the running-max-ECI subset."))
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 2: ECI Forecasts — quarterly frontier projection to end of 2029
+    # ECI Forecasts — quarterly frontier projection to the horizon
     # ══════════════════════════════════════════════════════════════════════
     st.subheader("ECI Forecasts")
     _cc_eci_forecast(cc_rows, frontier, _today, obs_slope, g_recent, g_planned,
                      share_lo, share_mid, share_hi, horizon=horizon)
 
+
+def render_compute_capabilities():
+    _today = datetime.now()
+
+    with st.sidebar:
+        st.header("China")
+        # Run-length options are the Pacing tab's, verbatim.
+        if st.session_state.get("cc_run") not in _PC_RUN_OPTIONS:
+            st.session_state.pop("cc_run", None)
+        run_label = st.selectbox(
+            "Run length", list(_PC_RUN_OPTIONS),
+            index=list(_PC_RUN_OPTIONS).index(_CC_DEFAULTS["cc_run"]),
+            key="cc_run")
+        with st.expander("Projection range"):
+            cc_end_year = st.radio(
+                "Project through", _CC_END_YEARS, horizontal=True,
+                index=_CC_END_YEARS.index(_CC_DEFAULTS["cc_end_year"]),
+                key="cc_end_year")
+        if st.button("Reset", key="cc_reset"):
+            for k in _CC_RESET_KEYS:
+                st.session_state.pop(k, None)
+            st.session_state.update(_CC_DEFAULTS)
+            st.rerun()
+
+    st.header("China")
+    horizon = datetime(cc_end_year, 12, 31)
+    run_key = _PC_RUN_OPTIONS[run_label]
+    run_days = _DAYS_6MO if run_key == 'train_flop_6mo' else _DAYS_2MO
+    cc_rows = load_eci_compute(_mtime=_eci_mtime())
+
     # ══════════════════════════════════════════════════════════════════════
-    # Section 3: US vs. China — the same decomposition read by country
+    # Section 1: US vs. China — the exchange-rate decomposition read by country
     # ══════════════════════════════════════════════════════════════════════
     _cc_us_vs_china(cc_rows, _today, horizon=horizon,
                     run_key=run_key, run_days=run_days)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 4: the world split the catalogue above cannot see
+    # Section 2: the world split the catalogue cannot see
     # ══════════════════════════════════════════════════════════════════════
     _render_cc_world_shares(_today, horizon)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 5: the lithography ceiling on China's chip output (CTS)
+    # Section 3: the lithography ceiling on China's chip output (CTS)
     # ══════════════════════════════════════════════════════════════════════
     _render_cc_duv_ceiling(_today)
 
@@ -16582,7 +16595,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              f"output grows into it: **{_imp_cut:.0%}** less growth to "
              f"{_duv_end.year}. That cut comes off China's domestic compute "
              "growth, on top of the slider below. See the "
-             "Compute/capabilities tab's lithography chart.")
+             "China tab's lithography chart.")
     duv_service = db2.checkbox(
         "Ban servicing of DUVi at China's advanced fabs from 2027",
         key="pc_duv_service",
@@ -17172,7 +17185,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                   + (f"({pure[0]:.0f}\u2013{pure[1]:.0f} ECI/yr)" if pure else
                      f"(floor {inno[0]:.0f}\u2013{inno[1]:.0f} ECI/yr)")
                   + " plus its compute term. Same sim and pace band as the "
-                  "Compute/capabilities/diffusion crossing section, which "
+                  "China tab's crossing section, which "
                   f"lands earlier: its bar is lower ({_CC_CN_TARGET_ECI:.0f}), "
                   "its clock starts at China's last release rather than at "
                   "the pause, distillation never dries up there, and it adds "
@@ -19776,7 +19789,7 @@ if not os.environ.get("_VP_TESTING"):
         render_eci_gap()
     elif active_tab == "Data Centers":
         render_data_centers()
-    elif active_tab == "Compute/capabilities/diffusion":
+    elif active_tab == "China":
         render_compute_capabilities()
     elif active_tab == "Pacing":
         render_pacing()
