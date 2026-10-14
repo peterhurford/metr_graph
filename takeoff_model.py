@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v22-ladder-human-hours"
+MODEL_VERSION = "takeoff-v23-per-scenario-al5-gap"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -250,7 +250,8 @@ def workflow_state(capability_log, baseline_rate, starts, half_months, floor,
     every `half_months`. With `curve` = (years, share), each stage follows that
     shape instead (share relative to its start), at `reference_half` /
     `half_months` its pace: the halving times then only set each stage's
-    speed along the curve.
+    speed along the curve. `share` is one curve, or one per draw (rows) on an
+    evenly spaced `years` grid.
     """
     equivalent_years = np.maximum(capability_log, 0) / baseline_rate
     if curve is None:
@@ -258,7 +259,17 @@ def workflow_state(capability_log, baseline_rate, starts, half_months, floor,
     else:
         years, share = curve
         along = equivalent_years[:, None] * reference_half / half_months
-        decline = np.interp(along, years, share / share[0])
+        if np.ndim(share) == 1:
+            decline = np.interp(along, years, share / share[0])
+        else:
+            # One curve per draw on a shared, evenly spaced grid.
+            last = len(years) - 1
+            pos = np.clip(along / (years[1] - years[0]), 0, last)
+            i0 = np.minimum(pos.astype(int), last - 1)
+            w = pos - i0
+            rows = np.arange(len(share))[:, None]
+            decline = ((share[rows, i0] * (1 - w) + share[rows, i0 + 1] * w)
+                       / share[:, :1])
     return floor + (starts - floor) * decline
 
 

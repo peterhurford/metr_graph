@@ -17792,14 +17792,15 @@ def _tk_human_calibration(accel):
     return out
 
 
-def _tk_ladder_curve(hours=None, years=40.0):
+def _tk_ladder_curve(hours=None, years=40.0, lag_days=None):
     """(years ahead, human share) the R&D automation index's own projection
     implies, from its latest rated month: the share of tasks at each level,
     times `hours` per level. AL4 climbs from the projection's start at the
     milestone card's median rate, AL5 is AL4 shifted by the card's median
     lag, and AL2 and AL3 follow their own logit fits, kept nested above AL4,
     so the curve reaches the "AL4 reaches 90%" and "AL5 reaches 90%" cards'
-    medians. Non-increasing; None if the ladder will not fit."""
+    medians. `lag_days`, an array, gives one curve per AL5 gap (rows) instead
+    of the median's. Non-increasing; None if the ladder will not fit."""
     rows = load_rsi_automation()
     hours = _TK_AL_HUMAN_HOURS if hours is None else hours
     base4, _icpt4, slope4 = _rsi_auto_fit(rows)
@@ -17808,13 +17809,15 @@ def _tk_ladder_curve(hours=None, years=40.0):
         return None
     dt_lo, dt_hi = _rsi_auto_dt_ci(rows, round(np.log(2) / slope4))
     slope = np.log(2) / np.sqrt(dt_lo * dt_hi)               # per day, median
-    lag_days = np.sqrt(lag['lag'] * max(lag['lag'], lag['slow']) * _RSI_AL5_TAU_HI_MULT)
+    if lag_days is None:
+        lag_days = np.sqrt(lag['lag'] * max(lag['lag'], lag['slow']) * _RSI_AL5_TAU_HI_MULT)
+    lag_days = np.asarray(lag_days, dtype=float)
     cur, centre, _sigma = _rsi_auto_start(rows)
     fits = {k: _rsi_auto_level_fit(rows, k) for k in ('al2', 'al3')}
     t = np.linspace(0, years, int(years * 24) + 1)
     days = t * 365.25
     al4 = _inv_logit(centre + slope * days)
-    al5 = _inv_logit(centre + slope * (days - lag_days))
+    al5 = _inv_logit(centre + slope * (days - lag_days[..., None]))
     cum = {}
     for k in ('al2', 'al3'):
         b, icpt, sl = fits[k]
@@ -17823,7 +17826,23 @@ def _tk_ladder_curve(hours=None, years=40.0):
     al2 = np.maximum(cum['al2'], al3)
     cum_levels = [np.ones_like(t), np.ones_like(t), al2, al3, al4, al5]
     share = sum((cum_levels[i] - cum_levels[i + 1]) * hours[i] for i in range(5))
-    return t, np.minimum.accumulate(share)
+    return t, np.minimum.accumulate(share, axis=-1)
+
+
+def _tk_ladder_curves(hours, n, seed):
+    """(years, one human-share curve per draw): `_tk_ladder_curve` with each
+    draw's own AL4->AL5 gap, lognormal over the AL5 card's own 80% range
+    (`_rsi_al5_tau_draws`'s), from a fixed seed so reruns pair. None if the
+    ladder will not fit."""
+    lag = _rsi_al5_lag(load_rsi_automation())
+    if lag is None:
+        return None
+    lo = lag['lag']
+    hi = max(lo, lag['slow']) * _RSI_AL5_TAU_HI_MULT
+    rng = np.random.default_rng(int(seed) + 7)
+    gaps = np.exp(rng.normal((np.log(lo) + np.log(hi)) / 2,
+                             (np.log(hi) - np.log(lo)) / (2 * 1.282), n))
+    return _tk_ladder_curve(hours, lag_days=gaps)
 
 
 def _tk_al_hours_now():
@@ -18847,11 +18866,11 @@ def _render_takeoff(loading):
                    "its settings are in the RSI evidence section.")
         with st.expander("What decides ultraintelligence", expanded=True):
             st.caption("Across a plausible range, the first three each move the "
-                       "ultraintelligence date 1\u20135 months; \u03c1, more AI researchers "
+                       "ultraintelligence date 1\u20136 months; \u03c1, more AI researchers "
                        "and the scale-dependent share about 2\u20133 each; the training-run "
                        "wait 2\u20135 (12 sooner if no gain waits). Compute growth after RSI, "
                        "delayed 18 months, barely moves it; with no delay, 2\u00d7 brings it "
-                       "6 months sooner. Everything under Advanced moves it a few months "
+                       "5 months sooner. Everything under Advanced moves it a few months "
                        "at most.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
@@ -19206,8 +19225,9 @@ def _render_takeoff(loading):
         eci_rates = _tk_eci_rates(params, hist_compute)
         coding_level = _TK_ULTRA_ECI - eci_now          # in ECI points, through eci_rates
         coding_weights = (eci_rates["compute"], eci_rates["software"])
-        # Research hours follow the automation index's own projection.
-        human_curve = _tk_ladder_curve(_tk_al_hours_now())
+        # Research hours follow the automation index's own projection, each
+        # scenario with its own AL4->AL5 gap.
+        human_curve = _tk_ladder_curves(_tk_al_hours_now(), len(onset_years), params["seed"])
         _tk_loading(bar, 1)
         result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
                               experiment_starts, experiment_slopes, pace_yield, compute_rates,

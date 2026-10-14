@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v22-ladder-human-hours`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v23-per-scenario-al5-gap`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -139,9 +139,11 @@ runs to the horizon, so its capability path continues past RSI.
 The stages are direction, experiment design/interpretation, and verification/integration.
 Human hours follow the R&D automation index's own projection rather than an exponential:
 the share of tasks at each level over the coming years (AL4 at the milestone card's median
-rate, AL5 as AL4 shifted by the AL5 card's median lag), times the human time each level
-takes, gives a curve that holds people near the AL4 level (about 35% of hours) through 2027,
-then drops as AL5 arrives, to 5% about a year and a half after August 2026. Each stage moves
+rate, AL5 as AL4 shifted by a gap), times the human time each level takes, gives a curve
+that holds people near the AL4 level (about 35% of hours) through 2027, then drops as AL5
+arrives. AL5 has never been measured, so each scenario draws its own AL4-to-AL5 gap over
+the AL5 card's 80% range: the share reaches 5% between 1.0 and 2.9 years after August 2026
+(80%), 1.6 at the median. RSI therefore rests mostly on that unmeasured rung. Each stage moves
 along that curve at its own pace (direction 1.5x the average, verification 0.75x), in
 months of capability progress at today's rate, so faster progress compresses it. A
 persistent human-work floor (default 0) and the stage paces remain adjustable. The available research system includes validated fast gains.

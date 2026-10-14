@@ -352,6 +352,15 @@ def test_human_hours_can_follow_a_given_curve():
     onset = np.full(20, 0.5)
     r = tk.simulate(dict(years=4), n=20, onset_years=onset, human_curve=plateau)
     assert np.isfinite(r["events"]["RSI"]).any()
+    # One curve per draw: identical rows match the shared curve; a later drop
+    # keeps that draw's people in longer.
+    rows = np.vstack([plateau[1]] * 4)
+    np.testing.assert_allclose(tk.workflow_state(cap, 1.0, starts, halves, 0.0,
+                                                 (years, rows), ref), h)
+    later = rows.copy()
+    later[3] = np.where(years < 20, 0.6, 0.006)
+    h2 = tk.workflow_state(cap, 1.0, starts, halves, 0.0, (years, later), ref)
+    assert (h2[3] > h[3]).all()
 
 
 def test_workflow_halving_time_has_a_measurable_interpretation():
