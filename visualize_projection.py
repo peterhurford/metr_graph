@@ -2427,8 +2427,8 @@ _DC_CTY_COLORS = {_DC_CTY_US: "#1F77B4", _DC_CTY_CN: "#D62728",
 _DC_CTY_OTHER_COLORS = ("#2CA02C", "#9467BD", "#8C564B", "#7F7F7F", "#17BECF",
                         "#BCBD22", "#E377C2", "#4B6B3A")
 
-# ── Share of catalogued capacity by region ───────────────────────────────
-# Buckets for the share chart at the bottom of the tab, in stack order, keyed
+# ── Region buckets ───────────────────────────────────────────────────────
+# Buckets for the world-share charts, in stack order, keyed
 # on Epoch's `Country` column. Geography only: a site counts where it stands,
 # whoever trains in it — so the Johor sites sit in SEA here while the country
 # panel above also reads them as China-accessible. Anything unmatched, and any
@@ -2863,7 +2863,7 @@ def _dc_region_totals(series, country_of, grid):
     in; a region with nothing anywhere on the grid is dropped. Values stay in
     the metric's own units, so the caller normalises. Only additive metrics
     mean anything here — every _DC_METRICS key is one, the two "time to
-    train" ones because they store runs per window (see _dc_share_label).
+    train" ones because they store runs per window.
     """
     out = {}
     for name, v in series.items():
@@ -2877,34 +2877,6 @@ def _dc_region_totals(series, country_of, grid):
     return {lab: out[lab] for lab in order
             if lab in out and any(x > 0 for x in out[lab])}
 
-
-def _dc_region_shares(totals, grid):
-    """(grid, {region: [percent]}, {region: [level]}), all trimmed to the
-    dates where something is built — a share of nothing is not 0%, it is
-    undefined. Levels come back trimmed alongside so a caller can hover the
-    raw value against the share without re-indexing.
-    """
-    keep = [i for i in range(len(grid))
-            if sum(v[i] for v in totals.values()) > 0]
-    if not keep:
-        return [], {}, {}
-    g = [grid[i] for i in keep]
-    shares, levels = {}, {}
-    for lab, vals in totals.items():
-        levels[lab] = [vals[i] for i in keep]
-        shares[lab] = [100.0 * vals[i] / sum(v[i] for v in totals.values())
-                       for i in keep]
-    return g, shares, levels
-
-
-def _dc_share_label(metric_label, kind):
-    """What a share of this metric is a share of. The two "time to train"
-    metrics store runs per 2-month window — additive, and what a compute
-    share means — so they are named that way rather than by their inverted
-    label, which no share can be taken of."""
-    if kind == 'traintime':
-        return "training runs per 2-month window"
-    return metric_label
 
 
 def _dc_country_steps(series, names, mode, cluster_of):
@@ -11190,85 +11162,6 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
             "China's value; negative = China ahead.")
 
 
-def _dc_render_region_share(series, country_of, *, today, cap_date, x_start,
-                            metric_label, kind, include_future):
-    """Share of all catalogued capacity by where the building stands.
-
-    `series` is the tab's metric series with **no** host hidden and no tenant
-    attribution, like the country panel above it: this is a question about
-    buildings. Shares are of the total Epoch lists, which is far denser for
-    the US than anywhere else — the caption has to keep saying so.
-    """
-    st.subheader("Share of catalogued capacity by region")
-
-    grid = _dc_cty_month_grid(x_start, cap_date)
-    totals = _dc_region_totals(series, country_of, grid)
-    grid, shares, levels = _dc_region_shares(totals, grid)
-    if not shares:
-        st.warning("No capacity in range for this metric.")
-        return
-
-    counts = {}
-    for name in series:
-        lab = _dc_region_of(country_of.get(name, ''))
-        counts[lab] = counts.get(lab, 0) + 1
-    us_n = counts.get(_DC_REGIONS[0][0], 0)
-    rest = sum(counts.values()) - us_n
-    # Coverage bias is what the whole chart hinges on, so it goes above it as
-    # body text rather than into the caption. st.warning takes no HTML and the
-    # hovers are worth more than the yellow box.
-    _fn_line(
-        f"\u26a0\ufe0f **Tracked data centers only** \u2014 {us_n} of "
-        f"{us_n + rest} catalogued sites are American, and coverage elsewhere "
-        "is thinner than the buildout. Non-US shares are floors.",
-        ("coverage elsewhere is thinner than the buildout",
-         "Sites outside the US are less often announced, permitted in public "
-         "or sized in the press. A region that looks small here may just be "
-         "one Epoch has not catalogued \u2014 missing coverage, not missing "
-         "concrete."),
-        ("Non-US shares are floors",
-         "So the US share is a ceiling. Read a non-US line's movement over "
-         "time rather than its level."))
-
-    fig = go.Figure()
-    if include_future and cap_date > today:
-        # The shading sits under the filled areas; the divider and its labels
-        # are what read on this chart.
-        _dc_add_projection_band(fig, today, grid[-1])
-    for lab, pct in shares.items():
-        color = _DC_REGION_COLORS.get(lab, "#999999")
-        fig.add_trace(go.Scatter(
-            x=grid, y=pct, name=lab, mode='lines', stackgroup='one',
-            line=dict(width=0.5, color=color),
-            fillcolor=f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},"
-                      f"{int(color[5:7], 16)},0.75)",
-            customdata=[_dc_fmt_value(v, kind) for v in levels[lab]],
-            hovertemplate="%{y:.1f}% — %{customdata}<extra>" + lab + "</extra>"))
-    # The axis ends on the last sampled month, not on cap_date: a strip of
-    # empty axis past the last stacked point reads as capacity dropping out.
-    fig.update_layout(**_dc_layout(False, "Share of catalogued capacity",
-                                   grid[0], grid[-1], y_range=[0, 100],
-                                   show_legend=True))
-    fig.update_layout(hovermode='x unified')
-    fig.update_yaxes(ticksuffix='%')
-    st.plotly_chart(fig, width="stretch")
-
-    _fn_caption(
-        f"Share of every site's {_dc_share_label(metric_label, kind)}, "
-        "summed by where the building stands. SEA, Europe/UK and Other are "
-        "geographic buckets"
-        + (", and past today it is planned buildout." if include_future
-           and cap_date > today else "."),
-        ("where the building stands",
-         "Geography only \u2014 no host filter, no tenant attribution. The "
-         "Johor sites count under SEA here, though the panel above also reads them "
-         "as China-accessible."),
-        ("SEA, Europe/UK and Other",
-         "SEA is Malaysia, Indonesia, Singapore, Thailand, Vietnam and the "
-         "Philippines; Europe/UK is the EU, the UK and the rest of Europe; "
-         "everything left over is Other."))
-
-
 def render_data_centers():
     _today = datetime.now()
 
@@ -11762,12 +11655,9 @@ def render_data_centers():
     # Per-company: does the buildout predict releases?
     _cc_company_buildout(_today, cfg["key"], kind)
 
-    # Where the capacity is: share of the catalogued total by region. Same
-    # unfiltered, geography-only series the country panel reads.
-    _dc_render_region_share(
-        _cty_series, {dc['name']: _dc_site_country(dc) for dc in dc_view},
-        today=_today, cap_date=cap_date, x_start=x_start,
-        metric_label=metric_label, kind=kind, include_future=include_future)
+    # Where the world's compute is, from published estimates rather than the
+    # catalogue (which the diamonds show), carried forward by region.
+    _render_world_shares(_today, datetime(max(2029, dc_end_year), 12, 31))
 
     # What the compute buys: the Compute ⟷ ECI exchange rate and the ECI
     # forecast. Its horizon runs to at least end-2029 whatever the chart range.
@@ -14216,27 +14106,29 @@ def _wc_band(arr):
     return f"{med:.0f}% ({lo:.0f}\u2013{hi:.0f})"
 
 
-def _render_cc_world_shares(today, horizon):
+def _render_world_shares(today, horizon):
     """Where the world's AI compute is, and where it is heading.
 
-    Every chart above reads Epoch's data-center catalogue, which covers a
-    minority of the world's compute and is far denser for the US. This
-    section is the outside view: published country estimates for today, then
-    each region carried forward at its own growth rate.
+    Epoch's data-center catalogue covers a minority of the world's compute
+    and is far denser for the US, so this is the outside view: published
+    country estimates for today (the catalogue's own split as diamonds), then
+    each region carried forward at its own growth rate. Bottom of the Data
+    Centers tab.
     """
-    st.subheader("Global compute distribution")
+    st.subheader("Share of world AI compute by region")
 
     shares = _wc_sample_shares(N_SAMPLES)
     catalogued = _wc_catalogued_shares(dc_all, today)
     med = {lab: float(np.percentile(a, 50)) for lab, a in shares.items()}
     us, cn = _WC_LABELS[0], _WC_LABELS[1]
 
-    st.markdown(
+    _fn_line(
         f"About **{med[us]:.0f}% of the world's AI compute is in the US** "
-        f"today and **{med[cn]:.0f}% in mainland China**. The site catalogue "
-        f"the rest of this tab reads puts those at {catalogued.get(us, 0):.0f}% "
-        f"and {catalogued.get(cn, 0):.0f}%, but it only tracks large frontier "
-        "data centers, and mostly American ones.")
+        f"and **{med[cn]:.0f}% in mainland China**. The tracked sites alone "
+        f"say {catalogued.get(us, 0):.0f}% and {catalogued.get(cn, 0):.0f}%.",
+        ("tracked sites alone", "Epoch's catalogue, which the rest of this "
+                                "tab reads: large frontier sites, mostly "
+                                "American, so it overstates the US."))
 
     st.markdown("**Today**")
     fig = go.Figure()
@@ -14273,18 +14165,17 @@ def _render_cc_world_shares(today, horizon):
     layout['legend'] = dict(layout['legend'], orientation='h', y=-0.3)
     fig.update_layout(**layout)
     st.plotly_chart(fig, width="stretch")
-    st.caption(
-        "Bars are the middle estimate, whiskers the 80% CI \u2014 "
-        "which is mostly how much the sources disagree. Each whisker is one "
-        "region's own range and they don't add to 100: a world where the US "
-        "is at its low end is one where the others are all higher. Diamonds "
-        "are what the tracked-site data alone would say. Hover a bar for "
-        "where its number comes from. Shares are by location, so Chinese firms' capacity abroad "
-        "counts under SEA or Other. Sources: Epoch AI "
-        f"([share by country]({_WC_SOURCE_SUPERCOMPUTERS}), "
-        f"[smuggling to China]({_WC_SOURCE_SMUGGLING}), "
-        f"[its own coverage]({_WC_SOURCE_COVERAGE})), the AI-2027 tracker and "
-        "RAND.")
+    _fn_caption(
+        "Whiskers are 80% ranges, one region at a time; shares are by "
+        "location. Sources: Epoch AI "
+        f"([by country]({_WC_SOURCE_SUPERCOMPUTERS}), "
+        f"[smuggling]({_WC_SOURCE_SMUGGLING}), "
+        f"[coverage]({_WC_SOURCE_COVERAGE})), the AI-2027 tracker, RAND.",
+        ("80% ranges", "Mostly how much the sources disagree. They don't add "
+                       "to 100: a world with the US at its low end has the "
+                       "others higher. Hover a bar for its sources."),
+        ("by location", "Chinese firms' capacity abroad counts under SEA or "
+                        "Other."))
 
     # ── The same split, carried forward ──
     st.markdown("**Where it is heading**")
@@ -14348,17 +14239,18 @@ def _render_cc_world_shares(today, horizon):
     fig2.update_yaxes(ticksuffix='%')
     st.plotly_chart(fig2, width="stretch")
     _back = _wc_central_shares([(datetime(2025, 5, 1) - today).days / 365.25])
-    st.caption(
-        "Anchored on today's split above. There is no measured history of "
-        "these shares, so the same rates run backwards before today too "
-        f"\u2014 which puts China at {_back[_WC_LABELS[1]][0]:.0f}% in mid-2025, "
-        "against Epoch's ~15% reading for May 2025. Bands show each region "
-        "growing at its central rate; hover for the 80% CI around that \u2014 "
-        "one region at a time, not a joint scenario. Rates: "
-        + ", ".join(f"{lab.replace(' domestic', '')} {mid:g}\u00d7/yr"
-                    for lab, mid, _, _ in _WC_GROWTH)
-        + ". The US and the Gulf are building faster than China is, so "
-        "China's share drifts down even as its compute grows.")
+    _fn_caption(
+        "Each region grows at its central rate from today's split; before "
+        "today the same rates run backwards.",
+        ("central rate", "Rates: "
+         + ", ".join(f"{lab.replace(' domestic', '')} {mid:g}\u00d7/yr"
+                     for lab, mid, _, _ in _WC_GROWTH)
+         + ". Hover the chart for each region's 80% range, one region at a "
+           "time."),
+        ("run backwards", "No measured history of these shares exists. The "
+                          f"back-run puts China at "
+                          f"{_back[_WC_LABELS[1]][0]:.0f}% in May 2025, "
+                          "against Epoch's ~15% reading then."))
 
 
 def _render_cc_duv_ceiling(today):
@@ -14935,12 +14827,7 @@ def render_compute_capabilities():
                     run_key=run_key, run_days=run_days)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 2: the world split the catalogue cannot see
-    # ══════════════════════════════════════════════════════════════════════
-    _render_cc_world_shares(_today, horizon)
-
-    # ══════════════════════════════════════════════════════════════════════
-    # Section 3: the lithography ceiling on China's chip output (CTS)
+    # Section 2: the lithography ceiling on China's chip output (CTS)
     # ══════════════════════════════════════════════════════════════════════
     _render_cc_duv_ceiling(_today)
 

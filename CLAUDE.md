@@ -343,8 +343,8 @@ has no main-column headings, so it has no section to link to.
 | Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE`; `_CN_REVENUE` | ARR in billions; optional summed line (`rev_combined`, off by default) via `_rev_combined_series()`; then a data-only Chinese-lab chart (`_render_rev_china()`: MiniMax, Zhipu API, Alibaba MaaS, Moonshot, DeepSeek), run rates only, each point classed company-stated or press-reported (`TestRevenueChina`); closes on US vs China (`_render_rev_us_china()`): each side summed by `_rev_sum_series` (China from the date every lab reports, each lab held flat past its last report), with the ratio and the date the US labs stood at China's total, then the top-N vs top-N ratio over time (`_rev_ratio_path`), held flat and nowcast to today at each lab's last-interval growth (`_rev_value_nowcast`) (`TestRevenueUsChina`) |
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
-| Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`), the region-share stack (`_dc_render_region_share()`), and ends with *Compute ⟷ ECI* and *ECI Forecasts* (`_render_compute_eci()`, see below) |
-| China (slug `china`, was Compute/capabilities/diffusion) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | US vs China through the compute lens, then the global compute distribution, today and projected (`_render_cc_world_shares()`), and ends with the CTS lithography ceiling (`_render_cc_duv_ceiling()`) |
+| Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`), the world-share charts (`_render_world_shares()`), and ends with *Compute ⟷ ECI* and *ECI Forecasts* (`_render_compute_eci()`, see below) |
+| China (slug `china`, was Compute/capabilities/diffusion) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | US vs China through the compute lens, and ends with the CTS lithography ceiling (`_render_cc_duv_ceiling()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
 | Frontier Thresholds | `frontier_thresholds.render(st)` | `frontier_thresholds.json` | dated threshold events per lab and risk category; no projection (see *Frontier Thresholds* below) |
 
@@ -923,39 +923,6 @@ vertical pair in the OLS whose membership depends on CSV row order. Every ECI fr
 `test_one_frontier_model_per_date` and `test_frontier_does_not_depend_on_row_order`
 guard it.
 
-### Share of catalogued capacity by region (last chart on the tab)
-
-`_dc_render_region_share()` stacks each region's share of the selected metric,
-summed over every site, on a monthly grid. It reads the **unfiltered,
-geography-only** series the country panel does — capacity in a country is
-capacity whoever trains in it — so DayOne Nusajaya sits in *SEA* here while the
-panel above also reads it as China-accessible. Four things are load-bearing:
-
-1. **The buckets partition the catalogue.** `_DC_REGIONS` names US, China, SEA,
-   Europe/UK and UAE; everything else — including a site Epoch leaves without a
-   country — falls to *Other*, so the region totals add to the catalogue's own
-   total at every date (`test_regions_partition_the_catalogue`). Europe/UK is
-   the EU, the UK and the rest of Europe (Norway today), which is why it isn't
-   called EU+UK; `test_every_catalogued_country_is_placed_deliberately` holds
-   *Other* under 5% of catalogued capacity, so a refresh that adds a country
-   worth naming surfaces there.
-2. **The coverage caveat is body text above the chart, not caption fine
-   print** — an `_fn_line` with a warning glyph, since `st.warning` takes no
-   HTML and the hovers are worth more than the yellow box. Nearly every
-   catalogued site is American, so the line says non-US shares are floors and
-   puts the why in hovers. Its count comes from the plotted sites, not written
-   down.
-3. **Shares are computed, not `groupnorm`.** The trace carries the percentage
-   and the raw level as `customdata`, so the hover can't disagree with the
-   axis. Months where nothing is built are dropped — a share of nothing is
-   undefined, not 0%.
-4. **Only additive metrics mean anything.** Every `_DC_METRICS` key is one; the
-   two "time to train" metrics because they store runs per window, which
-   `_dc_share_label()` names in place of their inverted label.
-
-Guarded by `TestDcRegionShare` (unit) and `TestDataCentersRegionShare`
-(integration).
-
 ### Buildout by country (bottom of the Data Centers tab)
 
 `_dc_render_country_panel()` is the US-vs-China view: each country's largest training
@@ -1150,9 +1117,10 @@ a constant scale-and-slide, same leaders (`test_run_window_scales_levels_only`);
 China's capacity band scales by the window ratio; `_cc_country_pace_check` stays
 on 2-month (paces identical).
 
-### China tab — global compute distribution (last section)
+### Data Centers — share of world AI compute by region
 
-`_render_cc_world_shares()` answers what every chart above it cannot: how the
+`_render_world_shares()` (above *Compute ⟷ ECI*, moved from the China tab; it
+replaced a catalogue-only region stack, whose split survives as the diamonds) shows how the
 world's *installed* AI compute divides between the US, mainland China, SEA, the
 UAE and everywhere else — a bar chart for today, then a stacked area carrying
 it forward to the tab's horizon. The catalogue those other charts read covers a
@@ -1220,7 +1188,7 @@ not a reading of the CSVs. Six things are load-bearing:
    campus is still future-dated (the UAE) shows near zero.
 
 No controls: an editable-centrals expander was tried and removed. Guarded by
-`TestCcWorldShares` (unit) and `TestCcWorldSharesTab` (integration).
+`TestCcWorldShares` (unit) and `TestDataCentersRegionShare` (integration).
 
 ### China tab — lithography ceiling (last section)
 

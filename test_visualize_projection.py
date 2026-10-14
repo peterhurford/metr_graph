@@ -3991,7 +3991,7 @@ class TestDcByCountry:
 
 
 class TestDcRegionShare:
-    """Share of catalogued capacity by region, at the bottom of the tab."""
+    """The region buckets (`_DC_REGIONS`) the world-share charts use."""
 
     def _series(self, key='h100', cap=datetime(2028, 12, 31)):
         return vp._dc_series_for_metric(vp.dc_all, key, cap_date=cap)
@@ -4046,27 +4046,6 @@ class TestDcRegionShare:
                                     for v in series.values()) if x)
             assert abs(sum(v[i] for v in totals.values()) - whole) < 1e-6, d
 
-    def test_shares_sum_to_100_and_stay_aligned_with_their_levels(self):
-        grid = self._grid()
-        totals = vp._dc_region_totals(self._series(), self._country_of(), grid)
-        g, shares, levels = vp._dc_region_shares(totals, grid)
-        assert g and set(shares) == set(levels) == set(totals)
-        for i in range(len(g)):
-            assert abs(sum(v[i] for v in shares.values()) - 100.0) < 1e-6
-        for lab in shares:
-            assert len(shares[lab]) == len(levels[lab]) == len(g)
-
-    def test_months_with_nothing_built_are_dropped(self):
-        """A share of nothing is undefined, not 0% — the grid starts where the
-        first site does."""
-        grid = self._grid()
-        totals = vp._dc_region_totals(self._series(), self._country_of(), grid)
-        g, _, _ = vp._dc_region_shares(totals, grid)
-        first = min(i for i in range(len(grid))
-                    if sum(v[i] for v in totals.values()) > 0)
-        assert g[0] == grid[first] and g[-1] == grid[-1]
-        assert vp._dc_region_shares({}, grid) == ([], {}, {})
-
     def test_an_empty_region_is_left_off_the_chart(self):
         grid = self._grid()
         cty = dict(self._country_of())
@@ -4075,17 +4054,6 @@ class TestDcRegionShare:
         stripped = {n: ('' if c == "United Arab Emirates" else c)
                     for n, c in cty.items()}
         assert "UAE" not in vp._dc_region_totals(self._series(), stripped, grid)
-
-    def test_share_label_names_an_additive_unit(self):
-        """The two 'time to train' metrics store runs per window; a share of
-        the inverted label they carry would read backwards."""
-        for label, cfg in vp._DC_METRICS.items():
-            out = vp._dc_share_label(label, cfg["kind"])
-            if cfg["kind"] == 'traintime':
-                assert out == "training runs per 2-month window"
-            else:
-                assert out == label
-
 
 class TestNoDuplicateDefinitions:
     """One definition per name at module level.

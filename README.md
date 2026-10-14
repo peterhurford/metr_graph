@@ -34,7 +34,7 @@ and the sidebar's *Share view* button copies a URL carrying your current control
 | Frontier Thresholds | `thresholds` | `frontier_thresholds.json` (supplied timeline through September 6, 2026) | Lab/domain event timeline separating assessments, precautions, alerts, policy changes, reassessments, and operational responses |
 | Employment | `employment` | RLI frontier + assumptions | Unemployment / jobs displaced under slider assumptions |
 | Revenue | `revenue` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (hardcoded) | OpenAI and Anthropic ARR |
-| Data Centers | `datacenters` | `data_centers.csv` + `data_center_timelines.csv` | H100-equivalents, power, cost, time-to-train; a US-vs-China buildout panel, then Compute ⟷ ECI and the ECI forecast |
+| Data Centers | `datacenters` | `data_centers.csv` + `data_center_timelines.csv` | H100-equivalents, power, cost, time-to-train; a US-vs-China buildout panel, world compute share by region, then Compute ⟷ ECI and the ECI forecast |
 | China | `china` (old `computecap` links still work) | Data centers + ECI | US vs China through the compute lens, and China's ETA to today's US frontier |
 | Pacing | `pacing` | Data centers | What a US pause buys: China's catch-up, then when each entity can first mount a run of the paused US scale |
 

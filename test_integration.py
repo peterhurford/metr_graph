@@ -758,41 +758,6 @@ class TestComputeVsCapabilities:
 # UK Cyber (AISI narrow cyber tasks)
 # ===========================================================================
 
-class TestCcWorldSharesTab:
-    """The global compute distribution, second-to-last section of the CC tab."""
-
-    def _app(self):
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "China")
-        return at
-
-    _HEAD = "Global compute distribution"
-
-    def test_renders_last_with_both_charts(self):
-        at = self._app()
-        _assert_no_error(at, "CC / world shares")
-        assert [str(h.value) for h in at.subheader][-2:] == [
-            self._HEAD, TestCcDuvCeilingTab._HEAD]
-        text = " ".join(str(m.value) for m in at.markdown)
-        assert "of the world's AI compute is in the US" in text
-        assert "Where it is heading" in text
-        caps = " ".join(str(c.value) for c in at.caption)
-        assert "epoch.ai/publications/chip-smuggling" in caps
-        assert "Rates:" in caps and "80% CI" in caps
-
-    def test_the_headline_states_both_readings(self):
-        """The point of the section is the gap between the published
-        estimates and what the tracked sites alone say."""
-        at = self._app()
-        [line] = [str(m.value) for m in at.markdown
-                  if "of the world's AI compute is in the US" in str(m.value)]
-        pct = [int(x) for x in re.findall(r"(\d+)%", line)]
-        assert len(pct) == 4
-        us_guess, cn_guess, us_tracked, cn_tracked = pct
-        assert us_tracked > us_guess and cn_guess > cn_tracked
-
-
 class TestCcDuvCeilingTab:
     """The CTS lithography ceiling, last section of the CC tab."""
 
@@ -1576,7 +1541,8 @@ class TestDataCentersByCountry:
 # ===========================================================================
 
 class TestDataCentersRegionShare:
-    """The region-share chart at the bottom of the Data Centers tab."""
+    """The world-share charts near the bottom of the Data Centers tab, moved
+    from the China tab in place of the catalogue-only region chart."""
 
     def _app(self):
         at = _fresh_app()
@@ -1584,21 +1550,37 @@ class TestDataCentersRegionShare:
         _switch_tab(at, "Data Centers")
         return at
 
-    _HEAD = "Share of catalogued capacity by region"
+    _HEAD = "Share of world AI compute by region"
 
-    def test_renders_last_on_the_tab(self):
+    def test_renders_before_compute_eci(self):
         at = self._app()
-        _assert_no_error(at, "Data Centers / region share")
+        _assert_no_error(at, "Data Centers / world shares")
         heads = [str(h.value) for h in at.subheader]
-        # The Compute ⟷ ECI section follows it; ECI Forecasts closes the tab.
         assert heads[-3:] == [self._HEAD, "Compute ⟷ ECI", "ECI Forecasts"]
-        # The coverage caveat is body text above the chart, not fine print.
-        warn = [str(m.value) for m in at.markdown
-                if "Tracked data centers only" in str(m.value)]
-        assert len(warn) == 1 and "Non-US shares are floors" in warn[0]
-        assert "Tracked data centers only" not in \
-            " ".join(str(c.value) for c in at.caption)
+        assert "Share of catalogued capacity by region" not in heads
+        text = " ".join(str(m.value) for m in at.markdown)
+        assert "of the world's AI compute is in the US" in text
+        assert "Where it is heading" in text
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "epoch.ai/publications/chip-smuggling" in caps
+        assert "Rates:" in caps
 
+    def test_the_headline_states_both_readings(self):
+        """The point of the section is the gap between the published
+        estimates and what the tracked sites alone say."""
+        at = self._app()
+        [line] = [str(m.value) for m in at.markdown
+                  if "of the world's AI compute is in the US" in str(m.value)]
+        pct = [int(x) for x in re.findall(r"(\d+)%", line)]
+        assert len(pct) == 4
+        us_guess, cn_guess, us_tracked, cn_tracked = pct
+        assert us_tracked > us_guess and cn_guess > cn_tracked
+
+    def test_not_on_the_china_tab(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "China")
+        assert self._HEAD not in [str(h.value) for h in at.subheader]
 
 
 class TestDataCentersParty:
