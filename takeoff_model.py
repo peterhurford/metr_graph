@@ -676,7 +676,31 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         "compute_matched_advantage": advantage,
         "draws": {"taste_slope": taste_slope, "difficulty": beta,
                   "judgment_drift": drift, "substitution": rho},
+        # Each draw's log compute growth a year before and after `slow_at`;
+        # its compute is exp(log_level(t, rate, late, slow_at)) x today's.
+        "compute": {"rate": compute_rate, "late": compute_late, "slow_at": slow_at},
+        "stopped_at": stopped_at,
     }
+
+
+def progress_years(result, base_rate, window=1.0):
+    """Per draw, the years of progress at `base_rate` (log capability a year)
+    its deployed capability makes in the `window` years after RSI: Forethought's
+    "years of AI progress compressed into one year". NaN where RSI never comes
+    or the window runs past the horizon; +inf where the draw diverges inside it.
+    """
+    wp = result["workflow_progress"]
+    grid, cap = wp["years"], wp["capability_log"]
+    start = result["events"]["RSI"]
+    end = start + window
+    out = np.full(len(start), np.nan)
+    for i in np.flatnonzero(np.isfinite(start) & (end <= grid[-1] + 1e-9)):
+        if result["stopped_at"][i] <= end[i]:
+            out[i] = np.inf
+        else:
+            out[i] = (np.interp(end[i], grid, cap[i])
+                      - np.interp(start[i], grid, cap[i])) / base_rate
+    return out
 
 
 def cdf(samples, grid):

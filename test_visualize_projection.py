@@ -5152,6 +5152,26 @@ class TestMilestoneCardLayout:
         assert vp._pc_card_rows(10) == [4, 3, 3]
 
 
+class TestTakeoffYearlyProgress:
+    """Years of 2025-level progress per calendar year: ECI gained over the
+    frontier's fitted points a year, +inf once a draw has run away."""
+
+    def test_the_trend_makes_one_year_a_year_and_a_runaway_is_unbounded(self):
+        today = datetime(2026, 10, 13)
+        years = np.arange(0, 6, 1 / 12)
+        ppy = 15.0
+        paths = np.vstack([170 + ppy * years, 170 + 2 * ppy * years, 170 + ppy * years])
+        result = {"workflow_progress": {"years": years},
+                  "stopped_at": np.array([np.inf, np.inf, 2.5])}
+        rows = vp._tk_yearly_progress(result, {"paths": paths, "ppy": ppy}, today, 2035)
+        assert [y for y, _ in rows] == [2027, 2028, 2029, 2030, 2031]   # grid ends Sep 2032
+        for year, made in rows:
+            assert made[0] == pytest.approx(1, abs=0.003)   # a calendar year is 365 or 366 days
+            assert made[1] == pytest.approx(2, abs=0.006)
+        stopped = {y: v[2] for y, v in rows}
+        assert np.isfinite(stopped[2028]) and np.isinf(stopped[2029])
+
+
 class TestTakeoffRsiCalibration:
     """Takeoff defaults read off RSI data rather than set by hand."""
 

@@ -17921,6 +17921,45 @@ def _tk_factors_fig(result, today):
     return fig
 
 
+def _tk_compute_fig(result, today, slow_date, hist=None):
+    """The compute going in: each scenario's largest training run as a
+    multiple of today's (median, middle 80%), against the historical trend
+    continued, with the date its growth slows marked."""
+    c = result["compute"]
+    years = result["workflow_progress"]["years"]
+    x = _tk_dates(result, today)
+    level = np.exp(takeoff.log_level(years[None, :], c["rate"][:, None],
+                                     c["late"][:, None], c["slow_at"]))
+    q = np.quantile(level, [.1, .5, .9], axis=0).T
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x, y=q[:, 0], mode="lines", line=dict(width=0),
+                             name="Compute: 10th percentile", hoverinfo="skip",
+                             showlegend=False))
+    fig.add_trace(go.Scatter(x=x, y=q[:, 2], mode="lines", line=dict(width=0),
+                             fill="tonexty", fillcolor="rgba(41,128,185,0.15)",
+                             name="Middle 80% of scenarios", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(
+        x=x, y=q[:, 1], mode="lines", name="Compute in the model",
+        line=dict(color="#2980b9", width=2.5),
+        hovertemplate="%{x|%b %Y}<br>%{y:.3g}× today<extra>Median</extra>"))
+    if hist:
+        fig.add_trace(go.Scatter(
+            x=x, y=np.exp(hist * years), mode="lines",
+            name=f"Historical trend continued ({np.exp(hist):.1f}×/yr)",
+            line=dict(color="#7f8c8d", width=1.5, dash="dash"),
+            hovertemplate="%{x|%b %Y}<br>%{y:.3g}× today<extra>Trend</extra>"))
+    fig.add_vline(x=slow_date, line_dash="dot", line_color="#b0b0b0", line_width=1)
+    fig.add_annotation(x=slow_date, y=1.0, yref="paper", showarrow=False, xanchor="left",
+                       text=f"Growth keeps {result['params']['compute_slowdown']:g}% "
+                            "of its rate", font=dict(size=11, color="#888"))
+    fig.update_layout(
+        height=340, margin=dict(l=55, r=20, t=30, b=40),
+        xaxis=dict(range=[x[0], x[-1]]),
+        yaxis=dict(type="log", title="Largest training run, × today"),
+        legend=dict(orientation="h", y=-0.15), hovermode="x")
+    return fig
+
+
 def _tk_density(samples, edges):
     """Share of all draws per year of x in each bin of `edges`, lightly
     smoothed; draws outside the edges (never arriving included) count in the
@@ -18103,6 +18142,75 @@ def _tk_eci_fig(result, today, eci, markers=()):
                    range=[min(m['eci_score'] for m in past) - 10, _TK_ECI_VIEW_MAX]),
         legend=dict(orientation="h", y=-0.12), hovermode="x")
     return fig
+
+
+# Years of 2025-level progress made in one calendar year: the chart's view
+# stops here, since a runaway year's count is unbounded.
+_TK_YEARLY_VIEW = 100
+
+
+def _tk_yearly_progress(result, eci, today, last_year):
+    """[(year, per-draw years of 2025-level progress made that year)] for each
+    full calendar year from next year to `last_year`.
+
+    2025-level progress is the ECI frontier's fitted climb (`eci['ppy']`
+    points a year, fitted on the 2024-26 frontier), so a year that adds
+    2 x ppy ECI points made two years of it. A draw that runs away
+    numerically by the end of a year made unboundedly many (+inf)."""
+    years = result["workflow_progress"]["years"]
+    paths = eci["paths"]
+
+    def at(when):
+        t = (when - today).total_seconds() / (365.25 * 86400)
+        j = int(np.clip(np.searchsorted(years, t), 1, len(years) - 1))
+        w = np.clip((t - years[j - 1]) / (years[j] - years[j - 1]), 0, 1)
+        return paths[:, j - 1] * (1 - w) + paths[:, j] * w, t
+
+    out = []
+    for year in range(today.year + 1, last_year + 1):
+        start, _ = at(datetime(year, 1, 1))
+        end, t_end = at(datetime(year + 1, 1, 1))
+        if t_end > years[-1] + 1e-9:
+            break
+        made = (end - start) / eci["ppy"]
+        out.append((year, np.where(result["stopped_at"] <= t_end, np.inf, made)))
+    return out
+
+
+def _tk_yearly_fig(rows):
+    """Bars of the median years of 2025-level progress made in each calendar
+    year, middle 80% as whiskers, against 1 (2025's own pace) and
+    Forethought's 3 and 10."""
+    years = [y for y, _ in rows]
+    q = np.array([np.quantile(v, [.1, .5, .9]) for _, v in rows])
+    shown = np.minimum(q, _TK_YEARLY_VIEW)
+    hover = [f"{y}: {_tk_yrs(m)} of 2025-level progress (median)<br>"
+             f"Middle 80%: {_tk_yrs(lo)} to {_tk_yrs(hi)}<br>"
+             f"{100 * np.mean(v >= 3):.0f}% of scenarios make 3+ years, "
+             f"{100 * np.mean(v >= 10):.0f}% make 10+, "
+             f"{100 * np.mean(~np.isfinite(v)):.0f}% run away"
+             for (y, v), (lo, m, hi) in zip(rows, q)]
+    fig = go.Figure(go.Bar(
+        x=years, y=shown[:, 1], name="Median scenario", marker_color="#c0392b",
+        error_y=dict(type="data", symmetric=False, array=shown[:, 2] - shown[:, 1],
+                     arrayminus=shown[:, 1] - shown[:, 0], color="#555", thickness=1.5),
+        hovertext=hover, hoverinfo="text"))
+    for level, label in ((1, "2025's pace"), (3, "3 years in one"), (10, "10 years in one")):
+        fig.add_hline(y=level, line_dash="dash" if level == 1 else "dot",
+                      line_color="#777" if level == 1 else "#b0b0b0", line_width=1,
+                      annotation_text=label, annotation_position="top left",
+                      annotation_font=dict(size=11, color="#888"))
+    fig.update_layout(
+        height=340, margin=dict(l=55, r=20, t=30, b=40), showlegend=False,
+        xaxis=dict(tickmode="array", tickvals=years, ticktext=[str(y) for y in years]),
+        yaxis=dict(type="log", title="Years of 2025-level progress",
+                   range=[np.log10(0.3), np.log10(_TK_YEARLY_VIEW)]))
+    return fig
+
+
+def _tk_yrs(v):
+    """Years of progress for a label: 'runaway' when unbounded."""
+    return "runaway" if not np.isfinite(v) else f"{v:.1f} yr"
 
 
 def _tk_humans_fig(result, today, ladder=None):
@@ -18291,7 +18399,36 @@ def _tk_date(value, today):
             if np.isfinite(value) else "Beyond horizon")
 
 
+# Steps the takeoff tab's loading bar walks through, each (share done, text).
+_TK_LOADING_STEPS = (
+    (0.05, "Loading the evidence: CoBench, the automation index, surveys and the "
+           "automated coder projection"),
+    (0.45, "Simulating {n:,} takeoff scenarios from today to {end}"),
+    (0.70, "Re-running the scenarios with each coding date matched to its capability"),
+    (0.90, "Drawing the cards and charts"),
+)
+
+
+def _tk_loading(slot, step):
+    """Show loading step `step` (0-based) of `_TK_LOADING_STEPS` in `slot`."""
+    share, text = _TK_LOADING_STEPS[step]
+    slot.progress(share, text=f"**Takeoff model loading, step {step + 1} of "
+                              f"{len(_TK_LOADING_STEPS)}:** "
+                  + text.format(n=N_SAMPLES, end=_TK_SIM_END_YEAR) + "\u2026")
+
+
 def render_takeoff():
+    """The Takeoff tab, behind a loading bar that stays up until its last
+    chart is drawn, whichever way the tab returns."""
+    loading = []
+    try:
+        _render_takeoff(loading)
+    finally:
+        for slot in loading:
+            slot.empty()
+
+
+def _render_takeoff(loading):
     for key in ("tk_onset_low", "tk_onset_high", "tk_years", "tk_taste_at_onset"):
         st.session_state.pop(key, None)
         if key in st.query_params:
@@ -18323,10 +18460,12 @@ def render_takeoff():
                "models and not 'all things considered' takes.")
     # The takeoff model's loop and headline cards lead the page, but they need
     # the evidence's settings first: drawn into this slot once computed.
+    # The loading bar sits above the slot, so drawing the model's header and
+    # loop into the slot does not clear it; render_takeoff clears it at the end.
+    bar = st.empty()
+    loading.append(bar)
+    _tk_loading(bar, 0)
     top = st.empty()
-    top.info("Running the takeoff model. Its headline dates appear here once the "
-             "evidence below has loaded and the scenarios are simulated, a few seconds "
-             "from now.", icon="\u23f3")
     render_rsi(st.session_state["tk_end_year"])
     st.markdown("---")
     with st.sidebar:
@@ -18603,6 +18742,7 @@ def render_takeoff():
         # date says, so RSI no longer waits on a late inherited date past it.
         _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute)
         coding_level = (_TK_ULTRA_ECI - eci_now) * eci_base / eci_ppy
+        _tk_loading(bar, 1)
         result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
                               experiment_starts, experiment_slopes, pace_yield, compute_rates,
                               hist_compute, coding_level)
@@ -18614,6 +18754,7 @@ def render_takeoff():
             k = min(int(np.searchsorted(wp["years"], _TK_PAIRING_YEARS)), len(wp["years"]) - 1)
             onset_years = _tk_pair_onset(onset_years, wp["capability_log"][:, k], corr,
                                          int(params["seed"]))
+            _tk_loading(bar, 2)
             result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
                                   experiment_starts, experiment_slopes, pace_yield, compute_rates,
                                   hist_compute, coding_level)
@@ -18655,7 +18796,7 @@ def render_takeoff():
         _card(c, f"Ultraintelligence: ECI {_TK_ULTRA_ECI:g}", eci["ultra"],
               f"First month a scenario's ECI reaches {_TK_ULTRA_ECI:g} (today's frontier: "
               f"{eci['now']:.0f}).")
-        a, b = st.columns(2)
+        a, b, c = st.columns(3)
         _gap_card(a, "Coding automation \u2192 RSI", result["coding_at"], rsi,
                   "Time from each scenario's coding-automation date (the automated coder projection's, or the "
                   f"month its ECI reaches {_TK_ULTRA_ECI:g} if sooner) to its RSI date.")
@@ -18664,6 +18805,30 @@ def render_takeoff():
                   f"ECI reaching {_TK_ULTRA_ECI:g}. A model that reaches ECI "
                   f"{_TK_ULTRA_ECI:g} counts as having automated coding, so RSI never waits on "
                   "a later coding date from the automated coder projection.")
+        burst = takeoff.progress_years(result, eci_base)
+        burst = burst[~np.isnan(burst)]
+        if burst.size:
+            def _yrs(v):
+                return "runaway" if not np.isfinite(v) else f"{v:.1f} yr"
+            c.metric(
+                "Progress in RSI's first year", _yrs(takeoff.quantile(burst, 0.5)),
+                help="Forethought's measure of an intelligence explosion: years of progress "
+                     "at today's pace made in the year after RSI. Today's pace is the ECI "
+                     f"trend's: effective compute growing {np.exp(eci_base):.1f}\u00d7 a year "
+                     f"(software doubling every {params['software_months']:g} months, compute "
+                     f"{np.exp(eci_base - np.log(2) * 12 / params['software_months']):.1f}"
+                     f"\u00d7). {100 * np.mean(burst >= 3):.0f}% of scenarios make 3 "
+                     f"years or more and {100 * np.mean(burst >= 10):.0f}% make 10. "
+                     "Forethought's 57% and 18% use a different yardstick, so compare "
+                     "loosely: they count about 10\u00d7 a year of effective compute as a "
+                     "year, hold compute fixed after automation, and start at full "
+                     "automation of AI R&D, not RSI. Among the "
+                     f"{len(burst) / len(rsi):.0%} of scenarios reaching RSI by the end of "
+                     f"{end_date.year - 1}; one whose research runs away counts as more.")
+            for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
+                c.caption(f"{level}% CI: {_yrs(takeoff.quantile(burst, lo))}"
+                          f" – {_yrs(takeoff.quantile(burst, hi))}")
+        _tk_loading(bar, 3)
         medians = [(label, takeoff.quantile(samples, 0.5, horizon))
                    for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
                                           ("Ultraintelligence", eci["ultra"]))]
@@ -18687,6 +18852,18 @@ def render_takeoff():
     st.plotly_chart(_tk_evidence_fig({k: st.session_state["tk_" + k]
                                       for k in ("taste_slope", "coding_slope")}),
                     width="stretch")
+    st.markdown("**Compute going in**")
+    _fn_caption(
+        "The compute each scenario trains and experiments with, as a multiple of today's.",
+        ("compute each scenario",
+         "One growth rate per scenario: with the sidebar's data-center toggle on (the "
+         "default), the average over the next five years of one sampled US "
+         "largest-training-run path from the Data Centers tab; off, the flat rate set "
+         f"there. From the end of {_TK_COMPUTE_SLOW_YEAR} each keeps the sidebar's share "
+         "of its log growth. Training, experiments and agents split this one budget."))
+    st.plotly_chart(_tf(_tk_to(_tk_compute_fig(
+        result, today, datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31), result.get("hist_compute")),
+        view_end)), width="stretch")
 
     st.subheader("1. Research speeds up")
     _fn_caption(
@@ -18733,6 +18910,24 @@ def render_takeoff():
          "deployed model. For the first year it is floored at the trend, since "
          "no new model has shipped yet."))
     st.plotly_chart(_tf(_tk_to(_tk_eci_fig(result, today, eci, markers), view_end)),
+                    width="stretch")
+    st.markdown("**2025-level progress in each year (ECI trend)**")
+    _fn_caption(
+        "How many years of capability progress at 2025's pace each calendar year makes; "
+        "1 is 2025 itself. Not chart 1's \u00d7 2025, which counts experiments.",
+        ("Not chart 1's",
+         "Chart 1 measures research pace by OpenAI's experiments per researcher, already "
+         "about 2\u00d7 2025 today. This chart measures capability (ECI) gained, where "
+         "today's pace is about 1\u00d7, since the ECI trend is fitted on 2024\u201326 models."),
+        ("2025's pace",
+         f"The ECI frontier's fitted climb, {eci['ppy']:.1f} points a year over 2024\u201326: "
+         "a year adding twice that made two years of progress. Bars are the median "
+         "scenario, whiskers the middle 80%; the hover gives the share making 3 and 10 "
+         "years, Forethought's thresholds. The first year sits near 1 because ECI is "
+         "floored at today's trend until the next model ships. A scenario whose research "
+         "runs away counts as more than any number; the axis stops at "
+         f"{_TK_YEARLY_VIEW}."))
+    st.plotly_chart(_tk_yearly_fig(_tk_yearly_progress(result, eci, today, view_end.year)),
                     width="stretch")
 
     st.subheader("4. When it happens, and how fast")

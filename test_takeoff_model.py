@@ -180,6 +180,25 @@ def test_a_runaway_reaches_rsi_unless_the_floor_blocks_it():
     assert np.isinf(inside["events"]["RSI"][0])
 
 
+def test_progress_years_reads_the_capability_gain_after_rsi():
+    """Forethought's readout: capability gained in the year after RSI over the
+    base rate. A runaway inside the window counts as more than any number; a
+    window running past the horizon, or no RSI, is not measured."""
+    r = tk.simulate(dict(tk.POINT_ESTIMATE, years=6), n=3,
+                    onset_years=np.array([0.5, 1.0, np.inf]))
+    wp, rsi = r["workflow_progress"], r["events"]["RSI"]
+    years = tk.progress_years(r, 2.0)
+    i = int(np.flatnonzero(np.isfinite(rsi))[0])
+    gain = (np.interp(rsi[i] + 1, wp["years"], wp["capability_log"][i])
+            - np.interp(rsi[i], wp["years"], wp["capability_log"][i]))
+    assert years[i] == pytest.approx(gain / 2.0)
+    assert np.isnan(years[2])
+    assert np.isnan(tk.progress_years(r, 2.0, window=10)[i])
+    explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, **tk.POINT_ESTIMATE, years=12)
+    runaway = tk.simulate(explosive, n=1, onset_years=np.array([0.5]))
+    assert np.isinf(tk.progress_years(runaway, 2.0)[0])
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])

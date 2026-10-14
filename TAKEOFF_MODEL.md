@@ -154,6 +154,12 @@ by the end of 2031 get to ultraintelligence within 6 months and 22% within a yea
 difficulty (b < 1), against the AI Futures Model's 38% and Forethought's ~60% chance that
 progress accelerates.
 
+Forethought's own measure, years of today's-pace progress made in the year after RSI, has a
+median of 1.5 (80%: 0.9 to 3.5); about 13% of scenarios make 3 years or more and 3% make 10,
+against Forethought's 57% and 18%. The yardsticks differ: here a year is today's ECI trend
+(about 7.8x a year of effective compute, compute growth included); Forethought counts about
+10x, holds compute fixed and starts at full automation of AI R&D.
+
 ## Evidence calibration
 
 Four priors come from the RSI tab. Today's human hours per stage are scaled so their

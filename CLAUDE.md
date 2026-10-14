@@ -113,9 +113,16 @@ month a draw's ECI reaches `_TK_ULTRA_ECI` (250). ECI at RSI is fixed by constru
 human hours depend only on capability, so RSI is a capability threshold.
 Under the three headline cards, a row gives coding → RSI and RSI → ultraintelligence
 (`_tk_gap`, the FOOM readout) with 80%/90% intervals, over draws reaching the first by the
-horizon, a second past it counting as longer. The loop, brakes and these five cards lead
+horizon, a second past it counting as longer. Beside them, *Progress in RSI's first year*
+(`takeoff.progress_years`) is Forethought's readout: capability gained in the year after RSI
+over today's ECI-trend rate (`_tk_eci_scale`'s base rate, ~7.8×/yr effective compute), +inf
+for a runaway inside the window. Forethought counts ~10×/yr, holds compute fixed and starts
+at full automation, so its hover says to compare loosely. The loop, brakes and these six cards lead
 the tab, above the evidence: they render into a `st.container()` slot made before
 `render_rsi`, since they need its settings first.
+A progress bar (`_tk_loading`, `_TK_LOADING_STEPS`) sits above that slot and steps through
+evidence, simulation, re-pairing and drawing; `render_takeoff` clears it in a `finally`
+once the last chart is drawn, so it outlasts every number.
 `tk_dc_compute` (default on) feeds compute growth from the Data Centers tab:
 `_tk_dc_compute` samples the US largest-run projection (`_pc_projection`, as Pacing does)
 and averages each path over a fixed `_TK_DC_AVG_YEARS` (not the chart horizon, which
@@ -145,10 +152,13 @@ URL sharing, stale imports, and exact inheritance from RSI.
 
 The tab reads as a story, top to bottom: the warning, *The takeoff model* (the loop
 `_TK_LOOP_HTML`, its three brakes, the headline cards for coding automation, RSI and
-ultraintelligence with 80%/90% CIs, and the two gaps between them), *The evidence* (the
-former RSI tab), then *Inside the takeoff model*: the evidence row, **1. Research speeds
+ultraintelligence with 80%/90% CIs, the two gaps between them and the first-year progress),
+*The evidence* (the former RSI tab), then *Inside the takeoff model*: the evidence row and
+*Compute going in* (`_tk_compute_fig`, each draw's compute from `result["compute"]`), **1. Research speeds
 up** (`_tk_pace_fig` plus the factor chart), **2. People step out of the loop**
-(`_tk_humans_fig`), **3. What it does to capability (ECI)** and **4. When it happens, and
+(`_tk_humans_fig`), **3. What it does to capability (ECI)** (plus *2025-level progress in
+each year*, `_tk_yearly_fig`: ECI gained per calendar year over the frontier's fitted
+points a year, a different 2025 unit from chart 1's experiments) and **4. When it happens, and
 how fast** (`_tk_dist_fig`: density and cumulative share of the RSI and ultraintelligence
 dates and the gap between them). `test_default_render_and_stable_rerun` pins the order.
 
