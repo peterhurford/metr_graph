@@ -344,7 +344,7 @@ has no main-column headings, so it has no section to link to.
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
 | ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`), the region-share stack (`_dc_render_region_share()`), and ends with *Compute ⟷ ECI* and *ECI Forecasts* (`_render_compute_eci()`, see below) |
-| China (slug `china`, was Compute/capabilities/diffusion) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | US vs China through the compute lens; carries China's ETA to `_CC_CN_TARGET_ECI` (`_render_cc_china_target()`), then the global compute distribution, today and projected (`_render_cc_world_shares()`), and ends with the CTS lithography ceiling (`_render_cc_duv_ceiling()`) |
+| China (slug `china`, was Compute/capabilities/diffusion) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | US vs China through the compute lens, then the global compute distribution, today and projected (`_render_cc_world_shares()`), and ends with the CTS lithography ceiling (`_render_cc_duv_ceiling()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
 | Frontier Thresholds | `frontier_thresholds.render(st)` | `frontier_thresholds.json` | dated threshold events per lab and risk category; no projection (see *Frontier Thresholds* below) |
 
@@ -1259,34 +1259,23 @@ On the Pacing tab the cut compounds with `pc_dom_slow`: effective slowdown =
 Guarded by `TestDuvProduction` (unit), `TestCcDuvCeilingTab` and
 `test_duvi_levers_compound_with_the_domestic_slider` (integration).
 
-### China tab — China's ETA to a target ECI
+### China's crossing simulation (Pacing pause panel)
 
-`_render_cc_china_target()` answers "when does China cross `_CC_CN_TARGET_ECI`" with a
-date distribution rather than the gap metrics above it. Three things are load-bearing:
+`_cc_cn_crossing_sim` dates when China's ECI frontier reaches a bar. The China tab's own
+"When does China reach ECI 166" section that used it was removed; the Pacing pause panel
+is its consumer. Load-bearing:
 
-1. **The target tracks today's US frontier**, which is what makes the framing — "China
-   matching where the US is *now*" — true. `TestCcCnTargetIsTodaysUsFrontier` asserts it
-   stays at or under the US frontier and within 5 points of it; if an ECI refresh breaks
-   that test, retarget the constant rather than loosening the test, and re-check the
-   caption. Don't hardcode the anchor model in prose — Epoch recomputes live and the anchor
-   moves between pulls, sometimes dropping a model off its own lab's running max entirely.
-2. **The rate is the same two-engine model as Chart B**, deliberately: algorithmic term
-   (iso-compute rates, mode = China's own) + `a_partial` × China's compute growth. A direct
-   fit of China's frontier would contradict the chart above. The bottom-up rate runs hot
-   against what the frontier has actually managed, so `_cc_cn_target_years()` takes
-   a `pace_lo`/`pace_hi` band derived from China's observed slope over `_CC_GAP_WINDOWS`.
-   That reality check is the main uncertainty — the two iso-compute fits sit within a point
-   of each other and alone would give a spuriously tight band.
-3. **Release steps are carried by level noise, not a release wait.** The frontier is a
-   step function; item 5's level offset models it, and the crossing adds no exponential
-   wait on top (`release_gap_days` stays a sim option, unused here). Together the two
-   skewed a dated backtest late; level noise alone puts ~80% of China's 2025–26 release
-   dates inside the 80% range with misses on both sides (`TestCcCrossingBacktest`). The
-   *months-behind* card is ship-to-ship on both sides and must stay so: a "smooth" variant
-   that interpolated the US released steps was tried and read low — across a same-day
-   release pair the interpolation collapses to the ship date, silently carrying the US's
-   real wait (GPT-5.5 Pro's run finished ~2 mo before it shipped, per the Mythos model
-   card) while charging China none.
+1. **The pace band reality-checks the bottom-up rate** against China's observed slope
+   over `_CC_GAP_WINDOWS` (`_cc_cn_pace_band`).
+2. **Release steps are carried by level noise, not a release wait.** `level_sd` adds a
+   per-sample offset, `_cc_frontier_level_sd` (sqrt 2 x China's scatter around its
+   since-2024 trend), phased in over the median release gap; `release_gap_days` stays a
+   sim option, unused. A rolling-origin backtest over China's 2025–26 releases puts ~80%
+   of levels and dates inside the 80% band (`TestCcCrossingBacktest`); a rate spread
+   alone covered ~16%, and a release wait on top skewed dates late. With `channels` the
+   offset is its own `level` entry, left out of Pacing's breakdown rows.
+3. **The end-year gap card's hover gives the fit-window range** (`_cc_gap_end_range` over
+   `_CC_CALIB_SENS_STARTS`): China's slope swings on DeepSeek-R1's Jan 2025 jump.
 4. **Three-channel algorithmic engine.** `_cc_cn_crossing_sim` splits the measured
    rate into innovation (`_cc_pure_innovation_band`, never decays) + diffusion
    (nodist − pure, decays only after a pause, `_CC_DIFF_ABSORB_YRS` absorption ramp
@@ -1320,17 +1309,6 @@ date distribution rather than the gap metrics above it. Three things are load-be
    puts Chinese models above their US compute-peers while the two iso-compute rates are
    indistinguishable; `TestCcCnLevelOffset` guards it.
 
-Fan traces set `mode='lines'` explicitly: the fan spans ~6 quarters, and plotly defaults a
-Scatter under 20 points to `lines+markers`, studding the band outline with stray dots.
-
-5. **Paths carry release-step level noise.** `_cc_cn_crossing_sim(level_sd=…)` adds a
-   per-sample level offset, `_cc_frontier_level_sd` (sqrt 2 x China's scatter around its
-   since-2024 trend), phased in over the median release gap. Rate spread alone put only
-   ~16% of China's 2025–26 releases inside the 80% band on a rolling-origin backtest;
-   `TestCcCrossingBacktest` holds it near 80%. Pacing passes it too; with `channels` the offset
-   is its own `level` entry, left out of the breakdown rows (its caption says so).
-6. **The end-year gap card's hover gives the fit-window range** (`_cc_gap_end_range` over
-   `_CC_CALIB_SENS_STARTS`): China's slope swings on DeepSeek-R1's Jan 2025 jump.
 ### Pacing tab
 
 `render_pacing()` renders the pause counterfactual **first**

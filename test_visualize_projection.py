@@ -2062,7 +2062,8 @@ class TestCcCnCrossingSim:
         cn_fr = vp._cc_country_frontier(eci, 'China')
         us_best = max(us_fr, key=lambda x: x[1])
         cn_best = max(cn_fr, key=lambda x: x[1])
-        assert cn_best[1] < vp._CC_CN_TARGET_ECI, "China already past the CC target"
+        target = us_best[1] - 1.0     # about where the US frontier is now
+        assert cn_best[1] < target, "China already past today's US frontier"
         a_partial, b_algo = vp._cc_pooled_decomp(cc)
         us_algo, _, _ = vp._cc_iso_compute_rate(cc, 'United States of America')
         cn_algo, _, _ = vp._cc_iso_compute_rate(cc, 'China')
@@ -2075,7 +2076,7 @@ class TestCcCnCrossingSim:
                   algo_hi=a_hi, inno_lo=inno[0], inno_hi=inno[1],
                   pace_lo=pace_lo, pace_hi=pace_hi, n=4000)
         y_cc, _, _ = vp._cc_cn_crossing_sim(
-            cn_best[1], vp._CC_CN_TARGET_ECI, us_anchor=us_best[1],
+            cn_best[1], target, us_anchor=us_best[1],
             us_rate=15.0, **kw)
         y_pause, _, _ = vp._cc_cn_crossing_sim(
             cn_best[1], us_best[1], us_anchor=us_best[1], us_rate=0.0, **kw)
@@ -2187,46 +2188,6 @@ class TestCcReleaseGapDays:
 
     def test_too_few_points(self):
         assert vp._cc_release_gap_days(self._fr()[:2]) is None
-
-
-class TestCcFirstReached:
-    """_cc_first_reached: first frontier model at or above a level."""
-
-    def _fr(self):
-        return [(datetime(2025, 1, 1), 100.0, "a"),
-                (datetime(2025, 6, 1), 120.0, "b"),
-                (datetime(2026, 1, 1), 140.0, "c")]
-
-    def test_returns_first_crossing_model(self):
-        assert vp._cc_first_reached(self._fr(), 110.0) == (datetime(2025, 6, 1), "b")
-
-    def test_exact_match_counts(self):
-        assert vp._cc_first_reached(self._fr(), 120.0)[1] == "b"
-
-    def test_none_when_target_above_frontier(self):
-        assert vp._cc_first_reached(self._fr(), 999.0) is None
-
-
-class TestCcCnTargetIsTodaysUsFrontier:
-    """The 161 bar is meant to be ~today's US frontier, not an arbitrary number.
-
-    If Epoch's rescoring or a new US model moves the frontier far from the
-    constant, the section's framing ("China matching where the US is now") stops
-    being true and `_CC_CN_TARGET_ECI` needs revisiting.
-    """
-
-    def test_target_sits_at_the_us_frontier(self):
-        eci = vp.load_eci_frontier(_mtime=vp._eci_mtime())
-        us = vp._cc_country_frontier(eci, "United States of America")
-        assert us, "no US-tagged ECI frontier"
-        best = max(s for _, s, _ in us)
-        assert vp._CC_CN_TARGET_ECI <= best, "target is above the US frontier"
-        assert best - vp._CC_CN_TARGET_ECI < 5.0, "target has fallen behind the US"
-
-    def test_china_has_not_yet_crossed_it(self):
-        eci = vp.load_eci_frontier(_mtime=vp._eci_mtime())
-        cn = vp._cc_country_frontier(eci, "China")
-        assert max(s for _, s, _ in cn) < vp._CC_CN_TARGET_ECI
 
 
 class TestEciMonthsBehind:

@@ -13143,7 +13143,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     # China's lines at the US-measured iso-compute rate and with external
     # distillation removed (`_cc_innovation_algo_band` midpoint, diffusion kept); the table
     # adds indigenous-only. China's own measured rate (`cn_algo`, distillation
-    # included) is not drawn; it feeds `_render_cc_china_target`.
+    # included) is not drawn.
     st.markdown("**China's algorithmic rate — the distillation scenario**")
     us_algo, n_us_iso, _ = _cc_iso_compute_rate(cc_rows, 'United States of America')
     cn_algo, n_cn_iso, cn_med = _cc_iso_compute_rate(cc_rows, 'China')
@@ -13378,24 +13378,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                           "dex of median compute \u2014 so few same-budget US models "
                           "that the rates are indicative, not measured."))
 
-    # ── When does China cross the target ECI? ─────────────────────────────────
-    _render_cc_china_target(
-        cn_fr=cn_fr, us_fr=us_fr, a_partial=a_partial, b_algo=b_algo,
-        us_algo=us_algo, cn_algo=cn_algo, g_lo=g_cn_lo, g_hi=g_cn_hi,
-        us_eci_smid=us_eci_smid, today=today, inno_band=inno_band)
 
-
-# ── China's ETA to a target ECI ───────────────────────────────────────────
-# The level the section asks about: today's US ECI frontier, rounded down to a
-# whole point. "When does China cross it" is then "when does China reach where
-# the US is now" — a fixed bar, not a moving one, which is why it can be
-# answered with a date instead of a gap. The anchor model is deliberately not
-# named here: Epoch recomputes scores live, so which model holds the record
-# moves between pulls. Retarget when
-# TestCcCnTargetIsTodaysUsFrontier fails, and re-read the captions that
-# compare this bar with the Pacing pause panel's.
-_CC_CN_TARGET_ECI = 166.0
-
+# ── China's crossing simulation (used by the Pacing pause panel) ─────────
 
 def _cc_cn_target_years(anchor_eci, target, algo_lo, algo_mid, algo_hi,
                         a_partial, g_lo, g_hi, pace_lo=0.85, pace_hi=1.15,
@@ -13622,11 +13606,6 @@ def _cc_release_gap_days(fr, since=None):
     return float(np.median(gaps)) if gaps else None
 
 
-def _cc_first_reached(fr, target):
-    """First (date, name) on a running-max frontier at or above `target`, else None."""
-    return next(((d, n) for d, s, n in fr if s >= target), None)
-
-
 def _wc_region_of(country):
     """The world-share bucket a country falls in — the Data Centers tab's
     regions, which this section shares."""
@@ -13709,270 +13688,6 @@ def _wc_share_paths(years, n, common=None):
         cur = lev * g ** t
         out[:, i, :] = 100.0 * cur / cur.sum(axis=0)
     return {lab: out[i] for i, lab in enumerate(_WC_LABELS)}
-
-
-def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo,
-                            g_lo, g_hi, us_eci_smid, today, inno_band=None,
-                            target=_CC_CN_TARGET_ECI):
-    """Section 5: the date China's ECI frontier crosses `target`.
-
-    Everything above reports *gaps* — points behind, months behind, how the gap
-    evolves. This turns the same decomposition around and answers the calendar
-    question directly, fanning China's compute+algo rate out into crossing
-    dates via _cc_cn_crossing_sim (distillation decays as the gap closes);
-    _cc_cn_target_years supplies the constant-rate comparison in the caption.
-    """
-    st.subheader(f"When does China reach ECI {target:.0f} (~Mythos-tier)?")
-
-    cn_best = max(cn_fr, key=lambda x: x[1])
-    us_best = max(us_fr, key=lambda x: x[1])
-    anchor_d, anchor_eci, anchor_name = cn_best
-
-    if anchor_eci >= target:
-        st.success(
-            f"**Already there.** {pretty(anchor_name)} reached ECI {anchor_eci:.0f} on "
-            f"{anchor_d:%b %-d, %Y}, at or above the {target:.0f} bar.")
-        return
-
-    # Algorithmic term: China's own iso-compute rate is the mode, the US rate the
-    # no-distillation-edge alternative. Fall back to the shared pooled term when
-    # the per-country fits are too sparse to estimate.
-    if us_algo is None or cn_algo is None:
-        a_lo = a_mid = a_hi = b_algo
-        algo_note = (f"the shared pooled algorithmic term (~{b_algo:.0f} ECI/yr); "
-                     "per-country iso-compute fits were too sparse")
-    else:
-        a_lo, a_hi = min(us_algo, cn_algo), max(us_algo, cn_algo)
-        a_mid = cn_algo
-        algo_note = (f"the iso-compute algorithmic rates ({a_lo:.1f}–{a_hi:.1f} "
-                     f"ECI/yr, mode = China's own {cn_algo:.1f})")
-
-    # Reality-check the bottom-up rate against China's *observed* frontier slope
-    # over the same windows the gap band uses. The two engines are fitted on
-    # model-level data and currently run hot (~14 ECI/yr) against a frontier that
-    # has managed 10–13, so the pace factor is widened to span that disagreement
-    # rather than asserting a spurious ±12%.
-    r_central = a_mid + a_partial * 0.5 * (g_lo + g_hi)
-    pace_lo, pace_hi, obs = _cc_cn_pace_band(cn_fr, r_central)
-    obs_note = ((f"reality-checked against China's observed frontier slope "
-                 f"({min(obs):.1f}–{max(obs):.1f} vs ~{r_central:.1f} ECI/yr "
-                 "bottom-up)") if obs else "with a ±15% pace factor")
-
-    # Recent release cadence: the level offset phases in over one gap. No
-    # separate release wait is added on top; the offset already carries the
-    # steps, and a dated backtest found the two together skewed late.
-    gap_d = _cc_release_gap_days(cn_fr, since=today - timedelta(days=730))
-
-    # Distillation-aware headline; the constant-rate model is the comparison.
-    inno_lo, inno_hi = inno_band if inno_band else (a_lo, a_hi)
-    years, grid_yrs, traj_m = _cc_cn_crossing_sim(
-        anchor_eci, target,
-        # The US trend's level at China's anchor date, not its later best.
-        us_anchor=us_best[1] - max(us_eci_smid, 0.0)
-        * (us_best[0] - anchor_d).days / 365.25,
-        us_rate=max(us_eci_smid, 0.0), a_partial=a_partial,
-        g_lo=g_lo, g_hi=g_hi, algo_lo=a_lo, algo_mid=a_mid, algo_hi=a_hi,
-        inno_lo=inno_lo, inno_hi=inno_hi,
-        pace_lo=pace_lo, pace_hi=pace_hi,
-        level_sd=_cc_frontier_level_sd(cn_fr),
-        level_ramp_yrs=(gap_d or 47.5) / 365.25)
-    years_const, rates = _cc_cn_target_years(anchor_eci, target, a_lo, a_mid,
-                                             a_hi, a_partial, g_lo, g_hi,
-                                             pace_lo=pace_lo, pace_hi=pace_hi)
-    yr_ok = years[np.isfinite(years)]
-    if len(yr_ok) < 100:
-        st.info("Sampled growth rates were too weak to give a crossing date.")
-        return
-
-    def _date_at(y):
-        return anchor_d + timedelta(days=float(y) * 365.25)
-
-    y10, y50, y90 = (float(np.percentile(yr_ok, p)) for p in (10, 50, 90))
-    d10, d50, d90 = _date_at(y10), _date_at(y50), _date_at(y90)
-    rate_med = float(np.median(rates))
-
-    # Lag behind the US at the *same* level: when did (or will) the US frontier
-    # first hit this bar? Measured off actual models where one exists, else
-    # extrapolated at the US mid rate. Ship-to-ship on BOTH sides: China's
-    # crossing is dated against release dates (the level offset is backtested
-    # on them), and the US release date embeds the US's own wait —
-    # GPT-5.5 Pro shipped at 161.7 roughly two months after its run
-    # finished (Mythos model card), the wait paid in prep and overshoot,
-    # invisible in the released steps. A "smooth" variant that interpolated
-    # the US steps was tried and read ~1.4 mo low: across a same-day release
-    # pair the interpolation collapses to the ship date, charging China no
-    # wait while the US date silently carried all of its own.
-    us_hit = _cc_first_reached(us_fr, target)
-    if us_hit is not None:
-        us_hit_d, us_hit_name = us_hit
-        us_hit_txt = f"{pretty(us_hit_name)}, {us_hit_d:%b %Y}"
-    elif us_eci_smid > 0:
-        us_hit_d = us_best[0] + timedelta(
-            days=(target - us_best[1]) / us_eci_smid * 365.25)
-        us_hit_txt = f"projected {us_hit_d:%b %Y}"
-    else:
-        us_hit_d, us_hit_txt = None, "—"
-    lag_mo = ((d50 - us_hit_d).days / 30.44) if us_hit_d else float('nan')
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric(f"China crosses ECI {target:.0f}", f"{d50:%b %Y}",
-              f"{d10:%b %Y} – {d90:%b %Y} (80%)", delta_color="off")
-    m2.metric("From today", f"~{(d50 - today).days / 30.44:.0f} mo",
-              f"from {pretty(anchor_name)} at {anchor_eci:.0f}", delta_color="off")
-    # The 80% CI rides under each card's delta line rather than replacing it: the
-    # delta says *what the number is measured from* (the anchor model, the US
-    # model that set the bar), which the range can't carry. All come off the same
-    # d10/d90 as card 1, so the three cards can't disagree.
-    m2.caption(f"80% CI: {(d10 - today).days / 30.44:.0f}–"
-               f"{(d90 - today).days / 30.44:.0f} mo")
-    m3.metric(f"Months behind US when reaching ECI {target:.0f}",
-              "—" if us_hit_d is None else f"~{lag_mo:.1f} mo",
-              f"US: {us_hit_txt}", delta_color="off")
-    if us_hit_d is not None:
-        m3.caption(f"80% CI: {(d10 - us_hit_d).days / 30.44:.0f}–"
-                   f"{(d90 - us_hit_d).days / 30.44:.0f} mo · shipped model "
-                   "to shipped model")
-
-    # ── Chart: China's fan against the fixed target bar ───────────────────────
-    # The fan is the capability path, release-step level noise included; the
-    # vertical band and the diamond are the crossing distribution read off it.
-    horizon = max(datetime(2027, 12, 31), d90 + timedelta(days=180))
-    x_dates = [anchor_d] + _cc_quarter_ends(anchor_d, horizon)
-    dt = np.array([(d - anchor_d).days / 365.25 for d in x_dates])
-    pct_m = _pctiles(traj_m, (10, 25, 50, 75, 90))
-    pct = {p: np.interp(dt, grid_yrs, pct_m[p]) for p in pct_m}
-
-    figt = go.Figure()
-    _dc_add_projection_band(figt, today, horizon)
-    # 80% crossing window as a vertical band, so the answer is readable off the
-    # x-axis without tracing the fan up to the target line.
-    figt.add_vrect(x0=d10, x1=d90, fillcolor='rgba(214,39,40,0.10)',
-                   line_width=0, layer='below')
-    # Label the band by hand: plotly can't average a datetime x0/x1 to place its
-    # own vrect annotation.
-    figt.add_annotation(x=d50, y=1.0, yref='paper', yanchor='bottom',
-                        text='80% crossing window', showarrow=False,
-                        font=dict(size=10, color='#7F1010'))
-    figt.add_hline(y=target, line=dict(color='#111', width=1.5, dash='dash'),
-                   annotation_text=f"ECI {target:.0f}",
-                   annotation_position='top left',
-                   annotation_font=dict(size=11, color='#111'))
-    # 0.16 on the outer band, not the 0.10 the other fans use: the eye
-    # otherwise reads the inner 50% band as "the fan" and finds it much
-    # narrower than the 80% crossing window beside it.
-    for lo_p, hi_p, alpha, label in ((10, 90, 0.16, '80% CI'), (25, 75, 0.20, '50% CI')):
-        # mode='lines' is load-bearing: this fan spans only ~6 quarters, and under
-        # 20 points plotly defaults a Scatter to lines+markers — which would stud
-        # the band's outline with stray default-blue dots.
-        figt.add_trace(go.Scatter(
-            x=x_dates + x_dates[::-1], mode='lines',
-            y=list(pct[hi_p]) + list(pct[lo_p][::-1]),
-            fill='toself', fillcolor=f'rgba(214,39,40,{alpha})', line=dict(width=0),
-            name=label, hoverinfo='skip'))
-    # US context: actual frontier plus its mid-rate climb, thin and dotted — the
-    # point is that the target bar is already behind the US, not a race to it.
-    figt.add_trace(go.Scatter(
-        x=[d for d, s, n in us_fr], y=[s for d, s, n in us_fr],
-        mode='lines+markers', line=dict(color='#1F77B4', width=1.2),
-        marker=dict(size=4, color='#1F77B4', line=dict(color='white', width=0.5)),
-        text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in us_fr],
-        hoverinfo='text', name='US (actual)'))
-    figt.add_trace(go.Scatter(
-        x=[us_best[0]] + [d for d in x_dates if d > us_best[0]],
-        y=[us_best[1] + us_eci_smid * (d - us_best[0]).days / 365.25
-           for d in [us_best[0]] + [d for d in x_dates if d > us_best[0]]],
-        mode='lines',
-        line=dict(color='#1F77B4', width=1.2, dash='dot'),
-        name='US (projected)', hoverinfo='skip'))
-    figt.add_trace(go.Scatter(
-        x=[d for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
-        mode='lines+markers', line=dict(color='#D62728', width=1.8),
-        marker=dict(size=6, color='#D62728', line=dict(color='white', width=0.5)),
-        text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in cn_fr],
-        hoverinfo='text', name='China (actual)'))
-    figt.add_trace(go.Scatter(
-        x=x_dates, y=list(pct[50]), mode='lines',
-        line=dict(color='#D62728', width=2.5, dash='dash'),
-        name='China (compute + algo)',
-        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra></extra>'))
-    figt.add_trace(go.Scatter(
-        x=[d50], y=[target], mode='markers',
-        marker=dict(size=11, color='#7F1010', symbol='diamond',
-                    line=dict(color='white', width=1)),
-        name=f'Median crossing ({d50:%b %Y})',
-        hovertemplate=f'Median crossing<br>{d50:%b %Y}'
-                      '<extra></extra>'))
-    figt.update_layout(
-        height=440, plot_bgcolor='white', paper_bgcolor='white',
-        margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
-        # Bottom-right, unlike the other charts here: both frontiers climb
-        # left-to-right, so the usual top-left corner is where the target line and
-        # its label live. Under the China line is the one reliably empty corner.
-        legend=dict(font=dict(size=11, color='#222'), x=0.99, y=0.02,
-                    xanchor='right', yanchor='bottom',
-                    bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
-                    borderwidth=1),
-        xaxis=dict(gridcolor='rgba(0,0,0,0.12)',
-                   range=[_CC_X_START, horizon],
-                   tickfont=dict(color='#222'), title_font=dict(color='#222')),
-        yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
-                   tickfont=dict(color='#222'), title_font=dict(color='#222')))
-    st.plotly_chart(figt, width="stretch")
-
-    # Cumulative odds by quarter — the same distribution read as "have they done it
-    # yet?". Quarterly, not annual: the whole band lands inside ~a year, so
-    # year-ends would round to 0/100 and say nothing.
-    cross_ord = np.array([_date_at(y).toordinal() for y in yr_ok], dtype=float)
-    q_cuts = _cc_quarter_ends(today, max(d90 + timedelta(days=95),
-                                         today + timedelta(days=370)))
-    pmd = ["| Crossed by | Probability |", "|---|---|"]
-    for qd in q_cuts:
-        p = (cross_ord <= float(qd.toordinal())).mean() * 100
-        pmd.append(f"| End {qd.year} Q{(qd.month - 1) // 3 + 1} | **{p:.0f}%** |")
-    st.markdown("\n".join(pmd))
-
-    _fn_caption(
-        f"China's frontier sits at <b>ECI {anchor_eci:.0f}</b> "
-        f"({pretty(anchor_name)}, {anchor_d:%b %Y}), "
-        f"<b>{target - anchor_eci:.1f} points</b> short, closing at a median "
-        f"<b>~{rate_med:.0f} ECI/yr</b> \u2014 of which compute is the small "
-        "term. This assumes model access stays open: the algorithmic part "
-        "includes distillation from US models, fading as the gap closes.",
-        ("closing at a median", f"{algo_note}, plus "
-                                f"~{a_partial * 0.5 * (g_lo + g_hi):.1f} ECI/yr "
-                                f"from compute ({a_partial:.0f} pts per "
-                                f"\u00d710 \u00d7 China's {10 ** g_lo:.1f}"
-                                f"\u2013{10 ** g_hi:.1f}\u00d7/yr capacity "
-                                f"growth), {obs_note}. Each path also "
-                                f"carries a \u00b1{_cc_frontier_level_sd(cn_fr):.1f} "
-                                "ECI level offset: China's frontier moves in "
-                                "release-sized steps around its trend, which "
-                                "a rate spread alone does not cover. Backtested "
-                                "on China's 2025\u201326 releases, about 80% "
-                                "of their dates fall inside the 80% range."),
-        ("compute is the small term", "Even doubling China's compute growth "
-                                      f"(+{g_hi:.2f} OOM/yr) adds only "
-                                      f"~{a_partial * g_hi:.1f} ECI/yr against "
-                                      f"~{a_mid:.0f} algorithmic \u2014 moving "
-                                      "the date by weeks."),
-        ("fading as the gap closes", "The algorithmic term falls toward the "
-                                     "no-external-distillation "
-                                     f"{inno_lo:.0f}\u2013{inno_hi:.0f} ECI/yr "
-                                     "(the solid line above) as China nears the "
-                                     "moving US frontier "
-                                     f"({(y50 - float(np.nanmedian(years_const))) * 52.18:+.0f}"
-                                     " weeks vs constant-rate)."))
-    _fn_caption(
-        f"ECI {target:.0f} is a <i>fixed</i> bar \u2014 the US frontier as of "
-        f"{us_hit_txt} \u2014 so crossing it means matching where the US is "
-        "<b>now</b>, not parity. It is also a bar that can move under a "
-        "rescore.",
-        ("not parity", "Trajectories climb at a constant rate; only the release "
-                       "wait models the frontier's steps, and nothing here "
-                       "captures a paradigm shift, a chip shock, or a lab not "
-                       "shipping."),
-        ("move under a rescore", "Epoch recomputes ECI continuously, and this "
-                                 "target sits close to the frontier."))
 
 
 # ── Per-company buildout-vs-release timing ────────────────────────────────
@@ -17358,12 +17073,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                   "indigenous innovation "
                   + (f"({pure[0]:.0f}\u2013{pure[1]:.0f} ECI/yr)" if pure else
                      f"(floor {inno[0]:.0f}\u2013{inno[1]:.0f} ECI/yr)")
-                  + " plus its compute term. Same sim and pace band as the "
-                  "China tab's crossing section, which "
-                  f"lands earlier: its bar is lower ({_CC_CN_TARGET_ECI:.0f}), "
-                  "its clock starts at China's last release rather than at "
-                  "the pause, distillation never dries up there, and it adds "
-                  "a release-queue wait this panel omits."),
+                  + " plus its compute term."),
     ]
     _cf_tail = ""
     if d50_ca is not None:
