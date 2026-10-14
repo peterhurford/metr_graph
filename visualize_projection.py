@@ -16282,7 +16282,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                            if ravg is not None else None)
                     label += " (rate: all compute)"
                 shown = True
-        start, end = _fmt(r[0]), _fmt(r[1])
+        start, mid, end = _fmt(r[0]), _fmt(avg), _fmt(r[1])
         if k == 'distillation':
             # Two different reasons for a zero: the lever cut it, or China
             # caught the model it learns from.
@@ -16299,7 +16299,10 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                     start = tag
                 else:
                     end = tag
-        rows.append({"Source": label, c0: start, c1: _fmt(avg), c2: end})
+            # Cut by the pause, it closes nothing over the whole catch-up.
+            if start == "Stopped":
+                mid = "Stopped"
+        rows.append({"Source": label, c0: start, c1: mid, c2: end})
     r0 = sum(r[0] for r in rates.values())
     r1 = sum(r[1] for r in rates.values())
     rows.append({"Source": "Total", c0: _fmt(r0), c1: _fmt(ravg),

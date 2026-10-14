@@ -1688,7 +1688,8 @@ class TestPacingTab:
         at.checkbox(key="pc_stop_dist").check().run()
         cut = next(t.value for t in at.table if "Source" in t.value.columns)
         cut = cut[cut["Source"].str.startswith("Distillation")].iloc[0]
-        assert cut["ECI/yr at pause"] == cut["ECI/yr at crossing"] == "Stopped"
+        assert (cut["ECI/yr at pause"] == cut["Average ECI/yr"]
+                == cut["ECI/yr at crossing"] == "Stopped")
         at.checkbox(key="pc_stop_dist").uncheck().run()
         months = why[why["Source"].str.startswith("Time")].iloc[0]
         m = [float(months[c].split()[0]) for c in
@@ -1886,7 +1887,8 @@ class TestPacingTab:
                             if r["Source"].startswith(sub) or
                             (len(sub) > 6 and sub in r["Source"])), None)
                 if key and r["Average ECI/yr"] != "\u2014":
-                    out[key] = float(r["Average ECI/yr"])
+                    v = r["Average ECI/yr"]
+                    out[key] = 0.0 if v == "Stopped" else float(v)
             return out
 
         base = _rows(self._paired(at))
