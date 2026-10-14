@@ -143,14 +143,14 @@ Unit tests cover accounting, snapshots, fast feedback, calibration, ordering, ce
 convergence, and RNG isolation. AppTests cover the layout, calibration, matched hours,
 URL sharing, stale imports, and exact inheritance from RSI.
 
-The tab reads as a story, top to bottom: the warning, the loop the model simulates
-(`_TK_LOOP_HTML`) and its three brakes, the headline cards (coding automation, RSI,
-ultraintelligence, each with 80%/90% CIs) and the two gaps between them, the RSI evidence row, then **1. Research speeds
+The tab reads as a story, top to bottom: the warning, *The takeoff model* (the loop
+`_TK_LOOP_HTML`, its three brakes, the headline cards for coding automation, RSI and
+ultraintelligence with 80%/90% CIs, and the two gaps between them), *The evidence* (the
+former RSI tab), then *Inside the takeoff model*: the evidence row, **1. Research speeds
 up** (`_tk_pace_fig` plus the factor chart), **2. People step out of the loop**
 (`_tk_humans_fig`), **3. What it does to capability (ECI)** and **4. When it happens, and
 how fast** (`_tk_dist_fig`: density and cumulative share of the RSI and ultraintelligence
-dates and the gap between them), closing on one short
-*About this model* expander. `test_default_render_and_stable_rerun` pins the order.
+dates and the gap between them). `test_default_render_and_stable_rerun` pins the order.
 
 Four defaults are read off RSI data at import (`TestTakeoffRsiCalibration`), each
 keeping the model's stage pattern and rescaling it. Today's human share per stage matches
@@ -174,7 +174,8 @@ onsets. Forward activity and mechanistic effort are alternative estimates, blend
 fading weight, not multiplied. Current activity normalization only affects the displayed
 2025-baseline fan, not today's already-assisted productivity. `_tk_simulate` still returns
 2025-unit quantiles of pace, the reference's own pace and cumulative deliveries.
-`tk_pace_today` (default 1.7×) sets today's
+`tk_pace_today` (default `_tk_pace_today_default()`: OpenAI's experiment trend carried to
+today) sets today's
 pace directly; each draw keeps its activity spread around it. Rebase each draw before taking quantiles; never multiply quantile bands.
 The simulator records ongoing production separately from delivery-window rates, which
 remain available for internal diagnostics and the validated milestone definitions.
@@ -1232,7 +1233,8 @@ over the quarters from 2025 on, with `_rsi_code_dt_ci()` and
 labelled months, odds-doubling over `_rsi_auto_dt_ci()`, position over the
 figure's own 90% interval on the latest month; AL5: that same draw shifted by a
 lag drawn over [censored ladder, `_RSI_AL5_TAU_HI_MULT`x it]; next-step: single OLS in
-logit space, odds-doubling over `_rsi_dir_dt_ci()`, position
+logit space, odds-doubling over `_rsi_dir_dt_ci()` (widened to span every frontier
+step's rate), position around the measured score
 ± `_RSI_DIR_POS_CI` points (the study's own binomial SE at n=`_RSI_DIR_N`) — rather
 than fitting its own, so the tabs can't quote different dates for the same milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
 `test_rli_eta_reproduces_the_rli_tab_defaults` and

@@ -6037,10 +6037,19 @@ def _rsi_dir_fit(frontier):
 
 
 def _rsi_dir_dt_ci(frontier, fit_dt):
-    """Default 80% CI on the odds-doubling time, in days."""
-    return _dt_ci_t_widened(
+    """Default 80% CI on the odds-doubling time, in days: the t-widened
+    [DT/2, DT*2], widened again to span every frontier step's own rate (the
+    2025 steps ran three times slower than the fit)."""
+    lo, hi = _dt_ci_t_widened(
         [(r['date'] - frontier[0]['date']).days for r in frontier],
         _logit(np.array([r['better'] for r in frontier]) / 100), fit_dt)
+    for a, b in zip(frontier, frontier[1:]):
+        d = (b['date'] - a['date']).days
+        gain = _logit(b['better'] / 100) - _logit(a['better'] / 100)
+        if d > 0 and gain > 0:
+            step = np.log(2) * d / gain
+            lo, hi = min(lo, step), max(hi, step)
+    return float(round(max(5.0, lo))), float(round(hi))
 
 
 def _rsi_code_fit(rows):
@@ -7081,7 +7090,7 @@ def _render_rsi_direction(end_year):
         n = N_SAMPLES
         proj_slope = np.log(2) / np.maximum(
             _lognormal_from_ci(*_rsi_dir_dt_ci(frontier, round(fit_dt)), n=n), 1.0)
-        fitted = intercept + slope * (cur['date'] - base).days
+        fitted = _logit(cur['better'] / 100)    # the measured score, as the card
         sigma = (_logit((cur['better'] + _RSI_DIR_POS_CI) / 100)
                  - _logit((cur['better'] - _RSI_DIR_POS_CI) / 100)) / (2 * 1.282)
         start_logit = np.random.normal(fitted, max(float(sigma), 0), n)
@@ -16081,10 +16090,10 @@ def _pc_nextstep_eta(frontier, target_pct=_RSI_DIR_TARGET, n=None,
     dt_lo, dt_hi = _rsi_dir_dt_ci(frontier, round(np.log(2) / slope))
     proj_slope = np.log(2) / np.maximum(_lognormal_from_ci(dt_lo, dt_hi, n), 1.0)
     cur = frontier[-1]
-    fitted = intercept + slope * (cur['date'] - base).days
     sigma = (_logit((cur['better'] + _RSI_DIR_POS_CI) / 100)
              - _logit((cur['better'] - _RSI_DIR_POS_CI) / 100)) / (2 * 1.282)
-    start = np.random.normal(fitted, max(float(sigma), 0), n)
+    # From the measured score, as CoBench's card does.
+    start = np.random.normal(_logit(cur['better'] / 100), max(float(sigma), 0), n)
     days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
     return _pc_eta_out(cur['date'], days_to, samples)
 
@@ -17664,6 +17673,22 @@ _TK_DEFAULTS["tk_taste_slope"] = _tk_nextstep_taste(
 _TK_DEFAULTS["tk_coding_slope"] = _tk_survey_coding(
     load_rsi_survey(), load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
     _TK_DEFAULTS["tk_transfer"] / 100)
+
+
+def _tk_pace_today_default(today=None):
+    """Today's research pace in 2025 units: OpenAI's experiments per
+    experimenter, its fitted trend carried from the last reading to today
+    (the median of the same draws the RSI experiment fan uses)."""
+    rows = load_rsi_experiments()
+    draws = _rsi_experiment_draws(rows, n=N_SAMPLES)
+    if draws is None:
+        return 1.7
+    starts, slopes = draws
+    today = (today or datetime.now()).replace(hour=0, minute=0, second=0, microsecond=0)
+    return round(float(np.median(np.exp(starts + slopes * (today - rows[-1]["date"]).days))), 1)
+
+
+_TK_DEFAULTS["tk_pace_today"] = _tk_pace_today_default()
 _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
 
 
@@ -17737,7 +17762,7 @@ def _tk_dates(result, today):
             for y in result["workflow_progress"]["years"]]
 
 
-def _tk_pace_fig(result, today, markers=(), history=None):
+def _tk_pace_fig(result, today, markers=(), history=None, today_note="OpenAI trend"):
     """Research pace in multiples of 2025, actual vs AI frozen at today.
 
     `markers` is [(label, date)] drawn as dotted verticals: the milestones'
@@ -17764,7 +17789,7 @@ def _tk_pace_fig(result, today, markers=(), history=None):
                           "<extra>Reconstructed</extra>"))
         fig.add_vline(x=today, line_color="#555", line_width=1.5)
         fig.add_annotation(x=today, y=0.5, yref="paper", showarrow=False,
-                           text=f"Today: {hq[-1, 1]:.1f}\u00d7 (assumed)",
+                           text=f"Today: {hq[-1, 1]:.1f}\u00d7 ({today_note})",
                            xanchor="right", textangle=-90,
                            font=dict(size=11, color="#555"))
     for key, name, color, dash in (
@@ -18369,9 +18394,10 @@ def render_takeoff():
                    "gives the rate. 100 keeps today's growth.")
             number("Research pace today (× 2025)", "pace_today", 0.5, 5.0, 0.1,
                    "Where chart 1 starts: how much faster useful research is today than "
-                   "in 2025. The default is an assumption, not a measurement. "
-                   "Scenarios keep their spread around it. This sets the chart's units "
-                   "and the 2×/5× dates, not the simulated dynamics or automation dates.")
+                   "in 2025. The default is OpenAI's experiments per experimenter, its "
+                   "fitted trend carried from the last reading to today; experiments "
+                   "are a proxy for research, not a measure of it. Scenarios keep their "
+                   "spread around it. Only chart 1's units move, no date.")
             st.markdown("**Feedback starting today**")
             number("Undeployed research today (months of baseline progress)",
                    "pipeline_months", 0.0, 12.0, 0.5,
@@ -18668,7 +18694,9 @@ def render_takeoff():
          "leave the top of the chart."))
     st.plotly_chart(_tf(_tk_to(_tk_pace_fig(
         result, today, markers,
-        history=_tk_pace_history(np.exp(experiment_starts) * pace_yield, today)), view_end)),
+        history=_tk_pace_history(np.exp(experiment_starts) * pace_yield, today),
+        today_note="OpenAI trend" if abs(pace_today - _TK_DEFAULTS["tk_pace_today"]) < 0.05
+        else "set"), view_end)),
         width="stretch")
     st.markdown("**What moves the pace**")
     _fn_caption(
@@ -18718,21 +18746,6 @@ def render_takeoff():
          "denominator."))
     st.plotly_chart(_tf(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_end,
                                      end_date)), width="stretch")
-    with st.expander("About this model"):
-        st.markdown(
-            "- **Coding automation** is the automated coder projection above.\n"
-            "- **RSI** is research direction handed to AI: at most "
-            f"{params['full_human']:g}% of its baseline human hours, after coding "
-            "automation.\n"
-            f"- **Ultraintelligence** is ECI {_TK_ULTRA_ECI:g}, read off each scenario's "
-            "capability path.\n"
-            "- Rates are fitted to the evidence series where there is one (top of the "
-            "page); compute growth comes from the Data Centers tab. Everything else is "
-            "an assumption, and the sidebar's top section holds the few that move the "
-            "dates.\n"
-            "- Inspired by the [AI Futures model](https://www.aifuturesmodel.com/) and "
-            "Forethought's work on software intelligence explosions; the parameters "
-            "and output are this app's own.")
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────

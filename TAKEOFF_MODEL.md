@@ -98,7 +98,8 @@ They start from today's already-assisted rate and can fall if difficulty outpace
 No minimum of 1× is imposed.
 
 The reporting anchor is a set research pace today relative to 2025 (`tk_pace_today`,
-default 1.7×, an assumption). Each draw keeps its RSI activity
+by default OpenAI's experiments per experimenter, its fitted trend carried from the last
+reading to today, about 2×; experiments are a proxy for research). Each draw keeps its RSI activity
 multiple's spread around that median. It is a stated normalization, not measured discovery
 growth. It rescales each draw before computing percentiles and does not multiply existing
 assistance into dynamics a second time, so it moves the 2×/5× crossings but no milestone.
