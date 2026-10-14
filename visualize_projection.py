@@ -16174,13 +16174,13 @@ _PC_METR_CAP_HRS = 10 * 2000
 
 # Display names for the four rate terms, in _CC_CHANNELS order.
 _PC_CHANNEL_LABELS = {
-    'compute': "Compute — China's own cluster buildout",
-    'compute_domestic': "Compute — domestic clusters",
-    'compute_abroad': "Compute — remote access to clusters abroad",
-    'innovation': "Indigenous innovation — never dries up",
-    'diffusion': "Diffusion — published US methods, drying up after "
-                 "the pause",
-    'distillation': "Distillation — training against US model outputs",
+    'compute': "Compute",
+    'compute_domestic': "Compute, domestic clusters",
+    'compute_abroad': "Compute, clusters abroad",
+    'innovation': "Innovation, China's own (never stops)",
+    'diffusion': "Diffusion, published US methods (stops ~1 yr after pause)",
+    'distillation': "Distillation, learning from US models (stops near the "
+                    "teacher)",
 }
 
 
@@ -16256,9 +16256,18 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     rates = {}
     if t_pause is not None:
         t_cross = np.where(ok, np.maximum(years - cn_extra - 1e-6, 0.0), np.nan)
-        for k, arr in cum.items():
-            rates[k] = (float(np.nanmedian(_pc_rate_at(arr, grid0, t_pause))),
-                        float(np.nanmedian(_pc_rate_at(arr, grid0, t_cross))))
+        for k in _CC_CHANNELS:
+            rates[k] = tuple(float(np.nanmedian(_pc_rate_at(chan[k], grid0, t)))
+                             for t in (t_pause, t_cross))
+        # The compute split is a domestic-only counterfactual, whose own
+        # stepwise rate swaps between rows; each row instead takes the
+        # compute term's rate in proportion to what it closed.
+        if 'compute_domestic' in cum:
+            rc = rates.pop('compute')
+            both = contrib['compute_domestic'] + contrib['compute_abroad']
+            for k in ('compute_domestic', 'compute_abroad'):
+                f = contrib[k] / both if both > 0 else 0.5
+                rates[k] = (rc[0] * f, rc[1] * f)
     if cn_run_mo != us_run_mo:
         contrib['run'] = cn_gain
     total_eci = sum(contrib.values())
@@ -16271,70 +16280,54 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
             label = _PC_CHANNEL_LABELS[k]
             d = _delta(_pc_cross_years(traj0 - cum[k], grid0, target0)
                        + cn_extra)
-        row = {"Channel": label}
+        row = {"Source": label}
         if rates:
-            r0, r1 = rates.get(k, (None, None))
-            row["ECI/yr at pause"] = "—" if r0 is None else f"{r0:.1f}"
-            row["ECI/yr at crossing"] = "—" if r1 is None else f"{r1:.1f}"
+            r = rates.get(k)
+            row["ECI/yr, pause \u2192 crossing"] = (
+                "\u2014" if r is None else f"{r[0]:.1f} \u2192 {r[1]:.1f}")
         row.update({
             "ECI closed": f"{eci:+.1f}",
-            "Share": f"{eci / total_eci:.0%}" if total_eci else "—",
             "Without it": (f"not by {horizon_year}" if d is None else
                            f"{d:+.1f} mo"),
         })
         rows.append(row)
-    total = {"Channel": f"**Total** — the whole gap, closed over "
-                        f"**{total_mo:.1f} months** from "
-                        f"{pretty(anchor_name)} ({anchor_d:%b %Y}, ECI "
-                        f"{anchor_eci:.0f})"}
+    total = {"Source": "**Total**"}
     if rates:
-        total["ECI/yr at pause"] = f"{sum(r[0] for r in rates.values()):.1f}"
-        total["ECI/yr at crossing"] = f"{sum(r[1] for r in rates.values()):.1f}"
-    total.update({"ECI closed": f"{total_eci:+.1f}", "Share": "100%",
-                  "Without it": "—"})
+        r0 = sum(r[0] for r in rates.values())
+        r1 = sum(r[1] for r in rates.values())
+        total["ECI/yr, pause \u2192 crossing"] = f"**{r0:.1f} \u2192 {r1:.1f}**"
+    total.update({"ECI closed": f"**{total_eci:+.1f}**", "Without it": ""})
     rows.append(total)
     st.markdown("##### Why that long?")
     if rates:
         at_pause = _pc_at_years(traj0, grid0, t_pause)
         cn_at = float(np.nanmedian(at_pause))
         gap = float(np.nanmedian(np.asarray(target0) - at_pause))
-        r0 = sum(r[0] for r in rates.values())
-        r1 = sum(r[1] for r in rates.values())
         _fn_line(
-            f"When the US pauses ({pause_label}), China is at about "
-            f"**ECI {cn_at:.0f}**, so **{gap:.1f} ECI** is left to close. It "
-            f"climbs at **{r0:.1f} ECI/yr** then, slowing to **{r1:.1f}** by "
-            "the crossing as distillation and diffusion dry up"
-            + (f": about **{surpass_mo:.0f}** months on the card."
+            f"At the pause ({pause_label}) China is at ~{cn_at:.0f}: "
+            f"**{gap:.0f} ECI to close**. It starts at **{r0:.0f} ECI/yr** "
+            f"but ends at **{r1:.0f}** as distillation and diffusion run out"
+            + (f", so it takes ~**{surpass_mo:.0f}** months."
                if surpass_mo is not None else "."),
-            ("dry up", "Diffusion fades over the year after the pause, as "
-                       "China absorbs what the US had published. "
-                       "Distillation fades as China nears the best model it "
-                       "can learn from, which with models withheld sits "
-                       "below the bar. Innovation and compute keep going."),
-            *([("months on the card", "Roughly the gap over the average "
-                                      "of that slowing rate; the card also "
-                                      "nets out the one-month release lag, "
-                                      "and is a median over paths.")]
+            ("run out", "Diffusion fades over the year after the pause. "
+                        "Distillation fades as China nears the best model "
+                        "it can learn from, which with models withheld sits "
+                        "below the bar."),
+            *([("months", "Roughly the gap over the average rate; the card "
+                          "nets out the one-month release lag and is a "
+                          "median over paths.")]
               if surpass_mo is not None else []))
     st.table(rows)
     _fn_caption(
-        f"The {total_mo:.1f} months run from China's last frontier model, not "
-        "from the pause start. <b>ECI closed</b> and "
-        "<b>Without it</b> answer different questions."
-        + ("".join(" " + n for n in notes) if notes else ""),
-        ("ECI closed", "Each term's cumulative contribution at its own sample's "
-                       "crossing. The terms sum to the gap by construction, "
-                       "which is why the shares are exact. Same samples as the "
-                       "chart, so this is a decomposition rather than a second "
-                       "model."),
-        ("Without it", "Re-crosses the same paths with that term removed "
-                       "\u2014 the number a policy question asks. It does not "
-                       "add up: kill compute and the gap stays wider, so "
-                       "distillation keeps running at full strength longer and "
-                       "the shortfalls partly cover for each other. Median over "
-                       "samples, so a row's two columns need not agree in "
-                       "rank."))
+        "<b>ECI closed</b> sums to the gap; <b>Without it</b> is the delay "
+        "if that source alone were removed. "
+        f"Measured from {pretty(anchor_name)} ({anchor_d:%b %Y}), "
+        f"{total_mo:.1f} months to the crossing"
+        + (", under these settings." if notes else "."),
+        ("Without it", "Re-crosses the same paths with that source removed. "
+                       "Rows don't add up: remove compute and the gap stays "
+                       "wider, so distillation runs longer."),
+        *([("these settings", " ".join(notes))] if notes else []))
 
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,

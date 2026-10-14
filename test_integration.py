@@ -1645,16 +1645,20 @@ class TestPacingTab:
         crossing, distillation and diffusion drying up, innovation not."""
         at = self._app()
         lead = [str(m.value) for m in at.markdown
-                if "When the US pauses" in str(m.value)]
-        assert len(lead) == 1 and "left to close" in lead[0]
-        why = next(t.value for t in at.table if "Channel" in t.value.columns)
-        assert {"ECI/yr at pause", "ECI/yr at crossing"} <= set(why.columns)
-        rate = {str(r["Channel"]).split(" ")[0]: (float(r["ECI/yr at pause"]),
-                                                  float(r["ECI/yr at crossing"]))
-                for _, r in why.iterrows() if r["ECI/yr at pause"] != "—"}
+                if "At the pause" in str(m.value)]
+        assert len(lead) == 1 and "ECI to close" in lead[0]
+        why = next(t.value for t in at.table if "Source" in t.value.columns)
+        col = "ECI/yr, pause \u2192 crossing"
+        assert col in why.columns
+        rate = {}
+        for _, r in why.iterrows():
+            src = str(r["Source"]).split(",")[0]
+            if "\u2192" in str(r[col]) and "Total" not in src:
+                a, b = str(r[col]).split(" \u2192 ")
+                rate[src] = (float(a), float(b))
         assert rate["Distillation"][1] < rate["Distillation"][0]
         assert rate["Diffusion"][1] < rate["Diffusion"][0]
-        assert rate["Indigenous"][1] == pytest.approx(rate["Indigenous"][0],
+        assert rate["Innovation"][1] == pytest.approx(rate["Innovation"][0],
                                                       abs=0.2)
 
     @staticmethod
@@ -1834,17 +1838,17 @@ class TestPacingTab:
         at = self._app()
 
         _KEYS = {"domestic": "domestic", "abroad": "abroad",
-                 "innovation": "Indigenous", "diffusion": "Diffusion",
+                 "innovation": "Innovation", "diffusion": "Diffusion",
                  "distillation": "Distillation", "run": "Longer training",
                  "total": "Total"}
 
         def _rows(at):
-            t = next(x.value for x in at.table if "Channel" in x.value.columns)
+            t = next(x.value for x in at.table if "Source" in x.value.columns)
             out = {}
             for _, r in t.iterrows():
                 key = next((k for k, sub in _KEYS.items()
-                            if sub in r["Channel"]), r["Channel"])
-                out[key] = (float(r["ECI closed"]), r["Share"],
+                            if sub in r["Source"]), r["Source"])
+                out[key] = (float(str(r["ECI closed"]).strip("*")), None,
                             r["Without it"])
             return out
 
