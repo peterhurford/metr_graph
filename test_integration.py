@@ -1655,7 +1655,7 @@ class TestPacingTab:
             src = str(r["Source"]).split(",")[0]
             if "\u2192" in str(r[col]) and "Total" not in src:
                 a, b = str(r[col]).split(" \u2192 ")
-                rate[src] = (float(a), float(b))
+                rate[src] = (float(a), float(b.split()[0]))
         assert rate["Distillation"][1] < rate["Distillation"][0]
         assert rate["Diffusion"][1] < rate["Diffusion"][0]
         assert rate["Innovation"][1] == pytest.approx(rate["Innovation"][0],

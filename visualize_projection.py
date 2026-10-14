@@ -16259,18 +16259,14 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         for k in _CC_CHANNELS:
             rates[k] = tuple(float(np.nanmedian(_pc_rate_at(chan[k], grid0, t)))
                              for t in (t_pause, t_cross))
-        # The compute split is a domestic-only counterfactual, whose own
-        # stepwise rate swaps between rows; each row instead takes the
-        # compute term's rate in proportion to what it closed.
-        if 'compute_domestic' in cum:
-            rc = rates.pop('compute')
-            both = contrib['compute_domestic'] + contrib['compute_abroad']
-            for k in ('compute_domestic', 'compute_abroad'):
-                f = contrib[k] / both if both > 0 else 0.5
-                rates[k] = (rc[0] * f, rc[1] * f)
+        # The compute split is a domestic-only counterfactual with no rate
+        # of its own, so the measured compute rate is shown once, on the
+        # first compute row.
+        split_rate = rates.pop('compute') if 'compute_domestic' in cum else None
     if cn_run_mo != us_run_mo:
         contrib['run'] = cn_gain
     total_eci = sum(contrib.values())
+    shown_split = False
     for k, eci in sorted(contrib.items(), key=lambda kv: -kv[1]):
         if k == 'run':
             label = (f"Longer training run — {cn_run_mo} mo instead of "
@@ -16283,8 +16279,13 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         row = {"Source": label}
         if rates:
             r = rates.get(k)
-            row["ECI/yr, pause \u2192 crossing"] = (
-                "\u2014" if r is None else f"{r[0]:.1f} \u2192 {r[1]:.1f}")
+            cell = "\u2014" if r is None else f"{r[0]:.1f} \u2192 {r[1]:.1f}"
+            if k in ('compute_domestic', 'compute_abroad') and split_rate:
+                cell = ("\u2014" if shown_split else
+                        f"{split_rate[0]:.1f} \u2192 {split_rate[1]:.1f} "
+                        "(both compute rows)")
+                shown_split = True
+            row["ECI/yr, pause \u2192 crossing"] = cell
         row.update({
             "ECI closed": f"{eci:+.1f}",
             "Without it": (f"not by {horizon_year}" if d is None else
@@ -16293,6 +16294,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         rows.append(row)
     total = {"Source": "**Total**"}
     if rates:
+        if split_rate:
+            rates['compute'] = split_rate
         r0 = sum(r[0] for r in rates.values())
         r1 = sum(r[1] for r in rates.values())
         total["ECI/yr, pause \u2192 crossing"] = f"**{r0:.1f} \u2192 {r1:.1f}**"
