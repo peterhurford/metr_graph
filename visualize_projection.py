@@ -16281,49 +16281,83 @@ def _pc_render_compute_ratios(ci, span):
     t_end = max((end - today).days / 365.25, t_x)
     ts = np.linspace(0.0, t_end, 80)
     dates = [today + timedelta(days=float(t) * 365.25) for t in ts]
-    fig = go.Figure()
+    t_cross_d = today + timedelta(days=t_x * 365.25)
+    levers = bool(ci.get('levers'))
 
-    def _ratio_line(name, color, ys, dash, legend):
+    def _marks(fig):
+        for x, txt in ((pause_d, "US pauses"), (t_cross_d, "China crosses")):
+            fig.add_vline(x=x, line=dict(color='#999999', width=1, dash='dot'))
+            fig.add_annotation(x=x, yref='paper', y=1.0, text=txt,
+                               showarrow=False, yanchor='bottom',
+                               font=dict(size=11, color='#555555'))
+
+    def _layout(fig, height=360):
+        fig.update_layout(
+            height=height, plot_bgcolor='white', paper_bgcolor='white',
+            margin=dict(l=70, r=20, t=28, b=10), font=dict(color='#222222'),
+            hovermode='x unified',
+            legend=dict(orientation='h', x=0, y=-0.12, yanchor='top',
+                        font=dict(size=12, color='#222')),
+            xaxis=dict(gridcolor='rgba(0,0,0,0.10)', tickfont=dict(color='#222'),
+                       range=[today, today + timedelta(days=t_end * 365.25)]))
+
+    def _line(fig, name, color, ys, dash='solid', ratio=None, unit=""):
+        cd = ([f"US {r:.1f}\u00d7 ahead" if r is not None else ""
+               for r in ratio] if ratio is not None else None)
         fig.add_trace(go.Scatter(
-            x=dates, y=ys, mode='lines', name=name, showlegend=legend,
-            line=dict(color=color, width=2.5 if dash == 'solid' else 1.5,
+            x=dates, y=ys, mode='lines', name=name, customdata=cd,
+            line=dict(color=color, width=3 if dash == 'solid' else 2,
                       dash=dash),
-            hovertemplate='%{x|%b %Y}: US %{y:.1f}\u00d7<extra>' + name
-                          + '</extra>'))
+            hovertemplate=('%{x|%b %Y}: %{y:.3s}' + unit
+                           + (' (%{customdata})' if cd is not None else '')
+                           + '<extra>' + name + '</extra>')))
 
-    # Domestic first, so the usable run draws on top where the two coincide
-    # (remote access cut).
+    # Chart 1: the largest run each side's clusters could train, in log OP.
+    fig1 = go.Figure()
+    us_y = [10 ** _us(t) for t in ts]
+    _line(fig1, "US (frozen at the pause)", '#1F77B4', us_y)
+    short = {series[0][0]: "China, largest run it can use",
+             series[1][0]: "China, domestic clusters only"}
     for name, color, cur, base in series[::-1]:
-        ys = [10 ** (_us(t) - _path(*cur, t)) if _path(*cur, t) is not None
-              else None for t in ts]
-        _ratio_line(name, color, ys, 'solid', True)
-        if ci.get('levers'):
-            yb = [10 ** (_us(t) - _path(*base, t)) if _path(*base, t)
-                  is not None else None for t in ts]
-            _ratio_line(name + ", no compute levers", color, yb, 'dash', False)
-    tot = _pc_wc_ratio(ts, ci.get('dom_keep', 1.0))
-    _ratio_line("Total installed compute", '#1F77B4', list(tot), 'solid', True)
-    if ci.get('levers') and ci.get('dom_keep', 1.0) < 1.0:
-        _ratio_line("Total installed compute, no compute levers", '#1F77B4',
-                    list(_pc_wc_ratio(ts)), 'dash', False)
-    for x, txt in ((pause_d, "US pauses"),
-                   (today + timedelta(days=t_x * 365.25), "China crosses")):
-        fig.add_vline(x=x, line=dict(color='#999999', width=1, dash='dot'))
-        fig.add_annotation(x=x, yref='paper', y=1.0, text=txt, showarrow=False,
-                           yanchor='bottom', font=dict(size=10, color='#777777'))
-    fig.update_layout(
-        height=340, plot_bgcolor='white', paper_bgcolor='white',
-        margin=dict(l=60, r=20, t=24, b=40), font=dict(color='#222222'),
-        legend=dict(orientation='h', y=-0.18, font=dict(size=11, color='#222')),
-        xaxis=dict(gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
-                   range=[today, today + timedelta(days=t_end * 365.25)]),
-        yaxis=dict(type='log', title_text="US \u00f7 China (\u00d7)",
-                   tickvals=[0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100],
-                   ticktext=["0.1\u00d7", "0.2\u00d7", "0.5\u00d7", "1\u00d7",
-                             "2\u00d7", "5\u00d7", "10\u00d7", "20\u00d7",
-                             "50\u00d7", "100\u00d7"],
-                   gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
-                   title_font=dict(color='#222')))
+        lv = [_path(*cur, t) for t in ts]
+        _line(fig1, short[name], color,
+              [10 ** v if v is not None else None for v in lv],
+              ratio=[10 ** (_us(t) - v) if v is not None else None
+                     for t, v in zip(ts, lv)])
+    if levers:
+        name, color, _cur, base = series[0]
+        lv = [_path(*base, t) for t in ts]
+        _line(fig1, short[name] + ", no compute levers", color,
+              [10 ** v if v is not None else None for v in lv], dash='dash',
+              ratio=[10 ** (_us(t) - v) if v is not None else None
+                     for t, v in zip(ts, lv)])
+    _marks(fig1)
+    _layout(fig1)
+    _cc_logop_yaxis(fig1, "Largest trainable run (log\u2081\u2080 OP)")
+
+    # Chart 2: total installed compute, indexed to China today.
+    lev = {lab: mid for lab, mid, _, _ in _WC_REGIONS}
+    gro = {lab: mid for lab, mid, _, _ in _WC_GROWTH}
+    us_l, cn_l = _WC_LABELS[0], _WC_LABELS[1]
+    keep = ci.get('dom_keep', 1.0)
+    us_tot = (lev[us_l] / lev[cn_l]) * gro[us_l] ** ts
+    cn_tot = gro[cn_l] ** (ts * keep)
+    fig2 = go.Figure()
+    _line(fig2, "US (keeps installing through the pause)", '#1F77B4',
+          list(us_tot), unit="\u00d7")
+    _line(fig2, "China", '#D62728', list(cn_tot), unit="\u00d7",
+          ratio=list(us_tot / cn_tot))
+    if levers and keep < 1.0:
+        cn_base = gro[cn_l] ** ts
+        _line(fig2, "China, no compute levers", '#D62728', list(cn_base),
+              dash='dash', unit="\u00d7", ratio=list(us_tot / cn_base))
+    _marks(fig2)
+    _layout(fig2, height=320)
+    fig2.update_yaxes(type='log', title_text="Installed compute (China today = 1)",
+                      tickvals=[1, 3, 10, 30, 100, 300, 1000],
+                      ticktext=["1", "3", "10", "30", "100", "300", "1,000"],
+                      gridcolor='rgba(0,0,0,0.10)', tickfont=dict(color='#222'),
+                      title_font=dict(color='#222'))
 
     def _cell(us_l, cn_l):
         if us_l is None or cn_l is None:
@@ -16346,17 +16380,25 @@ def _pc_render_compute_ratios(ci, span):
         trow["Same date, no compute levers"] = f"US {_pc_wc_ratio([t_x])[0]:.1f}\u00d7"
     rows.append(trow)
 
-    st.markdown("##### Compute capacity: US vs China's largest trainable run "
-                "and total compute")
-    st.plotly_chart(_tf(fig), use_container_width=True)
+    st.markdown("##### Compute: largest trainable run")
+    st.plotly_chart(_tf(fig1), use_container_width=True)
+    st.markdown("##### Compute: total installed")
+    st.plotly_chart(_tf(fig2), use_container_width=True)
+    st.markdown("**How far ahead the US is**")
     st.table(pandas.DataFrame(rows).style.hide(axis="index"))
     _fn_caption(
         "Largest run is capacity: what each side's clusters could train, "
         "sites abroad included, not runs actually done (the China tab's "
         "~50\u00d7 gap counts those). Total is installed compute by location; "
-        "the US keeps installing through the pause. Dashed lines: no compute "
-        "levers. "
+        "the US keeps installing through the pause. "
         f"Each 10\u00d7 of compute is worth ~{ci['a_partial']:.0f} ECI.",
+        ("sites abroad included", "China's usable run counts two Johor, "
+                                  "Malaysia campuses (DayOne Nusajaya, Bridge "
+                                  "MY06) whole, on press reports that "
+                                  "ByteDance and Alibaba train there. They "
+                                  "have other tenants, so this is an upper "
+                                  "bound; it also sets what the remote-access "
+                                  "lever is worth."),
         ("not runs actually done", "Those are Epoch's estimates of the "
                                    "largest runs each country has trained, "
                                    "a different quantity from what its "

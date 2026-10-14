@@ -1684,7 +1684,8 @@ class TestPacingTab:
         assert "Total installed compute" in list(tbl[""])
         names = [d.get("name", "") for el in at.get("plotly_chart")
                  for d in json.loads(el.proto.spec)["data"]]
-        assert "Total installed compute" in names
+        assert "US (keeps installing through the pause)" in names
+        assert "China, no compute levers" in names
 
     def test_why_states_the_gap_and_the_slowing_rate(self):
         """The breakdown says how much gap is left at the pause and how fast
@@ -2085,11 +2086,11 @@ class TestPacingTab:
             at.radio(key="pc_end_year").set_value(yr).run()
             _assert_no_error(at, f"Pausing / through {yr}")
             ends = _ends(at)
-            assert len(ends) == 3, ends
-            # The pause chart and the compute-ratio chart under it stop on
+            assert len(ends) == 4, ends
+            # The pause chart and the two compute charts under it stop on
             # the grid exactly; the threshold timeline pads a few months past.
-            assert ends[0] == yr and ends[1] == yr, ends
-            assert ends[2] in (yr, yr + 1), ends
+            assert ends[:3] == [yr] * 3, ends
+            assert ends[3] in (yr, yr + 1), ends
 
     def test_horizon_too_narrow_still_describes_the_pause(self):
         """A pause past the projection range has no crossing to report, so
@@ -2285,7 +2286,7 @@ class TestTodayForwardMode:
         return out
 
     # Tabs where every chart is a projection, so every chart goes forward.
-    _ALL_FORWARD = {"Pausing": 3}
+    _ALL_FORWARD = {"Pausing": 4}
 
     def _starts_today(self, spec):
         rng = spec["layout"].get("xaxis", {}).get("range")
