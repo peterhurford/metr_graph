@@ -21,6 +21,13 @@ SCRIPT = "visualize_projection.py"
 TIMEOUT = 30
 
 
+def _qp(at, key):
+    """A query param's values as a list: AppTest returned a list before
+    Streamlit 1.66 and returns a bare string from it."""
+    v = at.query_params[key]
+    return v if isinstance(v, list) else [v]
+
+
 def _fresh_app():
     """Create a fresh AppTest instance."""
     return AppTest.from_file(SCRIPT, default_timeout=TIMEOUT)
@@ -1146,7 +1153,7 @@ class TestTakeoffTab:
         _assert_no_error(at, "Takeoff / persistent human bottleneck")
         assert next(m.value for m in at.metric if m.label == rsi_label) == "Beyond horizon"
         assert not any(m.label == "ECI when RSI arrives" for m in at.metric)
-        assert at.query_params["tk_human_floor"] == ["6.0"]
+        assert _qp(at, "tk_human_floor") == ["6.0"]
         at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_human_floor").value == 0.0
 
@@ -1228,7 +1235,7 @@ class TestTakeoffTab:
         cards = [(m.label, m.value) for m in at.metric]
         at.number_input(key="tk_end_year").set_value(2035).run()
         _assert_no_error(at, "Takeoff / year end")
-        assert at.query_params["tk_end_year"] == ["2035"]
+        assert _qp(at, "tk_end_year") == ["2035"]
         # The year crops the charts; the cards come from scenarios run to 2040.
         assert [(m.label, m.value) for m in at.metric] == cards
         eci = json.loads(_tk_charts(at)[6].proto.spec)
@@ -1243,7 +1250,7 @@ class TestTakeoffTab:
         assert not _has_widget(at, "button", "tk_preset_Central")
         at.number_input(key="tk_transfer").set_value(20).run()
         _assert_no_error(at, "Takeoff / low transfer")
-        assert at.query_params["tk_transfer"] == ["20"]
+        assert _qp(at, "tk_transfer") == ["20"]
         fresh = _fresh_app()
         fresh.query_params.update(dict(at.query_params))
         fresh.run()

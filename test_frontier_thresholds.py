@@ -7,6 +7,13 @@ import frontier_thresholds as ft
 from streamlit.testing.v1 import AppTest
 
 
+def _qp(at, key):
+    """A query param's values as a list: AppTest returned a list before
+    Streamlit 1.66 and returns a bare string from it."""
+    v = at.query_params[key]
+    return v if isinstance(v, list) else [v]
+
+
 def test_timeline_dates_and_distinctions():
     events = ft.load_events()
     assert len(events) == len({e['id'] for e in events}) == 55
@@ -54,7 +61,7 @@ def test_tab_filters_url_reset_and_empty_state():
     assert 'ft_search' not in at.query_params
     at.selectbox(key='ft_status').set_value('Precaution').run()
     assert not at.exception
-    assert at.query_params['ft_status'] == ['Precaution']
+    assert _qp(at, 'ft_status') == ['Precaution']
     assert set(at.dataframe[-1].value['Event type']) == {'Precaution'}
     at.radio(key='_active_tab').set_value('Revenue').run()
     assert not at.exception
@@ -92,7 +99,7 @@ def test_category_switches_and_collapsed_details():
         at.radio(key='ft_category').set_value(category).run()
         assert not at.exception
         assert len(at.get('plotly_chart')) == count
-        assert at.query_params['ft_category'] == [category]
+        assert _qp(at, 'ft_category') == [category]
 
 
 def test_added_context_is_visible_without_crowding_chart_labels():
