@@ -123,8 +123,8 @@ Under the three headline cards, a row gives coding → RSI and RSI → ultrainte
 (`_tk_gap`, the FOOM readout) with 80%/90% intervals, over draws reaching the first by the
 horizon, a second past it counting as longer. Beside them, *Progress in RSI's first year*
 (`takeoff.progress_years`) is Forethought's readout: capability gained in the year after RSI
-over today's ECI-trend rate (`_tk_eci_scale`'s base rate, ~7.8×/yr effective compute), +inf
-for a runaway inside the window. Forethought counts ~10×/yr, holds compute fixed and starts
+in years of 2025-level ECI progress, the yearly chart's unit (`_tk_year_gain`, ~5.8×/yr
+effective compute through the ECI mapping), +inf for a runaway inside the window. Forethought counts ~10×/yr, holds compute fixed and starts
 at full automation, so its hover says to compare loosely. The loop, brakes and these six cards lead
 the tab, above the evidence: they render into a `st.container()` slot made before
 `render_rsi`, since they need its settings first.

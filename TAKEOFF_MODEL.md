@@ -160,13 +160,15 @@ by the end of 2031 get to ultraintelligence within 6 months and 22% within a yea
 difficulty (b < 1), against the AI Futures Model's 38% and Forethought's ~60% chance that
 progress accelerates.
 
-Forethought's own measure, years of today's-pace progress made in the year after RSI, has a
-median of 1.5 (80%: 0.9 to 3.4); about 13% of scenarios make 3 years or more and 2% make 10,
-against Forethought's 57% and 18%. The yardsticks differ: here a year is today's ECI trend
-(about 7.8x a year of effective compute, compute growth included); Forethought counts about
-10x, holds compute fixed and starts at full automation of AI R&D. Two features account for most of
-the gap: with labor and compute as substitutes (rho 0.5, no spread) and every gain delivered
-on a one-week cycle instead of waiting for a training run, 50% make 3 years and 30% make 10;
+Forethought's own measure, years of progress made in the year after RSI, is counted in
+2025-level ECI progress: the 13.5 points the US frontier gained over 2025, about 5.8x a year
+of effective compute here. Its median is 1.8 (80%: 1.1 to 4.0); 17% of scenarios make 3
+years or more and 3% make 10, against Forethought's 57% and 18%. The yardsticks differ:
+Forethought counts about 10x a year of effective compute as a year, holds compute fixed and
+starts at full automation of AI R&D. Two features account for most of the gap. Measured
+against the 2024-26 trend (7.8x a year, where defaults give 13% and 2%): with labor and
+compute as substitutes (rho 0.5, no spread) and every gain delivered on a one-week cycle
+instead of waiting for a training run, 50% make 3 years and 30% make 10;
 r at Forethought's 2025 central 1.2 then gives 57% and 37%. Either alone gives 23% or 27%;
 AI speed (100x) and keeping compute growth after 2030 move nothing.
 

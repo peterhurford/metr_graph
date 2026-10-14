@@ -18972,19 +18972,24 @@ def _render_takeoff(loading):
                   f"ECI reaching {_TK_ULTRA_ECI:g}. A model that reaches ECI "
                   f"{_TK_ULTRA_ECI:g} counts as having automated coding, so RSI never waits on "
                   "a later coding date from the automated coder projection.")
-        burst = takeoff.progress_years(result, eci_base)
+        # In years of 2025-level ECI progress, the yearly chart's unit: 2025's
+        # own gain, as a rate of log effective compute through the ECI mapping.
+        unit_pts = _tk_year_gain(eci["frontier"], _TK_YEARLY_BASE_YEAR) or eci["ppy"]
+        year_rate = eci_base * unit_pts / eci["ppy"]
+        burst = takeoff.progress_years(result, year_rate)
         burst = burst[~np.isnan(burst)]
         if burst.size:
             def _yrs(v):
                 return "runaway" if not np.isfinite(v) else f"{v:.1f} yr"
             c.metric(
                 "Progress in RSI's first year", _yrs(takeoff.quantile(burst, 0.5)),
-                help="Forethought's measure of an intelligence explosion: years of progress "
-                     "at today's pace made in the year after RSI. Today's pace is the ECI "
-                     f"trend's: effective compute growing {np.exp(eci_base):.1f}\u00d7 a year "
-                     f"(software doubling every {params['software_months']:g} months, compute "
-                     f"{np.exp(eci_base - np.log(2) * 12 / params['software_months']):.1f}"
-                     f"\u00d7). {100 * np.mean(burst >= 3):.0f}% of scenarios make 3 "
+                help="Forethought's measure of an intelligence explosion: years of "
+                     f"{_TK_YEARLY_BASE_YEAR}-level ECI progress made in the year after RSI, in "
+                     "the unit of the yearly chart in section 3: the "
+                     f"{unit_pts:.1f} ECI points the US frontier gained over "
+                     f"{_TK_YEARLY_BASE_YEAR}, about {np.exp(year_rate):.1f}\u00d7 a year of "
+                     "effective compute in this model. "
+                     f"{100 * np.mean(burst >= 3):.0f}% of scenarios make 3 "
                      f"years or more and {100 * np.mean(burst >= 10):.0f}% make 10. "
                      "Forethought's 57% and 18% use a different yardstick, so compare "
                      "loosely: they count about 10\u00d7 a year of effective compute as a "
