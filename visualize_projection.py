@@ -17635,6 +17635,7 @@ _TK_DEFAULTS.update({
     "tk_wf_copies": 75_000, "tk_wf_power": 10.0,
 })
 _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
+_TK_DEFAULTS["tk_serial_speedup"] = bool(takeoff.DEFAULTS["serial_speedup"])
 
 # Human hours a task at each automation level still takes, as a share of
 # doing it unassisted (AL0..AL5). The index rates who leads, not how long
@@ -19227,6 +19228,14 @@ def _render_takeoff(loading):
             
             number("Training duration (months)", "training_months", 0.5, 12.0, 0.5)
             number("Validation and deployment delay (months)", "validation_months", 0.0, 12.0, 0.5)
+            st.checkbox("Cycles speed up with AI", key="tk_serial_speedup",
+                        help="On: a model's validation shrinks as AI takes over verification "
+                             "(to about a day on autopilot), and each new training run is "
+                             "shorter when capability is growing faster than today, by "
+                             "today's growth rate over the current one, so a run never "
+                             "outlasts the time better methods take to beat it. Off: every "
+                             "cycle keeps the settings above. Today's first run is the same "
+                             "either way.")
             number("Compute for training (%)", "training_share", 5, 90, 5)
             number("Compute for experiments (%)", "experiment_share", 5, 90, 5)
             agents = 100 - st.session_state["tk_training_share"] \

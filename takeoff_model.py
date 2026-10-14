@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v26-direction-two-sources"
+MODEL_VERSION = "takeoff-v27-serial-speedup"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -62,6 +62,11 @@ DEFAULTS = {
     # Ceiling on AI research judgment, as a multiple of today's AI judgment;
     # 0 is no ceiling. AI Futures caps AI research taste near 4x the best human.
     "judgment_cap": 0.0,
+    # Serial speed-up: validation shrinks as AI takes over verification, and a
+    # new training run shortens as capability grows faster than today (a run
+    # should not outlast the time better methods take to beat it). 0 holds
+    # both at their settings.
+    "serial_speedup": 1.0,
     # Per-draw spread on the four settings that decide whether takeoff runs
     # away (TAKEOFF_MODEL.md, *Parameter uncertainty*): 1-sigma of ln r,
     # 1-sigma of ln(judgment elasticity), 1-sigma of the drift in percentage
@@ -160,6 +165,7 @@ def validate(params):
             or not (p["ceiling_high_oom"] == 0 or 0 < p["ceiling_low_oom"] <= p["ceiling_high_oom"]) \
             or p["rsi_autopilot"] not in (0, 1) or not 0 <= p["ai_copies"] <= 2 \
             or not (p["judgment_cap"] == 0 or p["judgment_cap"] >= 1) \
+            or p["serial_speedup"] not in (0, 1) \
             or not 0 <= p["compute_bound_corr"] <= 1 \
             or not 0 <= p["scale_dependent"] <= 100 or not 0 <= p["scale_dependent_spread"] <= 400 \
             or not 0 < p["scale_lag_oom"] <= 10 or not 0 <= p["scale_lag_spread"] <= 400:
@@ -485,6 +491,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     run_compute = np.zeros(n)
     training_used = np.zeros(n)
     run_start = np.zeros(n)
+    # This run's training length and the pending model's validation length;
+    # both shrink with the serial speed-up (see `serial_speedup`).
+    run_len = train_time.copy()
+    eval_len = eval_time.copy()
     pending = np.zeros(n)
     pending_software = np.zeros(n)
     deployed_software = np.zeros(n)
@@ -641,8 +651,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     now = (np.zeros(n), np.zeros(n), np.zeros(n))
     realized()                  # the deployed model, refreshed when it changes
     while np.any(t < p["years"] - 1e-12):
-        train_end = run_start + train_time
-        deploy_end = train_end + eval_time
+        train_end = run_start + run_len
+        deploy_end = train_end + eval_len
         next_event = np.minimum(np.where(finished, deploy_end, train_end), fast_next)
         next_event = np.minimum(next_event, np.where(coding > t + 1e-12, coding, np.inf))
         next_observation = workflow_grid[np.minimum(observation_index, len(workflow_grid) - 1)]
@@ -776,6 +786,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         run_compute += used
         training_used += used
         done = active & (~finished) & (end >= train_end - 1e-12)
+        if p["serial_speedup"]:
+            # Validation runs at the verification stage's mix of people and AI,
+            # relative to today's mix.
+            h_ver = human_now[:, 2]
+            eval_len[done] = (eval_time * (h_ver + (1 - h_ver) / ai_speed)
+                              / (starts[:, 2] + (1 - starts[:, 2]) / ai_speed))[done]
         candidate_compute = np.log(np.maximum(run_compute / reference_train_compute, 1e-12))
         candidate = (1 - fast_fraction) * snapshot + candidate_compute
         reference_snapshot = initial_stock + reference_software(run_start, software_rate, input_rate,
@@ -872,6 +888,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         last_experiments[tracking] = experiment_log[tracking]
         snapshot[ready] = software[ready]
         run_start[ready] = end[ready]
+        if p["serial_speedup"]:
+            # The next run is shorter when capability is growing faster than
+            # today: today's growth rate over the current one, capped at 1.
+            growth_now = software_rate * pace + np.where(end < slow_at, compute_rate, compute_late)
+            run_len[ready] = (train_time * np.minimum(
+                1.0, baseline_capability_rate / np.maximum(growth_now, 1e-9)))[ready]
         run_start_scale[ready] = (log_level(end, compute_rate, compute_late, slow_at)
                                   + boost_log)[ready]
         run_compute[ready] = 0

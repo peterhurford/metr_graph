@@ -70,7 +70,7 @@ def test_compute_budget_conservation():
 
 
 def test_validation_reserves_but_does_not_spend_training_compute():
-    r = tk.simulate(dict(compute_growth=1.0, **tk.POINT_ESTIMATE, transfer=0,
+    r = tk.simulate(dict(compute_growth=1.0, **tk.POINT_ESTIMATE, transfer=0, serial_speedup=0,
                          years=2, training_months=3.0, validation_months=3.0),
                     n=1, step=1/120)
     # Four 3-month runs in two years; half the reserved training allocation
@@ -80,7 +80,7 @@ def test_validation_reserves_but_does_not_spend_training_compute():
 
 
 def test_algorithms_wait_for_the_next_run_and_validation():
-    p = dict(compute_growth=1.0, **tk.POINT_ESTIMATE, training_months=3.0,
+    p = dict(compute_growth=1.0, **tk.POINT_ESTIMATE, training_months=3.0, serial_speedup=0,
              validation_months=0.0, transfer=0, fast_share=0, pipeline_months=0)
     first = tk.simulate(dict(p, years=0.25), n=1, step=1/120)
     assert first["software_log"][0] > 0
@@ -205,7 +205,7 @@ def test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference():
     RSI date, slowdown included; before RSI, and in the frozen-AI reference,
     nothing changes."""
     onset = np.array([0.5, 1.0, 2.0])
-    base = dict(tk.POINT_ESTIMATE, years=6, rsi_compute_boost=1.0,
+    base = dict(tk.POINT_ESTIMATE, years=6, rsi_compute_boost=1.0, serial_speedup=0,
                 rsi_compute_delay=0.0, rsi_compute_ramp=0.0)
     a = tk.simulate(base, n=3, onset_years=onset)
     b = tk.simulate(dict(base, rsi_compute_boost=2.0), n=3, onset_years=onset)
@@ -262,7 +262,7 @@ def test_scale_dependent_gains_pay_off_only_as_compute_scales():
     AI frozen it never binds; once AI races ahead of compute it holds
     capability back, and more compute after RSI gives some of it back."""
     onset = np.full(100, 1.0)
-    base = dict(years=6, rsi_compute_boost=1.0)
+    base = dict(years=6, rsi_compute_boost=1.0, serial_speedup=0)
     none = tk.simulate(dict(base, scale_dependent=0.0), n=100, onset_years=onset)
     wp = none["workflow_progress"]
     np.testing.assert_allclose(wp["software_realized_log"], wp["validated_log"], atol=1e-12)
@@ -286,7 +286,7 @@ def test_scale_dependent_gains_wait_on_compute_rather_than_vanish():
     lag is no scale-dependence at all, and a longer one holds capability back
     more."""
     onset = np.full(100, 1.0)
-    base = dict(years=6, scale_dependent=50.0, scale_lag_spread=0.0)
+    base = dict(years=6, scale_dependent=50.0, scale_lag_spread=0.0, serial_speedup=0)
     end = lambda q: tk.simulate(dict(base, **q), n=100, onset_years=onset)[
         "workflow_progress"]["capability_log"][:, -1]
     none = end(dict(scale_dependent=0.0))
@@ -387,7 +387,7 @@ def test_a_judgment_cap_only_ever_slows_research():
     """Capping AI research judgment at a multiple of today's never speeds
     research, binds once judgment would pass it, and 0 is no cap."""
     onset = np.full(50, 0.5)
-    base = dict(years=6)
+    base = dict(years=6, serial_speedup=0)
     free = tk.simulate(base, n=50, onset_years=onset)
     capped = tk.simulate(dict(base, judgment_cap=2.0), n=50, onset_years=onset)
     a = free["workflow_progress"]["capability_log"][:, -1]
@@ -555,7 +555,8 @@ def test_weekly_steps_converge_to_half_week_steps():
     """Milestones land on run, deployment and observation events, so the step
     cannot move them; the integrated software stock converges well inside the
     error a monthly step leaves (~2e-4)."""
-    p = dict(years=8)
+    # Fixed cycles; the serial speed-up's own convergence is tested apart.
+    p = dict(years=8, serial_speedup=0)
     weekly = tk.simulate(p, n=200)
     half_week = tk.simulate(p, n=200, step=1/104)
     # A runaway's date is the step its stock crosses the numerical ceiling,
@@ -569,6 +570,26 @@ def test_weekly_steps_converge_to_half_week_steps():
     calm = held & (weekly["software_log"] < 1e3)
     np.testing.assert_allclose(weekly["software_log"][calm], half_week["software_log"][calm],
                                rtol=3e-5)
+
+
+def test_serial_speedup_shortens_cycles_after_rsi_and_converges():
+    """With the serial speed-up, runs and validation shorten once research
+    outpaces today and autopilot takes verification, so capability gets ahead
+    of fixed cycles; today's first run is unchanged; and the result settles as
+    the step shrinks."""
+    onset = np.full(100, 0.5)
+    on = tk.simulate(dict(years=6), n=100, onset_years=onset)
+    off = tk.simulate(dict(years=6, serial_speedup=0), n=100, onset_years=onset)
+    first = lambda r: r["workflow_progress"]["capability_log"][:, 3]   # month 3
+    np.testing.assert_allclose(first(on), first(off))
+    # By year 4, before the software ceiling binds, most draws are ahead.
+    j = int(np.searchsorted(on["workflow_progress"]["years"], 4.0))
+    ahead = (on["workflow_progress"]["capability_log"][:, j]
+             > off["workflow_progress"]["capability_log"][:, j])
+    assert ahead.mean() > 0.6
+    half = tk.simulate(dict(years=6), n=100, onset_years=onset, step=1/104)
+    calm = on["software_log"] < 1e3
+    np.testing.assert_allclose(on["software_log"][calm], half["software_log"][calm], rtol=2e-2)
 
 
 def test_longer_validation_delays_milestones():

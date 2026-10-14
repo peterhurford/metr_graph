@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v26-direction-two-sources`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v27-serial-speedup`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -94,6 +94,12 @@ through successor training. The split is an assumption about deployable efficien
 not a claim that all tooling improvements translate into compute savings. It sums to 100%,
 and an improvement never appears in both channels.
 
+Cycles speed up with AI (default on): a model's validation shrinks with the share of
+verification AI does (to about a day on autopilot), and each new training run shortens when
+capability grows faster than today, by today's growth rate over the current one, since a
+run should not outlast the time better methods take to beat it. Shorter runs train on less
+compute, which the adoption rule weighs. It moves ultraintelligence 3 months sooner (Nov
+against Feb 2030) and doubles the share making 10 years of progress in RSI's first year.
 The fast path validates its start-of-cycle discoveries over an assumed one month. The
 slow path freezes discoveries at training start, accumulates physical training compute,
 and deploys only after training plus validation (three plus one month by default).

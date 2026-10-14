@@ -41,7 +41,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v26-direction-two-sources`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v27-serial-speedup`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -105,7 +105,11 @@ RSI gates on coding plus research direction under the human-hours bar
 From each draw's RSI, `rsi_autopilot` (default on, *Autopilot from RSI*) zeroes every stage's human
 hours in the dynamics and the humans chart; the RSI outcomes keep the pre-autopilot hours
 (direction, experiments, verification), which the RSI card's hover quotes
-(`test_autopilot_drops_every_human_hour_from_rsi`). `ai_copies` (default 1) multiplies AI's speed in that
+(`test_autopilot_drops_every_human_hour_from_rsi`). `serial_speedup` (default on, *Cycles speed up with
+AI*) shrinks each validation by the verification stage's people/AI mix against today's and
+each new training run by today's capability growth over the current one (capped at 1), so
+cycles shorten once research outpaces today; today's first run is unchanged and fixed-cycle
+tests set it to 0 (`test_serial_speedup_shortens_cycles_after_rsi_and_converges`). `ai_copies` (default 1) multiplies AI's speed in that
 Amdahl term by the deployed model's paid-off algorithmic efficiency to that power, as more
 copies on the same compute (log space, so a runaway cannot overflow;
 `test_more_copies_speed_only_the_work_ai_does`). `_tk_copies_yearly` nets its ~4%/yr of
