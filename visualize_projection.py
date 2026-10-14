@@ -13137,24 +13137,41 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         # The US-measured and indigenous-only rates stay table rows.
         figd = go.Figure()
         _dc_add_projection_band(figd, today, horizon)
+
+        def _fr_max(fr, d):
+            """A frontier's best score on or before `d`, None before its start."""
+            vals = [s for dd, s, n in fr if dd <= d]
+            return max(vals) if vals else None
+
+        gap_bd = us_ceiling - cn_traj_inno if cn_traj_inno is not None else None
         figd.add_trace(go.Scatter(
             x=bd_dates, y=list(us_ceiling), mode='lines',
             line=dict(color='#1F77B4', width=1.5, dash='dot'),
-            name='US frontier (ceiling)', hoverinfo='skip'))
+            name='US frontier (ceiling)',
+            **(dict(customdata=gap_bd,
+                    hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                                  '<br>%{customdata:.0f} ahead of China '
+                                  '(access cut)<extra>US frontier</extra>')
+               if gap_bd is not None else dict(hoverinfo='skip'))))
         figd.add_trace(go.Scatter(
             x=[d for d, s, n in us_fr], y=[s for d, s, n in us_fr],
             mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
             marker=dict(size=5, color='#1F77B4', line=dict(color='white', width=0.5)),
-            text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in us_fr],
+            text=[f"{pretty(n)}<br>ECI {s:.0f}"
+                  + (f"<br>{s - _fr_max(cn_fr, d):.0f} ahead of China"
+                     if _fr_max(cn_fr, d) is not None else "")
+                  for d, s, n in us_fr],
             hoverinfo='text', name='US (actual)'))
         figd.add_trace(go.Scatter(
             x=[d for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
             mode='lines+markers', line=dict(color='#D62728', width=1.5),
             marker=dict(size=5, color='#D62728', line=dict(color='white', width=0.5)),
-            text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in cn_fr],
+            text=[f"{pretty(n)}<br>ECI {s:.0f}"
+                  + (f"<br>{_fr_max(us_fr, d) - s:.0f} behind the US"
+                     if _fr_max(us_fr, d) is not None else "")
+                  for d, s, n in cn_fr],
             hoverinfo='text', name='China (actual)'))
         if cn_traj_inno is not None:
-            gap_bd = us_ceiling - cn_traj_inno
             figd.add_trace(go.Scatter(
                 x=bd_dates + bd_dates[::-1],
                 y=list(us_ceiling) + list(cn_traj_inno[::-1]),
@@ -13169,31 +13186,6 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                 hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                               '<br>%{customdata:.0f} behind the US'
                               '<extra>no ext. distillation</extra>'))
-            # Year-end gap labels, between the two lines.
-            for yr in range(max(anchor_date.year, today.year), horizon.year + 1):
-                ye = datetime(yr, 12, 31)
-                if ye <= anchor_date or ye > horizon:
-                    continue
-                i = min(range(len(bd_dates)),
-                        key=lambda j: abs((bd_dates[j] - ye).days))
-                figd.add_annotation(
-                    x=bd_dates[i],
-                    y=0.5 * (float(us_ceiling[i]) + float(cn_traj_inno[i])),
-                    text=f"\u2212{gap_bd[i]:.0f}", showarrow=False,
-                    xanchor='right' if yr == horizon.year else 'center',
-                    font=dict(size=12, color='#7F1010'),
-                    bgcolor='rgba(255,255,255,0.8)')
-        # Year-end gaps already recorded, between the two actual frontiers.
-        for yr in range(2024, today.year):
-            ye = datetime(yr, 12, 31)
-            us_v = [s for d, s, n in us_fr if d <= ye]
-            cn_v = [s for d, s, n in cn_fr if d <= ye]
-            if us_v and cn_v:
-                figd.add_annotation(
-                    x=ye, y=0.5 * (max(us_v) + max(cn_v)),
-                    text=f"\u2212{max(us_v) - max(cn_v):.0f}", showarrow=False,
-                    font=dict(size=12, color='#555555'),
-                    bgcolor='rgba(255,255,255,0.8)')
         figd.update_layout(
             height=420, plot_bgcolor='white', paper_bgcolor='white',
             margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
@@ -13213,9 +13205,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
              f"Backdated to <b>Jan 2025</b> (China \u2248{cn_anchor:.0f} then) so "
              "the lines can be read against China's actual points.")
             + (" The solid line cuts model access, keeping method diffusion; "
-               "the shading and red labels are the ECI gap to the US line <i>if</i> "
-               "that access is cut, not the expected gap. Grey labels are the "
-               "recorded year-end gaps."
+               "the shading is the ECI gap to the US line <i>if</i> that access is "
+               "cut, not the expected gap. Hover any point for its gap."
                if cn_traj_inno is not None else "")
             + " The rates rest on thin fits.",
             *([("The solid line", "No external distillation: model access cut, "
