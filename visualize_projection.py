@@ -16314,9 +16314,16 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                 if v == "Blocked" else "")
 
     df = pandas.DataFrame(rows)
-    st.table(df.style.map(_shade).apply(
-        lambda r: ["font-weight: bold" if r.name >= len(df) - 2 else ""] * len(r),
-        axis=1).hide(axis="index"))
+    # The average is the column that sets the months, so it is lifted and the
+    # endpoint rates are muted. Translucent fills read in either theme.
+    st.table(df.style
+             .map(lambda v: "background-color: rgba(31,119,180,0.14); "
+                            "font-weight: 600", subset=[c1])
+             .map(lambda v: "color: rgba(128,128,128,0.95)", subset=[c0, c2])
+             .map(_shade)
+             .apply(lambda r: ["font-weight: bold" if r.name >= len(df) - 2
+                               else ""] * len(r), axis=1)
+             .hide(axis="index"))
     if notes:
         _fn_caption("Rates under these settings.",
                     ("these settings", " ".join(notes)))
