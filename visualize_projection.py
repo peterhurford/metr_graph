@@ -13159,7 +13159,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                 x=bd_dates + bd_dates[::-1],
                 y=list(us_ceiling) + list(cn_traj_inno[::-1]),
                 fill='toself', fillcolor='rgba(127,16,16,0.10)',
-                line=dict(width=0), hoverinfo='skip', name='Gap to US'))
+                line=dict(width=0), hoverinfo='skip',
+                name='Gap to US if model access is cut'))
             figd.add_trace(go.Scatter(
                 x=bd_dates, y=list(cn_traj_inno), mode='lines',
                 line=dict(color='#7F1010', width=2.5),
@@ -13212,8 +13213,9 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
              f"Backdated to <b>Jan 2025</b> (China \u2248{cn_anchor:.0f} then) so "
              "the lines can be read against China's actual points.")
             + (" The solid line cuts model access, keeping method diffusion; "
-               "the shading and red labels are its ECI gap to the US line, the "
-               "grey labels the recorded year-end gaps."
+               "the shading and red labels are the ECI gap to the US line <i>if</i> "
+               "that access is cut, not the expected gap. Grey labels are the "
+               "recorded year-end gaps."
                if cn_traj_inno is not None else "")
             + " The rates rest on thin fits.",
             *([("The solid line", "No external distillation: model access cut, "

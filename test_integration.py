@@ -692,7 +692,8 @@ class TestComputeVsCapabilities:
                  for d in json.loads(el.proto.spec)["data"]]
         china = [n for n in names if n.startswith("China · ")]
         assert len(china) == 1 and "no ext. distillation" in china[0]
-        assert "Gap to US" in names and "US (actual)" in names
+        assert "Gap to US if model access is cut" in names
+        assert "US (actual)" in names
         md = " ".join(str(m.value) for m in at.markdown)
         assert "China's own algo growth" not in md
         assert "Indigenous only" in md and "US-measured algo rate" in md
