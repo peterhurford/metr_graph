@@ -1324,6 +1324,11 @@ date distribution rather than the gap metrics above it. Three things are load-be
 Fan traces set `mode='lines'` explicitly: the fan spans ~6 quarters, and plotly defaults a
 Scatter under 20 points to `lines+markers`, studding the band outline with stray dots.
 
+5. **Paths carry release-step level noise.** `_cc_cn_crossing_sim(level_sd=…)` adds a
+   per-sample level offset, `_cc_frontier_level_sd` (sqrt 2 x China's scatter around its
+   since-2024 trend), phased in over the median release gap. Rate spread alone put only
+   ~16% of China's 2025–26 releases inside the 80% band on a rolling-origin backtest;
+   `TestCcCrossingBacktest` holds it near 80%. The panel passes it; Pacing does not yet.
 ### Pacing tab
 
 `render_pacing()` renders the pause counterfactual **first**

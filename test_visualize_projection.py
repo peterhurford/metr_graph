@@ -1871,6 +1871,56 @@ class TestCcRateCalibration:
         assert k > 1.0
 
 
+class TestCcCrossingBacktest:
+    def test_level_noise_brings_the_80pct_band_near_80pct(self):
+        """Rolling origins over China's 2025-26 releases: the crossing sim's
+        paths cover about 80% of later releases inside their 80% band with
+        `_cc_frontier_level_sd`, and far fewer from the rate spread alone."""
+        rows = vp.load_eci_compute(_mtime=vp._eci_mtime())
+        eci_all = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        cn_fr = vp._cc_country_frontier(eci_all, 'China')
+        us_fr = vp._cc_country_frontier(eci_all, 'United States of America')
+        fgm = vp._cc_frontier_grade_algo(
+            rows, vp.load_eci_frontier(_mtime=vp._eci_mtime(), full_window=True))
+        us_algo, _, _ = vp._cc_iso_compute_rate(rows, 'United States of America')
+        cn_algo, _, _ = vp._cc_iso_compute_rate(rows, 'China')
+        inno = vp._cc_innovation_algo_band(rows)
+        a, g_lo, g_hi = fgm['a_partial'], vp._CC_CN_COMPUTE_LO, vp._CC_CN_COMPUTE_HI
+        _, ug_lo, ug_hi = vp._cc_us_compute_band(datetime.now(), datetime(2029, 12, 31))
+        us_rate = (vp._cc_rate_calibration(us_fr, fgm['b_time'] + a * 0.5 * (ug_lo + ug_hi))
+                   * (fgm['b_time'] + a * 0.5 * (ug_lo + ug_hi)))
+        pace_lo, pace_hi, _ = vp._cc_cn_pace_band(cn_fr, cn_algo + a * 0.5 * (g_lo + g_hi))
+        gap_d = vp._cc_release_gap_days(cn_fr, since=datetime.now() - timedelta(days=730))
+
+        def best_at(fr, d):
+            return max(s for dd, s, n in fr if dd <= d)
+
+        def coverage(level_sd):
+            inside = total = 0
+            origins = [datetime(2025, 1, 1)] + [d for d, s, n in cn_fr
+                                                if d.year >= 2025][:-2]
+            for d0 in origins:
+                np.random.seed(0)
+                _, grid, traj = vp._cc_cn_crossing_sim(
+                    best_at(cn_fr, d0), 1e9, us_anchor=best_at(us_fr, d0),
+                    us_rate=us_rate, a_partial=a, g_lo=g_lo, g_hi=g_hi,
+                    algo_lo=min(us_algo, cn_algo), algo_mid=cn_algo,
+                    algo_hi=max(us_algo, cn_algo), inno_lo=inno[0],
+                    inno_hi=inno[1], pace_lo=pace_lo, pace_hi=pace_hi,
+                    horizon_yrs=2.0, n=2000, level_sd=level_sd,
+                    level_ramp_yrs=gap_d / 365.25)
+                p10, p90 = (np.percentile(traj, q, axis=0) for q in (10, 90))
+                for d, s, n in cn_fr:
+                    if d > d0:
+                        t = (d - d0).days / 365.25
+                        total += 1
+                        inside += np.interp(t, grid, p10) <= s <= np.interp(t, grid, p90)
+            return inside / total
+
+        assert coverage(0.0) < 0.4
+        assert 0.65 <= coverage(vp._cc_frontier_level_sd(cn_fr)) <= 0.95
+
+
 class TestCcCnLevelOffset:
     def test_recovers_a_constructed_level_premium(self):
         base = datetime(2024, 6, 1)

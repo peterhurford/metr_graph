@@ -12679,6 +12679,21 @@ def _cc_us_compute_band(today, horizon, run_key='train_flop',
     return dc_fr, g_lo, g_hi
 
 
+def _cc_frontier_level_sd(fr):
+    """ECI scatter of a projection anchored on a frontier point: sqrt(2) x the
+    residual SD of the frontier around its own trend since `_CC_CALIB_SINCE`,
+    since both the anchor and the later point sit off the trend. 0.0 when too
+    few points to fit."""
+    pts = [(d, s) for d, s, n in fr if d >= _CC_CALIB_SINCE]
+    if len(pts) < 4:
+        return 0.0
+    base = pts[0][0]
+    x = np.array([(d - base).days / 365.25 for d, _ in pts])
+    y = np.array([s for _, s in pts])
+    resid = y - np.polyval(np.polyfit(x, y, 1), x)
+    return float(np.sqrt(2.0) * resid.std(ddof=2))
+
+
 def _cc_pooled_decomp(rows):
     """Pooled ECI decomposition from US+China models with disclosed FLOP.
 
@@ -13397,7 +13412,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         us_pause_level=None, pure_lo=None, pure_hi=None,
                         t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS,
                         t_dist_stop=None, comp_dead=None, comp_slow=None,
-                        dist_teacher=None, channels=None, comp_shadow=None):
+                        dist_teacher=None, channels=None, comp_shadow=None,
+                        level_sd=0.0, level_ramp_yrs=0.5):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -13441,6 +13457,12 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     step, so `compute − compute_domestic` can't go negative while a setback
     is being regrown.
 
+    `level_sd` adds a per-sample level offset ~ N(0, level_sd), phased in
+    linearly over `level_ramp_yrs`: the frontier moves in release-sized steps
+    around its trend, which a rate spread alone cannot cover at short
+    horizons. It shifts `traj` and the crossings, not the channels or the
+    distillation gap.
+
     Returns (years, grid_yrs, traj): crossing years incl. the release wait
     (NaN = not crossed within horizon), the monthly time grid, and the
     (n, len(grid)) capability paths.
@@ -13480,6 +13502,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     e = np.full(n, float(anchor_eci))
     years = np.full(n, np.nan)
     us_rate = np.asarray(us_rate)      # scalar or per-sample array
+    offset = (np.random.normal(0.0, level_sd, n) if level_sd > 0
+              else np.zeros(n))
     for i in range(1, steps + 1):
         us_level = us_anchor + us_rate * grid[i - 1]
         if us_pause_level is not None:
@@ -13510,15 +13534,16 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
             channels['compute_domestic'][:, i] = \
                 channels['compute_domestic'][:, i - 1] + dom * dt
         e = e + rate * dt
-        traj[:, i] = e
-        hit = np.isnan(years) & (e >= target)
+        traj[:, i] = e + offset * min(grid[i] / level_ramp_yrs, 1.0)
+        hit = np.isnan(years) & (traj[:, i] >= target)
         if np.any(hit):
             # Interpolate the crossing inside the step: snapping to grid[i]
             # quantizes every crossing to the monthly grid, which swallows
             # sub-month differences between nearby scenarios.
             prev = traj[hit, i - 1]
             tgt = target[hit] if np.ndim(target) else target
-            frac = np.clip((tgt - prev) / np.maximum(e[hit] - prev, 1e-12),
+            frac = np.clip((tgt - prev)
+                           / np.maximum(traj[hit, i] - prev, 1e-12),
                            0.0, 1.0)
             years[hit] = grid[i - 1] + frac * dt
     if release_gap_days and release_gap_days > 0:
@@ -13686,7 +13711,9 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
         us_rate=max(us_eci_smid, 0.0), a_partial=a_partial,
         g_lo=g_lo, g_hi=g_hi, algo_lo=a_lo, algo_mid=a_mid, algo_hi=a_hi,
         inno_lo=inno_lo, inno_hi=inno_hi,
-        pace_lo=pace_lo, pace_hi=pace_hi, release_gap_days=gap_d)
+        pace_lo=pace_lo, pace_hi=pace_hi, release_gap_days=gap_d,
+        level_sd=_cc_frontier_level_sd(cn_fr),
+        level_ramp_yrs=(gap_d or 47.5) / 365.25)
     years_const, rates = _cc_cn_target_years(anchor_eci, target, a_lo, a_mid,
                                              a_hi, a_partial, g_lo, g_hi,
                                              pace_lo=pace_lo, pace_hi=pace_hi,
@@ -13854,7 +13881,11 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
                                 f"from compute ({a_partial:.0f} pts per "
                                 f"\u00d710 \u00d7 China's {10 ** g_lo:.1f}"
                                 f"\u2013{10 ** g_hi:.1f}\u00d7/yr capacity "
-                                f"growth), {obs_note}."),
+                                f"growth), {obs_note}. Each path also "
+                                f"carries a \u00b1{_cc_frontier_level_sd(cn_fr):.1f} "
+                                "ECI level offset: China's frontier moves in "
+                                "release-sized steps around its trend, which "
+                                "a rate spread alone does not cover."),
         ("compute is the small term", "Even doubling China's compute growth "
                                       f"(+{g_hi:.2f} OOM/yr) adds only "
                                       f"~{a_partial * g_hi:.1f} ECI/yr against "
