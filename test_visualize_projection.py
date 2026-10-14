@@ -5154,8 +5154,8 @@ class TestMilestoneCardLayout:
 
 class TestTakeoffYearlyProgress:
     """Years of 2025-level ECI progress per calendar year: ECI gained over the
-    frontier's fitted points a year, +inf once a draw has run away; last year
-    measured, this year measured to today then projected."""
+    points the frontier gained in 2025, +inf once a draw has run away; last
+    year measured, this year measured to today then projected."""
 
     def test_measured_partly_measured_and_projected_years(self):
         today = datetime(2026, 10, 13)
@@ -5172,13 +5172,15 @@ class TestTakeoffYearlyProgress:
         assert [(y, k) for y, _, k in rows][:3] == [
             (2025, "measured"), (2026, "partly"), (2027, "projected")]
         assert rows[-1][0] == 2031                       # the grid ends Sep 2032
-        np.testing.assert_allclose(rows[0][1], 12 / 15)  # 140 -> 152 over 2025
+        unit = 12.0                                      # 140 -> 152 over 2025
+        np.testing.assert_allclose(rows[0][1], 1.0)      # 2025 is the unit
         # 2026: 152 -> 165 measured, then the rest of the year projected.
         rest = (datetime(2027, 1, 1) - today).days / 365.25
-        assert rows[1][1][0] == pytest.approx((13 + ppy * rest) / ppy, rel=1e-3)
+        assert rows[1][1][0] == pytest.approx((13 + ppy * rest) / unit, rel=1e-3)
         for year, made, kind in rows[2:]:
-            assert made[0] == pytest.approx(1, abs=0.003)   # a calendar year is 365 or 366 days
-            assert made[1] == pytest.approx(2, abs=0.006)
+            # A calendar year is 365 or 366 days.
+            assert made[0] == pytest.approx(ppy / unit, rel=0.003)
+            assert made[1] == pytest.approx(2 * ppy / unit, rel=0.003)
         stopped = {y: v[2] for y, v, _ in rows}
         assert np.isfinite(stopped[2028]) and np.isinf(stopped[2029])
 

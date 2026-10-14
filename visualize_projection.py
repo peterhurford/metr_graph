@@ -18225,16 +18225,32 @@ def _tk_eci_fig(result, today, eci, markers=()):
 _TK_YEARLY_VIEW = 100
 
 
+# The calendar year whose measured ECI gain is the yearly chart's unit.
+_TK_YEARLY_BASE_YEAR = 2025
+
+
+def _tk_year_gain(frontier, year):
+    """ECI points the US-best frontier gained over calendar `year` (its
+    running maximum at each Jan 1), or None without a reading at both ends."""
+    def at(when):
+        scores = [m['eci_score'] for m in frontier if m['date'] <= when]
+        return scores[-1] if scores else None
+    lo, hi = at(datetime(year, 1, 1)), at(datetime(year + 1, 1, 1))
+    return None if lo is None or hi is None else hi - lo
+
+
 def _tk_yearly_progress(result, eci, today, last_year):
     """[(year, per-draw years of 2025-level ECI progress made that year, kind)]
     from the last full measured year to `last_year`; kind is 'measured',
     'partly' (this year: measured to today, projected after) or 'projected'.
 
-    2025-level progress is the ECI frontier's fitted climb (`eci['ppy']`
-    points a year, fitted on the 2024-26 frontier), so a year that adds
-    2 x ppy ECI points made two years of it. Measured gains read the US-best
-    frontier's running maximum at each Jan 1. A draw that runs away
-    numerically by the end of a year made unboundedly many (+inf)."""
+    2025-level progress is the ECI points the US frontier gained over
+    calendar `_TK_YEARLY_BASE_YEAR` (`_tk_year_gain`; the fitted trend if it
+    cannot be read), so that year is 1 by construction and a year adding
+    twice those points made two. Measured gains read the frontier's running
+    maximum at each Jan 1. A draw that runs away numerically by the end of a
+    year made unboundedly many (+inf)."""
+    unit = _tk_year_gain(eci["frontier"], _TK_YEARLY_BASE_YEAR) or eci["ppy"]
     years = result["workflow_progress"]["years"]
     paths = eci["paths"]
     n = paths.shape[0]
@@ -18253,16 +18269,16 @@ def _tk_yearly_progress(result, eci, today, last_year):
     last_full = today.year - 1
     lo, hi = measured(datetime(last_full, 1, 1)), measured(datetime(today.year, 1, 1))
     if lo is not None and hi is not None:
-        out.append((last_full, np.full(n, (hi - lo) / eci["ppy"]), "measured"))
+        out.append((last_full, np.full(n, (hi - lo) / unit), "measured"))
     if hi is not None:
         rest, _ = at(datetime(today.year + 1, 1, 1))
-        out.append((today.year, (eci["now"] - hi + rest - paths[:, 0]) / eci["ppy"], "partly"))
+        out.append((today.year, (eci["now"] - hi + rest - paths[:, 0]) / unit, "partly"))
     for year in range(today.year + 1, last_year + 1):
         start, _ = at(datetime(year, 1, 1))
         end, t_end = at(datetime(year + 1, 1, 1))
         if t_end > years[-1] + 1e-9:
             break
-        made = (end - start) / eci["ppy"]
+        made = (end - start) / unit
         out.append((year, np.where(result["stopped_at"] <= t_end, np.inf, made), "projected"))
     return out
 
@@ -18275,7 +18291,7 @@ def _tk_yearly_fig(rows, today):
     """Bars of the median years of 2025-level ECI progress made in each
     calendar year, middle 80% as whiskers: the last full year measured, this
     year measured to today then projected, later years projected. Lines at 1
-    (the 2024-26 trend), and Forethought's 3 and 10."""
+    (2025's own gain), and Forethought's 3 and 10."""
     years = [y for y, _, _ in rows]
     q = np.array([np.quantile(v, [.1, .5, .9]) for _, v, _ in rows])
     shown = np.minimum(q, _TK_YEARLY_VIEW)
@@ -18299,7 +18315,8 @@ def _tk_yearly_fig(rows, today):
                      arrayminus=np.where(spread, shown[:, 1] - shown[:, 0], 0),
                      color="#555", thickness=1.5),
         hovertext=hover, hoverinfo="text"))
-    for level, label in ((1, "2024\u201326 trend"), (3, "3 years in one"), (10, "10 years in one")):
+    for level, label in ((1, f"{_TK_YEARLY_BASE_YEAR}'s pace"), (3, "3 years in one"),
+                         (10, "10 years in one")):
         fig.add_hline(y=level, line_dash="dash" if level == 1 else "dot",
                       line_color="#777" if level == 1 else "#b0b0b0", line_width=1)
         # On a log axis an annotation's y is the exponent, so place it by hand.
@@ -19074,19 +19091,24 @@ def _render_takeoff(loading):
                     width="stretch")
     st.markdown("**2025-level ECI progress in each year**")
     _fn_caption(
-        "How many years of ECI progress, at the frontier's 2024\u201326 pace, each calendar "
-        f"year makes: {today.year - 1} measured, {today.year} measured to today, later "
-        "years projected. Not chart 1's \u00d7 2025, which counts experiments.",
+        f"How many years of ECI progress at {_TK_YEARLY_BASE_YEAR}'s pace each calendar year "
+        f"makes: {today.year - 1} measured, {today.year} measured to today, later years "
+        "projected. Not chart 1's \u00d7 2025, which counts experiments.",
         ("Not chart 1's",
          "Chart 1 measures research by OpenAI's experiments per researcher, about 2\u00d7 "
          "2025 today. This chart measures capability (ECI) gained, which has not "
          "doubled since: compare the measured bars. Research is also only part of capability "
          "growth: algorithms are under half of it today, compute the rest, and most "
          "research gains wait for a training run before they count."),
-        ("2024\u201326 pace",
-         f"The ECI frontier's fitted climb, {eci['ppy']:.1f} points a year from Feb 2024 to "
-         "today: a year adding twice that made two years. A calendar year's measured gain "
-         "can sit off 1, since releases land unevenly across years. Bars are the median "
+        (f"{_TK_YEARLY_BASE_YEAR}'s pace",
+         f"The ECI points the US frontier gained over {_TK_YEARLY_BASE_YEAR}, "
+         f"{_tk_year_gain(eci['frontier'], _TK_YEARLY_BASE_YEAR) or eci['ppy']:.1f}: a year "
+         "adding twice that made two years. That is below the frontier's fitted "
+         f"{eci['ppy']:.1f} points a year over 2024\u201326, which the ECI chart and the "
+         "ultraintelligence date use, so the projected years here read about "
+         f"{eci['ppy'] / (_tk_year_gain(eci['frontier'], _TK_YEARLY_BASE_YEAR) or eci['ppy']):.2f}"
+         "\u00d7 what they would against that trend. One calendar year is lumpy: a release "
+         "landing just before Jan 1 moves it. Bars are the median "
          "scenario, whiskers the middle 80%; the hover gives the share making 3 and 10 "
          "years, Forethought's thresholds. A scenario whose research runs away counts as "
          f"more than any number; the axis stops at {_TK_YEARLY_VIEW}."))
