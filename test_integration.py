@@ -14,7 +14,7 @@ from datetime import datetime
 import json
 import re
 from visualize_projection import (_pc_add_months, _pc_pause_default_mo,
-                                   _SLUG_FOR_TAB)
+                                   _SLUG_FOR_TAB, N_SAMPLES)
 from streamlit.testing.v1 import AppTest
 
 SCRIPT = "visualize_projection.py"
@@ -1195,8 +1195,8 @@ class TestTakeoffTab:
 
         monkeypatch.setattr(tk, "simulate", capture)
         at = _fresh_app()
-        # Takeoff only re-pairs these dates with its scenarios, so their CDF is
-        # the RSI tab's exactly.
+        # Takeoff re-pairs every `_TK_DRAW_STRIDE`th of these dates with its
+        # scenarios, so their CDF is the RSI tab's to within one full-sample draw.
         at.query_params.update(tab="rsi", rsi_atc_penalty="50",
                                rsi_timing=timing, rsi_notyet=condition, rsi_notyet_ramp="180",
                                pc_rsiw_rli_90="70", tk_seed="9182")
@@ -1208,7 +1208,8 @@ class TestTakeoffTab:
                          / (365.25 * 86400) for d in curve["x"]])
         _switch_tab(at, "Takeoff")
         assert captured
-        np.testing.assert_allclose(100 * tk.cdf(captured[-1], grid), curve["y"])
+        np.testing.assert_allclose(100 * tk.cdf(captured[-1], grid), curve["y"],
+                                   rtol=0, atol=100 / N_SAMPLES + 1e-9)
         assert at.session_state["rsi_atc_penalty"] == 50
         assert at.session_state["pc_rsiw_rli_90"] == 70
         _switch_tab(at, "Takeoff")

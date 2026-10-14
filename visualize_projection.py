@@ -18707,6 +18707,11 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
 # the end of this year; the sidebar's *Project through* year only crops charts.
 _TK_SIM_END_YEAR = 2040
 
+# The simulator runs every `_TK_DRAW_STRIDE`th of the RSI projection's sorted
+# coding dates: half the draws, its run time about halved, and the inherited
+# CDF within one full-sample draw of the RSI tab's.
+_TK_DRAW_STRIDE = 2
+
 
 def _tk_clip(result, years):
     """`result` with its monthly series cut to the first `years` from today,
@@ -18805,7 +18810,7 @@ def _tk_loading(slot, step):
     share, text = _TK_LOADING_STEPS[step]
     slot.progress(share, text=f"**Takeoff model loading, step {step + 1} of "
                               f"{len(_TK_LOADING_STEPS)}:** "
-                  + text.format(n=N_SAMPLES, end=_TK_SIM_END_YEAR) + "\u2026")
+                  + text.format(n=N_SAMPLES // _TK_DRAW_STRIDE, end=_TK_SIM_END_YEAR) + "\u2026")
 
 
 def render_takeoff():
@@ -19177,7 +19182,7 @@ def _render_takeoff(loading):
         if onset_days is None:
             st.info("The automated coder projection has no available draws. Adjust its weights below.")
             return
-        onset_years = onset_days / 365.25
+        onset_years = onset_days[_TK_DRAW_STRIDE // 2::_TK_DRAW_STRIDE] / 365.25
         # A widget with integer bounds hands back an int where the default is a
         # float; cast, or the first rerun misses `_tk_simulate`'s cache.
         params = {k: float(st.session_state["tk_" + k])

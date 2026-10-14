@@ -55,7 +55,8 @@ and returns sorted exact final samples, including conditioning, penalty, and clo
 This remains shared with the RSI tab. The display horizon does not clip its tail.
 
 `_pc_rsi_onset` mixes the same components as the RSI projection (`_pc_blend_parts`, AL5
-left out), so the exact-CDF invariant holds against the projection as shown
+left out). Takeoff simulates every `_TK_DRAW_STRIDE`th (2) of those sorted dates, half
+`N_SAMPLES`, so its coding CDF is the projection's as shown to within one full-sample draw
 (`test_coding_automation_inherits_the_exact_final_rsi_cdf`). `render_takeoff` then runs
 twice: `_tk_pair_onset` reassigns those dates so later ones go with slower capability
 (`tk_coding_pairing`, copula correlation, default 0.7), which moves the pairing only, never
