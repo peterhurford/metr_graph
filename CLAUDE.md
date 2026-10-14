@@ -40,7 +40,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v21-ai-copies`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v22-ladder-human-hours`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -133,11 +133,11 @@ it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
 The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, two ECI rates,
-software ceiling, scale-dependent gains, autopilot, copies; months to ultraintelligence
-from May 2030): the judgment elasticity (half/double: +2/−4), r (0.5/2: +6/−5),
-parallelization (0.8/0.3: +2/−2), ρ (−1/0: +2/−3), `ai_copies` (0/2: +2/−2), the
-training-run wait `fast_share` (12.5/50%: +2/−4; 100%: −12, since fast gains also skip the
-wait for scale), `scale_dependent` (25/75%: −2/+2) and `rsi_compute_boost` (default 2×;
+software ceiling, scale-dependent gains, autopilot, copies, ladder-driven human hours;
+months to ultraintelligence from Apr 2030): the judgment elasticity (half/double: +2/−4),
+r (0.5/2: +5/−5), parallelization (0.8/0.3: +2/−1), ρ (−1/0: +2/−3), `ai_copies` (0/2:
++2/−2), the training-run wait `fast_share` (12.5/50%: +2/−5; 100%: −12, since fast gains
+also skip the wait for scale), `scale_dependent` (25/75%: −3/+2) and `rsi_compute_boost` (default 2×;
 under *Advanced*, the software ceiling moves it −2 if removed, +2 at 3–8 orders of
 magnitude). The boost multiplies each draw's log compute growth after its own
 RSI date, waiting `rsi_compute_delay` (18 months) then
@@ -241,7 +241,14 @@ table shows the arithmetic (`TestTakeoffHumanSpeedup`).
 Four defaults are read off RSI data at import (`TestTakeoffRsiCalibration`), each
 keeping the model's stage pattern and rescaling it. Today's human share per stage matches
 the R&D automation index's latest month, read through `_TK_AL_HUMAN_HOURS` (assumed human
-time per AL level); the stage halving times match that share's past-year halving. The
+time per AL level). Research hours then follow the index's own projection, not an
+exponential: `_tk_ladder_curve` builds the human share over the coming years from the
+ladder (AL4 from the projection's start at the "AL4 reaches 90%" card's median rate, AL5 as
+AL4 shifted by the AL5 card's median lag, AL2/AL3 on their own fits, nested), times the
+hours per level, and `simulate(human_curve=…)` moves each stage along that shape in
+capability-equivalent years (`workflow_state`; `test_human_hours_can_follow_a_given_curve`).
+The stage halving times only set each stage's pace along it, as the weighted halving over
+its own (1.5× for direction, 0.75× for verification at the defaults). The
 judgment elasticity (`taste_slope`) is the next-step study's yearly odds growth raised to
 `_TK_ODDS_TO_JUDGMENT` (0.5: picking the better step more often is not proportionally more
 research); the coding elasticity is the staff survey's yearly output growth. Both go

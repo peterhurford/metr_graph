@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v21-ai-copies"
+MODEL_VERSION = "takeoff-v22-ladder-human-hours"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -241,16 +241,25 @@ def normal_scores(uniform):
     return np.vectorize(NormalDist().inv_cdf, otypes=[float])(u)
 
 
-def workflow_state(capability_log, baseline_rate, starts, half_months, floor):
+def workflow_state(capability_log, baseline_rate, starts, half_months, floor,
+                   curve=None, reference_half=None):
     """Human hours per stage relative to a fixed baseline project.
 
     Capability progress is measured in years at today's effective-compute
-    growth rate. Halving times are elicitable from repeated matched-project
-    measurements; defaults are assumptions, not fitted observations.
+    growth rate. Without `curve`, each stage halves its hours above the floor
+    every `half_months`. With `curve` = (years, share), each stage follows that
+    shape instead (share relative to its start), at `reference_half` /
+    `half_months` its pace: the halving times then only set each stage's
+    speed along the curve.
     """
     equivalent_years = np.maximum(capability_log, 0) / baseline_rate
-    return floor + (starts - floor) * np.exp(
-        -np.log(2) * equivalent_years[:, None] * 12 / half_months)
+    if curve is None:
+        decline = np.exp(-np.log(2) * equivalent_years[:, None] * 12 / half_months)
+    else:
+        years, share = curve
+        along = equivalent_years[:, None] * reference_half / half_months
+        decline = np.interp(along, years, share / share[0])
+    return floor + (starts - floor) * decline
 
 
 def progress_multiple(previous_software, new_software, cycle_years, baseline_rate):
@@ -313,7 +322,7 @@ def reference_software(years, rate, compute_rate, parallel, initial_throughput, 
 
 def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None,
              compute_rates=None, historical_compute_rate=None, coding_capability=None,
-             coding_weights=None):
+             coding_weights=None, human_curve=None):
     """Weekly research and successor cycles, with censored milestone draws.
 
     RSI is the first time research direction is at or under `full_human`% of
@@ -322,7 +331,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     (`capability_log`) covers the whole window. `compute_rates`, one log
     growth rate a year per draw, replaces `compute_growth` and its spread;
     `historical_compute_rate` is the compute growth behind today's steady pace
-    (default: each draw's own rate). `coding_weights` (w_compute, w_software)
+    (default: each draw's own rate). `human_curve` = (years ahead, human
+    share), the shape research hours follow (see `workflow_state`); without
+    it they decline exponentially. `coding_weights` (w_compute, w_software)
     measures capability as w_compute x its training-compute part plus
     w_software x its algorithmic part (both natural logs vs today's model)
     for that test, so the level can be an ECI gain; default 1 and 1, log
@@ -384,6 +395,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     floor = p["human_floor"] / 100
     starts = np.maximum(starts, floor)
     halves = np.array([p["half_" + s] for s in WORKFLOW_KEYS])[None, :] * factors[8:11].T
+    # Each stage's pace along `human_curve` is the settings' weighted halving
+    # time over its own (with its draw's spread).
+    reference_half = float(np.array([p["half_" + s] for s in WORKFLOW_KEYS]) @ WORKFLOW_WEIGHTS)
+
+    def humans(capability):
+        return workflow_state(capability, baseline_capability_rate, starts, halves, floor,
+                              human_curve, reference_half)
     baseline_capability_rate = software_rate + compute_rate
     events = {name: np.full(n, np.inf) for name in MILESTONES}
     outcomes = {name: {key: np.full(n, np.nan) for key in
@@ -622,8 +640,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # The deployed model only changes at the end of a step, where `now`
         # is refreshed, so the last step's reading still holds here.
         effective = now[2].copy()
-        human_now = workflow_state(effective, baseline_capability_rate, starts,
-                                   halves, floor)
+        human_now = humans(effective)
         if p["rsi_autopilot"]:
             human_now[np.isfinite(events["RSI"]) & (t >= events["RSI"] - 1e-12)] = 0.0
         share_now = human_now @ WORKFLOW_WEIGHTS
@@ -814,7 +831,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             history[rows] = np.where(future, values[rows, None], history[rows])
         # A diverged draw's state is a numerical ceiling: record nothing from it.
         live = active & ~diverged
-        human = workflow_state(effective, baseline_capability_rate, starts, halves, floor)
+        human = humans(effective)
         coding_hit = active & (end >= coding) & ~coding_recorded
         record("Full coding automation", coding_hit, human, delivered_rate, advantage)
         coding_recorded |= coding_hit
@@ -867,8 +884,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                                 compute_late[:, None], slow_at) + held
     # Retain all draws in each percentile, including slow/non-arriving paths.
     def humans_at(j):
-        hours = workflow_state(capability_history[:, j], baseline_capability_rate,
-                               starts, halves, floor)
+        hours = humans(capability_history[:, j])
         if p["rsi_autopilot"]:
             hours[events["RSI"] <= workflow_grid[j] + 1e-12] = 0.0
         return hours

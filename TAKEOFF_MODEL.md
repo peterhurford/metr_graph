@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v21-ai-copies`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v22-ladder-human-hours`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -137,9 +137,14 @@ then on none do. That lifts research pace about 15% just after RSI (2.35x today'
 2.05x), a gain difficulty erases within a year; ultraintelligence does not move. Every draw
 runs to the horizon, so its capability path continues past RSI.
 The stages are direction, experiment design/interpretation, and verification/integration.
-A persistent human-work floor (default 0: no stage needs people forever) and the stage halving times remain adjustable. Halving times use months of capability
-progress at today's initial growth rate, not calendar months; accelerated capability progress
-compresses calendar durations. The available research system includes validated fast gains.
+Human hours follow the R&D automation index's own projection rather than an exponential:
+the share of tasks at each level over the coming years (AL4 at the milestone card's median
+rate, AL5 as AL4 shifted by the AL5 card's median lag), times the human time each level
+takes, gives a curve that holds people near the AL4 level (about 35% of hours) through 2027,
+then drops as AL5 arrives, to 5% about a year and a half after August 2026. Each stage moves
+along that curve at its own pace (direction 1.5x the average, verification 0.75x), in
+months of capability progress at today's rate, so faster progress compresses it. A
+persistent human-work floor (default 0) and the stage paces remain adjustable. The available research system includes validated fast gains.
 
 **Capability as ECI.** Each draw's deployed model is read as ECI from its two parts, both
 relative to today's model: today's US frontier score, plus 6.4 points per 10x of training

@@ -332,6 +332,28 @@ def test_more_copies_speed_only_the_work_ai_does():
     assert np.median(on["software_log"]) > np.median(off["software_log"])
 
 
+def test_human_hours_can_follow_a_given_curve():
+    """A curve that is itself the exponential reproduces the exponential path
+    exactly; a plateau-then-drop curve holds people near the plateau, then lets
+    them go, and each stage moves along it at its halving time's pace."""
+    cap = np.array([0.0, 1.0, 2.0, 4.0])
+    starts = np.array([[.6, .5, .8]] * 4)
+    halves = np.array([[6.0, 9.0, 12.0]] * 4)
+    ref = float(np.array([6.0, 9.0, 12.0]) @ tk.WORKFLOW_WEIGHTS)
+    years = np.linspace(0, 40, 4001)
+    exp_curve = (years, 2 ** (-years * 12 / ref))
+    np.testing.assert_allclose(
+        tk.workflow_state(cap, 1.0, starts, halves, 0.0, exp_curve, ref),
+        tk.workflow_state(cap, 1.0, starts, halves, 0.0), rtol=1e-4)
+    plateau = (years, np.where(years < 2, 0.6, 0.006))
+    h = tk.workflow_state(cap, 1.0, starts, halves, 0.0, plateau, ref)
+    np.testing.assert_allclose(h[1], starts[1])           # still on the plateau
+    assert (h[3] < 0.05 * starts[3]).all()                 # all past the drop
+    onset = np.full(20, 0.5)
+    r = tk.simulate(dict(years=4), n=20, onset_years=onset, human_curve=plateau)
+    assert np.isfinite(r["events"]["RSI"]).any()
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])

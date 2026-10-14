@@ -17792,6 +17792,40 @@ def _tk_human_calibration(accel):
     return out
 
 
+def _tk_ladder_curve(hours=None, years=40.0):
+    """(years ahead, human share) the R&D automation index's own projection
+    implies, from its latest rated month: the share of tasks at each level,
+    times `hours` per level. AL4 climbs from the projection's start at the
+    milestone card's median rate, AL5 is AL4 shifted by the card's median
+    lag, and AL2 and AL3 follow their own logit fits, kept nested above AL4,
+    so the curve reaches the "AL4 reaches 90%" and "AL5 reaches 90%" cards'
+    medians. Non-increasing; None if the ladder will not fit."""
+    rows = load_rsi_automation()
+    hours = _TK_AL_HUMAN_HOURS if hours is None else hours
+    base4, _icpt4, slope4 = _rsi_auto_fit(rows)
+    lag = _rsi_al5_lag(rows)
+    if slope4 <= 0 or lag is None:
+        return None
+    dt_lo, dt_hi = _rsi_auto_dt_ci(rows, round(np.log(2) / slope4))
+    slope = np.log(2) / np.sqrt(dt_lo * dt_hi)               # per day, median
+    lag_days = np.sqrt(lag['lag'] * max(lag['lag'], lag['slow']) * _RSI_AL5_TAU_HI_MULT)
+    cur, centre, _sigma = _rsi_auto_start(rows)
+    fits = {k: _rsi_auto_level_fit(rows, k) for k in ('al2', 'al3')}
+    t = np.linspace(0, years, int(years * 24) + 1)
+    days = t * 365.25
+    al4 = _inv_logit(centre + slope * days)
+    al5 = _inv_logit(centre + slope * (days - lag_days))
+    cum = {}
+    for k in ('al2', 'al3'):
+        b, icpt, sl = fits[k]
+        cum[k] = _inv_logit(icpt + sl * ((cur['date'] - b).days + days))
+    al3 = np.maximum(cum['al3'], al4)
+    al2 = np.maximum(cum['al2'], al3)
+    cum_levels = [np.ones_like(t), np.ones_like(t), al2, al3, al4, al5]
+    share = sum((cum_levels[i] - cum_levels[i + 1]) * hours[i] for i in range(5))
+    return t, np.minimum.accumulate(share)
+
+
 def _tk_al_hours_now():
     """Hours per level at the session's human speed-up setting."""
     accel = st.session_state.get("tk_human_accel", _TK_HUMAN_ACCELERATION)
@@ -18622,13 +18656,13 @@ def _tk_rsi_activity(rows, today, n):
 @st.cache_data(show_spinner=False, max_entries=12)
 def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, experiment_slopes,
                  baseline_yield=1.0, compute_rates=None, historical_compute_rate=None,
-                 coding_capability=None, coding_weights=None):
+                 coding_capability=None, coding_weights=None, human_curve=None):
     # The source digest invalidates results when the imported simulator changes.
     result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
                              experiment_slopes=experiment_slopes, compute_rates=compute_rates,
                              historical_compute_rate=historical_compute_rate,
                              coding_capability=coding_capability,
-                             coding_weights=coding_weights)
+                             coding_weights=coding_weights, human_curve=human_curve)
     grid = result["workflow_progress"]["years"]
     paths = np.exp(experiment_starts[:, None] + experiment_slopes[:, None] * grid)
     result["workflow_progress"]["rsi_activity_quantiles"] = np.quantile(
@@ -18813,11 +18847,11 @@ def _render_takeoff(loading):
                    "its settings are in the RSI evidence section.")
         with st.expander("What decides ultraintelligence", expanded=True):
             st.caption("Across a plausible range, the first three each move the "
-                       "ultraintelligence date 2\u20136 months; \u03c1, more AI researchers "
+                       "ultraintelligence date 1\u20135 months; \u03c1, more AI researchers "
                        "and the scale-dependent share about 2\u20133 each; the training-run "
-                       "wait 2\u20134 (12 sooner if no gain waits). Compute growth after RSI, "
+                       "wait 2\u20135 (12 sooner if no gain waits). Compute growth after RSI, "
                        "delayed 18 months, barely moves it; with no delay, 2\u00d7 brings it "
-                       "5 months sooner. Everything under Advanced moves it a few months "
+                       "6 months sooner. Everything under Advanced moves it a few months "
                        "at most.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
@@ -19016,10 +19050,12 @@ def _render_takeoff(loading):
                        "month, read through an assumed human-time share per level, gives "
                        "the average; the split across stages is assumed.")
                 number(f"{stage}: human-work halving time (months)", "half_" + key, 1.0, 60.0, 1.0,
-                       "Months of capability progress at today’s pace needed to halve "
-                       "human work above the floor. Future acceleration shortens calendar time. "
-                       "Default: the R&D automation index's past-year halving, spread "
-                       "across stages in an assumed pattern.")
+                       "Sets this stage's pace along the curve human hours follow (the "
+                       "automation index's own projection: an AL4 plateau, then a drop as "
+                       "AL5 arrives): a stage halving faster than the stages' weighted "
+                       "average moves along it faster, and only these ratios matter. "
+                       "Measured in months of capability progress at today's pace, so "
+                       "future acceleration shortens calendar time.")
             number("Persistent human-work floor (%)", "human_floor", 0.0, 25.0, 1.0)
             st.markdown("**Validated research progress**")
             number("Baseline software doubling time (months)", "software_months", 3.0, 60.0, 1.0,
@@ -19170,10 +19206,12 @@ def _render_takeoff(loading):
         eci_rates = _tk_eci_rates(params, hist_compute)
         coding_level = _TK_ULTRA_ECI - eci_now          # in ECI points, through eci_rates
         coding_weights = (eci_rates["compute"], eci_rates["software"])
+        # Research hours follow the automation index's own projection.
+        human_curve = _tk_ladder_curve(_tk_al_hours_now())
         _tk_loading(bar, 1)
         result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
                               experiment_starts, experiment_slopes, pace_yield, compute_rates,
-                              hist_compute, coding_level, coding_weights)
+                              hist_compute, coding_level, coding_weights, human_curve)
         # Late coding dates go with slow scenarios: rank the first run's capability
         # growth, reassign the RSI projection's dates along it, and run again.
         corr = float(st.session_state["tk_coding_pairing"])
@@ -19185,7 +19223,7 @@ def _render_takeoff(loading):
             _tk_loading(bar, 2)
             result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
                                   experiment_starts, experiment_slopes, pace_yield, compute_rates,
-                                  hist_compute, coding_level, coding_weights)
+                                  hist_compute, coding_level, coding_weights, human_curve)
         # The ECI trend reflects the compute growth behind it: the data-center
         # series' own historical fit when its projection is in use.
         result["hist_compute"] = hist_compute
@@ -19231,6 +19269,9 @@ def _render_takeoff(loading):
               "human hours, after coding automation: the AI chooses what to try next. "
               f"At that point experiment design still needs {left['experiments']:.0f}% of its "
               f"human hours and verification {left['verification']:.0f}% (medians); "
+              "human hours follow the automation index's projection, so this date rests "
+              "mostly on when AL5 (no human) tasks arrive, a level the index has never yet "
+              "rated a task at; "
               + ("on autopilot (the default) those are dropped, so from RSI on no stage needs "
                  "people." if params["rsi_autopilot"] else
                  "with autopilot off they keep falling at their own pace."))
