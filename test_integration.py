@@ -1150,6 +1150,17 @@ class TestTakeoffTab:
         at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_human_floor").value == 0.0
 
+    def test_human_speedup_resets_the_stage_settings_and_shows_its_table(self):
+        """The speed-up input resets each stage's starting share and halving
+        time, and section 2's table shows the mix it is read from."""
+        at = self._app()
+        before = at.number_input(key="tk_human_direction").value
+        at.number_input(key="tk_human_accel").set_value(2.5).run()
+        _assert_no_error(at, "Takeoff / human speed-up")
+        assert at.number_input(key="tk_human_direction").value < before
+        table = next(df.value for df in at.dataframe if "Fitted human time" in df.value.columns)
+        assert table["Human share of work"].iloc[-1] == "40.0%"
+
     @pytest.mark.parametrize("bad,fix,message", [
         # A floor above a stage's starting share is inconsistent.
         ((("tk_human_experiments", 5.0), ("tk_human_floor", 10.0)),

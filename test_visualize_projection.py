@@ -5213,6 +5213,24 @@ class TestTakeoffEciRates:
         assert lo - 2 <= r["algo_ppy"] <= hi + 2
 
 
+class TestTakeoffHumanSpeedup:
+    """Hours per automation level: the prior raised to one common power so
+    the index's latest month gives the set human speed-up, ends fixed."""
+
+    @pytest.mark.parametrize("accel", [1.3, 1.7, 2.5])
+    def test_fitted_hours_reproduce_the_speedup(self, accel):
+        row = vp.load_rsi_automation()[-1]
+        hours = vp._tk_fit_al_hours(row, accel=accel)
+        assert hours[0] == pytest.approx(1.0) and hours[-1] == 0.0
+        assert vp._tk_ladder_human_share(row, hours) == pytest.approx(1 / accel, rel=1e-6)
+        # The prior's order survives: each level takes less human time than the one below.
+        assert all(a > b for a, b in zip(hours, hours[1:]))
+
+    def test_a_faster_speedup_starts_people_lower(self):
+        slow, fast = vp._tk_human_calibration(1.4), vp._tk_human_calibration(2.5)
+        assert fast["tk_human_direction"] < slow["tk_human_direction"]
+
+
 class TestTakeoffRsiCalibration:
     """Takeoff defaults read off RSI data rather than set by hand."""
 

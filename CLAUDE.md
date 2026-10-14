@@ -232,6 +232,12 @@ its line labels are placed by hand since a log axis reads an annotation's y as t
 how fast** (`_tk_dist_fig`: density and cumulative share of the RSI and ultraintelligence
 dates and the gap between them). `test_default_render_and_stable_rerun` pins the order.
 
+Today's human share comes from the automation index's latest mix of AL levels times the
+human time each level still takes: `_TK_AL_HUMAN_HOURS_PRIOR` (100/95/80/60/30/0%) raised
+to one common power by `_tk_fit_al_hours` so the mix gives `tk_human_accel` (default 1.7×,
+*Human research speed-up today*), ends fixed. Changing it resets each stage's starting
+share and halving time (`_tk_on_human_accel`, `_tk_human_calibration`), and section 2's
+table shows the arithmetic (`TestTakeoffHumanSpeedup`).
 Four defaults are read off RSI data at import (`TestTakeoffRsiCalibration`), each
 keeping the model's stage pattern and rescaling it. Today's human share per stage matches
 the R&D automation index's latest month, read through `_TK_AL_HUMAN_HOURS` (assumed human
