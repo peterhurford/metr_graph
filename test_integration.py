@@ -683,6 +683,21 @@ class TestComputeVsCapabilities:
         caps = " ".join(str(c.value) for c in at.caption)
         assert "consistency check" in caps
 
+    def test_distillation_chart_draws_two_china_scenarios(self):
+        """The scenario chart draws the US-measured rate (dashed) and no
+        external distillation (solid); China's own rate and indigenous-only
+        are not lines, and the table drops the own-rate row."""
+        at = self._cc_app()
+        names = [d.get("name", "") for el in at.get("plotly_chart")
+                 for d in json.loads(el.proto.spec)["data"]]
+        china = [n for n in names if n.startswith("China · ")]
+        assert any("US-measured rate" in n for n in china)
+        assert any("no ext. distillation" in n for n in china)
+        assert not any("own algo rate" in n or "indigenous" in n for n in china)
+        md = " ".join(str(m.value) for m in at.markdown)
+        assert "China's own algo growth" not in md
+        assert "Indigenous only" in md
+
     def test_distillation_anchor_dropdown(self):
         """The scenario-lines anchor toggles between today and the Jan-2025
         backtest, and the caption follows."""

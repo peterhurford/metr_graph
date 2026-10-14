@@ -13048,15 +13048,12 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                                           "derived without it is the "
                                           "decomposition's main consistency check."))
 
-    # ── China's algorithmic edge: the distillation scenario ────────────────────
-    # Chart B assumes a *shared* algorithmic term — methods diffuse, so both
-    # countries gain capability at the same per-year rate at fixed compute. But a
-    # compute-constrained follower has both the incentive and the means (distilling
-    # from open and API-served frontier models, heavy RL/efficiency focus) to push
-    # its own algorithmic rate higher. We test that by measuring each country's
-    # algorithmic rate *empirically and separately* — the iso-compute slope (ECI/yr
-    # at a fixed compute budget) — instead of forcing one shared term.
-    st.markdown("**China's algorithmic edge — the distillation scenario**")
+    # ── The distillation scenario ──────────────────────────────────────────────
+    # China's lines at the US-measured iso-compute rate and with external
+    # distillation removed (`_cc_innovation_algo_band` midpoint, diffusion kept); the table
+    # adds indigenous-only. China's own measured rate (`cn_algo`, distillation
+    # included) is not drawn; it feeds `_render_cc_china_target`.
+    st.markdown("**China's algorithmic rate — the distillation scenario**")
     us_algo, n_us_iso, _ = _cc_iso_compute_rate(cc_rows, 'United States of America')
     cn_algo, n_cn_iso, cn_med = _cc_iso_compute_rate(cc_rows, 'China')
     if us_algo is None or cn_algo is None:
@@ -13066,13 +13063,9 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         g_cn_mid = 0.5 * (g_cn_lo + g_cn_hi)
         compute_term_cn = a_partial * g_cn_mid          # China's compute-driven ECI/yr
         slope_usalgo = us_algo + compute_term_cn        # China riding US algo rate
-        slope_cnalgo = cn_algo + compute_term_cn        # China riding its own algo rate
-        premium = cn_algo - us_algo
-        premium_pct = (premium / us_algo * 100) if us_algo else 0.0
 
         # Anchor selector: project forward from today, or backdate to Jan
-        # 2025 so the own-rate line doubles as a backtest against China's
-        # actual points.
+        # 2025 so the lines double as a backtest against China's actual points.
         if st.session_state.get("cc_bd_anchor") not in _CC_BD_OPTIONS:
             st.session_state.pop("cc_bd_anchor", None)
         bd_label = st.selectbox(
@@ -13080,8 +13073,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             index=_CC_BD_OPTIONS.index(_CC_DEFAULTS["cc_bd_anchor"]),
             key="cc_bd_anchor",
             help="Today projects forward; Jan 2025 backdates the lines so "
-                 "the own-rate one can be checked against China's actual "
-                 "frontier since then.")
+                 "they can be checked against China's actual frontier since "
+                 "then.")
         if bd_label == "Today":
             anchor_date, cn_anchor, us_anchor = today, cn_best[1], us_best[1]
         else:
@@ -13096,22 +13089,9 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         bd_dates = [anchor_date] + _cc_quarter_ends(anchor_date, horizon)
         dt_bd = np.array([(d - anchor_date).days / 365.25 for d in bd_dates])
 
-        # Own-rate line: distillation decays as the gap closes, the same law as
-        # _cc_cn_crossing_sim (gap0 = today's gap) — not the old hard cap. The
-        # min() only guards the discrete step against overshoot.
         us_ceiling = us_anchor + us_eci_smid * dt_bd
         cn_traj_us = cn_anchor + slope_usalgo * dt_bd
-        gap0_now = max(us_best[1] - cn_best[1], 1e-6)
         inno_mid = 0.5 * (inno_band[0] + inno_band[1]) if inno_band else us_algo
-        e = float(cn_anchor)
-        cn_traj_cn = [e]
-        for i in range(1, len(dt_bd)):
-            gap = max(float(us_ceiling[i - 1]) - e, 0.0)
-            r = (compute_term_cn + inno_mid
-                 + (cn_algo - inno_mid) * min(1.0, gap / gap0_now))
-            e = min(e + r * (dt_bd[i] - dt_bd[i - 1]), float(us_ceiling[i]))
-            cn_traj_cn.append(e)
-        cn_traj_cn = np.array(cn_traj_cn)
         # Two stripped counterfactuals: no *external* distillation (diffusion
         # of methods intact — the inno_band midpoint), and innovation alone
         # (no distillation and no diffusion — the pure band midpoint).
@@ -13123,9 +13103,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
 
         us_end = float(us_ceiling[-1])
         cn_end_us = float(cn_traj_us[-1])
-        cn_end_cn = float(cn_traj_cn[-1])
         mo_us = (us_end - cn_end_us) / us_eci_smid * 12 if us_eci_smid > 0 else float('nan')
-        mo_cn = (us_end - cn_end_cn) / us_eci_smid * 12 if us_eci_smid > 0 else float('nan')
 
         rows_md = [
             "| Scenario | China algo rate | China ECI/yr (algo+compute) | "
@@ -13133,10 +13111,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             "|---|---|---|---|---|",
             f"| **US-measured algo rate** (mid-compute, itself teacher-fed) | "
             f"{us_algo:.1f} pts/yr | "
-            f"{slope_usalgo:.1f} pts/yr | ~{cn_end_us:.0f} | ~{mo_us:.0f} mo |",
-            f"| **China's own algo growth** (distillation, decaying) | "
-            f"{cn_algo:.1f} pts/yr | {slope_cnalgo:.1f} pts/yr | ~{cn_end_cn:.0f} "
-            f"| ~{mo_cn:.0f} mo |"]
+            f"{slope_usalgo:.1f} pts/yr | ~{cn_end_us:.0f} | ~{mo_us:.0f} mo |"]
         if cn_traj_inno is not None:
             cn_end_inno = float(cn_traj_inno[-1])
             mo_inno = ((us_end - cn_end_inno) / us_eci_smid * 12
@@ -13157,8 +13132,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                 f"| ~{mo_pure:.0f} mo |")
         st.markdown("\n".join(rows_md))
 
-        # Chart: the two China trajectories (backdated to Jan 2025) vs the US
-        # frontier ceiling.
+        # Chart: the US-measured and no-external-distillation China lines vs
+        # the US frontier ceiling. Indigenous-only stays a table row.
         figd = go.Figure()
         _dc_add_projection_band(figd, today, horizon)
         figd.add_trace(go.Scatter(
@@ -13176,25 +13151,13 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             line=dict(color='#D62728', width=2.5, dash='dash'),
             name=f'China · US-measured rate ({us_algo:.1f})',
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US-measured</extra>'))
-        figd.add_trace(go.Scatter(
-            x=bd_dates, y=list(cn_traj_cn), mode='lines',
-            line=dict(color='#7F1010', width=2.5),
-            name=f"China · own algo rate ({cn_algo:.1f})",
-            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>China algo</extra>'))
         if cn_traj_inno is not None:
             figd.add_trace(go.Scatter(
                 x=bd_dates, y=list(cn_traj_inno), mode='lines',
-                line=dict(color='#6B6B6B', width=2, dash='dashdot'),
+                line=dict(color='#7F1010', width=2.5),
                 name=f"China · no ext. distillation (~{inno_mid:.0f})",
                 hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                               '<extra>no ext. distillation</extra>'))
-        if cn_traj_pure is not None:
-            figd.add_trace(go.Scatter(
-                x=bd_dates, y=list(cn_traj_pure), mode='lines',
-                line=dict(color='#9E9E9E', width=2, dash='dot'),
-                name=f"China · indigenous only (~{pure_mid:.0f})",
-                hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                              '<extra>indigenous</extra>'))
         figd.update_layout(
             height=420, plot_bgcolor='white', paper_bgcolor='white',
             margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
@@ -13212,33 +13175,22 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
              "actual points are history)."
              if bd_label == "Today" else
              f"Backdated to <b>Jan 2025</b> (China \u2248{cn_anchor:.0f} then) so "
-             "the edge accumulates over its full period and the own-rate line can "
-             "be read against China's actual points.")
-            + " The solid line uses China's own measured rate, the dashed line the "
-            "US-measured one"
-            + ("; the grey dash-dot line cuts model access"
+             "the lines can be read against China's actual points.")
+            + (" The solid line cuts model access, keeping method diffusion;"
                if cn_traj_inno is not None else "")
-            + ("; the dotted grey line strips diffusion too"
-               if cn_traj_pure is not None else "")
-            + ". The edge buys earlier <i>parity</i>, not a lead, and rests on thin "
+            + " the dashed line rides the US-measured rate. Both rest on thin "
             "fits.",
-            ("The solid line", "China's own measured algorithmic rate "
-                               f"({cn_algo:.1f} vs {us_algo:.1f} ECI/yr, "
-                               f"~+{premium_pct:.0f}%), its distillation term "
-                               "decaying as the gap closes \u2014 you can't overtake "
-                               "your teacher \u2014 so it approaches the US line, "
-                               "never past it."),
+            *([("The solid line", "No external distillation: model access cut, "
+                                  "papers still flowing "
+                                  f"(~{inno_mid:.1f} ECI/yr, constant). China's "
+                                  f"own measured rate, {cn_algo:.1f}, includes "
+                                  "distillation.")]
+              if cn_traj_inno is not None else []),
             ("the dashed line", "Rides the US-measured rate: mid-compute US models, "
                                 "themselves teacher-fed \u2014 a follower rate, not "
                                 "the US frontier engine. Both China lines share the "
                                 f"compute term (~{compute_term_cn:.1f} ECI/yr) and "
                                 "differ only algorithmically."),
-            *([("the grey dash-dot line", "Cuts model access but keeps method "
-                                          f"diffusion (~{inno_mid:.0f} ECI/yr).")]
-              if cn_traj_inno is not None else []),
-            *([("the dotted grey line", "Strips diffusion too \u2014 innovation "
-                                        f"alone (~{pure_mid:.0f} ECI/yr).")]
-              if cn_traj_pure is not None else []),
             ("thin fits", f"n={n_us_iso} US / n={n_cn_iso} China within \u00b10.4 "
                           "dex of median compute \u2014 so few same-budget US models "
                           "that the edge is indicative, not measured."))
