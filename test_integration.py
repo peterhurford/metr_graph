@@ -1660,6 +1660,26 @@ class TestPacingTab:
         at.run()
         assert cards() == china
 
+    def test_compute_ratios_show_what_the_compute_levers_cost_china(self):
+        """The ratio table under the breakdown: the US is frozen, China closes
+        the compute gap by the crossing, and the DUV bans leave the US
+        further ahead than the same date with no compute levers."""
+        at = self._app()
+
+        def ratios(at):
+            t = next(x.value for x in at.table if "At the pause" in x.value.columns)
+            row = t[t[""].str.startswith("China, largest run")].iloc[0]
+            return {c: float(re.search(r"US ([\d.,]+)\u00d7", row[c]).group(1)
+                             .replace(",", ""))
+                    for c in t.columns[1:]}
+
+        base = ratios(at)
+        assert base["At the crossing"] < base["At the pause"]
+        at.checkbox(key="pc_duv_ban").check().run()
+        at.checkbox(key="pc_duv_service").check().run()
+        cut = ratios(at)
+        assert cut["At the crossing"] > cut["Same date, no compute levers"]
+
     def test_why_states_the_gap_and_the_slowing_rate(self):
         """The breakdown says how much gap is left at the pause and how fast
         China closes it: each channel's rate at the pause and at the

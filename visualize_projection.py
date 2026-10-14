@@ -16204,12 +16204,68 @@ def _pc_rate_at(cum, grid, t):
     return np.where(np.isnan(np.asarray(t, dtype=float)), np.nan, out)
 
 
+def _pc_render_compute_ratios(ci, span):
+    """Largest training runs, US over China, at the pause and at the crossing.
+
+    China grows from its pause-start reading (`_pc_capacity_at`, the
+    state-of-play numbers) at the pace the levers leave it, over `span`
+    years (pause to crossing); the US is frozen. A last column repeats the
+    crossing with no compute levers, so the levers show in compute's own
+    units before the exchange rate shrinks them to ECI.
+    """
+    us = ci.get('us')
+    if not us or span <= 0:
+        return
+    lus = float(np.log10(us[1]))
+
+    def _cell(level):
+        if level is None:
+            return "\u2014"
+        r = 10 ** (lus - level)
+        return (f"{_log_op(10 ** level)} log OP "
+                f"(US {r:.1f}\u00d7)" if r < 10 else
+                f"{_log_op(10 ** level)} log OP (US {r:,.0f}\u00d7)")
+
+    def _lv(cap):
+        return float(np.log10(cap[1])) if cap else None
+
+    def _grow(level, g):
+        return None if level is None or g is None else level + g * span
+
+    use0, dom0 = _lv(ci.get('cn_use')), _lv(ci.get('cn_dom'))
+    rows = [{"": "US, frozen at the pause",
+             "At the pause": f"{_log_op(us[1])} log OP",
+             "At the crossing": f"{_log_op(us[1])} log OP"},
+            {"": "China, largest run it can use",
+             "At the pause": _cell(use0),
+             "At the crossing": _cell(_grow(use0, ci.get('g_use')))},
+            {"": "China, domestic clusters only",
+             "At the pause": _cell(dom0),
+             "At the crossing": _cell(_grow(dom0, ci.get('g_dom')))}]
+    if ci.get('levers'):
+        base0 = _lv(ci.get('base_cn_use'))
+        rows[0]["Same date, no compute levers"] = f"{_log_op(us[1])} log OP"
+        rows[1]["Same date, no compute levers"] = _cell(
+            _grow(base0, ci.get('g_use_base')))
+        rows[2]["Same date, no compute levers"] = _cell(
+            _grow(dom0, ci.get('g_dom_base')))
+    st.markdown("##### Compute: US vs China's largest run")
+    st.table(pandas.DataFrame(rows).style.hide(axis="index"))
+    _fn_caption(
+        f"Each 10\u00d7 of compute is worth ~{ci['a_partial']:.0f} ECI, so "
+        "a big compute ratio buys a small capability gap.",
+        ("Each 10\u00d7", "The frontier-grade exchange rate. China's runs grow "
+                           "from the state-of-play reading at the pace these "
+                           "levers leave it, over the median time from the "
+                           "pause to the crossing; the US is frozen."))
+
+
 def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    cn_gain, cn_extra, cn_run_mo, us_run_mo, anchor_name,
                    anchor_d, anchor_eci, horizon_year, notes=(),
                    t_pause=None, pause_label=None, surpass_mo=None,
                    withhold=False, dist_stop_t=None, remote_stop_t=None,
-                   comp_dead=None):
+                   comp_dead=None, compute_info=None):
     """Bottom-of-panel breakdown: why China's catch-up takes the months it does.
 
     The table gives each source's rate at the pause, its average from the
@@ -16401,6 +16457,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         _fn_caption(" ".join(legend + (["Rates under these settings."]
                                        if notes else [])),
                     *([("these settings", " ".join(notes))] if notes else []))
+    if compute_info:
+        _pc_render_compute_ratios(compute_info, span)
 
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
@@ -17175,6 +17233,32 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             f"Each path also carries ±{_cc_frontier_level_sd(cn_fr):.1f} "
             "ECI of release-step scatter, which closes no gap on average and "
             "is left out of the rows.")
+    # Compute levels at the pause (the state-of-play reading) and the paces
+    # they grow at after it, with these levers and with none, for the
+    # breakdown's ratio table.
+    _use_dom = stop_remote and t_cut_r <= max(float(np.median(t_pause_s)),
+                                              t_today)
+    # The domestic pace as the sim runs it: the catalogued domestic pace
+    # capped by the export-control band, mid-band; and the same unslowed.
+    _g_dom_base = None
+    if chk_dom is not None:
+        _hi = min(_CC_CN_COMPUTE_HI, max(chk_dom['g'], 0.05))
+        _g_dom_base = 0.5 * (min(_CC_CN_COMPUTE_LO, _hi) + _hi)
+    compute_info = {
+        'us': caps.get(_DC_CTY_US),
+        'cn_use': caps.get(_DC_CTY_CN_DOMESTIC if _use_dom
+                           else _DC_CTY_CN_ACCESS),
+        'cn_dom': caps.get(_DC_CTY_CN_DOMESTIC),
+        'g_use': 0.5 * (g_lo_eff + g_hi_eff),
+        'g_dom': (0.5 * (g_dom_lo + g_dom_hi) if g_dom_hi is not None
+                  else None),
+        'g_use_base': g_mid,
+        'g_dom_base': _g_dom_base,
+        'base_cn_use': caps.get(_DC_CTY_CN_ACCESS),
+        'a_partial': a_partial,
+        'levers': bool(stop_remote or duv_ban or duv_service
+                       or dom_slow_user),
+    }
     _pc_render_why(
         chan, grid0, traj0, target0, years, years_base,
         cn_gain=cn_gain, cn_extra=cn_extra, cn_run_mo=cn_run_mo,
@@ -17185,7 +17269,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         surpass_mo=s50, withhold=bool(withhold),
         dist_stop_t=kw.get('t_dist_stop'),
         remote_stop_t=t_cut_r if stop_remote else None,
-        comp_dead=comp_dead)
+        comp_dead=comp_dead, compute_info=compute_info)
 
 
 def render_pacing():
