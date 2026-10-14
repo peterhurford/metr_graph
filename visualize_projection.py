@@ -17905,7 +17905,7 @@ def _tk_density(samples, edges):
     return counts / len(samples) / np.diff(edges)
 
 
-def _tk_dist_fig(rsi, ultra, gap, today, view_years, sim_end):
+def _tk_dist_fig(rsi, ultra, gap, today, view_end, sim_end):
     """Section 4: density (top) and cumulative share (bottom) of the RSI and
     ultraintelligence dates (left, calendar, cropped to the chart year) and of
     the RSI-to-ultraintelligence gap (right, among draws reaching RSI by
@@ -17916,6 +17916,7 @@ def _tk_dist_fig(rsi, ultra, gap, today, view_years, sim_end):
                         subplot_titles=["When each milestone arrives",
                                         "RSI \u2192 ultraintelligence", "", ""])
     month = 1 / 12
+    view_years = (view_end - today).total_seconds() / (365.25 * 86400)
     edges = np.arange(0, view_years + month, month)
     mids = [today + timedelta(days=float(y * 365.25)) for y in (edges[:-1] + edges[1:]) / 2]
     for name, samples, color in (("RSI", rsi, "#d68910"),
@@ -17960,7 +17961,7 @@ def _tk_dist_fig(rsi, ultra, gap, today, view_years, sim_end):
     fig.update_yaxes(rangemode="tozero", row=1, col=2)
     fig.update_yaxes(title_text="Cumulative %", range=[0, 100], row=2, col=1)
     fig.update_yaxes(range=[0, 100], row=2, col=2)
-    fig.update_xaxes(range=[today, today + timedelta(days=float(view_years * 365.25))], col=1)
+    fig.update_xaxes(range=[today, view_end], col=1)
     fig.update_xaxes(range=[g_edges[0], g_edges[-1]], col=2)
     fig.update_xaxes(title_text=f"Time from RSI to ECI {_TK_ULTRA_ECI:g}", row=2, col=2)
     fig.update_layout(height=560, margin=dict(l=55, r=20, t=40, b=40),
@@ -18715,7 +18716,7 @@ def render_takeoff():
          f"Among the {100 * np.mean(reached):.0f}% of scenarios reaching RSI by "
          f"{end_date:%Y}; one not reaching ultraintelligence by then stays in the "
          "denominator."))
-    st.plotly_chart(_tf(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_years,
+    st.plotly_chart(_tf(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_end,
                                      end_date)), width="stretch")
     with st.expander("About this model"):
         st.markdown(
