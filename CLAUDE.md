@@ -8,6 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 streamlit run visualize_projection.py    # http://localhost:8501
 ```
 
+## Random seed
+
+Every tab's rerun draws its Monte Carlo inside `_seeded_rng(_APP_SEED)` (the dispatch), so
+the same settings give the same numbers; Takeoff reseeds from its own `tk_seed`. No cached
+function may draw unseeded, or a cache hit would shift the stream
+(`test_toggling_a_box_back_restores_the_numbers`).
+
 ## Running Tests
 
 ```bash
@@ -1510,31 +1517,15 @@ wait** (unlike the CC 161 section — a queue delays both sides alike); dates fo
 sidebar's *Date points at* in lockstep (US events run-finished + `shift − run`, ECI
 release dates + `shift − run − 30d`), so the US–China gap is milestone-invariant; the
 chart (actual points included) rides the same clock, x-axis titled by milestone.
-The panel ends with `_pc_render_why()`, a **decomposition of the same samples**, not a
-second model. A lead line gives the gap left at the pause and China's total rate then and at
-the crossing, and a column gives each source's rate at both (`_pc_rate_at`; the compute split is a
-counterfactual with no rate of its own, so the measured compute rate shows once, on the
-first compute row), so the card's months read as gap over a slowing rate
-(`test_why_states_the_gap_and_the_slowing_rate`); settings notes sit in a hover: `_cc_cn_crossing_sim` fills an optional `channels` dict with the four rate
-terms' cumulative ECI (`_CC_CHANNELS`, summing to `traj − anchor` exactly —
-`test_channels_account_for_the_whole_climb`), `_pc_at_years` reads each at its own
-sample's crossing for the *ECI closed* / *Share* columns, and *Without it* re-crosses
-`traj − channel` via `_pc_cross_years`. **Compute splits in two**, because remote access
-is a lever the panel offers and folding it into one compute row hid it: `comp_shadow`
-(comp_cap, dead) makes the sim accumulate a fifth column, the compute term recomputed
-with each sample's *own* pace capped at the domestic ceiling and its own setback window.
-Capping the same sample rather than redrawing is load-bearing — when the run already has
-no access abroad the cap never binds, so the two coincide exactly and the abroad row
-reads a clean 0.0, and it's held ≤ the actual term per step so the remainder can't go
-negative while a setback regrows. The shadow is built whether or not the checkbox is on.
-The two columns answer different questions and
-**Without it is deliberately non-additive** — kill compute and the gap stays wider, so
-distillation runs at full strength longer; the caption says so. The total's months run
-from China's last model, not from the pause the cards count from — also captioned. A
-longer Chinese run appears as its own row (`years_base` is its counterfactual). Live at
-defaults innovation dominates, then diffusion, then distillation, then the two compute
-rows; the frontier-grade fix shrank distillation and grew diffusion, since the
-no-teacher band's floor rose while the pure-innovation floor fell. Note for tests: this table renders *after* the race table, so address
+The panel ends with `_pc_render_why()`, *Why that long?*: a lead line with the gap left at
+the pause and China's total rate then and at the crossing, and a table of each source's rate
+at both (`_pc_rate_at`) and its share of the card's months, split by the ECI it closes after
+the pause. The months are an apportionment, not a counterfactual (the caption's hover says
+so). The compute split (`comp_shadow`, a domestic-only counterfactual) has no rate of its
+own, so the measured compute rate shows once, on the first compute row; its domestic row can
+close nothing while a setback regrows. Settings notes sit in a hover
+(`test_why_states_the_gap_and_the_slowing_rate`, `test_why_breakdown_tracks_the_sliders`).
+Note for tests: this table renders *after* the race table, so address
 the race table by its columns (`TestPacingTab._entities`), never by position.
 China
 races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the

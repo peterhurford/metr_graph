@@ -16208,128 +16208,90 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    cn_gain, cn_extra, cn_run_mo, us_run_mo, anchor_name,
                    anchor_d, anchor_eci, horizon_year, notes=(),
                    t_pause=None, pause_label=None, surpass_mo=None):
-    """Bottom-of-panel breakdown: which channel closed how much of the gap.
+    """Bottom-of-panel breakdown: why China's catch-up takes the months it does.
 
-    Two readings of the same sampled paths, because neither alone answers
-    "why X months". *ECI closed* is each rate term's cumulative contribution
-    at its own sample's crossing (they sum to the gap exactly — that's the
-    accounting identity the sim is built on). *Without it* re-crosses the
-    path with that term's cumulative subtracted, which is the number a
-    policy question actually asks, and is deliberately **not** additive: the
-    channels interact, so removing compute leaves the gap wider and the
-    distillation term stronger for longer. Both are stated as such.
-
-    `years` is the final crossing (run-length shift included), `years_base`
-    the same without that shift, `target0`/`traj0`/`grid0` the organic bar
-    and paths the channels accumulated against. With `t_pause` (years from
-    China's anchor, per sample) a lead line states the gap left at the pause
-    and the table gains each channel's rate at the pause and at the crossing:
-    the gap over that slowing rate is the months on the card.
+    A lead line gives the gap left at the pause and China's total rate then
+    and at the crossing; the table gives each source's rate at both
+    (`_pc_rate_at`) and its share of the card's months, split by the ECI it
+    closes after the pause (each sample read at its own pause and crossing).
+    The months are an apportionment, not a counterfactual: sources interact,
+    so removing one costs more than its share. `years` is the final crossing
+    (run-length shift included), `target0`/`traj0`/`grid0` the organic bar
+    and paths the channels accumulated against, `t_pause` years from China's
+    anchor per sample, `surpass_mo` the card's months.
     """
     ok = np.isfinite(years)
-    if ok.sum() < 100:
+    if ok.sum() < 100 or t_pause is None:
         return
-    total_mo = float(np.median(years[ok])) * 12.0
-
-    def _delta(alt):
-        """Median paired months between an alternative crossing and the real
-        one; None when the alternative mostly never crosses."""
-        both = np.isfinite(alt) & ok
-        return (float(np.median((alt - years)[both])) * 12.0
-                if both.sum() >= 100 else None)
-
-    # Compute splits in two when the sim carried a domestic-only shadow:
-    # what domestic clusters alone would have contributed, and the rest —
-    # the export-controlled channel. The two still sum to the compute term,
-    # so the identity below is untouched.
+    t_cross = np.where(ok, np.maximum(years - cn_extra - 1e-6, 0.0), np.nan)
+    # Compute splits in two when the sim carried a domestic-only shadow: what
+    # domestic clusters alone would have contributed, and the rest. The split
+    # is a counterfactual with no rate of its own, so the measured compute
+    # rate is shown once, on the first compute row.
     cum = {k: chan[k] for k in _CC_CHANNELS}
     if 'compute_domestic' in chan:
         cum['compute_domestic'] = chan['compute_domestic']
         cum['compute_abroad'] = chan['compute'] - chan['compute_domestic']
         del cum['compute']
-    contrib, rows = {}, []
-    for k, arr in cum.items():
-        contrib[k] = float(np.nanmedian(
-            _pc_at_years(arr, grid0, years - cn_extra)))
-    # Each channel's pace at the pause and just before the crossing. The
-    # level noise is a one-off offset, not a rate, so it is left out.
-    rates = {}
-    if t_pause is not None:
-        t_cross = np.where(ok, np.maximum(years - cn_extra - 1e-6, 0.0), np.nan)
-        for k in _CC_CHANNELS:
-            rates[k] = tuple(float(np.nanmedian(_pc_rate_at(chan[k], grid0, t)))
-                             for t in (t_pause, t_cross))
-        # The compute split is a domestic-only counterfactual with no rate
-        # of its own, so the measured compute rate is shown once, on the
-        # first compute row.
-        split_rate = rates.pop('compute') if 'compute_domestic' in cum else None
+    rates = {k: tuple(float(np.nanmedian(_pc_rate_at(chan[k], grid0, t)))
+                      for t in (t_pause, t_cross)) for k in _CC_CHANNELS}
+    after = {k: float(np.nanmedian(_pc_at_years(arr, grid0, t_cross)
+                                   - _pc_at_years(arr, grid0, t_pause)))
+             for k, arr in cum.items()}
     if cn_run_mo != us_run_mo:
-        contrib['run'] = cn_gain
-    total_eci = sum(contrib.values())
-    shown_split = False
-    for k, eci in sorted(contrib.items(), key=lambda kv: -kv[1]):
+        after['run'] = cn_gain
+    closed = sum(max(v, 0.0) for v in after.values())
+    months = (surpass_mo if surpass_mo is not None
+              else float(np.nanmedian((t_cross - t_pause)[ok])) * 12.0)
+    split = 'compute_domestic' in cum
+    col_mo = f"Months of the ~{months:.0f}"
+    rows, shown = [], False
+    for k, eci in sorted(after.items(), key=lambda kv: -kv[1]):
         if k == 'run':
-            label = (f"Longer training run — {cn_run_mo} mo instead of "
-                     f"{us_run_mo}")
-            d = _delta(years_base)
+            label, r = (f"Longer training run, {cn_run_mo} mo instead of "
+                        f"{us_run_mo}"), None
         else:
             label = _PC_CHANNEL_LABELS[k]
-            d = _delta(_pc_cross_years(traj0 - cum[k], grid0, target0)
-                       + cn_extra)
-        row = {"Source": label}
-        if rates:
             r = rates.get(k)
-            cell = "\u2014" if r is None else f"{r[0]:.1f} \u2192 {r[1]:.1f}"
-            if k in ('compute_domestic', 'compute_abroad') and split_rate:
-                cell = ("\u2014" if shown_split else
-                        f"{split_rate[0]:.1f} \u2192 {split_rate[1]:.1f} "
-                        "(both compute rows)")
-                shown_split = True
-            row["ECI/yr, pause \u2192 crossing"] = cell
-        row.update({
-            "ECI closed": f"{eci:+.1f}",
-            "Without it": (f"not by {horizon_year}" if d is None else
-                           f"{d:+.1f} mo"),
+            if split and k in ('compute_domestic', 'compute_abroad'):
+                r = None if shown else rates['compute']
+                if not shown:
+                    label += " (rate: all compute)"
+                shown = True
+        rows.append({
+            "Source": label,
+            "ECI/yr at pause": "\u2014" if r is None else f"{r[0]:.1f}",
+            "ECI/yr at crossing": "\u2014" if r is None else f"{r[1]:.1f}",
+            col_mo: (f"{months * max(eci, 0.0) / closed:.1f}" if closed > 0
+                     else "\u2014"),
         })
-        rows.append(row)
-    total = {"Source": "**Total**"}
-    if rates:
-        if split_rate:
-            rates['compute'] = split_rate
-        r0 = sum(r[0] for r in rates.values())
-        r1 = sum(r[1] for r in rates.values())
-        total["ECI/yr, pause \u2192 crossing"] = f"**{r0:.1f} \u2192 {r1:.1f}**"
-    total.update({"ECI closed": f"**{total_eci:+.1f}**", "Without it": ""})
-    rows.append(total)
+    r0 = sum(r[0] for r in rates.values())
+    r1 = sum(r[1] for r in rates.values())
+    rows.append({"Source": "**Total**", "ECI/yr at pause": f"**{r0:.1f}**",
+                 "ECI/yr at crossing": f"**{r1:.1f}**",
+                 col_mo: f"**{months:.1f}**"})
     st.markdown("##### Why that long?")
-    if rates:
-        at_pause = _pc_at_years(traj0, grid0, t_pause)
-        cn_at = float(np.nanmedian(at_pause))
-        gap = float(np.nanmedian(np.asarray(target0) - at_pause))
-        _fn_line(
-            f"At the pause ({pause_label}) China is at ~{cn_at:.0f}: "
-            f"**{gap:.0f} ECI to close**. It starts at **{r0:.0f} ECI/yr** "
-            f"but ends at **{r1:.0f}** as distillation and diffusion run out"
-            + (f", so it takes ~**{surpass_mo:.0f}** months."
-               if surpass_mo is not None else "."),
-            ("run out", "Diffusion fades over the year after the pause. "
-                        "Distillation fades as China nears the best model "
-                        "it can learn from, which with models withheld sits "
-                        "below the bar."),
-            *([("months", "Roughly the gap over the average rate; the card "
-                          "nets out the one-month release lag and is a "
-                          "median over paths.")]
-              if surpass_mo is not None else []))
+    at_pause = _pc_at_years(traj0, grid0, t_pause)
+    cn_at = float(np.nanmedian(at_pause))
+    gap = float(np.nanmedian(np.asarray(target0) - at_pause))
+    _fn_line(
+        f"At the pause ({pause_label}) China is at ~{cn_at:.0f}: "
+        f"**{gap:.0f} ECI to close**. It starts at **{r0:.0f} ECI/yr** "
+        f"but ends at **{r1:.0f}** as distillation and diffusion run out, "
+        f"so it takes ~**{months:.0f}** months.",
+        ("run out", "Diffusion fades over the year after the pause. "
+                    "Distillation fades as China nears the best model it can "
+                    "learn from, which with models withheld sits below the "
+                    "bar."),
+        ("months", "Roughly the gap over the average rate; the card nets out "
+                   "the one-month release lag and is a median over paths."))
     st.table(rows)
     _fn_caption(
-        "<b>ECI closed</b> sums to the gap; <b>Without it</b> is the delay "
-        "if that source alone were removed. "
-        f"Measured from {pretty(anchor_name)} ({anchor_d:%b %Y}), "
-        f"{total_mo:.1f} months to the crossing"
-        + (", under these settings." if notes else "."),
-        ("Without it", "Re-crosses the same paths with that source removed. "
-                       "Rows don't add up: remove compute and the gap stays "
-                       "wider, so distillation runs longer."),
+        "Months are split by how much of the gap each source closes after "
+        "the pause" + (", under these settings." if notes else "."),
+        ("split", "An apportionment, not a counterfactual: sources interact, "
+                  "so removing one would cost more than its share (the gap it "
+                  "leaves slows the others too)."),
         *([("these settings", " ".join(notes))] if notes else []))
 
 
@@ -19630,36 +19592,43 @@ def _render_takeoff(loading):
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
+# Every rerun draws its Monte Carlo from this seed, so the same settings give
+# the same numbers (toggle a box off and on and nothing moves). Takeoff then
+# reseeds from its own *Random seed*. No cached function draws unseeded, so a
+# cache hit cannot shift the stream.
+_APP_SEED = 0
+
 if not os.environ.get("_VP_TESTING"):
     _hydrate_session_from_url()
     st.session_state["_vp_booted"] = True
     if _BOOT_BAR is not None:
         _BOOT_BAR.empty()
 
-    if active_tab == "METR Horizon":
-        render_metr()
-    elif active_tab == "Epoch ECI":
-        render_eci()
-    elif active_tab == "Remote Labor Index":
-        render_rli()
-    elif active_tab == "Takeoff":
-        render_takeoff()
-    elif active_tab == "UK Cyber":
-        render_ukcyber()
-    elif active_tab == "Frontier Thresholds":
-        thresholds.render(st)
-    elif active_tab == "Revenue":
-        render_revenue()
-    elif active_tab == "Employment":
-        render_employment()
-    elif active_tab == "ECI Company Gap":
-        render_eci_gap()
-    elif active_tab == "Data Centers":
-        render_data_centers()
-    elif active_tab == "China":
-        render_compute_capabilities()
-    elif active_tab == "Pausing":
-        render_pacing()
+    with _seeded_rng(_APP_SEED):
+        if active_tab == "METR Horizon":
+            render_metr()
+        elif active_tab == "Epoch ECI":
+            render_eci()
+        elif active_tab == "Remote Labor Index":
+            render_rli()
+        elif active_tab == "Takeoff":
+            render_takeoff()
+        elif active_tab == "UK Cyber":
+            render_ukcyber()
+        elif active_tab == "Frontier Thresholds":
+            thresholds.render(st)
+        elif active_tab == "Revenue":
+            render_revenue()
+        elif active_tab == "Employment":
+            render_employment()
+        elif active_tab == "ECI Company Gap":
+            render_eci_gap()
+        elif active_tab == "Data Centers":
+            render_data_centers()
+        elif active_tab == "China":
+            render_compute_capabilities()
+        elif active_tab == "Pausing":
+            render_pacing()
 
     # Rendered after the tab's own controls, at the foot of the sidebar. The
     # charts above read the key from session state, which a click updates
