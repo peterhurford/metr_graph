@@ -1667,16 +1667,23 @@ class TestPacingTab:
         at = self._app()
         lead = [str(m.value) for m in at.markdown
                 if "At the pause" in str(m.value)]
-        assert len(lead) == 1 and "ECI to close" in lead[0]
+        assert len(lead) == 1 and "short" in lead[0]
         why = next(t.value for t in at.table if "Source" in t.value.columns)
         assert {"ECI/yr at pause", "ECI/yr at crossing"} <= set(why.columns)
         rate = {}
         for _, r in why.iterrows():
             src = str(r["Source"]).split(",")[0]
-            if r["ECI/yr at pause"] != "\u2014" and "Total" not in src:
+            if r["ECI/yr at pause"] != "\u2014" and src not in ("Total",) \
+                    and not src.startswith("Time"):
+                end = r["ECI/yr at crossing"]
                 rate[src] = (float(r["ECI/yr at pause"]),
-                             float(r["ECI/yr at crossing"]))
+                             0.0 if end == "Blocked" else float(end))
         assert rate["Distillation"][1] < rate["Distillation"][0]
+        # The bottom row turns the three total rates into months, slowest last.
+        months = why[why["Source"].str.startswith("Time")].iloc[0]
+        m = [float(months[c].split()[0]) for c in
+             ("ECI/yr at pause", "Average ECI/yr", "ECI/yr at crossing")]
+        assert m[0] < m[1] < m[2]
         assert rate["Diffusion"][1] < rate["Diffusion"][0]
         assert rate["Innovation"][1] == pytest.approx(rate["Innovation"][0],
                                                       abs=0.2)
@@ -1856,26 +1863,27 @@ class TestPacingTab:
         rows add to the total, and cutting a channel collapses its row."""
         at = self._app()
 
-        _KEYS = {"domestic": "domestic", "abroad": "abroad",
+        _KEYS = {"domestic": "Compute, domestic", "abroad": "Compute, clusters abroad",
                  "innovation": "Innovation", "diffusion": "Diffusion",
                  "distillation": "Distillation", "run": "Longer training",
                  "total": "Total"}
 
         def _rows(at):
             t = next(x.value for x in at.table if "Source" in x.value.columns)
-            col = next(c for c in t.columns if c.startswith("Months"))
             out = {}
             for _, r in t.iterrows():
                 key = next((k for k, sub in _KEYS.items()
-                            if sub in r["Source"]), r["Source"])
-                out[key] = float(str(r[col]).strip("*"))
+                            if r["Source"].startswith(sub) or
+                            (len(sub) > 6 and sub in r["Source"])), None)
+                if key and r["Average ECI/yr"] != "\u2014":
+                    out[key] = float(r["Average ECI/yr"])
             return out
 
         base = _rows(self._paired(at))
-        assert set(base) == {"domestic", "abroad", "innovation", "diffusion",
-                             "distillation", "total"}
+        assert {"abroad", "innovation", "diffusion", "distillation",
+                "total"} <= set(base)
         parts = sum(v for k, v in base.items() if k != "total")
-        assert parts == pytest.approx(base["total"], abs=0.3)  # rounding
+        assert parts == pytest.approx(base["total"], abs=0.15)  # rounding
         # Innovation and diffusion always close part of it; the compute
         # split's domestic row can be zero while its setback is regrown.
         assert base["innovation"] > 0 and base["diffusion"] > 0
@@ -1892,7 +1900,10 @@ class TestPacingTab:
         self._paired(at.checkbox(key="pc_stop_remote").check())
         _assert_no_error(at, "Pausing / why with remote access cut")
         rem = _rows(at)
-        assert rem["abroad"] == pytest.approx(0.0, abs=0.05)
+        # All compute is then domestic: the abroad row closes nothing (it
+        # shows a dash) and the domestic row carries the compute rate.
+        assert rem.get("abroad", 0.0) == pytest.approx(0.0, abs=0.05)
+        assert rem["domestic"] > 0
         # Dating the cut later leaves part of it standing.
         when = at.select_slider(key="pc_remote_when").options
         self._paired(at.select_slider(key="pc_remote_when").set_value(
@@ -1902,7 +1913,7 @@ class TestPacingTab:
         # Between the two: more than a cut today leaves, no more than never
         # cutting. The upper bound carries a tolerance because the dated cut
         # re-reads each sample at its own crossing.
-        assert later["abroad"] > rem["abroad"]
+        assert later.get("abroad", 0.0) > rem.get("abroad", 0.0)
         at.select_slider(key="pc_remote_when").set_value("Now").run()
         at.checkbox(key="pc_stop_remote").uncheck().run()
 

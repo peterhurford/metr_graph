@@ -9,7 +9,7 @@ import numpy as np
 from contextlib import contextmanager
 # Imported eagerly, under the import lock: plotly reads pandas from sys.modules
 # without importing it, so it can see another session thread's half-finished import.
-import pandas  # noqa: F401
+import pandas
 import plotly.graph_objects as go
 import yaml
 import csv
@@ -16207,15 +16207,16 @@ def _pc_rate_at(cum, grid, t):
 def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    cn_gain, cn_extra, cn_run_mo, us_run_mo, anchor_name,
                    anchor_d, anchor_eci, horizon_year, notes=(),
-                   t_pause=None, pause_label=None, surpass_mo=None):
+                   t_pause=None, pause_label=None, surpass_mo=None,
+                   dist_blocked=False):
     """Bottom-of-panel breakdown: why China's catch-up takes the months it does.
 
-    A lead line gives the gap left at the pause and China's total rate then
-    and at the crossing; the table gives each source's rate at both
-    (`_pc_rate_at`) and its share of the card's months, split by the ECI it
-    closes after the pause (each sample read at its own pause and crossing).
-    The months are an apportionment, not a counterfactual: sources interact,
-    so removing one costs more than its share. `years` is the final crossing
+    The table gives each source's rate at the pause, its average from the
+    pause to the crossing (what it closes over that span) and its rate at the
+    crossing (`_pc_rate_at`), then the months the gap would take at each total
+    rate: the average's is the actual catch-up. Distillation reads "Blocked"
+    at the crossing when a lever (`dist_blocked`) has dried it up. `years` is
+    the final crossing
     (run-length shift included), `target0`/`traj0`/`grid0` the organic bar
     and paths the channels accumulated against, `t_pause` years from China's
     anchor per sample, `surpass_mo` the card's months.
@@ -16240,59 +16241,85 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
              for k, arr in cum.items()}
     if cn_run_mo != us_run_mo:
         after['run'] = cn_gain
-    closed = sum(max(v, 0.0) for v in after.values())
-    months = (surpass_mo if surpass_mo is not None
-              else float(np.nanmedian((t_cross - t_pause)[ok])) * 12.0)
-    split = 'compute_domestic' in cum
-    col_mo = f"Months of the ~{months:.0f}"
-    rows, shown = [], False
-    for k, eci in sorted(after.items(), key=lambda kv: -kv[1]):
-        if k == 'run':
-            label, r = (f"Longer training run, {cn_run_mo} mo instead of "
-                        f"{us_run_mo}"), None
-        else:
-            label = _PC_CHANNEL_LABELS[k]
-            r = rates.get(k)
-            if split and k in ('compute_domestic', 'compute_abroad'):
-                r = None if shown else rates['compute']
-                if not shown:
-                    label += " (rate: all compute)"
-                shown = True
-        rows.append({
-            "Source": label,
-            "ECI/yr at pause": "\u2014" if r is None else f"{r[0]:.1f}",
-            "ECI/yr at crossing": "\u2014" if r is None else f"{r[1]:.1f}",
-            col_mo: (f"{months * max(eci, 0.0) / closed:.1f}" if closed > 0
-                     else "\u2014"),
-        })
-    r0 = sum(r[0] for r in rates.values())
-    r1 = sum(r[1] for r in rates.values())
-    rows.append({"Source": "**Total**", "ECI/yr at pause": f"**{r0:.1f}**",
-                 "ECI/yr at crossing": f"**{r1:.1f}**",
-                 col_mo: f"**{months:.1f}**"})
-    st.markdown("##### Why that long?")
+    # Years from the pause to the crossing (median over paths): each source's
+    # average rate is what it closes over that span.
+    span = float(np.nanmedian((t_cross - t_pause)[ok]))
     at_pause = _pc_at_years(traj0, grid0, t_pause)
     cn_at = float(np.nanmedian(at_pause))
     gap = float(np.nanmedian(np.asarray(target0) - at_pause))
+    split = 'compute_domestic' in cum
+    c0, c1, c2 = "ECI/yr at pause", "Average ECI/yr", "ECI/yr at crossing"
+
+    def _fmt(v):
+        return "\u2014" if v is None else f"{v:.1f}"
+
+    # Average rates: the gap over the span, shared out by each source's
+    # median post-pause ECI, so the rows add to the total exactly (medians of
+    # the parts don't add to the median of the whole).
+    ravg = gap / span if span > 0 else None
+    pos = sum(max(v, 0.0) for v in after.values())
+    share = {k: (max(v, 0.0) / pos if pos > 0 else 0.0) for k, v in after.items()}
+    rows, shown = [], False
+    for k, eci in sorted(after.items(), key=lambda kv: -kv[1]):
+        avg = ravg * share[k] if ravg is not None else None
+        if k == 'run':
+            label, r = (f"Longer training run, {cn_run_mo} mo instead of "
+                        f"{us_run_mo}"), (None, None)
+        else:
+            label = _PC_CHANNEL_LABELS[k]
+            r = rates.get(k, (None, None))
+            if split and k in ('compute_domestic', 'compute_abroad'):
+                # The split is a counterfactual with no rate of its own: the
+                # measured compute rate shows once, on the first compute row.
+                if shown:
+                    r, avg = (None, None), None
+                else:
+                    r = rates['compute']
+                    avg = (ravg * (share['compute_domestic']
+                                   + share['compute_abroad'])
+                           if ravg is not None else None)
+                    label += " (rate: all compute)"
+                shown = True
+        end = _fmt(r[1])
+        if k == 'distillation' and dist_blocked and r[1] is not None \
+                and r[1] < 0.05:
+            end = "Blocked"
+        rows.append({"Source": label, c0: _fmt(r[0]), c1: _fmt(avg), c2: end})
+    r0 = sum(r[0] for r in rates.values())
+    r1 = sum(r[1] for r in rates.values())
+    rows.append({"Source": "Total", c0: _fmt(r0), c1: _fmt(ravg),
+                 c2: _fmt(r1)})
+
+    def _mo(rate):
+        return f"{gap / rate * 12:.1f} mo" if rate and rate > 0 else "never"
+
+    rows.append({"Source": f"Time to close the {gap:.0f} ECI gap",
+                 c0: _mo(r0), c1: _mo(ravg), c2: _mo(r1)})
+    st.markdown("##### Why that long?")
     _fn_line(
-        f"At the pause ({pause_label}) China is at ~{cn_at:.0f}: "
-        f"**{gap:.0f} ECI to close**. It starts at **{r0:.0f} ECI/yr** "
-        f"but ends at **{r1:.0f}** as distillation and diffusion run out, "
-        f"so it takes ~**{months:.0f}** months.",
+        f"At the pause ({pause_label}) China is at ~{cn_at:.0f}, "
+        f"**{gap:.0f} ECI** short. At its starting pace that would take "
+        f"{_mo(r0)}; as distillation and diffusion run out it slows, so the "
+        f"actual average gives **{_mo(ravg)}**.",
         ("run out", "Diffusion fades over the year after the pause. "
                     "Distillation fades as China nears the best model it can "
                     "learn from, which with models withheld sits below the "
                     "bar."),
-        ("months", "Roughly the gap over the average rate; the card nets out "
-                   "the one-month release lag and is a median over paths."))
-    st.table(rows)
-    _fn_caption(
-        "Months are split by how much of the gap each source closes after "
-        "the pause" + (", under these settings." if notes else "."),
-        ("split", "An apportionment, not a counterfactual: sources interact, "
-                  "so removing one would cost more than its share (the gap it "
-                  "leaves slows the others too)."),
-        *([("these settings", " ".join(notes))] if notes else []))
+        *([("actual average", f"Before the card nets out the one-month "
+                              f"release lag ({surpass_mo:.1f} mo there).")]
+          if surpass_mo is not None else []))
+
+    def _shade(v):
+        return ("background-color: #F4CCCC; color: #7F1010"
+                if v == "Blocked" else "")
+
+    df = pandas.DataFrame(rows)
+    st.table(df.style.map(_shade).apply(
+        lambda r: ["font-weight: bold" if r.name >= len(df) - 2 else ""] * len(r),
+        axis=1).hide(axis="index"))
+    if notes:
+        _fn_caption("Rates under these settings.",
+                    ("these settings", " ".join(notes)))
 
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
@@ -17074,7 +17101,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         anchor_eci=anchor_eci,
         horizon_year=(horizon.year if horizon is not None else _PC_HORIZON.year),
         notes=_notes, t_pause=t_pause_s, pause_label=f"{d_pause_v:%b %Y}",
-        surpass_mo=s50)
+        surpass_mo=s50, dist_blocked=bool(withhold or stop_dist))
 
 
 def render_pacing():

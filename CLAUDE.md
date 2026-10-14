@@ -1517,13 +1517,14 @@ wait** (unlike the CC 161 section — a queue delays both sides alike); dates fo
 sidebar's *Date points at* in lockstep (US events run-finished + `shift − run`, ECI
 release dates + `shift − run − 30d`), so the US–China gap is milestone-invariant; the
 chart (actual points included) rides the same clock, x-axis titled by milestone.
-The panel ends with `_pc_render_why()`, *Why that long?*: a lead line with the gap left at
-the pause and China's total rate then and at the crossing, and a table of each source's rate
-at both (`_pc_rate_at`) and its share of the card's months, split by the ECI it closes after
-the pause. The months are an apportionment, not a counterfactual (the caption's hover says
-so). The compute split (`comp_shadow`, a domestic-only counterfactual) has no rate of its
-own, so the measured compute rate shows once, on the first compute row; its domestic row can
-close nothing while a setback regrows. Settings notes sit in a hover
+The panel ends with `_pc_render_why()`, *Why that long?*: each source's ECI/yr at the pause,
+its average from the pause to the crossing, and at the crossing (`_pc_rate_at`), then a row
+turning each total into months to close the gap; the average's months are the actual
+catch-up (before the card's one-month release lag). Averages are the gap over the span,
+shared by each source's median post-pause ECI, so rows add to the total. Distillation reads
+"Blocked" at the crossing when withholding or the stop lever has dried it up. The compute
+split (`comp_shadow`, a domestic-only counterfactual) has no rate of its own, so the
+measured compute rate shows once, on the first compute row
 (`test_why_states_the_gap_and_the_slowing_rate`, `test_why_breakdown_tracks_the_sliders`).
 Note for tests: this table renders *after* the race table, so address
 the race table by its columns (`TestPacingTab._entities`), never by position.
