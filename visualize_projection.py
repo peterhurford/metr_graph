@@ -6,6 +6,7 @@ Run: streamlit run visualize_projection.py
 import streamlit as st
 import frontier_thresholds as thresholds
 import numpy as np
+from contextlib import contextmanager
 # Imported eagerly, under the import lock: plotly reads pandas from sys.modules
 # without importing it, so it can see another session thread's half-finished import.
 import pandas  # noqa: F401
@@ -15501,13 +15502,15 @@ def _pc_projection(rows, dcs, today, since=None, ref_steps=None,
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
-def _pc_rsi_projection_samples(components, weights, origin, survival, raw_components):
+def _pc_rsi_projection_samples(components, weights, origin, survival, raw_components,
+                               seed=None):
     """One sampled blend shared by RSI and Takeoff, before the ATC penalty."""
     mix = (weights if survival is None else
            {s: w * survival.get(s, 1.0) for s, w in weights.items()})
-    blend_days = _pc_rsi_blend_samples(components, mix, origin)
-    raw_days = (None if survival is None or raw_components is None else
-                _pc_rsi_blend_samples(raw_components, weights, origin))
+    with _seeded_rng(seed):
+        blend_days = _pc_rsi_blend_samples(components, mix, origin)
+        raw_days = (None if survival is None or raw_components is None else
+                    _pc_rsi_blend_samples(raw_components, weights, origin))
     return mix, blend_days, raw_days
 
 
@@ -15528,7 +15531,8 @@ def _pc_rsi_onset(today):
                for slug, _, _, _ in components}
     if not any(weights.values()):
         return None, settings
-    _, days, _ = _pc_rsi_projection_samples(components, weights, today, survival, raw)
+    _, days, _ = _pc_rsi_projection_samples(components, weights, today, survival, raw,
+                                            _tk_seed())
     # Sorted: stable quantile pairing with takeoff's seeded draws.
     return np.sort(_pc_rsi_atc_samples(days, settings["rsi_atc_penalty"])), settings
 
@@ -15554,7 +15558,7 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
                                                 _PC_RSI_WEIGHTS.get(slug, 0.0)))
                for slug, _, _, _ in components}
     mix, blend_days, raw_days = _pc_rsi_projection_samples(
-        components, weights, origin, survival, raw_components)
+        components, weights, origin, survival, raw_components, _tk_seed())
     if blend_days is None:
         return
     penalty = st.session_state.get("rsi_atc_penalty", 0)
@@ -15677,9 +15681,41 @@ def _pc_clock_note(release_dated, timing_label):
             f"\u201c{timing_label.lower()}\u201d clock.")
 
 
+@contextmanager
+def _seeded_rng(seed):
+    """Seed numpy's global generator for the block (the samplers draw from
+    it), then put back whatever state it had, so seeding one computation
+    neither depends on nor shifts the draws around it. None leaves it alone."""
+    if seed is None:
+        yield
+        return
+    state = np.random.get_state()
+    np.random.seed(int(seed) % 2**32)
+    try:
+        yield
+    finally:
+        np.random.set_state(state)
+
+
+def _tk_seed():
+    """The Takeoff tab's one seed, shared by the simulator and the coding
+    dates it inherits."""
+    value = st.session_state.get("tk_seed", takeoff.DEFAULTS["seed"])
+    return int(value) if isinstance(value, (int, float)) and np.isfinite(value) \
+        and 0 <= value < 2**32 else takeoff.DEFAULTS["seed"]
+
+
 @st.cache_data(show_spinner=False, max_entries=24)
-def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_key):
-    """Shared milestone draws; the data key invalidates cache on source changes.
+def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_key,
+                             seed=None):
+    """Shared milestone draws, from `seed`; the data key invalidates cache on
+    source changes."""
+    with _seeded_rng(seed):
+        return _pc_milestone_draws(timing_label, today, condition, ramp_days, n)
+
+
+def _pc_milestone_draws(timing_label, today, condition, ramp_days, n):
+    """Shared milestone draws (`_pc_milestone_components` caches them).
 
     Both RSI and Takeoff consume these exact arrays. The date is normalized to
     midnight, so revisiting a tab does not silently redraw its input forecast.
@@ -15802,7 +15838,7 @@ def _pc_rsi_components(today, timing_label, condition, ramp_days):
                      load_rsi_code(), load_rsi_experiments(), rsi_dir_frontier_all,
                      _OPENAI_REVENUE, _ANTHROPIC_REVENUE))
     return _pc_milestone_components(timing_label, today, condition, ramp_days,
-                                    N_SAMPLES, data_key)
+                                    N_SAMPLES, data_key, _tk_seed())
 
 
 def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
@@ -18429,6 +18465,9 @@ def render_takeoff():
 
 
 def _render_takeoff(loading):
+    # The evidence fans draw from numpy's global generator; the cached coding
+    # dates and the simulator seed their own draws from the same value.
+    np.random.seed(_tk_seed())
     for key in ("tk_onset_low", "tk_onset_high", "tk_years", "tk_taste_at_onset"):
         st.session_state.pop(key, None)
         if key in st.query_params:
@@ -18665,7 +18704,11 @@ def _render_takeoff(loading):
                    "1\u03c3 of the log elasticity of substitution 1/(1\u2212\u03c1). "
                    "80 gives a ~90% range of 0.2\u20132.5 around the \u03c1 setting, "
                    "Whitfill & Wu's two specifications (near 0 and 2.6).")
-            number("Simulation seed", "seed", 0, 4294967295, 1)
+            number("Random seed", "seed", 0, 4294967295, 1,
+                   "Seeds every random draw on this tab: the evidence fans, the automated "
+                   "coder projection's coding dates and the takeoff scenarios, so the same "
+                   "settings give the same numbers on every run. Change it to see how much "
+                   "a number moves from sampling alone.")
 
     with top.container():
         st.header("The takeoff model")

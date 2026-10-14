@@ -23,7 +23,7 @@ WORKFLOW_WEIGHTS = np.array([0.25, 0.5, 0.25])
 # Capability past it is read as ECI.
 MILESTONES = ("RSI",)
 DEFAULTS = {
-    "onset_low": 6, "onset_high": 24, "years": 10, "seed": 20260906,
+    "onset_low": 6, "onset_high": 24, "years": 10, "seed": 42,
     "software_months": 9.0, "compute_growth": 2.0,
     "training_months": 3.0, "validation_months": 1.0,
     "training_share": 40, "experiment_share": 40,

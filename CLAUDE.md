@@ -120,6 +120,12 @@ for a runaway inside the window. Forethought counts ~10×/yr, holds compute fixe
 at full automation, so its hover says to compare loosely. The loop, brakes and these six cards lead
 the tab, above the evidence: they render into a `st.container()` slot made before
 `render_rsi`, since they need its settings first.
+One seed, `tk_seed` (default 42, *Random seed* in the sidebar), fixes every draw on the tab:
+`_render_takeoff` seeds numpy's global generator for the evidence fans, and the cached
+`_pc_milestone_components` and `_pc_rsi_projection_samples` take it as an argument and
+draw under `_seeded_rng`, which restores the global state afterward so a cache hit and a
+miss leave the same stream. The simulator seeds its own local generator from it. The same
+settings give the same cards and charts across processes and reruns.
 A progress bar (`_tk_loading`, `_TK_LOADING_STEPS`) sits above that slot and steps through
 evidence, simulation, re-pairing and drawing; `render_takeoff` clears it in a `finally`
 once the last chart is drawn, so it outlasts every number.
@@ -1466,7 +1472,7 @@ that back; the first two live in `conftest.py`.
    bytecode is still exec'd into a fresh module each run.
 2. **A smaller Monte Carlo.** `N_SAMPLES` reads `_VP_SAMPLES`; `conftest.py` sets it to 400.
    Nothing asserted depends on the count — the CI defaults the tests check come from the
-   deterministic OLS fits, and the app never seeds its RNG. `_VP_SAMPLES=5000 pytest` runs
+   deterministic OLS fits, and only the Takeoff tab seeds its RNG. `_VP_SAMPLES=5000 pytest` runs
    at production fidelity as a check. Don't lower the *default*: the band edges are
    percentiles and go visibly ragged well before 5000.
 3. **Parallelism.** `pytest.ini` passes `-n auto`; the cases are independent, so a straight
