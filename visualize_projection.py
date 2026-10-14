@@ -409,6 +409,17 @@ def _pctiles(x, qs):
     return dict(zip(qs, np.percentile(x, qs, axis=0)))
 
 
+@st.cache_data(show_spinner=False, max_entries=32)
+def _fan_pctiles(start, slope, days, qs, logit=False, shift=None):
+    """`_pctiles` of the fan start + (days - shift) x slope, one row per draw,
+    read as a % through the inverse logit or else through exp. Cached on the
+    drawn arrays, which a rerun redraws identically from the same seed, so
+    only the sampling is repeated, never the (draws x days) matrix."""
+    t = days[None, :] if shift is None else days[None, :] - shift[:, None]
+    x = start[:, None] + t * slope[:, None]
+    return _pctiles(_inv_logit(x) * 100 if logit else np.exp(x), qs)
+
+
 def _logit(p):
     """Logit transform: log(p / (1-p)). p in (0,1)."""
     p = np.clip(p, 1e-10, 1 - 1e-10)
@@ -6207,9 +6218,8 @@ def render_rsi(end_year):
     proj_end_date = datetime(rsi_end_year, 12, 31)
     proj_days = np.arange(0, (proj_end_date - current['date']).days + 1, dtype=float)
     proj_dates = [current['date'] + timedelta(days=int(d)) for d in proj_days]
-    traj = _inv_logit(proj_start_logit[:, None] + proj_days[None, :] * proj_slope[:, None]) * 100
-
-    pct = _pctiles(traj, (5, 10, 25, 50, 75, 90, 95))
+    pct = _fan_pctiles(proj_start_logit, proj_slope, proj_days,
+                       (5, 10, 25, 50, 75, 90, 95), logit=True)
 
     fig = go.Figure()
     for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
@@ -6471,11 +6481,9 @@ def _render_rsi_automation(end_year):
                     (25, 75, 'rgba(155,89,182,0.28)')]}
         medians = {}
         for key, shift in shifts.items():
-            traj = _inv_logit(
-                start_logit[:, None]
-                + (pdays[None, :] - shift[:, None]) * proj_slope[:, None]) * 100
-            pct = _pctiles(traj, (5, 10, 25, 75, 90, 95))
-            medians[key] = np.percentile(traj, 50, axis=0)
+            pct = _fan_pctiles(start_logit, proj_slope, pdays,
+                               (5, 10, 25, 50, 75, 90, 95), logit=True, shift=shift)
+            medians[key] = pct[50]
             for i, (lo, hi, color) in enumerate(bands[key]):
                 fig.add_trace(go.Scatter(
                     x=pdates + pdates[::-1],
@@ -6681,8 +6689,7 @@ def _render_rsi_survey(end_year):
         pdays = np.arange(0, max((datetime(end_year, 12, 31) - cur['date']).days, 1) + 1,
                           dtype=float)
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
-        traj = np.exp(start_log[:, None] + pdays[None, :] * proj_slope[:, None])
-        pct = _pctiles(traj, (5, 10, 25, 50, 75, 90, 95))
+        pct = _fan_pctiles(start_log, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95))
 
         for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
                                      (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
@@ -6823,8 +6830,7 @@ def _render_rsi_code(end_year):
         pdays = np.arange(0, max((datetime(end_year, 12, 31) - cur['date']).days, 1) + 1,
                           dtype=float)
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
-        traj = np.exp(start_log[:, None] + pdays[None, :] * proj_slope[:, None])
-        pct = _pctiles(traj, (5, 10, 25, 50, 75, 90, 95))
+        pct = _fan_pctiles(start_log, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95))
 
         for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
                                      (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
@@ -7006,8 +7012,7 @@ def _render_rsi_experiments(end_year):
         days = np.arange(0, (end - cur).days + 1, 7, dtype=float)
         days = np.unique(np.append(days, (end - cur).days))
         dates = [cur + timedelta(days=float(d)) for d in days]
-        paths = np.exp(starts[:, None] + slopes[:, None] * days[None, :])
-        pct = _pctiles(paths, (5, 10, 25, 50, 75, 90, 95))
+        pct = _fan_pctiles(starts, slopes, days, (5, 10, 25, 50, 75, 90, 95))
         for lo, hi, alpha in [(5, 95, 0.10), (10, 90, 0.18), (25, 75, 0.28)]:
             fig.add_trace(go.Scatter(
                 x=dates + dates[::-1], y=list(pct[hi]) + list(pct[lo][::-1]),
@@ -7136,9 +7141,8 @@ def _render_rsi_direction(end_year):
         end_date = datetime(end_year, 12, 31)
         pdays = np.arange(0, max((end_date - cur['date']).days, 1) + 1, dtype=float)
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
-        traj = _inv_logit(start_logit[:, None]
-                          + pdays[None, :] * proj_slope[:, None]) * 100
-        pct = _pctiles(traj, (5, 10, 25, 50, 75, 90, 95))
+        pct = _fan_pctiles(start_logit, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95),
+                           logit=True)
 
         for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
                                      (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
