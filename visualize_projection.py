@@ -18323,7 +18323,10 @@ def render_takeoff():
                "models and not 'all things considered' takes.")
     # The takeoff model's loop and headline cards lead the page, but they need
     # the evidence's settings first: drawn into this slot once computed.
-    top = st.container()
+    top = st.empty()
+    top.info("Running the takeoff model. Its headline dates appear here once the "
+             "evidence below has loaded and the scenarios are simulated, a few seconds "
+             "from now.", icon="\u23f3")
     render_rsi(st.session_state["tk_end_year"])
     st.markdown("---")
     with st.sidebar:
@@ -18525,7 +18528,7 @@ def render_takeoff():
                    "Whitfill & Wu's two specifications (near 0 and 2.6).")
             number("Simulation seed", "seed", 0, 4294967295, 1)
 
-    with top:
+    with top.container():
         st.header("The takeoff model")
         st.markdown(_TK_LOOP_HTML, unsafe_allow_html=True)
         _fn_line(

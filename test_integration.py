@@ -1066,6 +1066,8 @@ class TestTakeoffTab:
         assert len(cis) >= 5
         assert len([c for c in at.caption if c.value.startswith("90% CI: ")]) == 5
         assert any("RSI projections under construction" in w.value for w in at.warning)
+        # The loading notice at the top gives way to the model once it has run.
+        assert not any("Running the takeoff model" in i.value for i in at.info)
 
     def test_takeoff_refreshes_an_old_imported_model(self, monkeypatch):
         import takeoff_model as tk
