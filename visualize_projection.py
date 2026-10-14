@@ -12651,6 +12651,34 @@ def _cc_frontier_eci_slope(fr, cutoff):
         np.array([s for _, s in pts]), 1)[0])
 
 
+# Build-up ECI rates (algorithmic term + exchange rate x compute growth) are
+# scaled to each country's observed frontier slope over this window, so every
+# projected line fits its own history (`_cc_rate_calibration`).
+_CC_CALIB_SINCE = _CC_GAP_WINDOWS[1][1]
+
+
+def _cc_rate_calibration(fr, bottom_up):
+    """Observed frontier ECI/yr since `_CC_CALIB_SINCE` / a build-up rate; 1.0
+    when either is unavailable."""
+    obs = _cc_frontier_eci_slope(fr, _CC_CALIB_SINCE)
+    return obs / bottom_up if obs and bottom_up and bottom_up > 0 else 1.0
+
+
+def _cc_us_compute_band(today, horizon, run_key='train_flop',
+                        run_days=_DAYS_2MO):
+    """(dc_fr, g_lo, g_hi): the lab-only train-FLOP frontier and US compute
+    growth in OOM/yr, low = the planned pipeline's fit, high = the 2025 H2
+    built one."""
+    dc_fr = _cc_trainflop_frontier(dc_all, horizon, with_names=True,
+                                   key=run_key, run_days=run_days)
+    fits = _cc_segment_fits([(d, v) for d, v, n, sd in dc_fr], today)
+    g_hi = next((f['slope_oom'] for f in fits
+                 if f['label'].startswith('2025 H2')), 0.47)
+    g_lo = next((f['slope_oom'] for f in fits
+                 if f['label'].startswith('Planned')), 0.27)
+    return dc_fr, g_lo, g_hi
+
+
 def _cc_pooled_decomp(rows):
     """Pooled ECI decomposition from US+China models with disclosed FLOP.
 
@@ -12712,13 +12740,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     # US capacity = Epoch's data-center buildout (the largest cluster's training
     # capacity over the sidebar's run window); its recent-built vs planned
     # segments give the forward range.
-    dc_fr = _cc_trainflop_frontier(dc_all, horizon, with_names=True,
-                                   key=run_key, run_days=run_days)
-    dc_fits = _cc_segment_fits([(d, v) for d, v, n, sd in dc_fr], today)
-    g_us_hi = next((f['slope_oom'] for f in dc_fits
-                    if f['label'].startswith('2025 H2')), 0.47)   # recent built
-    g_us_lo = next((f['slope_oom'] for f in dc_fits
-                    if f['label'].startswith('Planned')), 0.27)   # planned pipeline
+    dc_fr, g_us_lo, g_us_hi = _cc_us_compute_band(today, horizon, run_key,
+                                                  run_days)
     # Keep every buildout point within the chart window — including the announced
     # megaclusters years out (Colossus 2, Hyperion, Stargate…) — so the labeled
     # line rides the real announced buildout to ~2029, not a flat extrapolation.
@@ -12754,8 +12777,15 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         a_partial, b_algo = fgm['a_partial'], fgm['b_time']
     inno_band = _cc_innovation_algo_band(cc_rows)
     pure_band = _cc_pure_innovation_band(cc_rows)
-    us_eci_slo, us_eci_shi = b_algo + a_partial * g_us_lo, b_algo + a_partial * g_us_hi
-    cn_eci_slo, cn_eci_shi = b_algo + a_partial * g_cn_lo, b_algo + a_partial * g_cn_hi
+    # Build-up rates, then each scaled to its own country's observed slope.
+    k_us = _cc_rate_calibration(
+        us_fr, b_algo + a_partial * 0.5 * (g_us_lo + g_us_hi))
+    k_cn = _cc_rate_calibration(
+        cn_fr, b_algo + a_partial * 0.5 * (g_cn_lo + g_cn_hi))
+    us_eci_slo = k_us * (b_algo + a_partial * g_us_lo)
+    us_eci_shi = k_us * (b_algo + a_partial * g_us_hi)
+    cn_eci_slo = k_cn * (b_algo + a_partial * g_cn_lo)
+    cn_eci_shi = k_cn * (b_algo + a_partial * g_cn_hi)
     us_eci_smid = 0.5 * (us_eci_slo + us_eci_shi)
     cn_eci_smid = 0.5 * (cn_eci_slo + cn_eci_shi)
 
@@ -12902,10 +12932,10 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
 
     figf = go.Figure()
     _dc_add_projection_band(figf, today, horizon)
-    for fr, best, slo, shi, smid, col, rgb, label in (
-            (us_fr, us_best, us_eci_slo, us_eci_shi, us_eci_smid,
+    for fr, best, slo, shi, smid, kc, col, rgb, label in (
+            (us_fr, us_best, us_eci_slo, us_eci_shi, us_eci_smid, k_us,
              '#1F77B4', (31, 119, 180), 'United States'),
-            (cn_fr, cn_best, cn_eci_slo, cn_eci_shi, cn_eci_smid,
+            (cn_fr, cn_best, cn_eci_slo, cn_eci_shi, cn_eci_smid, k_cn,
              '#D62728', (214, 39, 40), 'China')):
         lo, hi, mid = best[1] + slo * dt, best[1] + shi * dt, best[1] + smid * dt
         r, gg, bb = rgb
@@ -12923,7 +12953,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         # algo rate, with no compute added. The vertical gap up to the full
         # (compute + algo) line is that country's physical-compute contribution —
         # wide for the US, narrow for China, so the gap itself is the compute gap.
-        algo_only = best[1] + b_algo * dt
+        algo_only = best[1] + kc * b_algo * dt
         figf.add_trace(go.Scatter(
             x=x_dates + x_dates[::-1], y=list(mid) + list(algo_only[::-1]),
             fill='toself', fillcolor=f'rgba({r},{gg},{bb},0.16)',
@@ -12951,10 +12981,17 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     _fn_caption(
         f"ECI = <b>~{a_partial:.0f} pts per \u00d710 compute</b> on each "
         f"country's Chart-A compute growth, plus a shared algorithmic term of "
-        f"<b>~{b_algo:.0f} pts/yr</b> \u2014 so the divergence is purely the "
-        f"compute gap, ~{gap_end:.0f} pts (~{mo_end:.0f} mo) by "
+        f"<b>~{b_algo:.0f} pts/yr</b>, each country's sum scaled to its own "
+        f"observed slope: a gap of ~{gap_end:.0f} pts (~{mo_end:.0f} mo) by "
         f"end-{horizon.year}. Dotted = algorithmic-only.",
         ("a shared algorithmic term", "Shared because methods diffuse."),
+        ("scaled to its own observed slope",
+         f"The build-up rate under-runs each frontier's since-"
+         f"{_CC_CALIB_SINCE.year} slope, so it is multiplied by observed / "
+         f"build-up: \u00d7{k_us:.2f} for the US "
+         f"({us_eci_smid:.1f} ECI/yr), \u00d7{k_cn:.2f} for China "
+         f"({cn_eci_smid:.1f}). China's includes the distillation the "
+         "build-up leaves out."),
         ("Dotted = algorithmic-only", "Bands are compute-growth ranges; the "
                                       "shaded gap to the dashed line is "
                                       "compute's contribution, wider for the "
@@ -13060,9 +13097,25 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         st.caption("Not enough same-compute-budget models to estimate per-country "
                    "algorithmic rates.")
     else:
-        g_cn_mid = 0.5 * (g_cn_lo + g_cn_hi)
-        compute_term_cn = a_partial * g_cn_mid          # China's compute-driven ECI/yr
-        slope_usalgo = us_algo + compute_term_cn        # China riding US algo rate
+        # Each scenario is China's observed (calibrated) rate with one
+        # algorithmic channel swapped or removed, the channels as measured in
+        # the decomposition above: the US-measured algo rate in place of
+        # China's, then no external distillation, then no diffusion either.
+        cn_obs = cn_eci_smid
+        slope_usalgo = cn_obs + (us_algo - cn_algo)
+        inno_mid = 0.5 * (inno_band[0] + inno_band[1]) if inno_band else None
+        pure_mid = 0.5 * (pure_band[0] + pure_band[1]) if pure_band else None
+        isoc_sc = _cc_iso_compute(cc_rows)
+        dist_sc = (max(isoc_sc['eci_per_yr']
+                       - max(isoc_sc['bands'],
+                             key=lambda b: b['center'])['slope'], 0.0)
+                   if isoc_sc and isoc_sc.get('bands') else None)
+        slope_inno = (cn_obs - dist_sc
+                      if dist_sc is not None and inno_mid is not None else None)
+        diff_sc = (max(inno_mid - pure_mid, 0.0)
+                   if inno_mid is not None and pure_mid is not None else None)
+        slope_pure = (slope_inno - diff_sc
+                      if slope_inno is not None and diff_sc is not None else None)
 
         # Anchor selector: project forward from today, or backdate to Jan
         # 2025 so the lines double as a backtest against China's actual points.
@@ -13091,26 +13144,21 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
 
         us_ceiling = us_anchor + us_eci_smid * dt_bd
         cn_traj_us = cn_anchor + slope_usalgo * dt_bd
-        inno_mid = 0.5 * (inno_band[0] + inno_band[1]) if inno_band else us_algo
-        # Two stripped counterfactuals: no *external* distillation (diffusion
-        # of methods intact — the inno_band midpoint), and innovation alone
-        # (no distillation and no diffusion — the pure band midpoint).
-        cn_traj_inno = (cn_anchor + (compute_term_cn + inno_mid) * dt_bd
-                        if inno_band else None)
-        pure_mid = 0.5 * (pure_band[0] + pure_band[1]) if pure_band else None
-        cn_traj_pure = (cn_anchor + (compute_term_cn + pure_mid) * dt_bd
-                        if pure_mid is not None else None)
+        cn_traj_inno = (cn_anchor + slope_inno * dt_bd
+                        if slope_inno is not None else None)
+        cn_traj_pure = (cn_anchor + slope_pure * dt_bd
+                        if slope_pure is not None else None)
 
         us_end = float(us_ceiling[-1])
         cn_end_us = float(cn_traj_us[-1])
         mo_us = (us_end - cn_end_us) / us_eci_smid * 12 if us_eci_smid > 0 else float('nan')
 
         rows_md = [
-            "| Scenario | China algo rate | China ECI/yr (algo+compute) | "
+            "| Scenario | Change from China's observed rate | China ECI/yr | "
             f"China ECI end-{horizon.year} | Behind US |",
             "|---|---|---|---|---|",
             f"| **US-measured algo rate** (mid-compute, itself teacher-fed) | "
-            f"{us_algo:.1f} pts/yr | "
+            f"{us_algo - cn_algo:+.1f} pts/yr | "
             f"{slope_usalgo:.1f} pts/yr | ~{cn_end_us:.0f} | ~{mo_us:.0f} mo |"]
         if cn_traj_inno is not None:
             cn_end_inno = float(cn_traj_inno[-1])
@@ -13118,8 +13166,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                        if us_eci_smid > 0 else float('nan'))
             rows_md.append(
                 f"| **No external distillation** (diffusion intact — model "
-                f"access cut, papers still flowing) | {inno_mid:.1f} pts/yr | "
-                f"{inno_mid + compute_term_cn:.1f} pts/yr | ~{cn_end_inno:.0f} "
+                f"access cut, papers still flowing) | {-dist_sc:+.1f} pts/yr | "
+                f"{slope_inno:.1f} pts/yr | ~{cn_end_inno:.0f} "
                 f"| ~{mo_inno:.0f} mo |")
         if cn_traj_pure is not None:
             cn_end_pure = float(cn_traj_pure[-1])
@@ -13127,14 +13175,14 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                        if us_eci_smid > 0 else float('nan'))
             rows_md.append(
                 f"| **Indigenous only** (no distillation, no diffusion) | "
-                f"{pure_mid:.1f} pts/yr | "
-                f"{pure_mid + compute_term_cn:.1f} pts/yr | ~{cn_end_pure:.0f} "
+                f"{-(dist_sc + diff_sc):+.1f} pts/yr | "
+                f"{slope_pure:.1f} pts/yr | ~{cn_end_pure:.0f} "
                 f"| ~{mo_pure:.0f} mo |")
         st.markdown("\n".join(rows_md))
 
         # Chart: the no-external-distillation China line against the US
-        # frontier, the gap between them shaded and labelled at each year-end.
-        # The US-measured and indigenous-only rates stay table rows.
+        # frontier, the gap between them shaded, every gap on hover. The
+        # US-measured and indigenous-only rates stay table rows.
         figd = go.Figure()
         _dc_add_projection_band(figd, today, horizon)
 
@@ -13143,22 +13191,27 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             vals = [s for dd, s, n in fr if dd <= d]
             return max(vals) if vals else None
 
+        def _gap_txt(g, side):
+            """'Xmo (Y ECI) <side>': months at the US line's own pace."""
+            mo = g / us_eci_smid * 12 if us_eci_smid > 0 else float('nan')
+            return f"{mo:.0f}mo ({g:.0f} ECI) {side}"
+
         gap_bd = us_ceiling - cn_traj_inno if cn_traj_inno is not None else None
         figd.add_trace(go.Scatter(
             x=bd_dates, y=list(us_ceiling), mode='lines',
             line=dict(color='#1F77B4', width=1.5, dash='dot'),
             name='US frontier (ceiling)',
-            **(dict(customdata=gap_bd,
+            **(dict(customdata=[_gap_txt(g, "ahead of China") for g in gap_bd],
                     hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                                  '<br>%{customdata:.0f} ahead of China '
-                                  '(access cut)<extra>US frontier</extra>')
+                                  '<br>%{customdata} (access cut)'
+                                  '<extra>US frontier</extra>')
                if gap_bd is not None else dict(hoverinfo='skip'))))
         figd.add_trace(go.Scatter(
             x=[d for d, s, n in us_fr], y=[s for d, s, n in us_fr],
             mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
             marker=dict(size=5, color='#1F77B4', line=dict(color='white', width=0.5)),
             text=[f"{pretty(n)}<br>ECI {s:.0f}"
-                  + (f"<br>{s - _fr_max(cn_fr, d):.0f} ahead of China"
+                  + ("<br>" + _gap_txt(s - _fr_max(cn_fr, d), "ahead of China")
                      if _fr_max(cn_fr, d) is not None else "")
                   for d, s, n in us_fr],
             hoverinfo='text', name='US (actual)'))
@@ -13167,7 +13220,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             mode='lines+markers', line=dict(color='#D62728', width=1.5),
             marker=dict(size=5, color='#D62728', line=dict(color='white', width=0.5)),
             text=[f"{pretty(n)}<br>ECI {s:.0f}"
-                  + (f"<br>{_fr_max(us_fr, d) - s:.0f} behind the US"
+                  + ("<br>" + _gap_txt(_fr_max(us_fr, d) - s, "behind the US")
                      if _fr_max(us_fr, d) is not None else "")
                   for d, s, n in cn_fr],
             hoverinfo='text', name='China (actual)'))
@@ -13181,10 +13234,10 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             figd.add_trace(go.Scatter(
                 x=bd_dates, y=list(cn_traj_inno), mode='lines',
                 line=dict(color='#7F1010', width=2.5),
-                name=f"China · no ext. distillation (~{inno_mid:.0f})",
-                customdata=gap_bd,
+                name=f"China · no ext. distillation ({slope_inno:.1f}/yr)",
+                customdata=[_gap_txt(g, "behind the US") for g in gap_bd],
                 hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                              '<br>%{customdata:.0f} behind the US'
+                              '<br>%{customdata}'
                               '<extra>no ext. distillation</extra>'))
         figd.update_layout(
             height=420, plot_bgcolor='white', paper_bgcolor='white',
@@ -13210,10 +13263,16 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                if cn_traj_inno is not None else "")
             + " The rates rest on thin fits.",
             *([("The solid line", "No external distillation: model access cut, "
-                                  "papers still flowing "
-                                  f"(~{inno_mid:.1f} ECI/yr, constant). China's "
-                                  f"own measured rate, {cn_algo:.1f}, includes "
-                                  "distillation.")]
+                                  "papers still flowing. China's observed "
+                                  f"{cn_obs:.1f} ECI/yr since "
+                                  f"{_CC_CALIB_SINCE.year} less the "
+                                  f"{dist_sc:.1f} the decomposition above "
+                                  "credits to distillation = "
+                                  f"{slope_inno:.1f}, constant. The US line is "
+                                  f"its own observed {us_eci_smid:.1f}.")]
+              if cn_traj_inno is not None else []),
+            *([("its gap", "In ECI and in months: the time the US takes to "
+                           f"climb that gap at its {us_eci_smid:.1f} ECI/yr.")]
               if cn_traj_inno is not None else []),
             ("thin fits", f"n={n_us_iso} US / n={n_cn_iso} China within \u00b10.4 "
                           "dex of median compute \u2014 so few same-budget US models "
@@ -16732,8 +16791,17 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     if us_fit is not None:
         g_s = np.maximum(
             np.random.normal(us_fit['g'], us_fit['sigma_g'], n_s), 0.05)
-        us_rate = b_algo + a_partial * us_fit['g']
-        us_rate_s = np.maximum(b_algo + a_partial * g_s, 1.0)
+        # Scaled by the China tab's US calibration (observed slope / build-up
+        # rate), so the climb fits the US frontier's history while the
+        # networking selector still moves it.
+        _, _g_lo, _g_hi = _cc_us_compute_band(
+            today, datetime(2029, 12, 31),
+            'train_flop_6mo' if run_days == _DAYS_6MO else 'train_flop',
+            run_days)
+        k_us = _cc_rate_calibration(
+            us_fr, b_algo + a_partial * 0.5 * (_g_lo + _g_hi))
+        us_rate = k_us * (b_algo + a_partial * us_fit['g'])
+        us_rate_s = np.maximum(k_us * (b_algo + a_partial * g_s), 1.0)
     else:
         g_s = None
         us_rate = _cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1)) or 15.0

@@ -1126,6 +1126,14 @@ Four contracts, each guarded:
    and the China-accessible fit is a from-zero ramp the DC tab itself flags as hot. If a
    refresh breaks either test, retarget the constants deliberately.
 
+**Build-up rates are calibrated.** Each country's ECI rate (algorithmic term +
+exchange rate × compute growth) is multiplied by `_cc_rate_calibration`: its
+observed frontier slope since `_CC_CALIB_SINCE` over that build-up rate (US ×1.31,
+China ×1.37 live), so projected lines fit their history. The distillation scenario's
+China rows are the calibrated rate less the channels the decomposition measures
+(distillation, then diffusion). The Pacing pause panel scales its US climb by the same
+US factor. `TestCcRateCalibration`.
+
 *Compute ⟷ ECI* (exchange rate, iso-ECI/iso-compute charts, the two engines) and
 *ECI Forecasts* (`_cc_eci_forecast`) close the Data Centers tab via
 `_render_compute_eci()`, on a fixed 2-month run, `dc_future`, and a horizon of
@@ -1480,7 +1488,7 @@ than a hardcoded month count, so the reset restores a *date*. The pause is on th
 **run-finished** clock; the displayed date carries `timing_label`'s
 offset, which is what keeps the US–China gap milestone-invariant. The US climb pace
 still comes from the **sidebar-pooled US series**, so the networking selector moves
-the bar. Between the slider and the subheader sits the *state of play* table, off
+the bar, scaled by the China tab's US calibration (`_cc_rate_calibration`). Between the slider and the subheader sits the *state of play* table, off
 that same `_pc_capacity_at()` reading (the race's own `_pc_projection` at the pause
 date, so the two sections cannot disagree) — three rows (US, China-accessible,
 China domestic-only) of each side's

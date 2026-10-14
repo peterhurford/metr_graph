@@ -1845,6 +1845,32 @@ class TestCcFrontierGradeAlgo:
         assert r is not None and r['n'] == len(good)
 
 
+class TestCcRateCalibration:
+    def test_scales_a_build_up_rate_to_the_observed_slope(self):
+        """A calibrated rate reproduces the frontier's own since-2024 slope,
+        so a projected line fits its history; no data leaves it unscaled."""
+        base = vp._CC_CALIB_SINCE
+        fr = [(base + timedelta(days=90 * i), 140.0 + 15.0 * 90 * i / 365.25, "m")
+              for i in range(8)]
+        k = vp._cc_rate_calibration(fr, 12.0)
+        assert k * 12.0 == pytest.approx(15.0, rel=1e-6)
+        assert vp._cc_rate_calibration(fr[:1], 12.0) == 1.0
+        assert vp._cc_rate_calibration(fr, 0.0) == 1.0
+
+    def test_live_us_build_up_under_runs_its_frontier(self):
+        """The case the calibration exists for: on live data the US build-up
+        rate falls short of the observed slope. Retarget if a refresh flips it."""
+        eci_all = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        us_fr = vp._cc_country_frontier(eci_all, 'United States of America')
+        rows = vp.load_eci_compute(_mtime=vp._eci_mtime())
+        fgm = vp._cc_frontier_grade_algo(
+            rows, vp.load_eci_frontier(_mtime=vp._eci_mtime(), full_window=True))
+        _, lo, hi = vp._cc_us_compute_band(datetime.now(), datetime(2029, 12, 31))
+        k = vp._cc_rate_calibration(
+            us_fr, fgm['b_time'] + fgm['a_partial'] * 0.5 * (lo + hi))
+        assert k > 1.0
+
+
 class TestCcCnLevelOffset:
     def test_recovers_a_constructed_level_premium(self):
         base = datetime(2024, 6, 1)
