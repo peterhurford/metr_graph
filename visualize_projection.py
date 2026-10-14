@@ -55,11 +55,11 @@ st.markdown("""<style>
     .block-container { padding-top: 2rem !important; }
     /* The Takeoff tab's loading bar (`_tk_loading`), the app's only progress
        bar: boxed, tall and in large type so a multi-second wait reads as one. */
-    [data-testid="stProgress"] { padding: 1rem 1.2rem; border-radius: 0.6rem;
-        background: rgba(41,128,185,0.08); border: 1px solid rgba(41,128,185,0.35); }
-    [data-testid="stProgress"] p { font-size: 1.3rem !important; line-height: 1.4; }
+    [data-testid="stProgress"] { padding: 1.6rem 1.8rem; border-radius: 0.8rem;
+        background: rgba(41,128,185,0.10); border: 2px solid rgba(41,128,185,0.45); }
+    [data-testid="stProgress"] p { font-size: 1.75rem !important; line-height: 1.35; }
     [data-testid="stProgress"] div[role="progressbar"] div {
-        height: 1.75rem !important; border-radius: 0.875rem !important; }
+        height: 3rem !important; border-radius: 1.5rem !important; }
     [data-testid="stTable"] table { margin-top: 0 !important; margin-bottom: 0.5rem !important; }
     .vp-fn, .vp-fn-a { position: relative; cursor: help; }
     /* Anchored: the note hangs off the words it qualifies. */
