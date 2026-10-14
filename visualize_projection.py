@@ -18551,9 +18551,10 @@ def _render_takeoff(loading):
             st.caption("Across a plausible range, the first three each move the "
                        "ultraintelligence date 3\u20136 months; \u03c1 and the training-run "
                        "wait 1\u20132 months (6 sooner if no gain waits). Compute growth "
-                       "after RSI moves it most: 2\u00d7 brings it 6 months sooner, 0.5\u00d7 "
-                       "6 months later. Everything under Advanced moves it a few months "
-                       "at most.")
+                       "after RSI, delayed 18 months, leaves the median where 1\u00d7 does "
+                       "and pulls in the slow tail (80% interval's late edge 4 months "
+                       "sooner); with no delay, 2\u00d7 brings the median 6 months sooner. "
+                       "Everything under Advanced moves it a few months at most.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
