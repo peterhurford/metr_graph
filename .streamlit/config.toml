@@ -1,0 +1,3 @@
+[server]
+# The Takeoff tab sends ~4 MB of chart JSON; deflate cuts it ~4x on the wire.
+enableWebsocketCompression = true

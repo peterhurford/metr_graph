@@ -409,6 +409,13 @@ def _pctiles(x, qs):
     return dict(zip(qs, np.percentile(x, qs, axis=0)))
 
 
+def _fan_days(last):
+    """Day offsets 0..`last` for a fan chart: weekly, plus `last` so the fan
+    reaches the axis end. A day is under a pixel at these charts' spans, and
+    daily points made the Takeoff tab ship ~4 MB of chart JSON."""
+    return np.unique(np.append(np.arange(0, last + 1, 7, dtype=float), float(last)))
+
+
 @st.cache_data(show_spinner=False, max_entries=32)
 def _fan_pctiles(start, slope, days, qs, logit=False, shift=None):
     """`_pctiles` of the fan start + (days - shift) x slope, one row per draw,
@@ -6216,7 +6223,7 @@ def render_rsi(end_year):
                                         max(_pos_sigma, 0), n)
 
     proj_end_date = datetime(rsi_end_year, 12, 31)
-    proj_days = np.arange(0, (proj_end_date - current['date']).days + 1, dtype=float)
+    proj_days = _fan_days((proj_end_date - current['date']).days)
     proj_dates = [current['date'] + timedelta(days=int(d)) for d in proj_days]
     pct = _fan_pctiles(proj_start_logit, proj_slope, proj_days,
                        (5, 10, 25, 50, 75, 90, 95), logit=True)
@@ -6462,7 +6469,7 @@ def _render_rsi_automation(end_year):
         start_logit = np.random.normal(centre, sigma, n)
 
         horizon = max((datetime(end_year, 12, 31) - cur['date']).days, 1)
-        pdays = np.arange(0, horizon + 1, dtype=float)
+        pdays = _fan_days(horizon)
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
         x_end = pdates[-1]
 
@@ -6686,8 +6693,7 @@ def _render_rsi_survey(end_year):
         sigma = np.log(_RSI_SURVEY_POS_FACTOR) / 1.282
         start_log = np.random.normal(fitted, sigma, n)
 
-        pdays = np.arange(0, max((datetime(end_year, 12, 31) - cur['date']).days, 1) + 1,
-                          dtype=float)
+        pdays = _fan_days(max((datetime(end_year, 12, 31) - cur['date']).days, 1))
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
         pct = _fan_pctiles(start_log, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95))
 
@@ -6827,8 +6833,7 @@ def _render_rsi_code(end_year):
         start_log = np.random.normal(
             fitted, np.log(_RSI_CODE_POS_FACTOR) / 1.282, n)
 
-        pdays = np.arange(0, max((datetime(end_year, 12, 31) - cur['date']).days, 1) + 1,
-                          dtype=float)
+        pdays = _fan_days(max((datetime(end_year, 12, 31) - cur['date']).days, 1))
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
         pct = _fan_pctiles(start_log, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95))
 
@@ -7009,8 +7014,7 @@ def _render_rsi_experiments(end_year):
     y_top = _RSI_EXPERIMENT_TARGET * 1.3
     if draws is not None:
         starts, slopes = draws
-        days = np.arange(0, (end - cur).days + 1, 7, dtype=float)
-        days = np.unique(np.append(days, (end - cur).days))
+        days = _fan_days((end - cur).days)
         dates = [cur + timedelta(days=float(d)) for d in days]
         pct = _fan_pctiles(starts, slopes, days, (5, 10, 25, 50, 75, 90, 95))
         for lo, hi, alpha in [(5, 95, 0.10), (10, 90, 0.18), (25, 75, 0.28)]:
@@ -7139,7 +7143,7 @@ def _render_rsi_direction(end_year):
         start_logit = np.random.normal(fitted, max(float(sigma), 0), n)
 
         end_date = datetime(end_year, 12, 31)
-        pdays = np.arange(0, max((end_date - cur['date']).days, 1) + 1, dtype=float)
+        pdays = _fan_days(max((end_date - cur['date']).days, 1))
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
         pct = _fan_pctiles(start_logit, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95),
                            logit=True)

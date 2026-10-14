@@ -30,6 +30,7 @@ Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tes
 - **`data_centers.csv`** / **`data_center_timelines.csv`** — Epoch Frontier Data Centers: one metadata row per site, many dated capacity rows per site
 - **`CHINA_COMPUTE_JUDGMENTS.md`** — the record behind every hand-set China/SEA compute pace and share: value, evidence, derivation, revisit triggers
 - **`cts_duv_production.csv`** — CTS lithography report's Table 45: US AI chip output vs China's lithography-bounded ceiling, DUVi imports continuing or banned (see *Compute/capabilities/diffusion — lithography ceiling*)
+- **`.streamlit/config.toml`** — turns on websocket compression (~4× less chart JSON on the wire)
 - **`aisi_cyber_narrow.csv`** / **`aisi_cyber_tlo.csv`** — AISI narrow cyber success rates (12 models); AISI/CAISI cyber-range "The Last Ones" avg steps of 32 (10 models). Both **chart-digitized, not published feeds** — see each file's `#` header
 
 No build system, no CI/CD, no package manager beyond requirements.txt (`streamlit`, `numpy`, `plotly`, `pyyaml`).
@@ -621,7 +622,7 @@ scan that counts it runs on through thousands of lines. Tokenize, or edit by han
 The RSI tab merged into Takeoff: `render_takeoff()` draws the shared *Project through*
 (`tk_end_year`), the header and warning, then `render_rsi(end_year)` under *The evidence*,
 then *The takeoff model*. The evidence charts project through that year capped at
-`_RSI_MAX_END_YEAR` (2031; their daily fans outgrow memory past it). The rest of this
+`_RSI_MAX_END_YEAR` (2031), on a weekly grid (`_fan_days`; a day is under a pixel). The rest of this
 section still says "RSI tab" for that half; `_pc_rsi_onset` only reads its widget keys,
 since a drawn widget's key cannot be reassigned in the same run. `test_default_render_and_
 stable_rerun` pins the order; tests find Takeoff's own charts after the RSI projection's
