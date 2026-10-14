@@ -98,8 +98,8 @@ it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
 The sidebar leads with the four parameters of a one-at-a-time sweep: the judgment
-elasticity (half/double: −8/+6 months to ultraintelligence), r (2/0.5: −4/+6),
-parallelization (0.3/0.8: −3/+3) and ρ (0/−1: ±1, small since the v12 spreads draw ρ per
+elasticity (half/double: −8/+6 months to ultraintelligence), r (2/0.5: −5/+7),
+parallelization (0.3/0.8: −3/+4) and ρ (0/−1: ±1, small since the v12 spreads draw ρ per
 scenario anyway); the rest, data-center compute included (~1 month), sit in one *Advanced*
 expander. Retarget that grouping if a rerun of the sweep reorders them.
 AI judgment is gated by the direction stage's human share, uncapped
