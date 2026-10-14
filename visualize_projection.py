@@ -13148,6 +13148,20 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                         if slope_inno is not None else None)
         cn_traj_pure = (cn_anchor + slope_pure * dt_bd
                         if slope_pure is not None else None)
+        # China's observed trend, distillation included: the distillation term
+        # fades with the gap to the US line (the catch-up panel's law), and the
+        # line never passes its teacher.
+        cn_traj_dist = None
+        if slope_inno is not None:
+            gap0 = max(us_anchor - cn_anchor, 1e-6)
+            e = float(cn_anchor)
+            cn_traj_dist = [e]
+            for i in range(1, len(dt_bd)):
+                fade = min(1.0, max(float(us_ceiling[i - 1]) - e, 0.0) / gap0)
+                e = min(e + (slope_inno + dist_sc * fade)
+                        * (dt_bd[i] - dt_bd[i - 1]), float(us_ceiling[i]))
+                cn_traj_dist.append(e)
+            cn_traj_dist = np.array(cn_traj_dist)
 
         us_end = float(us_ceiling[-1])
         cn_end_us = float(cn_traj_us[-1])
@@ -13180,8 +13194,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                 f"| ~{mo_pure:.0f} mo |")
         st.markdown("\n".join(rows_md))
 
-        # Chart: the no-external-distillation China line against the US
-        # frontier, the gap between them shaded, every gap on hover. The
+        # Chart: China's trend with and without distillation against the US
+        # frontier, distillation's share shaded, every gap on hover. The
         # US-measured and indigenous-only rates stay table rows.
         figd = go.Figure()
         _dc_add_projection_band(figd, today, horizon)
@@ -13197,13 +13211,17 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             return f"{mo:.0f}mo ({g:.0f} ECI) {side}"
 
         gap_bd = us_ceiling - cn_traj_inno if cn_traj_inno is not None else None
+        gap_dist = (us_ceiling - cn_traj_dist
+                    if cn_traj_dist is not None else None)
         figd.add_trace(go.Scatter(
             x=bd_dates, y=list(us_ceiling), mode='lines',
             line=dict(color='#1F77B4', width=1.5, dash='dot'),
-            name='US frontier (ceiling)',
-            **(dict(customdata=[_gap_txt(g, "ahead of China") for g in gap_bd],
+            name=f'US frontier ({us_eci_smid:.1f}/yr)',
+            **(dict(customdata=[[_gap_txt(gd, "ahead of China with distillation"),
+                                 _gap_txt(gn, "without")]
+                                for gd, gn in zip(gap_dist, gap_bd)],
                     hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                                  '<br>%{customdata} (access cut)'
+                                  '<br>%{customdata[0]}<br>%{customdata[1]}'
                                   '<extra>US frontier</extra>')
                if gap_bd is not None else dict(hoverinfo='skip'))))
         figd.add_trace(go.Scatter(
@@ -13227,13 +13245,21 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         if cn_traj_inno is not None:
             figd.add_trace(go.Scatter(
                 x=bd_dates + bd_dates[::-1],
-                y=list(us_ceiling) + list(cn_traj_inno[::-1]),
-                fill='toself', fillcolor='rgba(127,16,16,0.10)',
+                y=list(cn_traj_dist) + list(cn_traj_inno[::-1]),
+                fill='toself', fillcolor='rgba(214,39,40,0.12)',
                 line=dict(width=0), hoverinfo='skip',
-                name='Gap to US if model access is cut'))
+                name='What distillation adds'))
+            figd.add_trace(go.Scatter(
+                x=bd_dates, y=list(cn_traj_dist), mode='lines',
+                line=dict(color='#D62728', width=2.5),
+                name=f"China · with distillation ({cn_obs:.1f}/yr)",
+                customdata=[_gap_txt(g, "behind the US") for g in gap_dist],
+                hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                              '<br>%{customdata}'
+                              '<extra>with distillation</extra>'))
             figd.add_trace(go.Scatter(
                 x=bd_dates, y=list(cn_traj_inno), mode='lines',
-                line=dict(color='#7F1010', width=2.5),
+                line=dict(color='#7F1010', width=2.5, dash='dash'),
                 name=f"China · no ext. distillation ({slope_inno:.1f}/yr)",
                 customdata=[_gap_txt(g, "behind the US") for g in gap_bd],
                 hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
@@ -13257,12 +13283,19 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
              if bd_label == "Today" else
              f"Backdated to <b>Jan 2025</b> (China \u2248{cn_anchor:.0f} then) so "
              "the lines can be read against China's actual points.")
-            + (" The solid line cuts model access, keeping method diffusion; "
-               "the shading is the ECI gap to the US line <i>if</i> that access is "
-               "cut, not the expected gap. Hover any point for its gap."
+            + (" The solid red line is China's observed trend, distillation "
+               "included; the dashed line cuts model access, keeping method "
+               "diffusion. The shading between them is what distillation adds. "
+               "Hover any point for its gap."
                if cn_traj_inno is not None else "")
             + " The rates rest on thin fits.",
-            *([("The solid line", "No external distillation: model access cut, "
+            *([("observed trend", f"{cn_obs:.1f} ECI/yr, China's frontier "
+                                  f"slope since {_CC_CALIB_SINCE.year}. Its "
+                                  f"{dist_sc:.1f} of distillation fades as the "
+                                  "gap to the US line closes, so it never "
+                                  "passes the US.")]
+              if cn_traj_inno is not None else []),
+            *([("the dashed line", "No external distillation: model access cut, "
                                   "papers still flowing. China's observed "
                                   f"{cn_obs:.1f} ECI/yr since "
                                   f"{_CC_CALIB_SINCE.year} less the "

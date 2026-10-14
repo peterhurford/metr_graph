@@ -684,15 +684,17 @@ class TestComputeVsCapabilities:
         assert "consistency check" in caps
 
     def test_distillation_chart_draws_two_china_scenarios(self):
-        """The scenario chart draws one China projection, no external
-        distillation, with its gap to the US shaded; the US-measured and
-        indigenous-only rates are table rows only, and the own rate is gone."""
+        """The scenario chart draws China's trend with and without
+        distillation, the difference shaded; the US-measured and
+        indigenous-only rates are table rows only."""
         at = self._cc_app()
         names = [d.get("name", "") for el in at.get("plotly_chart")
                  for d in json.loads(el.proto.spec)["data"]]
         china = [n for n in names if n.startswith("China · ")]
-        assert len(china) == 1 and "no ext. distillation" in china[0]
-        assert "Gap to US if model access is cut" in names
+        assert len(china) == 2
+        assert any("with distillation" in n for n in china)
+        assert any("no ext. distillation" in n for n in china)
+        assert "What distillation adds" in names
         assert "US (actual)" in names
         md = " ".join(str(m.value) for m in at.markdown)
         assert "China's own algo growth" not in md
