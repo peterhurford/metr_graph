@@ -1668,7 +1668,7 @@ class TestPacingTab:
 
         def ratios(at):
             t = next(x.value for x in at.table if "At the pause" in x.value.columns)
-            row = t[t[""].str.startswith("China, largest run")].iloc[0]
+            row = t[t[""].str.startswith("Largest run China can use")].iloc[0]
             return {c: float(re.search(r"US ([\d.,]+)\u00d7", row[c]).group(1)
                              .replace(",", ""))
                     for c in t.columns[1:]}
@@ -1679,6 +1679,12 @@ class TestPacingTab:
         at.checkbox(key="pc_duv_service").check().run()
         cut = ratios(at)
         assert cut["At the crossing"] > cut["Same date, no compute levers"]
+        # Total installed compute is in the table and the chart too.
+        tbl = next(x.value for x in at.table if "At the pause" in x.value.columns)
+        assert "Total installed compute" in list(tbl[""])
+        names = [d.get("name", "") for el in at.get("plotly_chart")
+                 for d in json.loads(el.proto.spec)["data"]]
+        assert "Total installed compute" in names
 
     def test_why_states_the_gap_and_the_slowing_rate(self):
         """The breakdown says how much gap is left at the pause and how fast
@@ -2079,11 +2085,11 @@ class TestPacingTab:
             at.radio(key="pc_end_year").set_value(yr).run()
             _assert_no_error(at, f"Pausing / through {yr}")
             ends = _ends(at)
-            assert len(ends) == 2, ends
-            # The pause chart renders first and stops on the grid exactly;
-            # the threshold timeline below it pads a few months past.
-            assert ends[0] == yr, ends
-            assert ends[1] in (yr, yr + 1), ends
+            assert len(ends) == 3, ends
+            # The pause chart and the compute-ratio chart under it stop on
+            # the grid exactly; the threshold timeline pads a few months past.
+            assert ends[0] == yr and ends[1] == yr, ends
+            assert ends[2] in (yr, yr + 1), ends
 
     def test_horizon_too_narrow_still_describes_the_pause(self):
         """A pause past the projection range has no crossing to report, so
@@ -2279,7 +2285,7 @@ class TestTodayForwardMode:
         return out
 
     # Tabs where every chart is a projection, so every chart goes forward.
-    _ALL_FORWARD = {"Pausing": 2}
+    _ALL_FORWARD = {"Pausing": 3}
 
     def _starts_today(self, spec):
         rng = spec["layout"].get("xaxis", {}).get("range")

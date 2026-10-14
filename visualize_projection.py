@@ -15217,28 +15217,34 @@ def _pc_race_threshold(caps):
     return caps[_DC_CTY_US][1] if _DC_CTY_US in caps else _PC_FALLBACK_THRESHOLD
 
 
-def _pc_capacity_at(rows, dcs, today, when, since=None, qs=(10, 50, 90)):
+def _pc_capacity_at(rows, dcs, today, when, since=None, qs=(10, 50, 90),
+                    also=None):
     """Each entity's largest training run at one date: label -> (q10, q50, q90).
 
     Runs the threshold race's own projection (`_pc_projection`) rather than a
     second fit, so the state-of-play numbers above the pause chart and the
     race table below it cannot quote different capacity for the same country,
     and reads the grid month containing `when`. Entities with nothing
-    recorded are omitted.
+    recorded are omitted. With `also` (a second date) it returns a pair of
+    readings off the same projection, so a second date costs no extra draws.
     """
     rows = [r for r in rows if r[2]]
     if not rows or dcs is None:
-        return {}
+        return ({}, {}) if also is not None else {}
     grid, traj = _pc_projection(rows, dcs, today, since=since,
                                 horizon=max(when, today + timedelta(days=31)))
-    j = max(bisect.bisect_right(grid, when) - 1, 0)
-    out = {}
-    for label, arr in traj.items():
-        col = arr[:, j]
-        col = col[np.isfinite(col)]
-        if len(col):
-            out[label] = tuple(float(np.percentile(col, q)) for q in qs)
-    return out
+
+    def _read(at):
+        j = max(bisect.bisect_right(grid, at) - 1, 0)
+        out = {}
+        for label, arr in traj.items():
+            col = arr[:, j]
+            col = col[np.isfinite(col)]
+            if len(col):
+                out[label] = tuple(float(np.percentile(col, q)) for q in qs)
+        return out
+
+    return (_read(when), _read(also)) if also is not None else _read(when)
 
 
 def _pc_entity_rows(series_shown, series_all, country_of, cluster_of,
@@ -16208,67 +16214,162 @@ def _pc_rate_at(cum, grid, t):
     return np.where(np.isnan(np.asarray(t, dtype=float)), np.nan, out)
 
 
-def _pc_render_compute_ratios(ci, span):
-    """Largest training runs, US over China, at the pause and at the crossing.
+def _pc_wc_ratio(years, dom_keep=1.0):
+    """US over mainland China in total installed AI compute, `years` from
+    today: the world-share centrals grown at their central rates
+    (`_WC_REGIONS`, `_WC_GROWTH`), China's log-rate scaled by `dom_keep`
+    (the domestic-growth levers). The US keeps installing through a pause,
+    which stops frontier training, not chip deliveries."""
+    lev = {lab: mid for lab, mid, _, _ in _WC_REGIONS}
+    g = {lab: mid for lab, mid, _, _ in _WC_GROWTH}
+    us, cn = _WC_LABELS[0], _WC_LABELS[1]
+    yrs = np.asarray(years, dtype=float)
+    return (lev[us] / lev[cn]) * (g[us] ** yrs) / (g[cn] ** (yrs * dom_keep))
 
-    China grows from its pause-start reading (`_pc_capacity_at`, the
-    state-of-play numbers) at the pace the levers leave it, over `span`
-    years (pause to crossing); the US is frozen. A last column repeats the
-    crossing with no compute levers, so the levers show in compute's own
-    units before the exchange rate shrinks them to ECI.
+
+def _pc_render_compute_ratios(ci, span):
+    """How far ahead the US is in compute, today to the crossing.
+
+    Largest trainable run (cluster capacity, `_pc_capacity_at`) for China's
+    usable run and its domestic clusters, against a US run that climbs to
+    the pause and then freezes; and total installed compute from the world
+    shares (`_pc_wc_ratio`). China's runs grow from the pause at the pace the
+    levers leave it over `span` years (pause to crossing). Solid lines are
+    these settings, dashed the same with no compute levers. A table gives
+    the readings at the pause and at the crossing.
     """
-    us = ci.get('us')
+    us, now = ci.get('us'), ci.get('now') or {}
     if not us or span <= 0:
         return
-    lus = float(np.log10(us[1]))
-
-    def _cell(level):
-        if level is None:
-            return "\u2014"
-        r = 10 ** (lus - level)
-        return (f"{_log_op(10 ** level)} log OP "
-                f"(US {r:.1f}\u00d7)" if r < 10 else
-                f"{_log_op(10 ** level)} log OP (US {r:,.0f}\u00d7)")
+    today, pause_d = ci['today'], ci['pause_d']
+    t_p = max((pause_d - today).days / 365.25, 0.0)
+    t_x = t_p + span
 
     def _lv(cap):
         return float(np.log10(cap[1])) if cap else None
 
-    def _grow(level, g):
-        return None if level is None or g is None else level + g * span
+    us_p, us_0 = _lv(us), _lv(now.get(_DC_CTY_US)) or _lv(us)
+    use_key = _DC_CTY_CN_DOMESTIC if ci.get('use_dom') else _DC_CTY_CN_ACCESS
 
-    use0, dom0 = _lv(ci.get('cn_use')), _lv(ci.get('cn_dom'))
-    rows = [{"": "US, frozen at the pause",
-             "At the pause": f"{_log_op(us[1])} log OP",
-             "At the crossing": f"{_log_op(us[1])} log OP"},
-            {"": "China, largest run it can use",
-             "At the pause": _cell(use0),
-             "At the crossing": _cell(_grow(use0, ci.get('g_use')))},
-            {"": "China, domestic clusters only",
-             "At the pause": _cell(dom0),
-             "At the crossing": _cell(_grow(dom0, ci.get('g_dom')))}]
+    def _path(l0, lp, g, t):
+        """Log level at `t` years: today -> pause along the projection, then
+        the post-pause pace."""
+        if lp is None:
+            return None
+        if l0 is None:
+            l0 = lp
+        if t <= t_p:
+            return l0 + (lp - l0) * (t / t_p if t_p > 0 else 1.0)
+        return lp + (g or 0.0) * (t - t_p)
+
+    def _us(t):
+        return _path(us_0, us_p, 0.0, t)
+
+    series = [  # label, colour, (l0, lp, g), (l0, lp, g) without levers
+        ("Largest run China can use", '#D62728',
+         (_lv(now.get(use_key)), _lv(ci.get('cn_use')), ci.get('g_use')),
+         (_lv(now.get(_DC_CTY_CN_ACCESS)), _lv(ci.get('base_cn_use')),
+          ci.get('g_use_base'))),
+        ("Largest run on domestic clusters", '#FF9896',
+         (_lv(now.get(_DC_CTY_CN_DOMESTIC)), _lv(ci.get('cn_dom')),
+          ci.get('g_dom')),
+         (_lv(now.get(_DC_CTY_CN_DOMESTIC)), _lv(ci.get('cn_dom')),
+          ci.get('g_dom_base'))),
+    ]
+    # Like the tab's other charts, the axis runs to *Project through*.
+    end = ci.get('horizon') or (today + timedelta(days=t_x * 365.25))
+    t_end = max((end - today).days / 365.25, t_x)
+    ts = np.linspace(0.0, t_end, 80)
+    dates = [today + timedelta(days=float(t) * 365.25) for t in ts]
+    fig = go.Figure()
+
+    def _ratio_line(name, color, ys, dash, legend):
+        fig.add_trace(go.Scatter(
+            x=dates, y=ys, mode='lines', name=name, showlegend=legend,
+            line=dict(color=color, width=2.5 if dash == 'solid' else 1.5,
+                      dash=dash),
+            hovertemplate='%{x|%b %Y}: US %{y:.1f}\u00d7<extra>' + name
+                          + '</extra>'))
+
+    # Domestic first, so the usable run draws on top where the two coincide
+    # (remote access cut).
+    for name, color, cur, base in series[::-1]:
+        ys = [10 ** (_us(t) - _path(*cur, t)) if _path(*cur, t) is not None
+              else None for t in ts]
+        _ratio_line(name, color, ys, 'solid', True)
+        if ci.get('levers'):
+            yb = [10 ** (_us(t) - _path(*base, t)) if _path(*base, t)
+                  is not None else None for t in ts]
+            _ratio_line(name + ", no compute levers", color, yb, 'dash', False)
+    tot = _pc_wc_ratio(ts, ci.get('dom_keep', 1.0))
+    _ratio_line("Total installed compute", '#1F77B4', list(tot), 'solid', True)
+    if ci.get('levers') and ci.get('dom_keep', 1.0) < 1.0:
+        _ratio_line("Total installed compute, no compute levers", '#1F77B4',
+                    list(_pc_wc_ratio(ts)), 'dash', False)
+    for x, txt in ((pause_d, "US pauses"),
+                   (today + timedelta(days=t_x * 365.25), "China crosses")):
+        fig.add_vline(x=x, line=dict(color='#999999', width=1, dash='dot'))
+        fig.add_annotation(x=x, yref='paper', y=1.0, text=txt, showarrow=False,
+                           yanchor='bottom', font=dict(size=10, color='#777777'))
+    fig.update_layout(
+        height=340, plot_bgcolor='white', paper_bgcolor='white',
+        margin=dict(l=60, r=20, t=24, b=40), font=dict(color='#222222'),
+        legend=dict(orientation='h', y=-0.18, font=dict(size=11, color='#222')),
+        xaxis=dict(gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
+                   range=[today, today + timedelta(days=t_end * 365.25)]),
+        yaxis=dict(type='log', title_text="US \u00f7 China (\u00d7)",
+                   tickvals=[0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100],
+                   ticktext=["0.1\u00d7", "0.2\u00d7", "0.5\u00d7", "1\u00d7",
+                             "2\u00d7", "5\u00d7", "10\u00d7", "20\u00d7",
+                             "50\u00d7", "100\u00d7"],
+                   gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222'),
+                   title_font=dict(color='#222')))
+
+    def _cell(us_l, cn_l):
+        if us_l is None or cn_l is None:
+            return "\u2014"
+        r = 10 ** (us_l - cn_l)
+        return f"US {r:.1f}\u00d7" if r < 10 else f"US {r:,.0f}\u00d7"
+
+    rows = []
+    for name, _c, cur, base in series:
+        row = {"": name, "At the pause": _cell(_us(t_p), _path(*cur, t_p)),
+               "At the crossing": _cell(_us(t_x), _path(*cur, t_x))}
+        if ci.get('levers'):
+            row["Same date, no compute levers"] = _cell(_us(t_x),
+                                                        _path(*base, t_x))
+        rows.append(row)
+    trow = {"": "Total installed compute",
+            "At the pause": f"US {_pc_wc_ratio([t_p], ci.get('dom_keep', 1.0))[0]:.1f}\u00d7",
+            "At the crossing": f"US {_pc_wc_ratio([t_x], ci.get('dom_keep', 1.0))[0]:.1f}\u00d7"}
     if ci.get('levers'):
-        base0 = _lv(ci.get('base_cn_use'))
-        rows[0]["Same date, no compute levers"] = f"{_log_op(us[1])} log OP"
-        rows[1]["Same date, no compute levers"] = _cell(
-            _grow(base0, ci.get('g_use_base')))
-        rows[2]["Same date, no compute levers"] = _cell(
-            _grow(dom0, ci.get('g_dom_base')))
-    st.markdown("##### Compute capacity: US vs China's largest trainable run")
+        trow["Same date, no compute levers"] = f"US {_pc_wc_ratio([t_x])[0]:.1f}\u00d7"
+    rows.append(trow)
+
+    st.markdown("##### Compute capacity: US vs China's largest trainable run "
+                "and total compute")
+    st.plotly_chart(_tf(fig), use_container_width=True)
     st.table(pandas.DataFrame(rows).style.hide(axis="index"))
     _fn_caption(
-        "Capacity: the largest run each side's clusters could train, sites "
-        "abroad included, not runs actually done (the China tab's ~50\u00d7 "
-        "gap counts those). "
-        f"Each 10\u00d7 of compute is worth ~{ci['a_partial']:.0f} ECI, so "
-        "a big compute ratio buys a small capability gap.",
+        "Largest run is capacity: what each side's clusters could train, "
+        "sites abroad included, not runs actually done (the China tab's "
+        "~50\u00d7 gap counts those). Total is installed compute by location; "
+        "the US keeps installing through the pause. Dashed lines: no compute "
+        "levers. "
+        f"Each 10\u00d7 of compute is worth ~{ci['a_partial']:.0f} ECI.",
         ("not runs actually done", "Those are Epoch's estimates of the "
                                    "largest runs each country has trained, "
                                    "a different quantity from what its "
                                    "clusters could train."),
-        ("Each 10\u00d7", "The frontier-grade exchange rate. China's runs grow "
-                           "from the state-of-play reading at the pace these "
-                           "levers leave it, over the median time from the "
-                           "pause to the crossing; the US is frozen."))
+        ("Total is installed compute", "The world-share estimates on the Data "
+                                       "Centers tab (US ~72%, mainland China "
+                                       "~13% today), each grown at its central "
+                                       "rate; the DUV and domestic levers slow "
+                                       "China's. Remote access does not move "
+                                       "it: that capacity sits outside "
+                                       "mainland China."),
+        ("Each 10\u00d7", "The frontier-grade exchange rate: a big compute "
+                           "ratio buys a small capability gap."))
 
 
 def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
@@ -16474,7 +16575,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                         us_steps=None, timing_label=_DC_TIMING_OPTIONS[0],
-                        horizon=None):
+                        horizon=None, caps_now=None):
     """If the US paused: China's catch-up to the paused frontier, in ECI.
 
     The pause is a **date the user names** (`pc_pause_mo`, rendered by
@@ -17269,6 +17370,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         'a_partial': a_partial,
         'levers': bool(stop_remote or duv_ban or duv_service
                        or dom_slow_user),
+        'now': caps_now or {},
+        'today': today, 'pause_d': pause_d, 'use_dom': _use_dom,
+        'horizon': horizon if horizon is not None else _PC_HORIZON,
+        'dom_keep': dom_keep,
     }
     _pc_render_why(
         chan, grid0, traj0, target0, years, years_base,
@@ -17391,13 +17496,15 @@ def render_pacing():
          (_DC_CTY_CN_ACCESS, 'country', _cn_steps_raw, tuple(_cn_names)),
          (_DC_CTY_CN_DOMESTIC, 'country', _dom_steps_raw,
           tuple(_dom_names))],
-        dc_view, _today, pause_d, since=_DC_DEFAULTS["dc_cty_since"])
+        dc_view, _today, pause_d, since=_DC_DEFAULTS["dc_cty_since"],
+        also=_today)
+    caps, caps_now = caps
     threshold = _pc_race_threshold(caps)
     threshold_label = f"{_log_op(threshold)} log OP"
 
     _pc_render_us_pause(_today, pause_d, caps, run_days,
                         us_steps=_us_steps_raw, timing_label=timing_label,
-                        horizon=pc_horizon)
+                        horizon=pc_horizon, caps_now=caps_now)
 
     # ── Entities and projections ──
     series_all = series_unshifted

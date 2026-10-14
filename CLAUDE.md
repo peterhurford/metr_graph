@@ -1526,6 +1526,15 @@ shared by each source's median post-pause ECI, so rows add to the total. Distill
 split (`comp_shadow`, a domestic-only counterfactual) has no rate of its own, so the
 measured compute rate shows once, on the first compute row
 (`test_why_states_the_gap_and_the_slowing_rate`, `test_why_breakdown_tracks_the_sliders`).
+Under it, `_pc_render_compute_ratios()` charts and tabulates how far ahead the US is
+(US ÷ China, log axis, to *Project through*): largest trainable run (cluster capacity,
+`_pc_capacity_at`, read for today and the pause off one projection via `also=`) for China's
+usable run and its domestic clusters, against a US run frozen at the pause; and total
+installed compute from the Data Centers tab's world shares (`_pc_wc_ratio`), the US still
+installing through the pause and the DUV/domestic levers slowing China's. Dashed lines and a
+last table column give the same date with no compute levers. Capacity is not the China tab's
+~50× *actual-run* gap; both captions say so
+(`test_compute_ratios_show_what_the_compute_levers_cost_china`).
 Note for tests: this table renders *after* the race table, so address
 the race table by its columns (`TestPacingTab._entities`), never by position.
 China
