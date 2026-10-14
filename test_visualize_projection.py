@@ -1871,6 +1871,23 @@ class TestCcRateCalibration:
         assert k > 1.0
 
 
+class TestCcGapEndRange:
+    def test_range_spans_the_window_choices(self):
+        """The end-year gap's hover range covers every alternative fit start,
+        and on live data the since-2024 central sits inside it."""
+        eci_all = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        us_fr = vp._cc_country_frontier(eci_all, 'United States of America')
+        cn_fr = vp._cc_country_frontier(eci_all, 'China')
+        gap_now = max(s for d, s, n in us_fr) - max(s for d, s, n in cn_fr)
+        (lo, hi), us_r, cn_r = vp._cc_gap_end_range(us_fr, cn_fr, gap_now, 3.0)
+        central = gap_now + 3.0 * (
+            vp._cc_frontier_eci_slope(us_fr, vp._CC_CALIB_SINCE)
+            - vp._cc_frontier_eci_slope(cn_fr, vp._CC_CALIB_SINCE))
+        assert lo <= central <= hi
+        assert hi - lo > 2.0
+        assert us_r[1] - us_r[0] < cn_r[1] - cn_r[0]
+
+
 class TestCcCrossingBacktest:
     def test_level_noise_brings_the_80pct_band_near_80pct(self):
         """Rolling origins over China's 2025-26 releases: the crossing sim's
@@ -4729,6 +4746,21 @@ class TestPacing:
         # can't show; unknown text falls back to today rather than raising.
         assert vp._pc_when_date("nonsense", today) == today
         assert vp._pc_when_date(None, today) == today
+
+    def test_level_scatter_is_its_own_channel(self):
+        """With level noise on, the offset is recorded as `level`, so the
+        channels still sum to the path exactly."""
+        kw = dict(a_partial=8.0, g_lo=0.15, g_hi=0.30, algo_lo=11.0,
+                  algo_mid=12.0, algo_hi=13.0, pace_lo=0.8, pace_hi=1.1,
+                  n=120, inno_lo=8.0, inno_hi=10.0, us_anchor=165.0,
+                  us_rate=25.0, pure_lo=3.0, pure_hi=4.0, t_pause=0.5,
+                  level_sd=2.0, level_ramp_yrs=0.2)
+        chan = {}
+        _, grid, traj = vp._cc_cn_crossing_sim(150.0, 160.0, channels=chan, **kw)
+        assert set(chan) == set(vp._CC_CHANNELS) | {'level'}
+        total = sum(chan[k] for k in chan)
+        assert np.allclose(total, traj - 150.0)
+        assert np.allclose(chan['level'][:, 0], 0.0)
 
     def test_channels_account_for_the_whole_climb(self):
         """The four channel cumulatives are an exact decomposition of the

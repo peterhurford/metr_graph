@@ -12655,6 +12655,29 @@ def _cc_frontier_eci_slope(fr, cutoff):
 # scaled to each country's observed frontier slope over this window, so every
 # projected line fits its own history (`_cc_rate_calibration`).
 _CC_CALIB_SINCE = _CC_GAP_WINDOWS[1][1]
+# Alternative fit starts for the end-year gap's sensitivity range: any
+# half-year from 2024 to mid-2025. DeepSeek-R1's Jan 2025 jump lifts China's
+# slope when it sits mid-window and lowers it when it opens the window.
+_CC_CALIB_SENS_STARTS = (datetime(2024, 1, 1), datetime(2024, 7, 1),
+                         datetime(2025, 1, 1), datetime(2025, 7, 1))
+
+
+def _cc_gap_end_range(us_fr, cn_fr, gap_now, years):
+    """(lo, hi) projected ECI gap after `years`, today's gap plus the two
+    frontiers' slope difference, over `_CC_CALIB_SENS_STARTS`; also the
+    (lo, hi) US and China slopes. None when no start has both slopes."""
+    gaps, us_r, cn_r = [], [], []
+    for cut in _CC_CALIB_SENS_STARTS:
+        u = _cc_frontier_eci_slope(us_fr, cut)
+        c = _cc_frontier_eci_slope(cn_fr, cut)
+        if u is not None and c is not None:
+            gaps.append(gap_now + (u - c) * years)
+            us_r.append(u)
+            cn_r.append(c)
+    if not gaps:
+        return None
+    return ((min(gaps), max(gaps)), (min(us_r), max(us_r)),
+            (min(cn_r), max(cn_r)))
 
 
 def _cc_rate_calibration(fr, bottom_up):
@@ -12814,9 +12837,19 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
               f"{run_gap_oom:.1f} OOM, US ahead", delta_color="off")
     c2.metric("ECI gap today", f"{gap_now:.0f} pts",
               f"~{mo_now:.0f} mo behind", delta_color="off")
+    _rng = _cc_gap_end_range(us_fr, cn_fr, gap_now, dt_end)
     c3.metric(f"ECI gap end-{horizon.year} (compute + algo)",
               f"~{gap_end:.0f} pts",
-              f"~{mo_end:.0f} mo behind", delta_color="off")
+              f"~{mo_end:.0f} mo behind", delta_color="off",
+              help=(f"Each country's rate fits its frontier since "
+                    f"{_CC_CALIB_SINCE.year}. Starting the fit at any half-year "
+                    f"from 2024 to mid-2025 instead gives {_rng[0][0]:.0f}"
+                    f"\u2013{_rng[0][1]:.0f} pts (US {_rng[1][0]:.1f}\u2013"
+                    f"{_rng[1][1]:.1f}, China {_rng[2][0]:.1f}\u2013"
+                    f"{_rng[2][1]:.1f} ECI/yr). The US rate barely moves; "
+                    "China's swings on DeepSeek-R1's Jan 2025 jump, which "
+                    "lifts the slope mid-window and lowers it at the "
+                    "window's start." if _rng else None))
 
     # ── Chart A: actual training runs (grounded) vs cluster capacity (est.) ────
     figc = go.Figure()
@@ -13461,7 +13494,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     linearly over `level_ramp_yrs`: the frontier moves in release-sized steps
     around its trend, which a rate spread alone cannot cover at short
     horizons. It shifts `traj` and the crossings, not the channels or the
-    distillation gap.
+    distillation gap. With `channels`, it is recorded as its own `level`
+    entry so the channels still sum to `traj - anchor_eci`.
 
     Returns (years, grid_yrs, traj): crossing years incl. the release wait
     (NaN = not crossed within horizon), the monthly time grid, and the
@@ -13504,6 +13538,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     us_rate = np.asarray(us_rate)      # scalar or per-sample array
     offset = (np.random.normal(0.0, level_sd, n) if level_sd > 0
               else np.zeros(n))
+    if channels is not None and level_sd > 0:
+        channels['level'] = np.zeros((n, steps + 1))
     for i in range(1, steps + 1):
         us_level = us_anchor + us_rate * grid[i - 1]
         if us_pause_level is not None:
@@ -13535,6 +13571,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                 channels['compute_domestic'][:, i - 1] + dom * dt
         e = e + rate * dt
         traj[:, i] = e + offset * min(grid[i] / level_ramp_yrs, 1.0)
+        if channels is not None and level_sd > 0:
+            channels['level'][:, i] = traj[:, i] - e
         hit = np.isnan(years) & (traj[:, i] >= target)
         if np.any(hit):
             # Interpolate the crossing inside the step: snapping to grid[i]
@@ -16987,6 +17025,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               t_dist_stop=(max((d_dist - anchor_d).days, 0) / 365.25
                            if stop_dist else None),
               dist_teacher=teacher_s if withhold else None,
+              # Release-step scatter, as on the China tab's catch-up panel.
+              level_sd=_cc_frontier_level_sd(cn_fr),
+              level_ramp_yrs=(_cc_release_gap_days(
+                  cn_fr, since=today - timedelta(days=730)) or 47.5) / 365.25,
               **({'pure_lo': pure[0], 'pure_hi': pure[1]} if pure else {}))
     if horizon is not None:
         # Search only as far as the sidebar's projection range, keeping at
@@ -17349,6 +17391,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _notes.append(f"Every row is scaled by the pace band "
                   f"(×{pace_lo:.2f}–{pace_hi:.2f}), the reality check "
                   "against China's own observed frontier slope.")
+    if 'level' in chan:
+        _notes.append(
+            f"Each path also carries ±{_cc_frontier_level_sd(cn_fr):.1f} "
+            "ECI of release-step scatter, which closes no gap on average and "
+            "is left out of the rows.")
     _pc_render_why(
         chan, grid0, traj0, target0, years, years_base,
         cn_gain=cn_gain, cn_extra=cn_extra, cn_run_mo=cn_run_mo,

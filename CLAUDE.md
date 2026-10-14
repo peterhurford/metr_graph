@@ -1328,7 +1328,10 @@ Scatter under 20 points to `lines+markers`, studding the band outline with stray
    per-sample level offset, `_cc_frontier_level_sd` (sqrt 2 x China's scatter around its
    since-2024 trend), phased in over the median release gap. Rate spread alone put only
    ~16% of China's 2025–26 releases inside the 80% band on a rolling-origin backtest;
-   `TestCcCrossingBacktest` holds it near 80%. The panel passes it; Pacing does not yet.
+   `TestCcCrossingBacktest` holds it near 80%. Pacing passes it too; with `channels` the offset
+   is its own `level` entry, left out of the breakdown rows (its caption says so).
+6. **The end-year gap card's hover gives the fit-window range** (`_cc_gap_end_range` over
+   `_CC_CALIB_SENS_STARTS`): China's slope swings on DeepSeek-R1's Jan 2025 jump.
 ### Pacing tab
 
 `render_pacing()` renders the pause counterfactual **first**
