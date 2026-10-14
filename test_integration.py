@@ -41,6 +41,20 @@ def _has_widget(at, widget_type, key):
         return False
 
 
+def _rsi_cdf_index(at):
+    """Position of the RSI projection's CDF, the evidence half's last chart."""
+    import json
+    specs = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+    return next(i for i, sp in enumerate(specs)
+                if ((sp["layout"].get("yaxis") or {}).get("title") or {}).get("text")
+                == "Chance crossed by then")
+
+
+def _tk_charts(at):
+    """The takeoff model's own charts, after the RSI evidence above them."""
+    return at.get("plotly_chart")[_rsi_cdf_index(at) + 1:]
+
+
 def _switch_tab(at, tab_name):
     """Switch to a tab and run."""
     [r for r in at.radio if r.label == "Tab"][0].set_value(tab_name).run()
@@ -753,7 +767,7 @@ class TestRsiTab:
     def _rsi_app(self):
         at = _fresh_app()
         at.run()
-        _switch_tab(at, "RSI")
+        _switch_tab(at, "Takeoff")
         return at
 
     def test_the_sections_chart_and_the_cards_date(self):
@@ -778,7 +792,7 @@ class TestRsiTab:
         # would sit on its own left edge. Calendar charts are the ones whose
         # explicit x range is a pair of date strings.
         charts = [json.loads(el.proto.spec)["layout"]
-                  for el in at.get("plotly_chart")]
+                  for el in at.get("plotly_chart")[:_rsi_cdf_index(at) + 1]]
         def _calendar(L):
             x = L.get("xaxis") or {}
             rng = x.get("range") or []
@@ -938,8 +952,10 @@ class TestRsiTab:
         assert not any("becomes 5%" in c.value for c in at.caption)
 
     def test_horizon_selector(self):
+        """The tab's one *Project through* year sets the evidence charts' reach
+        too, capped where their daily fans would outgrow memory."""
         at = self._rsi_app()
-        assert at.selectbox(key="rsi_end_year").value == 2029
+        assert at.number_input(key="tk_end_year").value == 2030
 
         def _al5_end(at):
             [trace] = [t for el in at.get("plotly_chart")
@@ -947,10 +963,11 @@ class TestRsiTab:
                        if t.get("name") == "AL5 median (assumed lag)"]
             return max(trace["x"])[:4]
 
-        assert _al5_end(at) == "2029"
-        at.selectbox(key="rsi_end_year").set_value(2031).run()
-        _assert_no_error(at, "RSI / project through 2031")
-        assert _al5_end(at) == "2031"
+        assert _al5_end(at) == "2030"
+        at.number_input(key="tk_end_year").set_value(2035).run()
+        _assert_no_error(at, "Takeoff / project through 2035")
+        import visualize_projection as vp
+        assert _al5_end(at) == str(vp._RSI_MAX_END_YEAR)
 
 
 class TestTakeoffTab:
@@ -966,12 +983,16 @@ class TestTakeoffTab:
         assert at.session_state["_active_tab"] == "Takeoff"
         assert any(h.value == "Takeoff" for h in at.header)
         # RSI evidence, pace, pace factors, people, ECI and the distributions.
-        assert len(at.get("plotly_chart")) == 6
-        assert [s.value for s in at.subheader][:5] == [
-            "What the RSI tab feeds in", "1. Research speeds up", "2. People step out of the loop",
+        assert len(_tk_charts(at)) == 6
+        # The evidence first, then the takeoff model.
+        assert [h.value for h in at.header] == ["Takeoff", "The evidence", "The takeoff model"]
+        subs = [s.value for s in at.subheader]
+        assert subs.index("CoBench") < subs.index("RSI projection (tentative)")
+        assert subs[subs.index("RSI projection (tentative)") + 1:][:5] == [
+            "What the evidence feeds in", "1. Research speeds up", "2. People step out of the loop",
             "3. What it does to capability (ECI)", "4. When it happens, and how fast"]
         import json
-        dist = json.loads(at.get("plotly_chart")[5].proto.spec)
+        dist = json.loads(_tk_charts(at)[5].proto.spec)
         # Density and cumulative share for RSI, ultraintelligence and the gap.
         assert len(dist["data"]) == 6
         import base64
@@ -982,11 +1003,11 @@ class TestTakeoffTab:
         assert all(((0 <= y) & (y <= 100)).all() and (np.diff(y) >= -1e-9).all() for y in cdfs)
         assert at.number_input(key="tk_end_year").value == 2030
         assert not _has_widget(at, "number_input", "tk_onset_low")
-        evidence = json.loads(at.get("plotly_chart")[0].proto.spec)
+        evidence = json.loads(_tk_charts(at)[0].proto.spec)
         titles = " ".join(a["text"] for a in evidence["layout"]["annotations"])
         for name in ("Next-step wins", "Staff speedup", "Experiments/researcher"):
             assert name in titles
-        eci = json.loads(at.get("plotly_chart")[4].proto.spec)
+        eci = json.loads(_tk_charts(at)[4].proto.spec)
         [projected] = [d for d in eci["data"] if d.get("name") == "Projected ECI"]
         assert projected["x"][-1].startswith("2030-12")
         import base64
@@ -1002,7 +1023,7 @@ class TestTakeoffTab:
         first_year = slice(0, 13)        # monthly grid: today plus 12 months
         assert np.all(_ys(traces["Projected ECI: 10th percentile"])[first_year]
                       >= _ys(traces["Today's trend continued"])[first_year] - 1e-9)
-        pace = json.loads(at.get("plotly_chart")[1].proto.spec)
+        pace = json.loads(_tk_charts(at)[1].proto.spec)
         assert {"Modeled research pace", "If AI stopped improving today"} <= {
             d.get("name") for d in pace["data"]}
         # Today's pace is set, not inherited from the experiment proxy.
@@ -1016,11 +1037,11 @@ class TestTakeoffTab:
         # Draws run to the horizon, so there is no held-pace tail to label.
         assert not any("hold their last pace" in a.get("text", "")
                    for a in pace["layout"]["annotations"])
-        factors = json.loads(at.get("plotly_chart")[2].proto.spec)
+        factors = json.loads(_tk_charts(at)[2].proto.spec)
         assert [d["name"] for d in factors["data"]] == [
             "Labor & compute", "Research judgment", "Harder ideas (divides)",
             "Net research pace"]
-        people = json.loads(at.get("plotly_chart")[3].proto.spec)
+        people = json.loads(_tk_charts(at)[3].proto.spec)
         # Three stages (band edges + median each), then the measured index history.
         assert len(people["data"]) == 10
         assert people["data"][-1]["name"] == "Measured: R&D automation index"
@@ -1030,7 +1051,8 @@ class TestTakeoffTab:
         at.run()
         assert [(m.label, m.value) for m in at.metric] == before
         labels = [m.label for m in at.metric]
-        assert labels[:5] == ["Full coding automation (RSI tab)",
+        labels = labels[labels.index("Full coding automation"):]
+        assert labels[:5] == ["Full coding automation",
                               "RSI: AI directs research",
                               "Ultraintelligence: ECI 250",
                               "Coding automation \u2192 RSI",
@@ -1050,7 +1072,7 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", old_simulator)
         at = self._app()
         assert tk.simulate is not old_simulator
-        assert len(at.get("plotly_chart")) == 6
+        assert len(_tk_charts(at)) == 6
 
     def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
         import takeoff_model as tk
@@ -1140,7 +1162,7 @@ class TestTakeoffTab:
                                pc_rsiw_rli_90="70", tk_seed="9182")
         at.run()
         _assert_no_error(at, "RSI / inherited configuration")
-        curve = json.loads(at.get("plotly_chart")[-1].proto.spec)["data"][-1]
+        curve = json.loads(at.get("plotly_chart")[_rsi_cdf_index(at)].proto.spec)["data"][-1]
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         grid = np.array([(datetime.fromisoformat(d) - today).total_seconds()
                          / (365.25 * 86400) for d in curve["x"]])
@@ -1149,9 +1171,9 @@ class TestTakeoffTab:
         np.testing.assert_allclose(100 * tk.cdf(captured[-1], grid), curve["y"])
         assert at.session_state["rsi_atc_penalty"] == 50
         assert at.session_state["pc_rsiw_rli_90"] == 70
-        _switch_tab(at, "RSI")
+        _switch_tab(at, "Takeoff")
         assert at.slider(key="rsi_atc_penalty").value == 50
-        second = json.loads(at.get("plotly_chart")[-1].proto.spec)["data"][-1]
+        second = json.loads(at.get("plotly_chart")[_rsi_cdf_index(at)].proto.spec)["data"][-1]
         assert second["y"] == curve["y"]
 
     def test_horizon_resets_and_rsi_settings_survive_reset(self):
@@ -1168,7 +1190,7 @@ class TestTakeoffTab:
         assert at.query_params["tk_end_year"] == ["2035"]
         # The year crops the charts; the cards come from scenarios run to 2040.
         assert [(m.label, m.value) for m in at.metric] == cards
-        eci = json.loads(at.get("plotly_chart")[4].proto.spec)
+        eci = json.loads(_tk_charts(at)[4].proto.spec)
         [projected] = [d for d in eci["data"] if d.get("name") == "Projected ECI"]
         assert projected["x"][-1].startswith("2035-12")
         at.button(key="tk_reset").click().run()
@@ -1223,7 +1245,7 @@ class TestTakeoffTab:
         labels = ["Coding automation \u2192 RSI", "RSI \u2192 ultraintelligence"]
         for label in labels:
             assert any(m.label == label for m in at.metric), label
-        pace = json.loads(at.get("plotly_chart")[1].proto.spec)
+        pace = json.loads(_tk_charts(at)[1].proto.spec)
         assert pace["layout"]["yaxis"]["range"][1] <= np.log10(1000) + 1e-9
         assert not any(m.label.startswith("FOOM") for m in at.metric)
 
@@ -1285,7 +1307,7 @@ class TestTakeoffTab:
         _assert_no_error(at, "Takeoff / invalid URL")
         assert at.number_input(key="tk_compute_growth").value == 2.0
         at.number_input(key="tk_returns").set_value(2.0).run()
-        _switch_tab(at, "RSI")
+        _switch_tab(at, "Takeoff")
         _switch_tab(at, "Takeoff")
         assert at.number_input(key="tk_returns").value == 2.0
 
@@ -2060,7 +2082,7 @@ class TestTodayForwardMode:
     projection charts open at today with relative hover dates, and the RSI
     tab's diagnostic charts are left alone."""
 
-    TABS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "RSI",
+    TABS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "Takeoff",
             "Revenue", "Pacing"]
     _DATE = re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) "
                        r"(\d{1,2}, )?\d{4}\b|\b\d{4}-\d{2}-\d{2}\b")
@@ -2092,7 +2114,7 @@ class TestTodayForwardMode:
     _ALL_FORWARD = {"Pacing": 2}
 
     def _starts_today(self, spec):
-        rng = spec["layout"]["xaxis"].get("range")
+        rng = spec["layout"].get("xaxis", {}).get("range")
         return bool(rng) and str(rng[0])[:10] == datetime.now().strftime("%Y-%m-%d")
 
     @pytest.mark.parametrize("tab", TABS)
@@ -2137,16 +2159,18 @@ class TestTodayForwardMode:
         _switch_tab(at, "UK Cyber")
         assert not [c for c in at.checkbox if c.key == "today_fwd"]
 
-    def test_rsi_tab_converts_only_the_projection_cdf(self):
+    def test_takeoff_converts_its_projections_not_the_evidence(self):
+        """The RSI projection's CDF and the four takeoff projections go
+        forward; the evidence charts above them keep their history."""
         at = _fresh_app()
         at.run()
-        _switch_tab(at, "RSI")
+        _switch_tab(at, "Takeoff")
         at.checkbox(key="today_fwd").set_value(True).run()
         specs = self._specs(at)
         fwd = [sp for sp in specs if self._starts_today(sp)]
-        assert len(fwd) == 1
+        assert len(fwd) == 5
         assert fwd[0]["layout"]["yaxis"]["title"]["text"] == "Chance crossed by then"
-        assert len(specs) > 1
+        assert len(specs) > len(fwd)
 
     def test_toggle_survives_a_tab_switch_and_its_reset(self):
         at = _fresh_app()

@@ -2271,8 +2271,9 @@ class TestRsi:
 
     def test_slugs_round_trip(self):
         assert vp._TAB_OPTIONS[vp._TAB_SLUG["takeoff"]] == "Takeoff"
-        assert vp._SLUG_FOR_TAB["RSI"] == "rsi"
-        assert vp._TAB_OPTIONS[vp._TAB_SLUG["rsi"]] == "RSI"
+        # The RSI tab merged into Takeoff; its old links land there.
+        assert "RSI" not in vp._TAB_OPTIONS
+        assert vp._TAB_SLUG["rsi"] == vp._TAB_SLUG["takeoff"]
 
     def test_defaults_and_url_tracking_cover_the_widgets(self):
         keys, defaults = vp._all_tracked()

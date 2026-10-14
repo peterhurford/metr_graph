@@ -36,11 +36,11 @@ No build system, no CI/CD, no package manager beyond requirements.txt (`streamli
 
 ## Architecture
 
-Thirteen-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `rsi`, `takeoff`, `thresholds`, `revenue`, `datacenters`, `computecap`, `pacing`, `ukcyber`, `employment`.
+Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `takeoff` (`rsi`, the merged RSI tab, is an alias for it),  `thresholds`, `revenue`, `datacenters`, `computecap`, `pacing`, `ukcyber`, `employment`.
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v12-literature-spread`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v13-compute-slowdown`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -208,7 +208,7 @@ has no main-column headings, so it has no section to link to.
 | METR Horizon | `render_metr()` | `benchmark_results_1_1.yaml` → `load_frontier()` | log₂(minutes) |
 | Epoch ECI | `render_eci()` | `epoch_capabilities_index.csv` → `load_eci_frontier()` | linear score |
 | Remote Labor Index | `render_rli()` | `_RLI_RAW` → `load_rli_data()` | logit-transformed score |
-| RSI | `render_rsi()` | `_RSI_RAW` → `load_rsi_data()`; `anthropic_rd_automation.csv` → `load_rsi_automation()`; `_RSI_SURVEY`; `_RSI_CODE_RAW` → `load_rsi_code()`; `_RSI_DIR_RAW` → `load_rsi_direction()`; `openai_experiment_velocity.csv` → `load_rsi_experiments()` | CoBench score % (logit-projected), AL2+/AL3+/AL4+ shares of R&D tasks % (logit-projected) plus AL5 shifted off their lag ladder, all on one chart, staff speedup ×, merged code per contributor ×, OpenAI experiments per experimenter ×, next-step win rate % |
+| Takeoff, evidence half (was the RSI tab) | `render_rsi(end_year)` | `_RSI_RAW` → `load_rsi_data()`; `anthropic_rd_automation.csv` → `load_rsi_automation()`; `_RSI_SURVEY`; `_RSI_CODE_RAW` → `load_rsi_code()`; `_RSI_DIR_RAW` → `load_rsi_direction()`; `openai_experiment_velocity.csv` → `load_rsi_experiments()` | CoBench score % (logit-projected), AL2+/AL3+/AL4+ shares of R&D tasks % (logit-projected) plus AL5 shifted off their lag ladder, all on one chart, staff speedup ×, merged code per contributor ×, OpenAI experiments per experimenter ×, next-step win rate % |
 | UK Cyber | `render_ukcyber()` | `aisi_cyber_narrow.csv` → `load_ukcyber()`; `aisi_cyber_tlo.csv` → `load_ukcyber_tlo()` | success rate % + open-weight lag in months; plus a TLO cyber-range cross-check in steps (`_render_ukcyber_tlo()`) and a callout for models only the range has measured (`_render_ukcyber_newest_open()`) |
 | Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE`; `_CN_REVENUE` | ARR in billions; optional summed line (`rev_combined`, off by default) via `_rev_combined_series()`; then a data-only Chinese-lab chart (`_render_rev_china()`: MiniMax, Zhipu API, Alibaba MaaS, Moonshot, DeepSeek), run rates only, each point classed company-stated or press-reported (`TestRevenueChina`); closes on US vs China (`_render_rev_us_china()`): each side summed by `_rev_sum_series` (China from the date every lab reports, each lab held flat past its last report), with the ratio and the date the US labs stood at China's total, then the top-N vs top-N ratio over time (`_rev_ratio_path`), held flat and nowcast to today at each lab's last-interval growth (`_rev_value_nowcast`) (`TestRevenueUsChina`) |
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
@@ -444,7 +444,7 @@ purpose-built fabric is the criterion for the levels that claim a link exists.
 
 A sidebar checkbox (`today_fwd`, URL-tracked, reset by no tab) at the foot of
 the sidebar on the six projection tabs (`_TODAY_FWD_TABS` — METR, Epoch ECI,
-RLI, RSI, Revenue, Pacing), rendered by the dispatch after the tab's own
+RLI, Takeoff, Revenue, Pacing), rendered by the dispatch after the tab's own
 controls. On, a chart opens at today with no history and every hover date
 reads relative to today (`_rel_date_label`: days to 30, then the two largest
 of y/mo/d, calendar months). It is a post-process on the finished figure,
@@ -517,9 +517,18 @@ caption stays short.
 f-string like `.split(' (')` puts an unbalanced paren inside a literal, and a
 scan that counts it runs on through thousands of lines. Tokenize, or edit by hand.
 
-### RSI tab
+### RSI tab (now the evidence half of Takeoff)
 
-`render_rsi()` is titled *RSI* and runs CoBench, then the R&D automation index,
+The RSI tab merged into Takeoff: `render_takeoff()` draws the shared *Project through*
+(`tk_end_year`), the header and warning, then `render_rsi(end_year)` under *The evidence*,
+then *The takeoff model*. The evidence charts project through that year capped at
+`_RSI_MAX_END_YEAR` (2031; their daily fans outgrow memory past it). The rest of this
+section still says "RSI tab" for that half; `_pc_rsi_onset` only reads its widget keys,
+since a drawn widget's key cannot be reassigned in the same run. `test_default_render_and_
+stable_rerun` pins the order; tests find Takeoff's own charts after the RSI projection's
+CDF (`_tk_charts`).
+
+`render_rsi()` runs CoBench, then the R&D automation index,
 then the staff survey, then
 merged code per person, OpenAI experiment velocity, then research direction, then
 *Capabilities Milestones* + *RSI projection (tentative)* (`_pc_render_milestones()`,

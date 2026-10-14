@@ -430,7 +430,7 @@ def _bt_color_for(r):
 # both Pacing charts) — a diagnostic chart of past data has no "forward".
 _TODAY_FWD_KEY = "today_fwd"
 _TODAY_FWD_DEFAULTS = {_TODAY_FWD_KEY: False}
-_TODAY_FWD_TABS = ("METR Horizon", "Epoch ECI", "Remote Labor Index", "RSI",
+_TODAY_FWD_TABS = ("METR Horizon", "Epoch ECI", "Remote Labor Index", "Takeoff",
                    "Revenue", "Pacing")
 # The visible data must cover at least this share of the recorded y-range,
 # else the axis is refit to it: a chart whose y-range was sized to its
@@ -3156,9 +3156,11 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "RSI", "Takeoff", "Frontier Thresholds", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing", "UK Cyber", "Employment"]
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "RSI": "rsi", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute/capabilities/diffusion": "computecap", "Pacing": "pacing"}
+_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "Takeoff", "Frontier Thresholds", "Revenue", "Data Centers", "Compute/capabilities/diffusion", "Pacing", "UK Cyber", "Employment"]
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "Compute/capabilities/diffusion": "computecap", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
+# The RSI tab merged into Takeoff; its links still land there.
+_TAB_SLUG["rsi"] = _TAB_SLUG["takeoff"]
 
 # Read ?tab= from URL for deep-linking
 _url_tab = st.query_params.get("tab", "").lower()
@@ -5898,14 +5900,13 @@ def render_rli():
 # ── RSI (CoBench: automating Anthropic's own AI R&D) ─────────────────────
 
 _RSI_RESET_KEYS = [
-    "rsi_end_year", "rsi_timing", "rsi_notyet", "rsi_notyet_ramp",
+    "rsi_timing", "rsi_notyet", "rsi_notyet_ramp",
     "rsi_atc_penalty",
     "rsi_custom_dt_lo", "rsi_custom_dt_hi", "rsi_custom_dt_dist",
     "rsi_custom_pos_lo", "rsi_custom_pos_hi", "rsi_al5_lag_mo",
 ]
 
 _RSI_DEFAULTS = {
-    "rsi_end_year": 2029,
     "rsi_timing": "Training run finished",
     "rsi_notyet": True,
     "rsi_notyet_ramp": 90.0,
@@ -6065,7 +6066,14 @@ def _rsi_code_dt_ci(rows, fit_dt):
                             np.log([r['mult'] for r in fr]), fit_dt)
 
 
-def render_rsi():
+# The evidence charts' fans hold a sample per day per draw; past this year they
+# outgrow memory, so they stop here whatever the tab's *Project through* says.
+_RSI_MAX_END_YEAR = 2031
+
+
+def render_rsi(end_year):
+    """The RSI evidence and projection: the first half of the Takeoff tab, its
+    charts projected through `end_year` (capped at `_RSI_MAX_END_YEAR`)."""
     if st.session_state.pop("_reset_rsi", False):
         for k in _RSI_RESET_KEYS:
             st.session_state.pop(k, None)
@@ -6080,10 +6088,9 @@ def render_rsi():
     _fit_dt = round(np.log(2) / _slope) if _slope > 0 else 200
     current = rsi_frontier_all[-1]
 
+    rsi_end_year = min(int(end_year), _RSI_MAX_END_YEAR)
     with st.sidebar:
-        st.header("RSI Projection")
-        rsi_end_year = st.selectbox("Project through", [2027, 2028, 2029, 2030, 2031],
-                                    key="rsi_end_year")
+        st.subheader("RSI evidence")
         if st.session_state.get("rsi_timing") not in _DC_TIMING_OPTIONS:
             st.session_state["rsi_timing"] = _RSI_DEFAULTS["rsi_timing"]
         rsi_timing = st.selectbox(
@@ -6118,10 +6125,7 @@ def render_rsi():
                 float(round(min(99.0, current['cobench'] + 10), 1)),
                 min_value=0.5, max_value=99.5, step=1.0)
 
-    st.header("RSI")
-    st.warning("Warning: RSI projections under construction, these are simple "
-               "models and not 'all things considered' takes.")
-
+    st.header("The evidence")
     st.subheader("CoBench")
     _fn_line(
         "Recursive self-improvement runs through a lab automating its own "
@@ -15492,14 +15496,13 @@ def _pc_rsi_projection_samples(components, weights, origin, survival, raw_compon
 def _pc_rsi_onset(today):
     """(coding days, settings): the final RSI projection's sorted draws, on the
     selected clock, for Takeoff's coding-automation dates."""
-    # Reassign inherited widget keys so Streamlit keeps them on the Takeoff
-    # page even though their editors only render on RSI.
+    # The editors render above on the same page, so read the keys, never set
+    # them: a widget's key cannot change once it is drawn.
     settings = {k: st.session_state.get(k, _RSI_DEFAULTS[k]) for k in
                 ("rsi_timing", "rsi_notyet", "rsi_notyet_ramp", "rsi_atc_penalty")}
     for slug, default in _PC_RSI_WEIGHTS.items():
         key = _PC_RSI_W_KEY + slug
         settings[key] = st.session_state.get(key, default)
-    st.session_state.update(settings)
     components, survival, raw, _ = _pc_rsi_components(
         today, settings["rsi_timing"], settings["rsi_notyet"], settings["rsi_notyet_ramp"])
     components, raw = _pc_blend_parts(components), raw and _pc_blend_parts(raw)
@@ -18291,14 +18294,14 @@ def _tk_clip(result, years):
 
 
 # How closely each scenario's inherited coding date tracks its own capability
-# growth: the correlation of a Gaussian copula between the two. The RSI tab's
+# growth: the correlation of a Gaussian copula between the two. The RSI projection's
 # dates and Takeoff's paths read the same underlying progress, but the RSI
 # tab's also carry benchmark-specific noise, so less than 1. A judgment call.
 _TK_PAIRING_YEARS = 4.0      # capability is compared this many years out
 
 
 def _tk_pair_onset(onset, capability, corr, seed=0):
-    """`onset` (the RSI tab's coding dates) reassigned across draws so a
+    """`onset` (the RSI projection's coding dates) reassigned across draws so a
     later date goes with slower `capability`, at copula correlation `corr`.
     Only the pairing moves, so the dates' distribution is exactly the RSI
     tab's."""
@@ -18359,14 +18362,21 @@ def render_takeoff():
                                 min_value=low, max_value=high, step=step, help=help)
 
     with st.sidebar:
-        st.subheader("Takeoff assumptions")
-        st.button("Reset to defaults", key="tk_reset", on_click=_tk_reset)
-        st.caption("Coding automation inherits the final RSI projection. "
-                   "Adjust its weights and timing on the RSI tab.")
         number("Project through (year end)", "end_year", datetime.now().year,
                _TK_SIM_END_YEAR, 1,
-               "Where the charts stop. Dates, intervals and shares come from scenarios "
-               f"simulated through {_TK_SIM_END_YEAR}, whatever this says.")
+               "Where the charts stop. The takeoff model's dates, intervals and shares "
+               f"come from scenarios simulated through {_TK_SIM_END_YEAR}, whatever "
+               f"this says; the evidence charts stop by {_RSI_MAX_END_YEAR}.")
+    st.header("Takeoff")
+    st.warning("Warning: RSI projections under construction, these are simple "
+               "models and not 'all things considered' takes.")
+    render_rsi(st.session_state["tk_end_year"])
+    st.markdown("---")
+    with st.sidebar:
+        st.subheader("Takeoff assumptions")
+        st.button("Reset to defaults", key="tk_reset", on_click=_tk_reset)
+        st.caption("Coding automation inherits the RSI projection above; its "
+                   "settings are in the RSI evidence section.")
         with st.expander("What decides ultraintelligence", expanded=True):
             st.caption("Across a plausible range, the first three each move the "
                        "ultraintelligence date 3\u20138 months; \u03c1 about a month, since "
@@ -18384,7 +18394,7 @@ def render_takeoff():
                    "setting.")
             number("How fast AI research judgment improves", "taste_slope", 0.0, 2.0, 0.1,
                    "Research quality scales as capability raised to this power. The "
-                   "default is fitted from the RSI tab's next-step study: its win odds "
+                   "default is fitted from the next-step study above: its win odds "
                    "against researchers grow as research judgment does.")
             number("Change in judgment rate per 10\u00d7 capability (%)", "judgment_drift",
                    -90.0, 300.0, 5.0,
@@ -18418,8 +18428,8 @@ def render_takeoff():
                    "How closely each scenario's coding-automation date, from the RSI "
                    "tab, follows its own capability growth: a late date goes with a "
                    "slow scenario. 0 pairs them at random; 1 matches them exactly. "
-                   "The RSI tab's dates themselves are unchanged. 0.7 is a judgment: "
-                   "both read the same progress, but the RSI tab's fits carry "
+                   "The RSI projection's dates themselves are unchanged. 0.7 is a judgment: "
+                   "both read the same progress, but the RSI projection's fits carry "
                    "benchmark-specific noise too.")
             number(f"Compute growth kept after {_TK_COMPUTE_SLOW_YEAR} (%)",
                    "compute_slowdown", 0.0, 100.0, 5.0,
@@ -18492,7 +18502,7 @@ def render_takeoff():
             
             for stage, key in zip(takeoff.WORKFLOW_STAGES, takeoff.WORKFLOW_KEYS):
                 number(f"{stage}: human work today (%)", "human_" + key, 0.0, 100.0, 5.0,
-                       "Default set from the RSI tab's R&D automation index: its latest "
+                       "Default set from the R&D automation index above: its latest "
                        "month, read through an assumed human-time share per level, gives "
                        "the average; the split across stages is assumed.")
                 number(f"{stage}: human-work halving time (months)", "half_" + key, 1.0, 60.0, 1.0,
@@ -18508,7 +18518,7 @@ def render_takeoff():
                    "Includes AI assistance already present today; it is not multiplied in again.")
             st.markdown("**Research feedback**")
             number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1,
-                   "Default fitted from the RSI tab's staff survey: the yearly growth in "
+                   "Default fitted from the staff survey above: the yearly growth in "
                    "self-reported output, read as AI coding labor.")
             number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
                    "Discounts coding and judgment gains beyond today. Zero removes "
@@ -18560,9 +18570,7 @@ def render_takeoff():
                    "Whitfill & Wu's two specifications (near 0 and 2.6).")
             number("Simulation seed", "seed", 0, 4294967295, 1)
 
-    st.header("Takeoff")
-    st.warning("Warning: RSI projections under construction, these are simple "
-               "models and not 'all things considered' takes.")
+    st.header("The takeoff model")
     st.markdown(_TK_LOOP_HTML, unsafe_allow_html=True)
     _fn_line(
         "Brakes: **limited compute**, **ideas get harder to find**, and "
@@ -18584,7 +18592,7 @@ def render_takeoff():
     view_years = (view_end - today).total_seconds() / (365.25 * 86400)
     onset_days, rsi_settings = _pc_rsi_onset(today)
     if onset_days is None:
-        st.info("The RSI projection has no available draws. Adjust its settings on the RSI tab.")
+        st.info("The RSI projection has no available draws. Adjust its weights above.")
         return
     onset_years = onset_days / 365.25
     params = {k: st.session_state["tk_" + k] for k in takeoff.DEFAULTS
@@ -18632,7 +18640,7 @@ def render_takeoff():
     dc = (_tk_dc_compute(today, n)
           if st.session_state["tk_dc_compute"] else None)
     compute_rates, hist_compute = dc if dc else (None, None)
-    # A model at ultraintelligence has automated coding whatever the RSI tab's
+    # A model at ultraintelligence has automated coding whatever the RSI projection's
     # date says, so RSI no longer waits on a late inherited date past it.
     _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute)
     coding_level = (_TK_ULTRA_ECI - eci_now) * eci_base / eci_ppy
@@ -18640,7 +18648,7 @@ def render_takeoff():
                           experiment_starts, experiment_slopes, pace_yield, compute_rates,
                           hist_compute, coding_level)
     # Late coding dates go with slow scenarios: rank the first run's capability
-    # growth, reassign the RSI tab's dates along it, and run again.
+    # growth, reassign the RSI projection's dates along it, and run again.
     corr = float(st.session_state["tk_coding_pairing"])
     if corr > 0:
         wp = result["workflow_progress"]
@@ -18679,8 +18687,9 @@ def render_takeoff():
                         f" \u2013 {_tk_span(takeoff.quantile(g, hi), end_date)}")
 
     a, b, c = st.columns(3)
-    _card(a, "Full coding automation (RSI tab)", result["onset"],
-          "The RSI tab's blend, AL5 card excluded.")
+    _card(a, "Full coding automation", result["onset"],
+          "The RSI projection above, each date paired with a scenario of matching "
+          "capability growth.")
     _card(b, "RSI: AI directs research", rsi,
           f"Research direction at or under {params['full_human']:g}% of its baseline "
           "human hours, after coding automation: the AI chooses what to try next.")
@@ -18689,13 +18698,13 @@ def render_takeoff():
           f"{eci['now']:.0f}).")
     a, b = st.columns(2)
     _gap_card(a, "Coding automation \u2192 RSI", result["coding_at"], rsi,
-              "Time from each scenario's coding-automation date (the RSI tab's, or the "
+              "Time from each scenario's coding-automation date (the RSI projection's, or the "
               f"month its ECI reaches {_TK_ULTRA_ECI:g} if sooner) to its RSI date.")
     _gap_card(b, "RSI \u2192 ultraintelligence", rsi, eci["ultra"],
               "How fast the takeoff is: time from each scenario's RSI date to its "
               f"ECI reaching {_TK_ULTRA_ECI:g}. A model that reaches ECI "
               f"{_TK_ULTRA_ECI:g} counts as having automated coding, so RSI never waits on "
-              "a later coding date from the RSI tab.")
+              "a later coding date from the RSI projection.")
     medians = [(label, takeoff.quantile(samples, 0.5, horizon))
                for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
                                       ("Ultraintelligence", eci["ultra"]))]
@@ -18705,10 +18714,10 @@ def render_takeoff():
     result = _tk_clip(result, view_years)
     eci = dict(eci, paths=eci["paths"][:, :len(result["workflow_progress"]["years"])])
 
-    st.subheader("What the RSI tab feeds in")
+    st.subheader("What the evidence feeds in")
     _fn_caption(
         "Each trend sets one rate below. The automation index is drawn into chart "
-        "2, the RSI tab's blend dates coding automation, and compute growth comes "
+        "2, the RSI projection dates coding automation, and compute growth comes "
         "from the Data Centers tab's US projection (sidebar toggle).",
         ("sets one rate",
          "Growth rates are divided by the experiment calibration's assumed "
@@ -18802,13 +18811,13 @@ def render_takeoff():
                                  end_date), width="stretch")
     with st.expander("About this model"):
         st.markdown(
-            "- **Coding automation** is the RSI tab's blend (AL5 card excluded).\n"
+            "- **Coding automation** is the RSI projection above.\n"
             "- **RSI** is research direction handed to AI: at most "
             f"{params['full_human']:g}% of its baseline human hours, after coding "
             "automation.\n"
             f"- **Ultraintelligence** is ECI {_TK_ULTRA_ECI:g}, read off each scenario's "
             "capability path.\n"
-            "- Rates are fitted to the RSI tab's series where it has one (top of the "
+            "- Rates are fitted to the evidence series where there is one (top of the "
             "page); compute growth comes from the Data Centers tab. Everything else is "
             "an assumption, and the sidebar's top section holds the few that move the "
             "dates.\n"
@@ -18828,8 +18837,6 @@ if not os.environ.get("_VP_TESTING"):
         render_eci()
     elif active_tab == "Remote Labor Index":
         render_rli()
-    elif active_tab == "RSI":
-        render_rsi()
     elif active_tab == "Takeoff":
         render_takeoff()
     elif active_tab == "UK Cyber":
