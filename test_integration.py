@@ -984,7 +984,7 @@ class TestTakeoffTab:
         assert any(h.value == "Takeoff" for h in at.header)
         # RSI evidence, pace, pace factors, compute, people, ECI, yearly progress
         # and the distributions.
-        assert len(_tk_charts(at)) == 8
+        assert len(_tk_charts(at)) == 9
         # The evidence first, then the takeoff model.
         # The takeoff model's loop and cards lead, then the evidence, then the
         # model's charts.
@@ -992,11 +992,12 @@ class TestTakeoffTab:
                                                 "Inside the takeoff model"]
         subs = [s.value for s in at.subheader]
         assert subs.index("CoBench") < subs.index("Automated coder projection")
-        assert subs[subs.index("Automated coder projection") + 1:][:5] == [
+        assert subs[subs.index("Automated coder projection") + 1:][:6] == [
             "What the evidence feeds in", "1. Research speeds up", "2. People step out of the loop",
-            "3. What it does to capability (ECI)", "4. When it happens, and how fast"]
+            "3. The research workforce", "4. What it does to capability (ECI)",
+            "5. When it happens, and how fast"]
         import json
-        dist = json.loads(_tk_charts(at)[7].proto.spec)
+        dist = json.loads(_tk_charts(at)[8].proto.spec)
         # Density and cumulative share for RSI, ultraintelligence and the gap.
         assert len(dist["data"]) == 6
         import base64
@@ -1011,7 +1012,7 @@ class TestTakeoffTab:
         titles = " ".join(a["text"] for a in evidence["layout"]["annotations"])
         for name in ("Next-step wins", "Staff speedup", "Experiments/researcher"):
             assert name in titles
-        yearly = json.loads(_tk_charts(at)[6].proto.spec)
+        yearly = json.loads(_tk_charts(at)[7].proto.spec)
         # Last year measured, this year partly, then each year to the sidebar's.
         assert yearly["data"][0]["x"] == list(range(datetime.now().year - 1, 2031))
         assert yearly["layout"]["yaxis"]["title"]["text"] == "Years of 2025-level ECI progress"
@@ -1021,7 +1022,7 @@ class TestTakeoffTab:
         assert compute["layout"]["yaxis"]["type"] == "log"
         assert {"Coding automated", "RSI", "Ultraintelligence"} <= {
             a.get("text") for a in compute["layout"]["annotations"]}
-        eci = json.loads(_tk_charts(at)[5].proto.spec)
+        eci = json.loads(_tk_charts(at)[6].proto.spec)
         [projected] = [d for d in eci["data"] if d.get("name") == "Projected ECI"]
         # The axis ends on the sidebar's year end; the line runs a month past it.
         assert eci["layout"]["xaxis"]["range"][1].startswith("2030-12-31")
@@ -1058,6 +1059,9 @@ class TestTakeoffTab:
             "Human labor (calibrated)", "AI capabilities", "Compute", "Research judgment", "Harder ideas (divides)",
             "Net research pace"]
         people = json.loads(_tk_charts(at)[4].proto.spec)
+        workforce = json.loads(_tk_charts(at)[5].proto.spec)
+        assert {"AI researchers", "Human researchers", "Total (humans + AIs)"} <= {
+            d.get("name") for d in workforce["data"]}
         # Three stages (band edges + median each), then the measured index history.
         assert len(people["data"]) == 10
         assert people["data"][-1]["name"] == "Measured: R&D automation index"
@@ -1093,7 +1097,7 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", old_simulator)
         at = self._app()
         assert tk.simulate is not old_simulator
-        assert len(_tk_charts(at)) == 8
+        assert len(_tk_charts(at)) == 9
 
     def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
         import takeoff_model as tk
@@ -1215,7 +1219,7 @@ class TestTakeoffTab:
         assert at.query_params["tk_end_year"] == ["2035"]
         # The year crops the charts; the cards come from scenarios run to 2040.
         assert [(m.label, m.value) for m in at.metric] == cards
-        eci = json.loads(_tk_charts(at)[5].proto.spec)
+        eci = json.loads(_tk_charts(at)[6].proto.spec)
         assert eci["layout"]["xaxis"]["range"][1].startswith("2035-12-31")
         at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_end_year").value == 2030
@@ -2187,7 +2191,7 @@ class TestTodayForwardMode:
         assert not [c for c in at.checkbox if c.key == "today_fwd"]
 
     def test_takeoff_converts_its_projections_not_the_evidence(self):
-        """The RSI projection's CDF and the six takeoff projections go
+        """The RSI projection's CDF and the seven takeoff projections go
         forward; the evidence charts above them keep their history."""
         at = _fresh_app()
         at.run()
@@ -2195,7 +2199,7 @@ class TestTodayForwardMode:
         at.checkbox(key="today_fwd").set_value(True).run()
         specs = self._specs(at)
         fwd = [sp for sp in specs if self._starts_today(sp)]
-        assert len(fwd) == 7
+        assert len(fwd) == 8
         assert fwd[0]["layout"]["yaxis"]["title"]["text"] == "Chance crossed by then"
         assert len(specs) > len(fwd)
 

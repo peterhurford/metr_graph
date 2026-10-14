@@ -18385,6 +18385,72 @@ def _tk_yrs(v):
     return "runaway" if not np.isfinite(v) else f"{v:.1f} yr"
 
 
+# Frontier AI research staff today: an order-of-magnitude assumption, since the
+# model tracks shares of research hours, not headcounts.
+_TK_HUMAN_RESEARCHERS = 10_000
+
+
+def _tk_ai_fte(eci_level):
+    """Human full-time equivalents one AI researcher is worth at an ECI level:
+    3 x (ECI / 200)^10, about 0.5 at today's frontier and 3 at ECI 200. A
+    stated judgment, not a fit."""
+    return 3.0 * (np.asarray(eci_level, dtype=float) / 200.0) ** 10
+
+
+def _tk_workforce(result, eci, humans=_TK_HUMAN_RESEARCHERS):
+    """(humans, AIs, FTE) per draw and month. Humans hold at `humans`. AIs start
+    where, at today's FTE value, they do the automation index's share of
+    today's research work, then grow with agent compute and with more copies
+    as algorithms improve. FTE = humans + AIs x `_tk_ai_fte(ECI)`."""
+    wp = result["workflow_progress"]
+    h0 = np.clip(result["outcomes"]["Today"]["human_mean"], 1e-3, 1 - 1e-3)
+    ais0 = humans * (1 - h0) / h0 / _tk_ai_fte(eci["now"])
+    copies = result["params"]["ai_copies"] * np.maximum(wp["software_realized_log"], 0)
+    ais = ais0[:, None] * np.exp(wp["compute_log"] + copies)
+    people = np.full_like(ais, float(humans))
+    return people, ais, people + ais * _tk_ai_fte(eci["paths"])
+
+
+def _tk_workforce_fig(result, today, eci, markers=(), humans=_TK_HUMAN_RESEARCHERS):
+    """Left: the research workforce in heads, humans and AI researchers.
+    Right: in human full-time equivalents. Medians with middle-80% bands."""
+    from plotly.subplots import make_subplots
+    people, ais, fte = _tk_workforce(result, eci, humans)
+    x = _tk_dates(result, today)
+    fig = make_subplots(rows=1, cols=2, horizontal_spacing=0.09,
+                        subplot_titles=["Researchers (heads)", "Human full-time equivalents"])
+    for col, series in ((1, (("AI researchers", ais, "#d68910"),
+                             ("Human researchers", people, "#2980b9"))),
+                        (2, (("Total (humans + AIs)", fte, "#8e44ad"),))):
+        for name, values, color in series:
+            q = np.quantile(values, [.1, .5, .9], axis=0)
+            rgb = tuple(int(color[j:j + 2], 16) for j in (1, 3, 5))
+            fig.add_trace(go.Scatter(x=x, y=q[0], mode="lines", line=dict(width=0),
+                                     hoverinfo="skip", showlegend=False, name=name + " 10%"),
+                          row=1, col=col)
+            fig.add_trace(go.Scatter(x=x, y=q[2], mode="lines", line=dict(width=0),
+                                     fill="tonexty", hoverinfo="skip", showlegend=False,
+                                     fillcolor=f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.15)",
+                                     name=name + " 90%"), row=1, col=col)
+            fig.add_trace(go.Scatter(
+                x=x, y=q[1], mode="lines", name=name, line=dict(color=color, width=2.5),
+                hovertemplate="%{x|%b %Y}<br>%{y:,.3s}<extra>" + name + "</extra>"),
+                row=1, col=col)
+    for i, (label, when) in enumerate(markers):
+        for col in (1, 2):
+            fig.add_vline(x=when, line_dash="dot", line_color="#b0b0b0", line_width=1,
+                          row=1, col=col)
+        fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper", xref="x",
+                           text=label, showarrow=False, xanchor="left",
+                           font=dict(size=11, color="#888"))
+    fig.update_yaxes(type="log", row=1, col=1, title_text="Researchers")
+    fig.update_yaxes(type="log", row=1, col=2)
+    fig.update_xaxes(range=[x[0], x[-1]])
+    fig.update_layout(height=380, margin=dict(l=55, r=20, t=40, b=40),
+                      legend=dict(orientation="h", y=-0.15), hovermode="x")
+    return fig
+
+
 def _tk_humans_fig(result, today, ladder=None):
     """The share of baseline human hours each research stage still takes,
     falling toward the RSI bar."""
@@ -19194,7 +19260,24 @@ def _render_takeoff(loading):
     st.plotly_chart(_tf(_tk_to(_tk_humans_fig(result, today, load_rsi_automation()),
                                view_end)), width="stretch")
 
-    st.subheader("3. What it does to capability (ECI)")
+    st.subheader("3. The research workforce")
+    _fn_caption(
+        "How many researchers there are, human and AI, and what they add up to in human "
+        "full-time equivalents.",
+        ("How many researchers",
+         f"Human research staff are held at {_TK_HUMAN_RESEARCHERS:,}, an order-of-magnitude "
+         "assumption for frontier labs; after RSI they are no longer needed but are kept "
+         "on the chart. AI researchers start where, at today's per-AI value, they do the "
+         "automation index's share of today's research work, then grow with the compute "
+         "for running agents and with more copies as algorithms improve."),
+        ("human full-time equivalents",
+         "Each AI researcher counts as 3 \u00d7 (ECI / 200)^10 people: about 0.5 at today's "
+         "frontier, 3 at ECI 200, 28 at 250. A stated judgment, not a fit; the model's "
+         "research speed comes from its own labor equations, not from this chart."))
+    st.plotly_chart(_tf(_tk_to(_tk_workforce_fig(result, today, eci, markers), view_end)),
+                    width="stretch")
+
+    st.subheader("4. What it does to capability (ECI)")
     rates = result["eci_rates"]
     _fn_caption(
         "Each scenario's model capability, read as Epoch's ECI, against today's "
@@ -19244,7 +19327,7 @@ def _render_takeoff(loading):
     st.plotly_chart(_tk_yearly_fig(_tk_yearly_progress(result, eci, today, view_end.year),
                                    today), width="stretch")
 
-    st.subheader("4. When it happens, and how fast")
+    st.subheader("5. When it happens, and how fast")
     gap, reached = _tk_gap(rsi, eci["ultra"], horizon)
     _fn_caption(
         f"Arrival dates through {view_end:%Y}, and the time from RSI to "
