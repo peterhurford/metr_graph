@@ -18163,7 +18163,7 @@ def _tk_eci(result, params):
     wp = result["workflow_progress"]
     years = wp["years"]
     w_compute, w_software = result["eci_rates"]["compute"], result["eci_rates"]["software"]
-    software = wp["validated_log"]
+    software = wp["software_realized_log"]
     # Today's trend is a floor for the first year, covering the months before
     # the next model ships. The lift it gives a scenario then fades out over
     # the next `_TK_ECI_FLOOR_FADE_YEARS`, so the scenario returns to its own
@@ -18645,11 +18645,13 @@ def _render_takeoff(loading):
                    "its settings are in the RSI evidence section.")
         with st.expander("What decides ultraintelligence", expanded=True):
             st.caption("Across a plausible range, the first three each move the "
-                       "ultraintelligence date 2\u20136 months; \u03c1 and the training-run "
-                       "wait 1\u20132 months (6 sooner if no gain waits). Compute growth "
-                       "after RSI, delayed 18 months, leaves the median where 1\u00d7 does; "
-                       "with no delay, 2\u00d7 brings it 3 months sooner. Everything under "
-                       "Advanced moves it a few months at most.")
+                       "ultraintelligence date 2\u20135 months; \u03c1 up to 2 and the "
+                       "training-run wait 1\u20134 (11 sooner if no gain waits, as fast gains "
+                       "also skip the wait for scale). Compute growth after RSI, delayed 18 "
+                       "months, moves it a month at most; with no delay, 2\u00d7 brings it 6 "
+                       "months sooner. The scale-dependent share moves it 2 months either "
+                       "way across 25\u201375%. Everything under Advanced moves it a few "
+                       "months at most.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
@@ -18675,6 +18677,16 @@ def _render_takeoff(loading):
                    "output; 0 lets either fully make up for the other. Contested: "
                    "compute-bottleneck views sit near \u22121, views where AI "
                    "economizes on experiments nearer 0.")
+            number("Algorithmic gains that pay off only at scale (%)", "scale_dependent",
+                   0.0, 100.0, 5.0,
+                   "Median share of each algorithmic gain worth anything only once models "
+                   "train at larger compute (Gundlach et al. 2025: most historical gains, "
+                   "like Transformers and Chinchilla scaling, grew with compute). That "
+                   "share of a gain counts in full once models train at the compute set "
+                   "under Advanced (default 10\u00d7) past the frontier when it was found; "
+                   "gains at the pace AI-frozen research would make never wait. The labor"
+                   "\u2013compute setting above is about discovering gains; this is about "
+                   "when a discovered gain pays off.")
             number("Gains that skip the training-run wait (%)", "fast_share", 0.0, 100.0, 5.0,
                    "Share of efficiency gains deployable at once through tooling, kernels "
                    "and small updates; the rest wait for a successor's training run and "
@@ -18728,6 +18740,11 @@ def _render_takeoff(loading):
                    "ceiling_high_oom", 0.0, 60.0, 1.0,
                    "Upper end of the ceiling's range. 0 removes the ceiling: constant "
                    "returns to research forever.")
+            number("Compute a scale-dependent gain waits for (orders of magnitude)",
+                   "scale_lag_oom", 0.1, 5.0, 0.1,
+                   "How much more compute than the frontier had when a gain was found "
+                   "models must train at before its scale-dependent share counts. 1 is "
+                   "10\u00d7, about 2 years at today's compute growth. Nothing measures it.")
             number("Delay before AI speeds compute growth (months after RSI)",
                    "rsi_compute_delay", 0.0, 60.0, 3.0,
                    "How long after a scenario's RSI the compute-growth multiplier "
@@ -18865,6 +18882,13 @@ def _render_takeoff(loading):
                    "1\u03c3, in percentage points per 10\u00d7 capability, of the "
                    "change in judgment rate. No study measures it; above 0 it is the "
                    "channel by which judgment compounds into a runaway.")
+            number("Spread on the scale-dependent share (%)", "scale_dependent_spread",
+                   0, 400, 10,
+                   "1\u03c3 of the scale-dependent share in log-odds, \u00d7100. 100 gives an "
+                   "80% range of about 22\u201378% around 50%: one paper, on small models.")
+            number("Spread on the scale-dependent wait (%)", "scale_lag_spread", 0, 400, 10,
+                   "1\u03c3 of the log of the compute a scale-dependent gain waits for, "
+                   "\u00d7100. 70 gives an 80% range of about 0.4\u20132.5\u00d7 the setting.")
             number("Spread on labor\u2013compute substitutability (%)",
                    "substitution_spread", 0, 200, 5,
                    "1\u03c3 of the log elasticity of substitution 1/(1\u2212\u03c1). "

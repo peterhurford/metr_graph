@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v17-software-ceiling"
+MODEL_VERSION = "takeoff-v18-scale-dependent-gains"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -72,15 +72,18 @@ DEFAULTS = {
     # as algorithmic efficiency nears a limit drawn uniformly this many orders
     # of magnitude above today's. A high of 0 removes it.
     "ceiling_low_oom": 6.0, "ceiling_high_oom": 16.0,
-    # Share of research that cannot outrun what compute alone would allow (the
-    # frozen-AI reference's pace): scale-dependent algorithmic progress
-    # (Gundlach et al. 2025). Logit-normal per draw, 1-sigma in logit units/100.
-    # Off by default until its strength is settled.
-    "compute_bound": 0.0, "compute_bound_spread": 100.0,
+    # Share of algorithmic gains that pay off only at scale (Gundlach et al.
+    # 2025): that share counts in full once training compute has grown
+    # `scale_lag_oom` orders of magnitude past where it was when the gain was
+    # found. Logit-normal share and lognormal lag per draw; spreads are each
+    # 1-sigma (log-odds, log) times 100.
+    "scale_dependent": 50.0, "scale_dependent_spread": 100.0,
+    "scale_lag_oom": 1.0, "scale_lag_spread": 70.0,
 }
 # Every spread at zero: each draw uses the settings themselves.
 POINT_ESTIMATE = {"uncertainty": 0, "returns_spread": 0, "judgment_spread": 0,
-                  "drift_spread": 0, "substitution_spread": 0, "compute_bound_spread": 0}
+                  "drift_spread": 0, "substitution_spread": 0, "scale_dependent_spread": 0,
+                  "scale_lag_spread": 0}
 PRESETS = {
     "Central": {},
     "Fast": {"software_months": 6.0, "training_months": 1.0,
@@ -141,7 +144,8 @@ def validate(params):
             or not 0 <= p["rsi_compute_delay"] <= 60 or not 0 <= p["rsi_compute_ramp"] <= 60 \
             or not 0 <= p["ceiling_high_oom"] <= 60 \
             or not (p["ceiling_high_oom"] == 0 or 0 < p["ceiling_low_oom"] <= p["ceiling_high_oom"]) \
-            or not 0 <= p["compute_bound"] <= 100 or not 0 <= p["compute_bound_spread"] <= 400:
+            or not 0 <= p["scale_dependent"] <= 100 or not 0 <= p["scale_dependent_spread"] <= 400 \
+            or not 0 < p["scale_lag_oom"] <= 10 or not 0 <= p["scale_lag_spread"] <= 400:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
                          "baseline input growth in [0, 200]%.")
     return p
@@ -346,7 +350,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # Rows fill in order, so appending a factor leaves the earlier draws unchanged.
     # Rows 4, 6, 7 and 11 fed retired milestones; they stay drawn so the others
     # keep their values.
-    raw = rng.uniform(-1, 1, (20, n))
+    raw = rng.uniform(-1, 1, (21, n))
     z = normal_scores(raw)
     spread = p["uncertainty"] / 100
     factors = np.exp(spread * z)
@@ -405,6 +409,16 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     workflow_grid = np.unique(np.r_[np.arange(0, p["years"], 1 / 12), p["years"]])
     capability_history = np.zeros((n, len(workflow_grid)))
     validated_history = np.zeros_like(capability_history)
+    # The deployed model's algorithmic efficiency as it pays off at its scale.
+    realized_history = np.zeros_like(capability_history)
+    # Monthly frontier compute (log, vs today) and the research stock found by
+    # then, for the scale-dependent lag; months not yet reached read +inf.
+    compute_seen = np.full_like(capability_history, np.inf)
+    compute_seen[:, 0] = 0.0
+    stock_seen = np.zeros_like(capability_history)
+    stock_seen[:, 0] = initial_stock
+    row_offset = np.arange(n) * 1e7       # wider than any row's range
+    seen_flat = [None]                    # compute_seen flattened, rebuilt on change
     reference_history = np.zeros_like(capability_history)
     fast_fraction = p["fast_share"] / 100
     fast_time = p["fast_months"] / 12
@@ -433,6 +447,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     last_experiments = np.ones(n)
     shares = np.array([p["training_share"], p["experiment_share"],
                        100 - p["training_share"] - p["experiment_share"]]) / 100
+    # Frontier compute (log, vs today) when the current run, the pending
+    # model's run and the deployed model's run started: a model's scale.
+    run_start_scale = np.zeros(n)
+    pending_scale = np.zeros(n)
+    deployed_scale = np.zeros(n)
     transfer = p["transfer"] / 100
     # difficulty = lambda / r, so a lognormal r gives a lognormal difficulty.
     beta = p["difficulty"] * np.exp(p["returns_spread"] / 100 * z[15])
@@ -442,11 +461,14 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                              * (raw[18] + 1) / 2)
                if p["ceiling_high_oom"] > 0 and p["difficulty"] > 0 else np.full(n, np.inf))
     capped = np.isfinite(ceiling)
-    # Compute-bound share of research, logit-normal per draw (row 19).
+    # Scale-dependent share of algorithmic gains, logit-normal per draw (row 19).
+    share_pct = p["scale_dependent"]
     with np.errstate(divide="ignore"):
-        bound_logit = np.log(p["compute_bound"]) - np.log(100 - p["compute_bound"]) \
-            if 0 < p["compute_bound"] < 100 else (np.inf if p["compute_bound"] >= 100 else -np.inf)
-    bound = 1 / (1 + np.exp(-(bound_logit + p["compute_bound_spread"] / 100 * z[19])))
+        share_logit = (np.log(share_pct) - np.log(100 - share_pct) if 0 < share_pct < 100
+                       else (np.inf if share_pct >= 100 else -np.inf))
+    scale_share = 1 / (1 + np.exp(-(share_logit + p["scale_dependent_spread"] / 100 * z[19])))
+    # The compute growth (natural log) a scale-dependent gain waits for (row 20).
+    scale_lag = np.log(10) * p["scale_lag_oom"] * np.exp(p["scale_lag_spread"] / 100 * z[20])
     parallel = p["parallelization"]
     initial_throughput = np.broadcast_to(_ces((shares[2] / 0.2) ** parallel,
                                               (shares[1] / 0.4) ** parallel, rho), (n,)).copy()
@@ -457,6 +479,64 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # from its historical rate moves the pace. Never applied to training.
     hist_rate = (compute_rate if historical_compute_rate is None
                  else np.full(n, float(historical_compute_rate)))
+    # Software growth per unit of compute growth in the history behind today's
+    # pace: the scale at which scale-dependent gains have paid off so far.
+    scale_ratio = np.divide(software_rate, hist_rate, out=np.full(n, np.inf), where=hist_rate > 0)
+
+    def pays_off(rows, scale_now, trained_software, fast_software, reference_trained):
+        """For draws `rows`, a model's algorithmic part as it pays off at its
+        compute. Fast gains (tooling, kernels: Gundlach et al.'s
+        scale-invariant kind) count at once. Of the gains that came through
+        training, the scale-dependent share counts in full only for gains
+        found while frontier compute was `scale_lag` below the frontier
+        compute when this model's run began (before today, history's balanced
+        path: today's stock plus `scale_ratio` x that compute), plus what
+        history's balanced pace adds over one lag, and never below the
+        frozen-AI reference's trained software for the same model, which
+        already carries history's own pace. Gains found faster wait until
+        models train at that much more compute, then count in full."""
+        lag = scale_lag[rows]
+        target = scale_now - lag
+        # Each row of compute_seen is non-decreasing, so offsetting row i by
+        # i x span sorts them all into one array: one search finds every row.
+        if seen_flat[0] is None:
+            seen_flat[0] = (np.where(np.isfinite(compute_seen), compute_seen, 1e6)
+                            + row_offset[:, None]).ravel()
+        last = len(workflow_grid) - 1
+        idx = np.searchsorted(seen_flat[0], np.minimum(target, 1e6 - 1) + row_offset[rows],
+                              side="right") - rows * (last + 1) - 1
+        c0 = compute_seen[rows, np.maximum(idx, 0)]
+        s0 = stock_seen[rows, np.maximum(idx, 0)]
+        c1 = compute_seen[rows, np.minimum(idx + 1, last)]
+        s1 = stock_seen[rows, np.minimum(idx + 1, last)]
+        # Past the last month recorded, interpolate toward the present.
+        ahead = ~np.isfinite(c1) | (idx >= last)
+        c1 = np.where(ahead, log_level(t[rows], compute_rate[rows], compute_late[rows], slow_at)
+                      + boost_log[rows], c1)
+        s1 = np.where(ahead, software[rows], s1)
+        ratio = scale_ratio[rows]
+        with np.errstate(invalid="ignore", divide="ignore"):
+            frac = np.clip(np.divide(target - c0, c1 - c0, out=np.zeros(len(rows)),
+                                     where=c1 > c0), 0, 1)
+            earlier = np.where(idx >= 0, s0 + frac * (s1 - s0),
+                               initial_stock[rows] + ratio * target)
+            due = np.where(np.isinf(ratio), np.inf, np.maximum(
+                (1 - fast_fraction) * (earlier + ratio * lag), reference_trained))
+        return (fast_software + trained_software
+                - scale_share[rows] * np.maximum(trained_software - due, 0))
+
+    def realized(rows=None):
+        """(training-compute part, algorithmic part as it pays off, capability)
+        of the deployed model, refreshed in `now` for draws `rows` (all by
+        default)."""
+        rows = np.arange(n) if rows is None else rows
+        compute_part_now = deployed[rows] - deployed_software[rows]
+        paid = pays_off(rows, deployed_scale[rows], deployed_software[rows], fast_deployed[rows],
+                        reference_delivered[rows])
+        now[0][rows], now[1][rows] = compute_part_now, paid
+        now[2][rows] = compute_part_now + paid
+        return now
+
     extra_rate = p["baseline_inputs"] / 100 * (
         beta * software_rate * initial_throughput / parallel - hist_rate)
     input_rate = np.maximum(compute_rate + extra_rate, 0)
@@ -503,6 +583,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     boost = p["rsi_compute_boost"] - 1
     boost_log = np.zeros(n)
     boost_history = np.zeros_like(capability_history)
+    now = (np.zeros(n), np.zeros(n), np.zeros(n))
+    realized()                  # the deployed model, refreshed when it changes
     while np.any(t < p["years"] - 1e-12):
         train_end = run_start + train_time
         deploy_end = train_end + eval_time
@@ -526,7 +608,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                                                          compute_late) * dt, 0.0)
         compute_log = base_compute_log + boost_log + boost_step / 2
         extra_log = log_level(t + dt / 2, extra_rate, extra_late, slow_at)
-        effective = deployed + fast_deployed
+        # The deployed model only changes at the end of a step, where `now`
+        # is refreshed, so the last step's reading still holds here.
+        effective = now[2].copy()
         human_now = workflow_state(effective, baseline_capability_rate, starts,
                                    halves, floor)
         share_now = human_now @ WORKFLOW_WEIGHTS
@@ -595,29 +679,6 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         _, ref_penalty = difficulty_at(reference_progress)
         reference_pace = np.exp(np.minimum(np.log(initial_throughput)
             + parallel * (base_compute_log + extra_log) - ref_penalty, 700))
-        # The compute-bound share of research runs no faster than the pace
-        # compute alone allows: the frozen-AI reference, plus any post-RSI
-        # compute boost it never gets. Equal to the pace with AI frozen.
-        # Compared at mid-step (a half-step predictor), so the cap converges
-        # with the step like the rest of the integration.
-        half_amount = np.log(software_rate) + research_log + np.log(
-            dt / 2, out=np.full(n, -np.inf), where=dt > 0)
-        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
-            mid_gained = np.where(
-                capped, -ceiling * np.expm1(ceiling_step(log_x, half_amount, beta * ceiling, ceiling)),
-                np.logaddexp(beta * gained, np.log(np.maximum(beta, 1e-300)) + half_amount)
-                / np.maximum(beta, 1e-300) if p["difficulty"] > 0
-                else gained + np.exp(np.minimum(half_amount, 100)))
-        _, mid_penalty = difficulty_at(mid_gained)
-        _, mid_ref_penalty = difficulty_at(reference_software(
-            t + dt / 2, software_rate, input_rate, parallel, initial_throughput, beta,
-            input_late, slow_at, ceiling))
-        allowed_log = (np.log(initial_throughput) + parallel * (compute_log + extra_log)
-                       - mid_ref_penalty)
-        over = np.minimum(allowed_log - (research_log - mid_penalty), 0)
-        bound_log = np.log1p(bound * np.expm1(over))
-        research_log = research_log + bound_log
-        compute_part = compute_part + bound_log
         log_amount = np.log(software_rate) + research_log + np.log(
             dt, out=np.full(n, -np.inf), where=dt > 0)
         # Derivative of the same discovery process being integrated below,
@@ -651,13 +712,23 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         run_compute += used
         training_used += used
         done = active & (~finished) & (end >= train_end - 1e-12)
-        candidate = (1 - fast_fraction) * snapshot + np.log(np.maximum(run_compute / reference_train_compute, 1e-12))
-        adopted = done & (candidate > deployed)
-        pending[done] = np.maximum(deployed[done], candidate[done])
-        pending_software[done] = np.where(adopted[done], (1 - fast_fraction) * snapshot[done], deployed_software[done])
+        candidate_compute = np.log(np.maximum(run_compute / reference_train_compute, 1e-12))
+        candidate = (1 - fast_fraction) * snapshot + candidate_compute
         reference_snapshot = initial_stock + reference_software(run_start, software_rate, input_rate,
                                                  parallel, initial_throughput, beta,
                                                  input_late, slow_at, ceiling)
+        # A successor ships only if it beats the deployed model as both pay off
+        # at their own scale (a short run can carry more algorithms on less
+        # compute and still be worse).
+        adopted = np.zeros(n, dtype=bool)
+        hit = np.flatnonzero(done)
+        if hit.size:
+            adopted[hit] = candidate_compute[hit] + pays_off(
+                hit, run_start_scale[hit], ((1 - fast_fraction) * snapshot)[hit],
+                fast_deployed[hit], ((1 - fast_fraction) * reference_snapshot)[hit]) > now[2][hit]
+        pending[done] = np.where(adopted[done], candidate[done], deployed[done])
+        pending_scale[done] = np.where(adopted[done], run_start_scale[done], deployed_scale[done])
+        pending_software[done] = np.where(adopted[done], (1 - fast_fraction) * snapshot[done], deployed_software[done])
         reference_candidate = (1 - fast_fraction) * reference_snapshot + np.log(
             np.maximum(run_compute / reference_train_compute, 1e-12))
         reference_pending_capability[done] = np.maximum(reference_deployed[done], reference_candidate[done])
@@ -666,7 +737,21 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             (1 - fast_fraction) * reference_snapshot[done], reference_delivered[done])
         finished |= done
         ready = active & finished & (end >= deploy_end - 1e-12)
+        # Fast gains keep landing on the deployed model during validation, so
+        # check again at deployment: a successor that has fallen behind it as
+        # both pay off is dropped.
+        pending_compute = pending - pending_software
+        behind = np.zeros(n, dtype=bool)
+        hit = np.flatnonzero(ready)
+        if hit.size:
+            behind[hit] = pending_compute[hit] + pays_off(
+                hit, pending_scale[hit], pending_software[hit], fast_deployed[hit],
+                reference_pending_software[hit]) < now[2][hit] - 1e-12
+        pending[behind] = deployed[behind]
+        pending_software[behind] = deployed_software[behind]
+        pending_scale[behind] = deployed_scale[behind]
         deployed[ready] = pending[ready]
+        deployed_scale[ready] = pending_scale[ready]
         fast_ready = active & (end >= fast_next - 1e-12)
         fast_deployed[fast_ready] = fast_fraction * fast_snapshot[fast_ready]
         reference_fast[fast_ready] = fast_fraction * (initial_stock[fast_ready] + reference_software(
@@ -691,18 +776,20 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         reference_deployed[ready] = reference_pending_capability[ready]
         deployed_software[ready] = pending_software[ready]
         last_deploy[ready] = end[ready]
-        effective = deployed + fast_deployed
+        changed = np.flatnonzero(ready | fast_ready)
+        if changed.size:
+            realized(changed)
+        compute_now, software_now, effective = (v.copy() for v in now)
         if coding_capability is not None:
             level = effective
             if coding_weights is not None:
-                software_part = deployed_software + fast_deployed
-                level = (coding_weights[0] * (deployed - deployed_software)
-                         + coding_weights[1] * software_part)
+                level = coding_weights[0] * compute_now + coding_weights[1] * software_now
             capable = active & (level >= coding_capability) & (coding > end)
             coding[capable] = end[capable]
         rows = np.flatnonzero(ready | fast_ready)
         future = workflow_grid[None, :] >= end[rows, None] - 1e-12
         for history, values in ((capability_history, effective),
+                                (realized_history, software_now),
                                 (validated_history, validated),
                                 (reference_history, reference_validated)):
             history[rows] = np.where(future, values[rows, None], history[rows])
@@ -721,11 +808,19 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         last_experiments[tracking] = experiment_log[tracking]
         snapshot[ready] = software[ready]
         run_start[ready] = end[ready]
+        run_start_scale[ready] = (log_level(end, compute_rate, compute_late, slow_at)
+                                  + boost_log)[ready]
         run_compute[ready] = 0
         finished[ready] = False
         observed = active & (end >= next_observation - 1e-12)
         rows = np.flatnonzero(observed)
         pace_history[rows, observation_index[rows]] = pace[rows]
+        seen_now = (log_level(end, compute_rate, compute_late, slow_at) + boost_log)[rows]
+        compute_seen[rows, observation_index[rows]] = seen_now
+        if seen_flat[0] is not None:     # fill the same cells of the sorted copy
+            seen_flat[0][rows * len(workflow_grid) + observation_index[rows]] = (
+                seen_now + row_offset[rows])
+        stock_seen[rows, observation_index[rows]] = software[rows]
         boost_history[rows, observation_index[rows]] = boost_log[rows]
         resources_log = research_log - judgment_log
         for key, values in (("judgment", judgment_log),
@@ -802,6 +897,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             "matched_quantiles": finite_quantiles(matched_history),
             "matched_coverage": np.mean(np.isfinite(matched_history), axis=0),
             "validated_log": validated_history,
+            # The algorithmic part of capability_log, as it pays off at scale.
+            "software_realized_log": realized_history,
             "validated_baseline_months": validated_history / software_rate[:, None] * 12,
             "pace": pace_history,
             # Log compute relative to today, post-RSI boost included.
@@ -816,7 +913,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         "compute_matched_advantage": advantage,
         "draws": {"taste_slope": taste_slope, "difficulty": beta,
                   "judgment_drift": drift, "substitution": rho,
-                  "ceiling_oom": ceiling / np.log(10), "compute_bound": bound},
+                  "ceiling_oom": ceiling / np.log(10), "scale_dependent": scale_share,
+                  "scale_lag_oom": scale_lag / np.log(10)},
         # Each draw's log compute growth a year before and after `slow_at`;
         # its compute is exp(log_level(t, rate, late, slow_at)) x today's.
         "compute": {"rate": compute_rate, "late": compute_late, "slow_at": slow_at},

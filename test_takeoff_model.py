@@ -256,6 +256,49 @@ def test_coding_weights_measure_capability_by_its_parts():
     assert (heavy["coding_at"] < plain["coding_at"]).any()
 
 
+def test_scale_dependent_gains_pay_off_only_as_compute_scales():
+    """A share of algorithmic gains counts only up to what compute has grown
+    into: with none, the paid-off software is the delivered software; with
+    AI frozen it never binds; once AI races ahead of compute it holds
+    capability back, and more compute after RSI gives some of it back."""
+    onset = np.full(100, 1.0)
+    base = dict(years=6, rsi_compute_boost=1.0)
+    none = tk.simulate(dict(base, scale_dependent=0.0), n=100, onset_years=onset)
+    wp = none["workflow_progress"]
+    np.testing.assert_allclose(wp["software_realized_log"], wp["validated_log"], atol=1e-12)
+    frozen = dict(base, transfer=0)
+    a = tk.simulate(dict(frozen, scale_dependent=0.0), n=100, onset_years=onset)
+    b = tk.simulate(dict(frozen, scale_dependent=50.0), n=100, onset_years=onset)
+    np.testing.assert_allclose(a["workflow_progress"]["capability_log"],
+                               b["workflow_progress"]["capability_log"], atol=1e-9)
+    half = tk.simulate(dict(base, scale_dependent=50.0), n=100, onset_years=onset)
+    cap0, cap1 = wp["capability_log"][:, -1], half["workflow_progress"]["capability_log"][:, -1]
+    assert (cap1 <= cap0 + 1e-9).all() and (cap1 < cap0 - 1e-3).any()
+    boosted = tk.simulate(dict(base, scale_dependent=50.0, rsi_compute_boost=3.0,
+                               rsi_compute_delay=0.0, rsi_compute_ramp=0.0),
+                          n=100, onset_years=onset)
+    assert np.median(boosted["workflow_progress"]["capability_log"][:, -1]) > np.median(cap1)
+
+
+def test_scale_dependent_gains_wait_on_compute_rather_than_vanish():
+    """The scale-dependent share waits for compute to grow `scale_lag_oom`
+    past where it was when a gain was found, then counts in full: a vanishing
+    lag is no scale-dependence at all, and a longer one holds capability back
+    more."""
+    onset = np.full(100, 1.0)
+    base = dict(years=6, scale_dependent=50.0, scale_lag_spread=0.0)
+    end = lambda q: tk.simulate(dict(base, **q), n=100, onset_years=onset)[
+        "workflow_progress"]["capability_log"][:, -1]
+    none = end(dict(scale_dependent=0.0))
+    np.testing.assert_allclose(end(dict(scale_lag_oom=1e-6)), none, rtol=1e-3, atol=1e-3)
+    short, long = end(dict(scale_lag_oom=0.5)), end(dict(scale_lag_oom=2.0))
+    assert (long <= short + 1e-9).all() and (long < short - 1e-3).any()
+    # Fast gains (tooling, kernels) are scale-invariant: with every gain fast,
+    # nothing waits.
+    all_fast = dict(fast_share=100.0, scale_lag_oom=2.0)
+    np.testing.assert_allclose(end(all_fast), end(dict(all_fast, scale_dependent=0.0)))
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])
@@ -491,7 +534,7 @@ def test_point_estimate_draws_the_settings_themselves():
     np.testing.assert_allclose(point["difficulty"], tk.DEFAULTS["difficulty"])
     np.testing.assert_allclose(point["judgment_drift"], 0.1)
     np.testing.assert_allclose(point["substitution"], -0.5)
-    spread = tk.simulate(dict(p, compute_bound=50.0), n=50)["draws"]
+    spread = tk.simulate(dict(p, scale_dependent=50.0), n=50)["draws"]
     assert all(np.ptp(v) > 0 for v in spread.values())
     # rho stays inside the range `validate` accepts.
     assert (spread["substitution"] >= -5).all() and (spread["substitution"] <= 0.9).all()

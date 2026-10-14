@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v17-software-ceiling`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v18-scale-dependent-gains`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -56,8 +56,8 @@ date, `rsi_compute_boost` (default 2) multiplies its log compute growth, standin
 speeding chip design, fabs and spending: Forethought's chip-technology and chip-production
 feedback loops. It waits 18 months (a chip generation, a fab's build) and ramps in over a
 year; the frozen-AI reference never gets it. The size is an assumption. With the delay the
-ultraintelligence median stays where no feedback puts it; at once, 2x brings it 3 months
-sooner. The
+ultraintelligence median moves a month at most; at once, 2x brings it 6 months sooner,
+since scale-dependent gains then wait less. The
 other research inputs keep their own growth, so research inputs slow by compute's share.
 
 Research judgment is gated by who directs research: people still in the direction stage
@@ -155,6 +155,20 @@ to the literature:
 | Labor–compute elasticity 1/(1−ρ) | 0.8 in its log | ~90%: 0.18–2.5 around 0.67 | Whitfill & Wu: ~0 (frontier experiments) to 2.6 (compute) |
 | Software ceiling | uniform | 6–16 orders of magnitude above today's efficiency | Forethought: 6–16 above full automation, returns falling linearly to 0 there |
 
+| Scale-dependent share of algorithmic gains | 1.0 in log-odds | 80%: ~22–78% around 50% | Gundlach et al. 2025: most historical gains grew with compute |
+| Compute such a gain waits for | 0.7 in its log | 80%: 0.4–2.5 around 10x | No measurement |
+
+A scale-dependent gain is worth something only once models train at larger compute, as
+Transformers and Chinchilla scaling were (Gundlach et al. 2025). Of the gains a model gets
+through training, that share counts in full once models train at about 10x the compute the
+frontier had when the gain was found (about two years at today's growth); fast gains such as
+tooling and kernels, the paper's scale-invariant kind, count at once. Nothing AI-frozen
+research would have found waits, since history already balanced it with compute; gains AI
+finds faster wait, then count in full. This is separate from ρ, which sets how fast gains
+are discovered. At the 50% median it moves ultraintelligence from Mar to Aug 2030 and the
+share making 3 years of progress in RSI's first year from 27% to 16%; 2x compute growth from
+RSI with no delay brings ultraintelligence back to Feb 2030.
+
 The ceiling raises difficulty so returns to research fall linearly to zero as a scenario's
 algorithmic efficiency nears it; no scenario then runs away without bound. It moves
 ultraintelligence from Jan to Mar 2030 and cuts the share making 10 years of progress in
@@ -171,9 +185,9 @@ progress accelerates.
 
 Forethought's own measure, years of progress made in the year after RSI, is counted in
 2025-level ECI progress: the 13.5 points the US frontier gained over 2025, about 5.8x a year
-of effective compute here. Read through the two ECI rates, under the software ceiling, its
-median is 2.1; 27% of scenarios make 3 years or more and 2% make 10, against Forethought's
-57% and 18%. The yardsticks differ: Forethought counts about 10x a
+of effective compute here. Read through the two ECI rates, under the software ceiling and
+the scale-dependent share, its median is 1.8; 16% of scenarios make 3 years or more and
+1% make 10, against Forethought's 57% and 18%, whose model has the ceiling but not the scale-dependent share. The yardsticks differ: Forethought counts about 10x a
 year of effective compute as a year, holds compute fixed and starts at full automation of AI
 R&D. Two features account for most of the gap. Measured with one ECI rate against the
 2024-26 trend (7.8x a year, where defaults give 13% and 2%): with labor and

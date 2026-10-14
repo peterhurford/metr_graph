@@ -1274,10 +1274,8 @@ class TestTakeoffTab:
             text = [c.value for c in at.caption if c.value.startswith("80% CI")][4]
             return text
         wide = ci80()
-        # The compute-bound share is off by default and has no control yet.
         for key in tk.POINT_ESTIMATE:
-            if _has_widget(at, "number_input", "tk_" + key):
-                at.number_input(key="tk_" + key).set_value(0)
+            at.number_input(key="tk_" + key).set_value(0)
         at.run()
         _assert_no_error(at, "Takeoff / point estimates")
         assert ci80() != wide

@@ -40,7 +40,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v17-software-ceiling`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v18-scale-dependent-gains`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -75,9 +75,21 @@ Row 18 draws each scenario's software ceiling (`ceiling_low_oom`–`ceiling_high
 returns to research fall linearly to 0 there (penalty −βC·ln(1−S/C); `ceiling_step` is the
 exact step, `reference_software` the same closed form), so with it no draw diverges
 (`test_the_software_ceiling_holds_every_draw_below_its_limit`); a high end of 0 removes it,
-which the runaway tests use. Row 19 draws `compute_bound`, the share of research capped at
-the pace compute alone allows (the frozen-AI reference, plus any post-RSI boost); it is 0 and
-has no control while its strength is undecided, and its weekly step is only first-order.
+which the runaway tests use. Row 19 draws `scale_dependent` (median 50%, logit spread
+`scale_dependent_spread`), row 20 `scale_lag_oom` (median 1, lognormal
+`scale_lag_spread`): of the gains a model gets through training, that share pays off only
+once models train at that many orders of magnitude more compute than the frontier had when
+the gain was found (Gundlach et al. 2025). Fast gains (tooling, kernels) are exempt, as the
+paper's scale-invariant kind. `pays_off` reads the research stock found by the month the
+frontier (`compute_seen`, `stock_seen`, one sorted search across draws) stood a lag below
+the frontier when the model's run began (`run_start_scale`), adds history's balanced pace
+over one lag, and never holds a model below the frozen-AI reference's trained software, so
+AI-frozen research never waits and AI-driven gains wait, then count in full
+(`test_scale_dependent_gains_pay_off_only_as_compute_scales`,
+`test_scale_dependent_gains_wait_on_compute_rather_than_vanish`). It is about when a
+discovered gain pays off, not how fast gains are found (that is ρ). Successors are adopted,
+and re-checked at deployment, by capability as it pays off, so `capability_log` never
+falls; `software_realized_log` is its algorithmic part, which the ECI reading uses.
 
 The model starts with partial automation, today's already-assisted software progress,
 and an assumed existing undeployed backlog shared with the reference. Coding productivity
@@ -112,18 +124,19 @@ it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
 The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, two ECI rates,
-software ceiling, months to ultraintelligence from Mar 2030): the judgment elasticity
-(half/double: +2/−4), r (0.5/2: +6/−4), parallelization (0.8/0.3: +3/−3), ρ (−1/0: +1/−1,
-small since the spreads draw ρ per scenario anyway), the training-run wait `fast_share`
-(12.5/50%: +1/−2; 100%: −6, and half the gap to Forethought) and `rsi_compute_boost`
-(default 2×; under *Advanced*, the software ceiling moves it −2 if removed, +2 at 3–8
-orders of magnitude). The boost multiplies each draw's log compute growth after its own
+software ceiling, scale-dependent gains; months to ultraintelligence from Aug 2030): the
+judgment elasticity (half/double: +2/−4), r (0.5/2: +5/−5), parallelization (0.8/0.3:
++2/−3), ρ (−1/0: 0/−2, small since the spreads draw ρ per scenario anyway), the
+training-run wait `fast_share` (12.5/50%: +1/−4; 100%: −11, since fast gains also skip the
+wait for scale), `scale_dependent` (25/75%: −2/+2) and `rsi_compute_boost` (default 2×;
+under *Advanced*, the software ceiling moves it −2 if removed, +2 at 3–8 orders of
+magnitude). The boost multiplies each draw's log compute growth after its own
 RSI date, waiting `rsi_compute_delay` (18 months) then
 ramping in over `rsi_compute_ramp` (12), never in the frozen-AI reference
 (`test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference`,
-`test_compute_boost_waits_its_delay_then_ramps_in`): delayed, it leaves the
-ultraintelligence median where no feedback puts it; switched on at once, 2× brings it
-3 months sooner. The rest,
+`test_compute_boost_waits_its_delay_then_ramps_in`): delayed, it moves the
+ultraintelligence median a month at most; switched on at once, 2× brings it 6 months
+sooner, since scale-dependent gains then wait less. The rest,
 data-center compute included (~1 month), sit in one *Advanced* expander. Retarget that
 grouping, and the expander's caption, if a rerun of the sweep reorders them.
 AI judgment is gated by the direction stage's human share, uncapped
