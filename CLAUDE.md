@@ -130,6 +130,8 @@ A progress bar (`_tk_loading`, `_TK_LOADING_STEPS`) sits above that slot and ste
 evidence, simulation, re-pairing and drawing; `render_takeoff` clears it in a `finally`
 once the last chart is drawn, so it outlasts every number. The cards' slot is `st.container(key="tk_headline")`; the
 global `<style>` block enlarges metrics and captions under `.st-key-tk_headline` only.
+App-wide, `_BOOT_BAR` (right after the style block) shows a loading bar on a session's
+first run only (`_vp_booted`), cleared by the dispatch before any tab draws.
 `tk_dc_compute` (default on) feeds compute growth from the Data Centers tab:
 `_tk_dc_compute` samples the US largest-run projection (`_pc_projection`, as Pacing does)
 and averages each path over a fixed `_TK_DC_AVG_YEARS` (not the chart horizon, which

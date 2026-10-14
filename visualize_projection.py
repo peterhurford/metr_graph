@@ -108,6 +108,15 @@ st.markdown("""<style>
     .vp-loop-arrow { opacity: 0.6; font-size: 0.82rem; }
 </style>""", unsafe_allow_html=True)
 
+# On a session's first run only, a loading bar holds the page while the data
+# loads; the dispatch clears it before a tab draws. Every later rerun skips it,
+# since a bar flashing in at the top on each click would shove the page down.
+_BOOT_BAR = None
+if "_vp_booted" not in st.session_state:
+    _BOOT_BAR = st.empty()
+    _BOOT_BAR.progress(0.05, text="**Loading the dashboard:** reading the METR, Epoch, "
+                                  "data-center and RSI data\u2026")
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 def _fn(note, marker="?", right=False):
@@ -19007,6 +19016,9 @@ def _render_takeoff(loading):
 
 if not os.environ.get("_VP_TESTING"):
     _hydrate_session_from_url()
+    st.session_state["_vp_booted"] = True
+    if _BOOT_BAR is not None:
+        _BOOT_BAR.empty()
 
     if active_tab == "METR Horizon":
         render_metr()
