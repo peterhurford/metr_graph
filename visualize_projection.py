@@ -16310,6 +16310,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                 start = mid = "Stopped"
             if float(np.nanmedian(t_cross)) >= remote_stop_t:
                 end = "Stopped"
+        if k == 'diffusion' and r[1] is not None and r[1] < 0.05:
+            end = "Dried up"
         if k == 'distillation':
             # Two different reasons for a zero: the lever cut it, or China
             # caught the model it learns from.
@@ -16384,9 +16386,17 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                       "the run size it had abroad, which adds no capability, "
                       f"until {anchor_d + timedelta(days=comp_dead[1] * 365.25):%b %Y}.")
     if "Dried up" in tags:
-        legend.append("<b>Dried up</b>: China has caught "
-                      + ("the last model the US released before withholding "
-                         "began." if withhold else "the paused US frontier."))
+        dry = {row["Source"].split(",")[0] for row in rows
+               if "Dried up" in row.values()}
+        why = []
+        if "Diffusion" in dry:
+            why.append("diffusion, China has absorbed what the US published "
+                       "before the pause")
+        if "Distillation" in dry:
+            why.append("distillation, China has caught "
+                       + ("the last model the US released before withholding "
+                          "began" if withhold else "the paused US frontier"))
+        legend.append("<b>Dried up</b>: for " + "; for ".join(why) + ".")
     if legend or notes:
         _fn_caption(" ".join(legend + (["Rates under these settings."]
                                        if notes else [])),

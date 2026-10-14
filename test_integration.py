@@ -1685,6 +1685,8 @@ class TestPacingTab:
         # up; the stop lever relabels it as stopped, from the pause on.
         dist = why[why["Source"].str.startswith("Distillation")].iloc[0]
         assert dist["ECI/yr at crossing"] == "Dried up"
+        diff = why[why["Source"].str.startswith("Diffusion")].iloc[0]
+        assert diff["ECI/yr at crossing"] == "Dried up"
         at.checkbox(key="pc_stop_dist").check().run()
         cut = next(t.value for t in at.table if "Source" in t.value.columns)
         cut = cut[cut["Source"].str.startswith("Distillation")].iloc[0]
