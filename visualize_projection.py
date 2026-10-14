@@ -17616,7 +17616,7 @@ _TK_DEFAULTS.update({
     "tk_cal_capability": 2.0, "tk_cal_yield": 1.0, "tk_cal_validated": 0.0,
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
     "tk_pace_today": 1.7, "tk_returns": 1.0, "tk_dc_compute": True,
-    "tk_coding_pairing": 0.7, "tk_eci_two_rate": True,
+    "tk_coding_pairing": 0.7,
 })
 
 # Human hours a task at each automation level still takes, as a share of
@@ -18120,38 +18120,40 @@ def _tk_eci_scale(params, hist=None):
     return frontier, frontier[-1]['eci_score'], ppy, base_rate
 
 
-def _tk_eci_rates(params, hist=None, two_rate=True):
-    """(ECI points per unit log training compute, per unit log algorithmic
-    efficiency, source). Two-rate: compute at the Compute/capabilities tab's
-    frontier-grade exchange rate (margin 3, then 5, then the pooled fit:
-    `_cc_frontier_grade_algo`, the fallback its innovation bands use), and
-    algorithms at whatever makes today's modeled growth match the ECI
-    frontier's fitted points a year. One rate: both at that fit's single rate."""
+def _tk_eci_rates(params, hist=None):
+    """How the ECI reading credits each part of a model: {'compute', 'software'}
+    (ECI points per unit log training compute, per unit log algorithmic
+    efficiency), plus the algorithm rate's cross-checks. Compute earns the
+    Compute/capabilities tab's frontier-grade exchange rate (margin 3, then
+    5, then the pooled fit: the fallback its innovation bands use);
+    algorithms earn the rest of the ECI frontier's fitted climb, so today's
+    modeled growth reproduces it. `algo_ppy` is that rest in points a year,
+    beside the tab's own fixed-compute fits (`fg_b_time`, `pooled_b_time`)."""
     _, _, ppy, base_rate = _tk_eci_scale(params, hist)
-    single = (ppy / base_rate, ppy / base_rate, "one rate")
-    if not two_rate:
-        return single
     compute_rate = hist if hist is not None else np.log(params["compute_growth"])
     software_rate = np.log(2) * 12 / params["software_months"]
     rows = load_eci_compute(_mtime=_eci_mtime())
     full = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
-    fit = (_cc_frontier_grade_algo(rows, full, margin=3.0)
-           or _cc_frontier_grade_algo(rows, full) or _cc_decomp(rows))
-    if not fit or fit['a_partial'] <= 0:
-        return single
-    per_compute = fit['a_partial'] / np.log(10)
-    per_software = (ppy - per_compute * compute_rate) / software_rate
-    if per_software <= 0:
-        return single
-    return per_compute, per_software, "two rates"
+    pooled = _cc_decomp(rows)
+    fg = (_cc_frontier_grade_algo(rows, full, margin=3.0)
+          or _cc_frontier_grade_algo(rows, full))
+    fit = fg or pooled
+    per_compute = fit['a_partial'] / np.log(10) if fit and fit['a_partial'] > 0 else None
+    algo_ppy = ppy - per_compute * compute_rate if per_compute is not None else None
+    if algo_ppy is None or algo_ppy <= 0:
+        # No usable fit: credit both parts alike, which still fits the climb.
+        per_compute, algo_ppy = ppy / base_rate, ppy * software_rate / base_rate
+    return {"compute": per_compute, "software": algo_ppy / software_rate,
+            "algo_ppy": algo_ppy, "fg_b_time": fg['b_time'] if fg else None,
+            "pooled_b_time": pooled['b_time'] if pooled else None}
 
 
 def _tk_eci(result, params):
     """Each scenario's capability path read as ECI, anchored on the US frontier.
 
     Today's modeled capability growth (software doubling plus compute growth)
-    is mapped to the ECI tab's own fitted frontier rate, at `result['eci_rates']`
-    (`_tk_eci_rates`: separate compute and algorithm rates, or one), so a scenario growing
+    is mapped to the ECI tab's own fitted frontier rate, crediting compute and
+    algorithms at `result['eci_rates']` (`_tk_eci_rates`), so a scenario growing
     faster than today shows as faster ECI growth, floored at today's trend
     continued for `_TK_ECI_FLOOR_YEARS`. Returns {'now', 'ppy',
     'paths' (draws x months), 'at_rsi' (per draw, NaN if not reached),
@@ -18160,7 +18162,7 @@ def _tk_eci(result, params):
     frontier, now, ppy, base_rate = _tk_eci_scale(params, result.get("hist_compute"))
     wp = result["workflow_progress"]
     years = wp["years"]
-    w_compute, w_software = result.get("eci_rates", (ppy / base_rate, ppy / base_rate))
+    w_compute, w_software = result["eci_rates"]["compute"], result["eci_rates"]["software"]
     software = wp["validated_log"]
     # Today's trend is a floor for the first year, covering the months before
     # the next model ships. The lift it gives a scenario then fades out over
@@ -18644,9 +18646,8 @@ def _render_takeoff(loading):
                        "ultraintelligence date 2\u20135 months; \u03c1 and the training-run "
                        "wait 1\u20132 months (6 sooner if no gain waits). Compute growth "
                        "after RSI, delayed 18 months, leaves the median where 1\u00d7 does; "
-                       "with no delay, 2\u00d7 brings it 3 months sooner. One ECI rate "
-                       "instead of two puts it 7 months later. Everything under Advanced "
-                       "moves it a few months at most.")
+                       "with no delay, 2\u00d7 brings it 3 months sooner. Everything under "
+                       "Advanced moves it a few months at most.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
@@ -18672,15 +18673,6 @@ def _render_takeoff(loading):
                    "output; 0 lets either fully make up for the other. Contested: "
                    "compute-bottleneck views sit near \u22121, views where AI "
                    "economizes on experiments nearer 0.")
-            st.checkbox(
-                "Read capability as ECI with separate compute and algorithm rates",
-                key="tk_eci_two_rate",
-                help="On: each 10\u00d7 of training compute is worth the Compute/capabilities "
-                     "tab's measured ECI per 10\u00d7 (its frontier-grade fit), and algorithms "
-                     "get whatever makes today's modeled growth match the ECI frontier's "
-                     "climb. Off: one rate for both, set so today's growth matches that "
-                     "climb. Both fit the frontier's history; they differ in how much ECI "
-                     "an algorithm-driven takeoff earns.")
             number("Gains that skip the training-run wait (%)", "fast_share", 0.0, 100.0, 5.0,
                    "Share of efficiency gains deployable at once through tooling, kernels "
                    "and small updates; the rest wait for a successor's training run and "
@@ -18945,10 +18937,9 @@ def _render_takeoff(loading):
         # A model at ultraintelligence has automated coding whatever the RSI projection's
         # date says, so RSI no longer waits on a late inherited date past it.
         _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute)
-        eci_rates = _tk_eci_rates(params, hist_compute,
-                                  bool(st.session_state["tk_eci_two_rate"]))
+        eci_rates = _tk_eci_rates(params, hist_compute)
         coding_level = _TK_ULTRA_ECI - eci_now          # in ECI points, through eci_rates
-        coding_weights = eci_rates[:2]
+        coding_weights = (eci_rates["compute"], eci_rates["software"])
         _tk_loading(bar, 1)
         result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
                               experiment_starts, experiment_slopes, pace_yield, compute_rates,
@@ -18968,7 +18959,7 @@ def _render_takeoff(loading):
         # The ECI trend reflects the compute growth behind it: the data-center
         # series' own historical fit when its projection is in use.
         result["hist_compute"] = hist_compute
-        result["eci_rates"] = eci_rates[:2]
+        result["eci_rates"] = eci_rates
         rsi = result["events"]["RSI"]
         eci = _tk_eci(result, params)
         def _card(col, label, samples, help):
@@ -19125,6 +19116,7 @@ def _render_takeoff(loading):
                                view_end)), width="stretch")
 
     st.subheader("3. What it does to capability (ECI)")
+    rates = result["eci_rates"]
     _fn_caption(
         "Each scenario's model capability, read as Epoch's ECI, against today's "
         "trend continued (dashed); the gap above it is the takeoff.",
@@ -19133,13 +19125,17 @@ def _render_takeoff(loading):
          "modeled capability growth is mapped to exactly that, so any faster "
          "growth in a scenario reads as faster ECI growth. Capability is the best "
          "deployed model's training compute and algorithmic efficiency, "
-         + (f"read at {result['eci_rates'][0] * np.log(10):.1f} ECI per 10\u00d7 compute "
-            "(the Compute/capabilities tab's measured exchange rate) and "
-            f"{result['eci_rates'][1] * np.log(10):.1f} per 10\u00d7 algorithms (the rest "
-            "of the frontier's climb)"
-            if abs(result['eci_rates'][0] - result['eci_rates'][1]) > 1e-9 else
-            f"both read at {result['eci_rates'][0] * np.log(10):.1f} ECI per 10\u00d7")
-         + ". For the first year it is floored at the trend, since no new model has "
+         f"read at {rates['compute'] * np.log(10):.1f} ECI per 10\u00d7 compute (the "
+         "Compute/capabilities tab's measured exchange rate) and "
+         f"{rates['software'] * np.log(10):.1f} per 10\u00d7 algorithms: the rest of the "
+         f"frontier's climb, {rates['algo_ppy']:.1f} points a year"
+         + (f", against that tab's own fixed-compute fits of {rates['fg_b_time']:.1f} "
+            f"(frontier-grade models) and {rates['pooled_b_time']:.1f} (all models)"
+            if rates['fg_b_time'] is not None and rates['pooled_b_time'] is not None else "")
+         + ". Algorithms earn more per 10\u00d7 because compute explains only "
+         f"{eci['ppy'] - rates['algo_ppy']:.1f} of the {eci['ppy']:.1f} points; one rate "
+         "for both would also fit the climb but credit an algorithm-driven takeoff less, "
+         "so ultraintelligence would come later. For the first year ECI is floored at the trend, since no new model has "
          "shipped yet."))
     st.plotly_chart(_tf(_tk_to(_tk_eci_fig(result, today, eci, markers), view_end)),
                     width="stretch")

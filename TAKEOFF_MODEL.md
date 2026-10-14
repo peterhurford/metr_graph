@@ -134,10 +134,9 @@ compute (the Compute/capabilities tab's frontier-grade exchange rate), plus 31 p
 10x of algorithmic efficiency, the rate that makes today's modeled growth equal the ECI
 frontier's fitted 15.7 points a year. Both rates fit that history; algorithms earn more
 because compute explains only about 3 of the 15.7 points (the tab's own pooled fit puts
-algorithms at 12 points a year, close to the 12.6 left over). The single-rate reading, 17.6
-points per 10x of either, also fits the history and is one checkbox away: it puts
-ultraintelligence at Aug 2030 against Jan 2030, since the takeoff after RSI is mostly
-algorithmic. Coding counts as automated once a model reaches ECI 250 under the same reading.
+algorithms at 12 points a year, close to the 12.6 left over). One rate for both, 17.6 points
+per 10x, also fits the history but credits the mostly algorithmic takeoff less: it put
+ultraintelligence 7 months later. Coding counts as automated once a model reaches ECI 250 under the same reading.
 Ultraintelligence is defined as an ECI level on this chart.
 
 ## Parameter uncertainty
