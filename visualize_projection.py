@@ -12313,6 +12313,9 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     anchor = max(eci_all, key=lambda m: m['eci_score']) if eci_all \
         else max(cc_rows, key=lambda m: m['eci'])
     eci_now = anchor.get('eci_score', anchor.get('eci'))
+    # Project from the anchor model's own release, so the months since it
+    # accrue at the trend rather than sitting flat until today.
+    anchor_d = min(anchor.get('date') or today, today)
 
     # Projected compute path: interpolate the running-max FLOP frontier in log
     # space; past its right edge, extend at the planned-buildout OOM/yr.
@@ -12327,11 +12330,11 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
             return float(flog[-1] + g_planned * (o - ford[-1]) / 365.25)
         return float(np.interp(o, ford, flog))
 
-    logflop_now = _logflop_at(today)
+    logflop_now = _logflop_at(anchor_d)
 
-    qdates = _cc_quarter_ends(today, horizon)
-    x_dates = [today] + qdates
-    dt_yrs = np.array([(d - today).days / 365.25 for d in x_dates])
+    qdates = _cc_quarter_ends(anchor_d, horizon)
+    x_dates = [anchor_d] + qdates
+    dt_yrs = np.array([(d - anchor_d).days / 365.25 for d in x_dates])
     dlog = np.array([_logflop_at(d) - logflop_now for d in x_dates])
 
     # Monte-Carlo over the three uncertainties the section already quantifies.
@@ -12662,16 +12665,19 @@ _CC_CALIB_SENS_STARTS = (datetime(2024, 1, 1), datetime(2024, 7, 1),
                          datetime(2025, 1, 1), datetime(2025, 7, 1))
 
 
-def _cc_gap_end_range(us_fr, cn_fr, gap_now, years):
-    """(lo, hi) projected ECI gap after `years`, today's gap plus the two
-    frontiers' slope difference, over `_CC_CALIB_SENS_STARTS`; also the
-    (lo, hi) US and China slopes. None when no start has both slopes."""
+def _cc_gap_end_range(us_fr, cn_fr, horizon):
+    """(lo, hi) projected ECI gap at `horizon`, each side climbing from its
+    own best frontier model at its slope, over `_CC_CALIB_SENS_STARTS`; also
+    the (lo, hi) US and China slopes. None when no start has both slopes."""
+    us_d, us_v = max(((d, s) for d, s, n in us_fr), key=lambda p: p[1])
+    cn_d, cn_v = max(((d, s) for d, s, n in cn_fr), key=lambda p: p[1])
     gaps, us_r, cn_r = [], [], []
     for cut in _CC_CALIB_SENS_STARTS:
         u = _cc_frontier_eci_slope(us_fr, cut)
         c = _cc_frontier_eci_slope(cn_fr, cut)
         if u is not None and c is not None:
-            gaps.append(gap_now + (u - c) * years)
+            gaps.append((us_v + u * (horizon - us_d).days / 365.25)
+                        - (cn_v + c * (horizon - cn_d).days / 365.25))
             us_r.append(u)
             cn_r.append(c)
     if not gaps:
@@ -12827,8 +12833,9 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     us_eci_smid = 0.5 * (us_eci_slo + us_eci_shi)
     cn_eci_smid = 0.5 * (cn_eci_slo + cn_eci_shi)
 
-    dt_end = (horizon - today).days / 365.25
-    gap_end = (us_best[1] + us_eci_smid * dt_end) - (cn_best[1] + cn_eci_smid * dt_end)
+    # Each side climbs from its own last frontier model, not from today.
+    gap_end = ((us_best[1] + us_eci_smid * (horizon - us_best[0]).days / 365.25)
+               - (cn_best[1] + cn_eci_smid * (horizon - cn_best[0]).days / 365.25))
     mo_end = (gap_end / us_eci_smid * 12.0) if us_eci_smid > 0 else float('nan')
 
     c1, c2, c3 = st.columns(3)
@@ -12837,7 +12844,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
               f"{run_gap_oom:.1f} OOM, US ahead", delta_color="off")
     c2.metric("ECI gap today", f"{gap_now:.0f} pts",
               f"~{mo_now:.0f} mo behind", delta_color="off")
-    _rng = _cc_gap_end_range(us_fr, cn_fr, gap_now, dt_end)
+    _rng = _cc_gap_end_range(us_fr, cn_fr, horizon)
     c3.metric(f"ECI gap end-{horizon.year} (compute + algo)",
               f"~{gap_end:.0f} pts",
               f"~{mo_end:.0f} mo behind", delta_color="off",
@@ -12974,10 +12981,6 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     # progress — ECI(t) = ECI_now + (a_partial·g_compute + b_algo)·t. The band is
     # each country's compute-growth range; algo is shared, so the divergence is
     # purely the compute gap. ──
-    qdates = _cc_quarter_ends(today, horizon)
-    x_dates = [today] + qdates
-    dt = np.array([(d - today).days / 365.25 for d in x_dates])
-
     figf = go.Figure()
     _dc_add_projection_band(figf, today, horizon)
     for fr, best, slo, shi, smid, kc, col, rgb, label in (
@@ -12985,6 +12988,9 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
              '#1F77B4', (31, 119, 180), 'United States'),
             (cn_fr, cn_best, cn_eci_slo, cn_eci_shi, cn_eci_smid, k_cn,
              '#D62728', (214, 39, 40), 'China')):
+        # From the country's own last frontier model, not from today.
+        x_dates = [best[0]] + _cc_quarter_ends(best[0], horizon)
+        dt = np.array([(d - best[0]).days / 365.25 for d in x_dates])
         lo, hi, mid = best[1] + slo * dt, best[1] + shi * dt, best[1] + smid * dt
         r, gg, bb = rgb
         figf.add_trace(go.Scatter(
@@ -13176,40 +13182,46 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             help="Today projects forward; Jan 2025 backdates the lines so "
                  "they can be checked against China's actual frontier since "
                  "then.")
-        if bd_label == "Today":
-            anchor_date, cn_anchor, us_anchor = today, cn_best[1], us_best[1]
-        else:
-            anchor_date = datetime(2025, 1, 1)
+        # Each country projects from its own last frontier model on or before
+        # the cutoff, so the months since that release accrue at the trend
+        # rather than sitting flat until the cutoff.
+        cutoff = today if bd_label == "Today" else datetime(2025, 1, 1)
 
-            def _fr_at(fr, d):
-                vals = [s for dd, s, n in fr if dd <= d]
-                return max(vals) if vals else fr[0][1]
+        def _last_at(fr, d):
+            pts = [(dd, s) for dd, s, n in fr if dd <= d]
+            return max(pts, key=lambda p: p[1]) if pts else (fr[0][0], fr[0][1])
 
-            cn_anchor = _fr_at(cn_fr, anchor_date)
-            us_anchor = _fr_at(us_fr, anchor_date)
-        bd_dates = [anchor_date] + _cc_quarter_ends(anchor_date, horizon)
-        dt_bd = np.array([(d - anchor_date).days / 365.25 for d in bd_dates])
+        cn_anchor_d, cn_anchor = _last_at(cn_fr, cutoff)
+        us_anchor_d, us_anchor = _last_at(us_fr, cutoff)
+        anchor_date = min(cn_anchor_d, us_anchor_d)
+        bd_dates = sorted({cn_anchor_d, us_anchor_d}
+                          | set(_cc_quarter_ends(anchor_date, horizon)))
+        i_cn, i_us = bd_dates.index(cn_anchor_d), bd_dates.index(us_anchor_d)
+        dt_cn = np.array([(d - cn_anchor_d).days / 365.25 for d in bd_dates])
+        dt_us = np.array([(d - us_anchor_d).days / 365.25 for d in bd_dates])
 
-        us_ceiling = us_anchor + us_eci_smid * dt_bd
-        cn_traj_us = cn_anchor + slope_usalgo * dt_bd
-        cn_traj_inno = (cn_anchor + slope_inno * dt_bd
+        # The US trend over the whole grid (behind its anchor too), so China's
+        # gap is read against it at every date; drawn only from its anchor.
+        us_ceiling = us_anchor + us_eci_smid * dt_us
+        cn_traj_us = cn_anchor + slope_usalgo * dt_cn
+        cn_traj_inno = (cn_anchor + slope_inno * dt_cn
                         if slope_inno is not None else None)
-        cn_traj_pure = (cn_anchor + slope_pure * dt_bd
+        cn_traj_pure = (cn_anchor + slope_pure * dt_cn
                         if slope_pure is not None else None)
         # China's observed trend, distillation included: the distillation term
         # fades with the gap to the US line (the catch-up panel's law), and the
         # line never passes its teacher.
         cn_traj_dist = None
         if slope_inno is not None:
-            gap0 = max(us_anchor - cn_anchor, 1e-6)
+            gap0 = max(float(us_ceiling[i_cn]) - cn_anchor, 1e-6)
             e = float(cn_anchor)
-            cn_traj_dist = [e]
-            for i in range(1, len(dt_bd)):
+            cn_traj_dist = np.full(len(bd_dates), np.nan)
+            cn_traj_dist[i_cn] = e
+            for i in range(i_cn + 1, len(bd_dates)):
                 fade = min(1.0, max(float(us_ceiling[i - 1]) - e, 0.0) / gap0)
                 e = min(e + (slope_inno + dist_sc * fade)
-                        * (dt_bd[i] - dt_bd[i - 1]), float(us_ceiling[i]))
-                cn_traj_dist.append(e)
-            cn_traj_dist = np.array(cn_traj_dist)
+                        * (dt_cn[i] - dt_cn[i - 1]), float(us_ceiling[i]))
+                cn_traj_dist[i] = e
 
         us_end = float(us_ceiling[-1])
         cn_end_us = float(cn_traj_us[-1])
@@ -13261,13 +13273,18 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         gap_bd = us_ceiling - cn_traj_inno if cn_traj_inno is not None else None
         gap_dist = (us_ceiling - cn_traj_dist
                     if cn_traj_dist is not None else None)
+        # Before China's anchor there is no projected China line to compare.
+        _i0 = max(i_us, i_cn)
         figd.add_trace(go.Scatter(
-            x=bd_dates, y=list(us_ceiling), mode='lines',
+            x=bd_dates[i_us:], y=list(us_ceiling[i_us:]), mode='lines',
             line=dict(color='#1F77B4', width=1.5, dash='dot'),
             name=f'US frontier ({us_eci_smid:.1f}/yr)',
-            **(dict(customdata=[[_gap_txt(gd, "ahead of China with distillation"),
-                                 _gap_txt(gn, "without")]
-                                for gd, gn in zip(gap_dist, gap_bd)],
+            **(dict(customdata=([["", ""]] * (_i0 - i_us)
+                                + [[_gap_txt(gd, "ahead of China with "
+                                                 "distillation"),
+                                    _gap_txt(gn, "without")]
+                                   for gd, gn in zip(gap_dist[_i0:],
+                                                     gap_bd[_i0:])]),
                     hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                                   '<br>%{customdata[0]}<br>%{customdata[1]}'
                                   '<extra>US frontier</extra>')
@@ -13292,24 +13309,26 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             hoverinfo='text', name='China (actual)'))
         if cn_traj_inno is not None:
             figd.add_trace(go.Scatter(
-                x=bd_dates + bd_dates[::-1],
-                y=list(cn_traj_dist) + list(cn_traj_inno[::-1]),
+                x=bd_dates[i_cn:] + bd_dates[i_cn:][::-1],
+                y=list(cn_traj_dist[i_cn:]) + list(cn_traj_inno[i_cn:][::-1]),
                 fill='toself', fillcolor='rgba(214,39,40,0.12)',
                 line=dict(width=0), hoverinfo='skip',
                 name='What distillation adds'))
             figd.add_trace(go.Scatter(
-                x=bd_dates, y=list(cn_traj_dist), mode='lines',
+                x=bd_dates[i_cn:], y=list(cn_traj_dist[i_cn:]), mode='lines',
                 line=dict(color='#D62728', width=2.5),
                 name=f"China · with distillation ({cn_obs:.1f}/yr)",
-                customdata=[_gap_txt(g, "behind the US") for g in gap_dist],
+                customdata=[_gap_txt(g, "behind the US")
+                            for g in gap_dist[i_cn:]],
                 hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                               '<br>%{customdata}'
                               '<extra>with distillation</extra>'))
             figd.add_trace(go.Scatter(
-                x=bd_dates, y=list(cn_traj_inno), mode='lines',
+                x=bd_dates[i_cn:], y=list(cn_traj_inno[i_cn:]), mode='lines',
                 line=dict(color='#7F1010', width=2.5, dash='dash'),
                 name=f"China · no ext. distillation ({slope_inno:.1f}/yr)",
-                customdata=[_gap_txt(g, "behind the US") for g in gap_bd],
+                customdata=[_gap_txt(g, "behind the US")
+                            for g in gap_bd[i_cn:]],
                 hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                               '<br>%{customdata}'
                               '<extra>no ext. distillation</extra>'))
@@ -13747,7 +13766,10 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
     # Distillation-aware headline; the constant-rate model is the comparison.
     inno_lo, inno_hi = inno_band if inno_band else (a_lo, a_hi)
     years, grid_yrs, traj_m = _cc_cn_crossing_sim(
-        anchor_eci, target, us_anchor=us_best[1],
+        anchor_eci, target,
+        # The US trend's level at China's anchor date, not its later best.
+        us_anchor=us_best[1] - max(us_eci_smid, 0.0)
+        * (us_best[0] - anchor_d).days / 365.25,
         us_rate=max(us_eci_smid, 0.0), a_partial=a_partial,
         g_lo=g_lo, g_hi=g_hi, algo_lo=a_lo, algo_mid=a_mid, algo_hi=a_hi,
         inno_lo=inno_lo, inno_hi=inno_hi,
@@ -13812,10 +13834,8 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
                    "to shipped model")
 
     # ── Chart: China's fan against the fixed target bar ───────────────────────
-    # The fan is the smooth *capability* path (rates only). The vertical band and
-    # the diamond are the crossing distribution, which also carries the wait for a
-    # model to ship — so they sit a little right of where the fan meets the bar.
-    # That offset is the release-cadence term, not a plotting error.
+    # The fan is the capability path, release-step level noise included; the
+    # vertical band and the diamond are the crossing distribution read off it.
     horizon = max(datetime(2027, 12, 31), d90 + timedelta(days=180))
     x_dates = [anchor_d] + _cc_quarter_ends(anchor_d, horizon)
     dt = np.array([(d - anchor_d).days / 365.25 for d in x_dates])
@@ -13858,7 +13878,10 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
         text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in us_fr],
         hoverinfo='text', name='US (actual)'))
     figt.add_trace(go.Scatter(
-        x=x_dates, y=list(us_best[1] + us_eci_smid * dt), mode='lines',
+        x=[us_best[0]] + [d for d in x_dates if d > us_best[0]],
+        y=[us_best[1] + us_eci_smid * (d - us_best[0]).days / 365.25
+           for d in [us_best[0]] + [d for d in x_dates if d > us_best[0]]],
+        mode='lines',
         line=dict(color='#1F77B4', width=1.2, dash='dot'),
         name='US (projected)', hoverinfo='skip'))
     figt.add_trace(go.Scatter(

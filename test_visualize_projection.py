@@ -1878,11 +1878,15 @@ class TestCcGapEndRange:
         eci_all = vp.load_eci_frontier(_mtime=vp._eci_mtime())
         us_fr = vp._cc_country_frontier(eci_all, 'United States of America')
         cn_fr = vp._cc_country_frontier(eci_all, 'China')
-        gap_now = max(s for d, s, n in us_fr) - max(s for d, s, n in cn_fr)
-        (lo, hi), us_r, cn_r = vp._cc_gap_end_range(us_fr, cn_fr, gap_now, 3.0)
-        central = gap_now + 3.0 * (
-            vp._cc_frontier_eci_slope(us_fr, vp._CC_CALIB_SINCE)
-            - vp._cc_frontier_eci_slope(cn_fr, vp._CC_CALIB_SINCE))
+        horizon = datetime(2029, 12, 31)
+        (lo, hi), us_r, cn_r = vp._cc_gap_end_range(us_fr, cn_fr, horizon)
+        us_d, us_v = max(((d, s) for d, s, n in us_fr), key=lambda p: p[1])
+        cn_d, cn_v = max(((d, s) for d, s, n in cn_fr), key=lambda p: p[1])
+        central = (
+            us_v + vp._cc_frontier_eci_slope(us_fr, vp._CC_CALIB_SINCE)
+            * (horizon - us_d).days / 365.25
+            - cn_v - vp._cc_frontier_eci_slope(cn_fr, vp._CC_CALIB_SINCE)
+            * (horizon - cn_d).days / 365.25)
         assert lo <= central <= hi
         assert hi - lo > 2.0
         assert us_r[1] - us_r[0] < cn_r[1] - cn_r[0]
