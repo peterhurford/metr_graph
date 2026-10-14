@@ -12769,7 +12769,11 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     c1, c2, c3 = st.columns(3)
     c1.metric("Compute gap (largest actual run)",
               f"~{10 ** run_gap_oom:.0f}×",
-              f"{run_gap_oom:.1f} OOM, US ahead", delta_color="off")
+              f"{run_gap_oom:.1f} OOM, US ahead", delta_color="off",
+              help="The largest runs Epoch estimates each country has "
+                   "actually trained. The Pausing tab compares capacity "
+                   "instead (the largest run each side's clusters could "
+                   "train, sites abroad included), a much smaller gap.")
     c2.metric("ECI gap today", f"{gap_now:.0f} pts",
               f"~{mo_now:.0f} mo behind", delta_color="off")
     _rng = _cc_gap_end_range(us_fr, cn_fr, horizon)
@@ -16249,11 +16253,18 @@ def _pc_render_compute_ratios(ci, span):
             _grow(base0, ci.get('g_use_base')))
         rows[2]["Same date, no compute levers"] = _cell(
             _grow(dom0, ci.get('g_dom_base')))
-    st.markdown("##### Compute: US vs China's largest run")
+    st.markdown("##### Compute capacity: US vs China's largest trainable run")
     st.table(pandas.DataFrame(rows).style.hide(axis="index"))
     _fn_caption(
+        "Capacity: the largest run each side's clusters could train, sites "
+        "abroad included, not runs actually done (the China tab's ~50\u00d7 "
+        "gap counts those). "
         f"Each 10\u00d7 of compute is worth ~{ci['a_partial']:.0f} ECI, so "
         "a big compute ratio buys a small capability gap.",
+        ("not runs actually done", "Those are Epoch's estimates of the "
+                                   "largest runs each country has trained, "
+                                   "a different quantity from what its "
+                                   "clusters could train."),
         ("Each 10\u00d7", "The frontier-grade exchange rate. China's runs grow "
                            "from the state-of-play reading at the pace these "
                            "levers leave it, over the median time from the "
@@ -16903,7 +16914,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         c = caps.get(label)
         return {
             "At pause start": label,
-            "Largest training run": (
+            "Largest trainable run (capacity)": (
                 f"{_log_op(c[1])} log OP ({_log_op(c[0])}–{_log_op(c[2])})"
                 if c else "—"),
             "Frontier ECI": f"~{e50:.0f} ({e10:.0f}–{e90:.0f})",

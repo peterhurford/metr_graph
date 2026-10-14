@@ -2004,7 +2004,7 @@ class TestPacingTab:
             if mo is not None:
                 at.select_slider(key="pc_pause_mo").set_value(mo).run()
                 _assert_no_error(at, f"Pausing / pause {mo}")
-            us = self._state(at).iloc[0]["Largest training run"].split()[0]
+            us = self._state(at).iloc[0]["Largest trainable run (capacity)"].split()[0]
             titles = [json.loads(el.proto.spec)["layout"].get("title", {})
                       .get("text", "") for el in at.get("plotly_chart")]
             race = next(t for t in titles if t.startswith("First \u2265"))
@@ -2019,8 +2019,8 @@ class TestPacingTab:
         assert list(t["At pause start"]) == [
             "United States", "China-accessible", "China (domestic only)"]
         us, cn = (t.iloc[i] for i in (0, 1))
-        assert float(us["Largest training run"].split()[0]) > \
-            float(cn["Largest training run"].split()[0])
+        assert float(us["Largest trainable run (capacity)"].split()[0]) > \
+            float(cn["Largest trainable run (capacity)"].split()[0])
         assert float(us["Frontier ECI"].split()[0].lstrip("~")) > \
             float(cn["Frontier ECI"].split()[0].lstrip("~"))
         assert us["Behind the US"] == "—" and cn["Behind the US"].endswith("mo")
@@ -2050,7 +2050,7 @@ class TestPacingTab:
 
         def _us_ops(at):
             return float(self._state(at).iloc[0][
-                "Largest training run"].split()[0])
+                "Largest trainable run (capacity)"].split()[0])
 
         month, ops_2mo = _pause_month(at), _us_ops(at)
         at.radio(key="pc_run").set_value("6-month run").run()
@@ -2168,12 +2168,12 @@ class TestPacingTab:
                                               .get("text", "")))
 
         assert not [b for b in at.selectbox if b.key == "pc_threshold"]
-        us_run = self._state(at).iloc[0]["Largest training run"].split(
+        us_run = self._state(at).iloc[0]["Largest trainable run (capacity)"].split(
             " (")[0]
         assert us_run in _title(at)
         at.select_slider(key="pc_pause_mo").set_value(42).run()
         _assert_no_error(at, "Pausing / bar at a later pause")
-        later = self._state(at).iloc[0]["Largest training run"].split(" (")[0]
+        later = self._state(at).iloc[0]["Largest trainable run (capacity)"].split(" (")[0]
         assert float(later.split()[0]) > float(us_run.split()[0])
         assert later in _title(at)
 
