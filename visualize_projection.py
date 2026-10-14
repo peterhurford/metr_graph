@@ -62,6 +62,11 @@ st.markdown("""<style>
         font-weight: 600; }
     .st-key-tk_headline [data-testid="stCaptionContainer"],
     .st-key-tk_headline [data-testid="stCaptionContainer"] * { font-size: 1.15rem !important; }
+    /* The 90% CI lines (`_tk_ci`) sit quieter under the 80% ones. */
+    [class*="st-key-tk_ci90_"] [data-testid="stCaptionContainer"],
+    [class*="st-key-tk_ci90_"] [data-testid="stCaptionContainer"] * {
+        font-size: 0.9rem !important; opacity: 0.6; }
+    [class*="st-key-tk_ci90_"] { margin-top: -0.6rem; }
     [data-testid="stProgress"] { min-height: 22rem; padding: 3rem 2.5rem;
         display: flex; flex-direction: column; justify-content: center;
         border-radius: 1rem; background: rgba(41,128,185,0.10);
@@ -18465,6 +18470,14 @@ def _tk_span(years, end_date):
     return f"{12 * years:.0f} mo" if abs(years) < 1 else f"{years:.1f} yr"
 
 
+def _tk_ci(col, level, label):
+    """Where a headline card's CI line goes: the 90% one in a keyed container
+    the global style block dims, the 80% one straight in the column."""
+    if level == 80:
+        return col
+    return col.container(key="tk_ci90_" + re.sub(r"[^a-z0-9]+", "_", label.lower()))
+
+
 def _tk_date(value, today):
     return ((today + timedelta(days=value * 365.25)).strftime("%b %Y")
             if np.isfinite(value) else "Beyond horizon")
@@ -18871,7 +18884,8 @@ def _render_takeoff(loading):
                        help=help + f" {100 * np.mean(samples <= horizon):.0f}% of scenarios "
                                    f"by {end_date:%b %Y}.")
             for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
-                col.caption(f"{level}% CI: {_tk_date(takeoff.quantile(samples, lo, horizon), today)}"
+                _tk_ci(col, level, label).caption(
+                    f"{level}% CI: {_tk_date(takeoff.quantile(samples, lo, horizon), today)}"
                             f" \u2013 {_tk_date(takeoff.quantile(samples, hi, horizon), today)}")
 
         def _gap_card(col, label, earlier, later, help):
@@ -18886,7 +18900,8 @@ def _render_takeoff(loading):
                        f"reaching the first by {end_date:%b %Y}; one not reaching the second "
                        "by then counts as longer, so late starters read long.")
             for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
-                col.caption(f"{level}% CI: {_tk_span(takeoff.quantile(g, lo), end_date)}"
+                _tk_ci(col, level, label).caption(
+                    f"{level}% CI: {_tk_span(takeoff.quantile(g, lo), end_date)}"
                             f" \u2013 {_tk_span(takeoff.quantile(g, hi), end_date)}")
 
         a, b, c = st.columns(3)
@@ -18929,7 +18944,8 @@ def _render_takeoff(loading):
                      f"{len(burst) / len(rsi):.0%} of scenarios reaching RSI by the end of "
                      f"{end_date.year - 1}; one whose research runs away counts as more.")
             for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
-                c.caption(f"{level}% CI: {_yrs(takeoff.quantile(burst, lo))}"
+                _tk_ci(c, level, "first year").caption(
+                    f"{level}% CI: {_yrs(takeoff.quantile(burst, lo))}"
                           f" – {_yrs(takeoff.quantile(burst, hi))}")
         _tk_loading(bar, 3)
         medians = [(label, takeoff.quantile(samples, 0.5, horizon))
