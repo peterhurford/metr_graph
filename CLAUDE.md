@@ -40,7 +40,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v13-compute-slowdown`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v14-rsi-compute-boost`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -97,11 +97,15 @@ it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `_TK_FACTOR_VIEW`. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
-The sidebar leads with the four parameters of a one-at-a-time sweep: the judgment
-elasticity (half/double: −8/+6 months to ultraintelligence), r (2/0.5: −5/+7),
-parallelization (0.3/0.8: −3/+4) and ρ (0/−1: ±1, small since the v12 spreads draw ρ per
-scenario anyway); the rest, data-center compute included (~1 month), sit in one *Advanced*
-expander. Retarget that grouping if a rerun of the sweep reorders them.
+The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, months to
+ultraintelligence): the judgment elasticity (half/double: +3/−5), r (0.5/2: +6/−5),
+parallelization (0.8/0.3: +3/−3), ρ (−1/0: +1/−2, small since the spreads draw ρ per
+scenario anyway), the training-run wait `fast_share` (12.5/50%: +1/−2; 100%: −6, and half
+the gap to Forethought) and `rsi_compute_boost` (0.5×/2×/3×: +6/−6/−9), which multiplies
+each draw's log compute growth from its own RSI date, never the frozen-AI reference
+(`test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference`). The rest,
+data-center compute included (~1 month), sit in one *Advanced* expander. Retarget that
+grouping, and the expander's caption, if a rerun of the sweep reorders them.
 AI judgment is gated by the direction stage's human share, uncapped
 (`test_ai_judgment_only_counts_where_ai_directs_research`). `judgment_drift` (default 0)
 changes its elasticity by that fraction per 10× of capability (`judgment_gain_log`), so b
@@ -163,7 +167,7 @@ The tab reads as a story, top to bottom: the warning, *The takeoff model* (the l
 `_TK_LOOP_HTML`, its three brakes, the headline cards for coding automation, RSI and
 ultraintelligence with 80%/90% CIs, the two gaps between them and the first-year progress),
 *The evidence* (the former RSI tab), then *Inside the takeoff model*: the evidence row and
-*Compute going in* (`_tk_compute_fig`, each draw's compute from `result["compute"]`), **1. Research speeds
+*Compute going in* (`_tk_compute_fig`, each draw's `workflow_progress["compute_log"]`, post-RSI boost included), **1. Research speeds
 up** (`_tk_pace_fig` plus the factor chart), **2. People step out of the loop**
 (`_tk_humans_fig`), **3. What it does to capability (ECI)** (plus *2025-level progress in
 each year*, `_tk_yearly_fig`: ECI gained per calendar year over the frontier's fitted

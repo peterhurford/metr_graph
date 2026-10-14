@@ -199,6 +199,30 @@ def test_progress_years_reads_the_capability_gain_after_rsi():
     assert np.isinf(tk.progress_years(runaway, 2.0)[0])
 
 
+def test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference():
+    """`rsi_compute_boost` multiplies log compute growth from each draw's own
+    RSI date, slowdown included; before RSI, and in the frozen-AI reference,
+    nothing changes."""
+    onset = np.array([0.5, 1.0, 2.0])
+    base = dict(tk.POINT_ESTIMATE, years=6)
+    a = tk.simulate(base, n=3, onset_years=onset)
+    b = tk.simulate(dict(base, rsi_compute_boost=2.0), n=3, onset_years=onset)
+    rsi, c = a["events"]["RSI"], a["compute"]
+    np.testing.assert_array_equal(rsi, b["events"]["RSI"])
+    extra = (tk.log_level(6.0, c["rate"], c["late"], c["slow_at"])
+             - tk.log_level(rsi, c["rate"], c["late"], c["slow_at"]))
+    gap = b["workflow_progress"]["compute_log"][:, -1] - a["workflow_progress"]["compute_log"][:, -1]
+    np.testing.assert_allclose(gap, extra, rtol=1e-6)
+    years = a["workflow_progress"]["years"]
+    before = years[None, :] < rsi[:, None]
+    np.testing.assert_allclose(b["workflow_progress"]["compute_log"][before],
+                               a["workflow_progress"]["compute_log"][before])
+    np.testing.assert_allclose(b["workflow_progress"]["reference_pace"],
+                               a["workflow_progress"]["reference_pace"])
+    assert (b["workflow_progress"]["capability_log"][:, -1]
+            > a["workflow_progress"]["capability_log"][:, -1]).all()
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])

@@ -17982,13 +17982,12 @@ def _tk_factors_fig(result, today):
 
 def _tk_compute_fig(result, today, slow_date, hist=None):
     """The compute going in: each scenario's largest training run as a
-    multiple of today's (median, middle 80%), against the historical trend
-    continued, with the date its growth slows marked."""
-    c = result["compute"]
+    multiple of today's (median, middle 80%), any post-RSI boost included,
+    against the historical trend continued, with the date its growth slows
+    marked."""
     years = result["workflow_progress"]["years"]
     x = _tk_dates(result, today)
-    level = np.exp(takeoff.log_level(years[None, :], c["rate"][:, None],
-                                     c["late"][:, None], c["slow_at"]))
+    level = np.exp(result["workflow_progress"]["compute_log"])
     q = np.quantile(level, [.1, .5, .9], axis=0).T
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=x, y=q[:, 0], mode="lines", line=dict(width=0),
@@ -18537,9 +18536,11 @@ def _render_takeoff(loading):
                    "its settings are in the RSI evidence section.")
         with st.expander("What decides ultraintelligence", expanded=True):
             st.caption("Across a plausible range, the first three each move the "
-                       "ultraintelligence date 3\u20138 months; \u03c1 about a month, since "
-                       "every scenario already spreads it widely. Everything under "
-                       "Advanced moves it a few months at most.")
+                       "ultraintelligence date 3\u20136 months; \u03c1 and the training-run "
+                       "wait 1\u20132 months (6 sooner if no gain waits). Compute growth "
+                       "after RSI moves it most: 2\u00d7 brings it 6 months sooner, 0.5\u00d7 "
+                       "6 months later. Everything under Advanced moves it a few months "
+                       "at most.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
@@ -18565,6 +18566,21 @@ def _render_takeoff(loading):
                    "output; 0 lets either fully make up for the other. Contested: "
                    "compute-bottleneck views sit near \u22121, views where AI "
                    "economizes on experiments nearer 0.")
+            number("Gains that skip the training-run wait (%)", "fast_share", 0.0, 100.0, 5.0,
+                   "Share of efficiency gains deployable at once through tooling, kernels "
+                   "and small updates; the rest wait for a successor's training run and "
+                   "validation. The same gain never counts in both. With \u03c1 above, "
+                   "this decides most of the gap to Forethought, whose model has no wait: "
+                   "100 here on a one-week fast cycle, with \u03c1 at 0.5 and no \u03c1 "
+                   "spread, gives 50% of scenarios 3 years of progress in RSI's first "
+                   "year, against Forethought's 57%.")
+            number("Compute growth after RSI (\u00d7 its rate)", "rsi_compute_boost",
+                   0.5, 5.0, 0.25,
+                   "Multiplies each scenario's log compute growth from its own RSI date: "
+                   "AI speeding chip design, fabs and spending. 2 turns about 3\u00d7 a year "
+                   "into about 9\u00d7. 1 leaves compute as projected. No published "
+                   "estimate; AI Futures adjusts its takeoff faster for this by judgment. "
+                   "The frozen-AI comparison never gets it.")
         with st.expander("What decides RSI"):
             number("Human work at RSI (%)", "full_human", 0.0, 25.0, 1.0,
                    "RSI is when research direction (choosing what to try next) falls "
@@ -18612,10 +18628,6 @@ def _render_takeoff(loading):
                    "Assumed share, not code authorship. The RSI date anchors 95% automation. "
                    "Between today and that date, remaining coding hours decline smoothly. "
                    "For past RSI dates the coding milestone is already satisfied.")
-            number("Improvements deployable through fast feedback (%)", "fast_share", 0.0, 100.0, 5.0,
-                   "Disjoint share of fixed-quality efficiency gains deployable through tooling, "
-                   "kernels and small updates. The remainder waits for successor training. "
-                   "The same improvement never counts in both channels.")
             number("Fast validation cycle (months)", "fast_months", 0.25, 12.0, 0.25,
                    "Each cycle validates discoveries available at its start. Like successor "
                    "training, unfinished work cannot improve the available research system.")

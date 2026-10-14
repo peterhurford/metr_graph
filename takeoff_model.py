@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v13-compute-slowdown"
+MODEL_VERSION = "takeoff-v14-rsi-compute-boost"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -62,6 +62,10 @@ DEFAULTS = {
     # after today (the app sets end-2030, where Epoch's feasibility analysis
     # stops); an assumption, not a fitted rate.
     "compute_slowdown": 50.0, "compute_slow_years": 4.0,
+    # Multiplier on each draw's log compute growth from its own RSI date: AI
+    # speeding chips, fabs and spending. 1 leaves compute as projected; an
+    # assumption, with no published estimate.
+    "rsi_compute_boost": 1.0,
 }
 # Every spread at zero: each draw uses the settings themselves.
 POINT_ESTIMATE = {"uncertainty": 0, "returns_spread": 0, "judgment_spread": 0,
@@ -121,7 +125,8 @@ def validate(params):
         raise ValueError("RSI trend weights must be percentages and their half-life positive.")
     if not -5 <= p["substitution"] <= 0.9 or p["ai_speed"] < 1 \
             or not 0 <= p["baseline_inputs"] <= 200 or not -90 <= p["judgment_drift"] <= 300 \
-            or not 0 <= p["compute_slowdown"] <= 100 or p["compute_slow_years"] < 0:
+            or not 0 <= p["compute_slowdown"] <= 100 or p["compute_slow_years"] < 0 \
+            or not 0.5 <= p["rsi_compute_boost"] <= 5:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
                          "baseline input growth in [0, 200]%.")
     return p
@@ -433,6 +438,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # cycle (which could move an entire milestone to the next successor).
     t = np.zeros(n)
     stopped_at = np.full(n, np.inf)
+    # Extra log compute from `rsi_compute_boost` since each draw's RSI; the
+    # frozen-AI reference never gets it.
+    boost = p["rsi_compute_boost"] - 1
+    boost_log = np.zeros(n)
+    boost_history = np.zeros_like(capability_history)
     while np.any(t < p["years"] - 1e-12):
         train_end = run_start + train_time
         deploy_end = train_end + eval_time
@@ -444,7 +454,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         active = t < p["years"] - 1e-12
         end = np.where(active, end, t)
         dt = np.maximum(end - t, 0)
-        compute_log = log_level(t + dt / 2, compute_rate, compute_late, slow_at)
+        base_compute_log = log_level(t + dt / 2, compute_rate, compute_late, slow_at)
+        boosting = np.isfinite(events["RSI"]) & (t >= events["RSI"] - 1e-12)
+        boost_step = np.where(boosting, boost * np.where(t + dt / 2 < slow_at, compute_rate,
+                                                         compute_late) * dt, 0.0)
+        compute_log = base_compute_log + boost_log + boost_step / 2
         extra_log = log_level(t + dt / 2, extra_rate, extra_late, slow_at)
         effective = deployed + fast_deployed
         human_now = workflow_state(effective, baseline_capability_rate, starts,
@@ -504,7 +518,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                                                 parallel, initial_throughput, beta,
                                                 input_late, slow_at)
         reference_pace = np.exp(np.minimum(np.log(initial_throughput)
-            + parallel * (compute_log + extra_log) - beta * reference_progress, 700))
+            + parallel * (base_compute_log + extra_log) - beta * reference_progress, 700))
         if p["difficulty"] > 0:
             updated = initial_stock + np.logaddexp(
                 beta * (software - initial_stock), np.log(beta) + log_amount) / beta
@@ -521,7 +535,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         events["RSI"][runaway_rsi] = end[runaway_rsi]
         software = np.minimum(updated, 1e6)
         train_budget = (grown(t + dt, compute_rate, compute_late, slow_at)
-                        - grown(t, compute_rate, compute_late, slow_at))
+                        - grown(t, compute_rate, compute_late, slow_at)) \
+            * np.exp(boost_log + boost_step / 2)
+        boost_log = boost_log + boost_step
         used = np.where(finished, 0, shares[0] * train_budget)
         run_compute += used
         training_used += used
@@ -596,6 +612,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         observed = active & (end >= next_observation - 1e-12)
         rows = np.flatnonzero(observed)
         pace_history[rows, observation_index[rows]] = pace[rows]
+        boost_history[rows, observation_index[rows]] = boost_log[rows]
         for key, values in (("judgment", judgment_log),
                             ("resources", research_log - judgment_log),
                             ("difficulty", penalty)):
@@ -613,6 +630,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     reference_pace_history = np.where(stopped, last_reference_pace[:, None], reference_pace_history)
     for key in factor_history:
         factor_history[key] = np.where(stopped, last_factors[key][:, None], factor_history[key])
+    # Boost observed through each draw's last month, held after it stops.
+    held = np.where(stopped, boost_log[:, None], boost_history)
+    compute_history = log_level(workflow_grid[None, :], compute_rate[:, None],
+                                compute_late[:, None], slow_at) + held
     # Retain all draws in each percentile, including slow/non-arriving paths.
     human_quantiles = [np.quantile(workflow_state(capability, baseline_capability_rate,
                                                   starts, halves, floor), [.1, .5, .9], axis=0)
@@ -666,6 +687,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             "validated_log": validated_history,
             "validated_baseline_months": validated_history / software_rate[:, None] * 12,
             "pace": pace_history,
+            # Log compute relative to today, post-RSI boost included.
+            "compute_log": compute_history,
             "pace_factors": factor_history,
             "reference_pace": reference_pace_history,
             "reference_log": reference_history,
