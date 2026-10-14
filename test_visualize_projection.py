@@ -2439,11 +2439,14 @@ class TestRsiExperiments:
         for key in ['pace_2025_quantiles', 'reference_2025_quantiles', 'cumulative_2025_quantiles']:
             np.testing.assert_allclose(b['workflow_progress'][key], 2 * h[key])
         np.testing.assert_array_equal(h['cumulative_2025_quantiles'][0], 0)
+        raw = vp.takeoff.simulate(params, n=20, onset_years=onset,
+                                  experiment_slopes=slopes)['workflow_progress']
         for key, sample_key in [('pace_2025_quantiles', 'pace'),
                                 ('reference_2025_quantiles', 'reference_pace'),
                                 ('cumulative_2025_quantiles', 'validated_baseline_months')]:
             np.testing.assert_allclose(h[key], np.quantile(
-                h[sample_key] * np.exp(starts)[:, None], [.1, .5, .9], axis=0).T)
+                raw[sample_key] * np.exp(starts)[:, None], [.1, .5, .9], axis=0).T)
+            assert sample_key not in h      # dropped from the cached result
         np.testing.assert_array_equal(a['software_log'], b['software_log'])
 
     def test_takeoff_inherits_the_same_activity_paths_without_changing_global_rng(self):

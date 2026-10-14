@@ -18103,18 +18103,17 @@ def _tk_factors_fig(result, today):
     over scenarios): human labor, AI capabilities and compute (the labor and
     experiments input, split exactly), research judgment, and difficulty,
     drawn as the divisor it is. Their product is the pace."""
-    p = result["workflow_progress"]
-    f = p["pace_factors"]
+    m = result["workflow_progress"]["factor_medians"]
     x = _tk_dates(result, today)
     fig = go.Figure()
-    for name, values, color, dash in (
-            ("Human labor (calibrated)", f["labor"], "#16a085", None),
-            ("AI capabilities", f["ai"], "#d68910", None),
-            ("Compute", f["compute"], "#2980b9", None),
-            ("Research judgment", f["judgment"], "#8e44ad", None),
-            ("Harder ideas (divides)", -f["difficulty"], "#c0392b", None),
-            ("Net research pace", np.log(p["pace"]), "#333", "dot")):
-        rel = np.exp(np.median(values - values[:, :1], axis=0))
+    for name, key, color, dash in (
+            ("Human labor (calibrated)", "labor", "#16a085", None),
+            ("AI capabilities", "ai", "#d68910", None),
+            ("Compute", "compute", "#2980b9", None),
+            ("Research judgment", "judgment", "#8e44ad", None),
+            ("Harder ideas (divides)", "difficulty", "#c0392b", None),
+            ("Net research pace", "pace", "#333", "dot")):
+        rel = np.exp(m[key])
         fig.add_trace(go.Scatter(
             x=x, y=rel, mode="lines", name=name,
             line=dict(color=color, width=2.5 if dash is None else 2, dash=dash),
@@ -18689,26 +18688,46 @@ def _tk_rsi_activity(rows, today, n):
 @st.cache_data(show_spinner=False, max_entries=12)
 def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, experiment_slopes,
                  baseline_yield=1.0, compute_rates=None, historical_compute_rate=None,
-                 coding_capability=None, coding_weights=None, human_curve=None):
+                 coding_capability=None, coding_weights=None, human_curve=None,
+                 capability_at=None):
+    """`takeoff.simulate` plus the tab's quantiles, holding per draw only what
+    the tab reads per draw: cached results stay in memory, ~3.4 MB per (draws x
+    months) array. With `capability_at` (years), only each draw's capability then."""
     # The source digest invalidates results when the imported simulator changes.
     result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
                              experiment_slopes=experiment_slopes, compute_rates=compute_rates,
                              historical_compute_rate=historical_compute_rate,
                              coding_capability=coding_capability,
                              coding_weights=coding_weights, human_curve=human_curve)
-    grid = result["workflow_progress"]["years"]
+    if capability_at is not None:
+        wp = result["workflow_progress"]
+        k = min(int(np.searchsorted(wp["years"], capability_at)), len(wp["years"]) - 1)
+        return wp["capability_log"][:, k].copy()
+    # A trimmed copy: the simulator's own result keeps every array.
+    result = dict(result, workflow_progress=dict(result["workflow_progress"]))
+    progress = result["workflow_progress"]
+    grid = progress["years"]
     paths = np.exp(experiment_starts[:, None] + experiment_slopes[:, None] * grid)
-    result["workflow_progress"]["rsi_activity_quantiles"] = np.quantile(
-        paths, [.1, .5, .9], axis=0).T
+    progress["rsi_activity_quantiles"] = np.quantile(paths, [.1, .5, .9], axis=0).T
     # Rebase each draw before taking quantiles, preserving uncertainty and
     # pairing. This is a reporting anchor, never a second productivity boost.
     baseline = np.exp(experiment_starts)[:, None] * baseline_yield
-    progress = result["workflow_progress"]
     for key, values in (("pace_2025_quantiles", progress["pace"]),
                         ("reference_2025_quantiles", progress["reference_pace"]),
                         ("cumulative_2025_quantiles", progress["validated_baseline_months"])):
         progress[key] = np.quantile(values * baseline, [.1, .5, .9], axis=0).T
+    # The factor chart draws each factor's median change since today.
+    f = progress.pop("pace_factors")
+    logs = dict(f, difficulty=-f["difficulty"], pace=np.log(progress["pace"]))
+    progress["factor_medians"] = {k: np.median(v - v[:, :1], axis=0) for k, v in logs.items()}
+    for key in _TK_UNREAD:
+        progress.pop(key)
     return result
+
+
+# Per-draw (draws x months) arrays the tab never reads per draw.
+_TK_UNREAD = ("pace", "reference_pace", "validated_baseline_months", "validated_log",
+              "reference_log", "rate", "matched")
 
 
 # The simulation, and every date, interval and share the tab quotes, runs to
@@ -19260,12 +19279,10 @@ def _render_takeoff(loading):
         # (`test_the_pairing_run_stops_where_the_pairing_reads`).
         corr = float(st.session_state["tk_coding_pairing"])
         if corr > 0:
-            first = _tk_simulate(dict(params, years=min(horizon, _TK_PAIRING_YEARS + 1 / 12)),
-                                 onset_years, _TK_SOURCE_DIGEST, *rest)
-            wp = first["workflow_progress"]
-            k = min(int(np.searchsorted(wp["years"], _TK_PAIRING_YEARS)), len(wp["years"]) - 1)
-            onset_years = _tk_pair_onset(onset_years, wp["capability_log"][:, k], corr,
-                                         int(params["seed"]))
+            capability = _tk_simulate(
+                dict(params, years=min(horizon, _TK_PAIRING_YEARS + 1 / 12)), onset_years,
+                _TK_SOURCE_DIGEST, *rest, capability_at=_TK_PAIRING_YEARS)
+            onset_years = _tk_pair_onset(onset_years, capability, corr, int(params["seed"]))
             _tk_loading(bar, 2)
         result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST, *rest)
         # The ECI trend reflects the compute growth behind it: the data-center
