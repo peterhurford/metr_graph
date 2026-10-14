@@ -18690,11 +18690,12 @@ def _render_takeoff(loading):
             number("Gains that skip the training-run wait (%)", "fast_share", 0.0, 100.0, 5.0,
                    "Share of efficiency gains deployable at once through tooling, kernels "
                    "and small updates; the rest wait for a successor's training run and "
-                   "validation. The same gain never counts in both. With \u03c1 above, "
-                   "this decides most of the gap to Forethought, whose model has no wait: "
-                   "100 here on a one-week fast cycle, with \u03c1 at 0.5 and no \u03c1 "
-                   "spread, gives 50% of scenarios 3 years of progress in RSI's first "
-                   "year, against Forethought's 57%.")
+                   "validation. The same gain never counts in both, and these also skip "
+                   "the wait for scale. With \u03c1 above, this decides most of the gap "
+                   "to Forethought, whose model has no wait: 100 here on a one-week fast "
+                   "cycle, with \u03c1 at 0.5 and no \u03c1 spread, gives 65% of scenarios "
+                   "3 years of progress in RSI's first year and 21% 10 years, against "
+                   "Forethought's 57% and 18% (16% and 1% at the defaults).")
             number("Compute growth after RSI (\u00d7 its rate)", "rsi_compute_boost",
                    0.5, 5.0, 0.25,
                    "Multiplies each scenario's log compute growth after its own RSI "

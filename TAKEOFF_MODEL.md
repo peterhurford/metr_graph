@@ -189,7 +189,10 @@ of effective compute here. Read through the two ECI rates, under the software ce
 the scale-dependent share, its median is 1.8; 16% of scenarios make 3 years or more and
 1% make 10, against Forethought's 57% and 18%, whose model has the ceiling but not the scale-dependent share. The yardsticks differ: Forethought counts about 10x a
 year of effective compute as a year, holds compute fixed and starts at full automation of AI
-R&D. Two features account for most of the gap. Measured with one ECI rate against the
+R&D. Two features account for most of the gap: at today's defaults, letting every gain skip
+the training-run wait on a one-week cycle, with labor and compute as substitutes (rho 0.5, no
+spread), gives 65% and 21%, against Forethought's 57% and 18%. The finer breakdown, measured
+earlier with one ECI rate and neither the ceiling nor scale-dependent gains, against the
 2024-26 trend (7.8x a year, where defaults give 13% and 2%): with labor and
 compute as substitutes (rho 0.5, no spread) and every gain delivered on a one-week cycle
 instead of waiting for a training run, 50% make 3 years and 30% make 10;
