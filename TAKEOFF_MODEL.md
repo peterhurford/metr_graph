@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v19-no-human-floor`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v20-rsi-autopilot`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -120,9 +120,13 @@ three-month delivered-rate and actual/reference diagnostics remain available for
 analysis and validated milestone definitions; they are not the chart's ongoing pace.
 
 **RSI** is the first time research direction (the stage that chooses what to try next)
-needs at most 5% of its baseline human hours, with the coding date arrived. Human hours are a readout, not an input: they never
-feed back into research speed. Every draw runs to the horizon (only a numerically
-divergent one stops), so its capability path continues past RSI.
+needs at most 5% of its baseline human hours, with the coding date arrived. Human hours
+feed back into research through the Amdahl labor term and through who directs research.
+From RSI on, autopilot (the default) drops every stage's remaining human hours: at RSI
+experiment design still needs about 5% of its hours and verification about 13%, and from
+then on none do. That lifts research pace about 15% just after RSI (2.35x today's against
+2.05x), a gain difficulty erases within a year; ultraintelligence does not move. Every draw
+runs to the horizon, so its capability path continues past RSI.
 The stages are direction, experiment design/interpretation, and verification/integration.
 A persistent human-work floor (default 0: no stage needs people forever) and the stage halving times remain adjustable. Halving times use months of capability
 progress at today's initial growth rate, not calendar months; accelerated capability progress

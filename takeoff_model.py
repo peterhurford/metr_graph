@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v19-no-human-floor"
+MODEL_VERSION = "takeoff-v20-rsi-autopilot"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -33,6 +33,9 @@ DEFAULTS = {
     "human_direction": 40.0, "human_experiments": 30.0, "human_verification": 50.0,
     "half_direction": 6.0, "half_experiments": 9.0, "half_verification": 12.0,
     "human_floor": 0.0, "full_human": 5.0,
+    # Autopilot: from a draw's RSI, no research stage needs people at all (the
+    # hours left in other stages are dropped). 0 keeps each stage's own decline.
+    "rsi_autopilot": 1.0,
     "fast_share": 25.0, "fast_months": 1.0,
     "coding_today": 70.0,
     # Steady state: the next model ships with one full cycle (training +
@@ -144,6 +147,7 @@ def validate(params):
             or not 0 <= p["rsi_compute_delay"] <= 60 or not 0 <= p["rsi_compute_ramp"] <= 60 \
             or not 0 <= p["ceiling_high_oom"] <= 60 \
             or not (p["ceiling_high_oom"] == 0 or 0 < p["ceiling_low_oom"] <= p["ceiling_high_oom"]) \
+            or p["rsi_autopilot"] not in (0, 1) \
             or not 0 <= p["scale_dependent"] <= 100 or not 0 <= p["scale_dependent_spread"] <= 400 \
             or not 0 < p["scale_lag_oom"] <= 10 or not 0 <= p["scale_lag_spread"] <= 400:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
@@ -616,6 +620,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         effective = now[2].copy()
         human_now = workflow_state(effective, baseline_capability_rate, starts,
                                    halves, floor)
+        if p["rsi_autopilot"]:
+            human_now[np.isfinite(events["RSI"]) & (t >= events["RSI"] - 1e-12)] = 0.0
         share_now = human_now @ WORKFLOW_WEIGHTS
         amdahl_log = amdahl0 - np.log(share_now + (1 - share_now) / ai_speed)
         # People still directing research keep today's judgment; AI's applies
@@ -850,9 +856,15 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     compute_history = log_level(workflow_grid[None, :], compute_rate[:, None],
                                 compute_late[:, None], slow_at) + held
     # Retain all draws in each percentile, including slow/non-arriving paths.
-    human_quantiles = [np.quantile(workflow_state(capability, baseline_capability_rate,
-                                                  starts, halves, floor), [.1, .5, .9], axis=0)
-                       for capability in capability_history.T]
+    def humans_at(j):
+        hours = workflow_state(capability_history[:, j], baseline_capability_rate,
+                               starts, halves, floor)
+        if p["rsi_autopilot"]:
+            hours[events["RSI"] <= workflow_grid[j] + 1e-12] = 0.0
+        return hours
+
+    human_quantiles = [np.quantile(humans_at(j), [.1, .5, .9], axis=0)
+                       for j in range(len(workflow_grid))]
     # A trailing rate needs a complete measurement window. In particular,
     # there is no observed 1x rate at t=0 to connect to early batch deliveries.
     rate_history = np.full_like(validated_history, np.nan)

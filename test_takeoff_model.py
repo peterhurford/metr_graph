@@ -299,6 +299,23 @@ def test_scale_dependent_gains_wait_on_compute_rather_than_vanish():
     np.testing.assert_allclose(end(all_fast), end(dict(all_fast, scale_dependent=0.0)))
 
 
+def test_autopilot_drops_every_human_hour_from_rsi():
+    """On autopilot, no stage needs people from a draw's RSI on: the charted
+    hours reach zero once every draw has reached RSI, and research runs at
+    least as fast as with each stage still shedding hours at its own pace."""
+    onset = np.full(100, 0.5)
+    on = tk.simulate(dict(years=8), n=100, onset_years=onset)
+    off = tk.simulate(dict(years=8, rsi_autopilot=0.0), n=100, onset_years=onset)
+    np.testing.assert_array_equal(on["events"]["RSI"], off["events"]["RSI"])
+    assert np.isfinite(on["events"]["RSI"]).all()
+    past = on["workflow_progress"]["years"] >= on["events"]["RSI"].max()
+    assert (on["workflow_progress"]["human_quantiles"][past] == 0).all()
+    assert (off["workflow_progress"]["human_quantiles"][past][:, 1, 2] > 0).all()
+    cap_on = on["workflow_progress"]["capability_log"][:, -1]
+    cap_off = off["workflow_progress"]["capability_log"][:, -1]
+    assert np.median(cap_on) > np.median(cap_off)
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])

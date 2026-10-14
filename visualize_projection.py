@@ -17618,6 +17618,7 @@ _TK_DEFAULTS.update({
     "tk_pace_today": 1.7, "tk_returns": 1.0, "tk_dc_compute": True,
     "tk_coding_pairing": 0.7,
 })
+_TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
 
 # Human hours a task at each automation level still takes, as a share of
 # doing it unassisted (AL0..AL5). An assumption: the index rates who leads,
@@ -18711,6 +18712,11 @@ def _render_takeoff(loading):
                    "RSI is when research direction (choosing what to try next) falls "
                    "to this share of its baseline human hours, after coding is "
                    "automated.")
+            st.checkbox("Autopilot from RSI", key="tk_rsi_autopilot",
+                        help="On: once research direction crosses the bar, no research "
+                             "stage needs people at all; the hours left in experiment "
+                             "design and verification are dropped. Off: each stage keeps "
+                             "shedding human hours at its own pace.")
             st.caption("RSI otherwise follows the coding-automation date, and research "
                        "direction's starting share and halving time under Advanced.")
         with st.expander("Advanced (small effects)"):
@@ -19029,9 +19035,19 @@ def _render_takeoff(loading):
         _card(a, "Full coding automation", result["onset"],
               "The automated coder projection below, each date paired with a scenario of matching "
               "capability growth.")
+        at_rsi = result["outcomes"]["RSI"]
+        with np.errstate(all="ignore"):
+            left = {k: 100 * float(np.nanmedian(at_rsi["human_" + k]))
+                    if np.isfinite(at_rsi["human_" + k]).any() else float("nan")
+                    for k in ("experiments", "verification")}
         _card(b, "RSI: AI directs research", rsi,
               f"Research direction at or under {params['full_human']:g}% of its baseline "
-              "human hours, after coding automation: the AI chooses what to try next.")
+              "human hours, after coding automation: the AI chooses what to try next. "
+              f"At that point experiment design still needs {left['experiments']:.0f}% of its "
+              f"human hours and verification {left['verification']:.0f}% (medians); "
+              + ("on autopilot (the default) those are dropped, so from RSI on no stage needs "
+                 "people." if params["rsi_autopilot"] else
+                 "with autopilot off they keep falling at their own pace."))
         _card(c, f"Ultraintelligence: ECI {_TK_ULTRA_ECI:g}", eci["ultra"],
               f"First month a scenario's ECI reaches {_TK_ULTRA_ECI:g} (today's frontier: "
               f"{eci['now']:.0f}).")

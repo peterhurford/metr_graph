@@ -40,7 +40,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v19-no-human-floor`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v20-rsi-autopilot`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -97,7 +97,11 @@ ramps to the inherited milestone; overlapping endogenous coding gains use a maxi
 than multiplying the two. Fast and successor improvements partition discoveries and each
 validate a start-of-cycle snapshot. A same-compute reference freezes today's AI skills.
 RSI gates on coding plus research direction under the human-hours bar
-(`test_rsi_turns_on_research_direction_alone`). Coding counts as automated at the
+(`test_rsi_turns_on_research_direction_alone`).
+From each draw's RSI, `rsi_autopilot` (default on, *Autopilot from RSI*) zeroes every stage's human
+hours in the dynamics and the humans chart; the RSI outcomes keep the pre-autopilot hours
+(direction, experiments, verification), which the RSI card's hover quotes
+(`test_autopilot_drops_every_human_hour_from_rsi`). Coding counts as automated at the
 inherited date or once a deployed model reaches ECI 250 (`coding_capability`, from
 `_tk_eci_scale`), returned as `coding_at` with `onset` left exact
 (`test_a_model_at_the_coding_capability_has_automated_coding`). Research acceleration
