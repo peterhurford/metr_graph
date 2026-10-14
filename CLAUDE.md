@@ -1511,7 +1511,9 @@ sidebar's *Date points at* in lockstep (US events run-finished + `shift − run`
 release dates + `shift − run − 30d`), so the US–China gap is milestone-invariant; the
 chart (actual points included) rides the same clock, x-axis titled by milestone.
 The panel ends with `_pc_render_why()`, a **decomposition of the same samples**, not a
-second model: `_cc_cn_crossing_sim` fills an optional `channels` dict with the four rate
+second model. A lead line gives the gap left at the pause and China's total rate then and at
+the crossing, and two columns give each channel's rate at both (`_pc_rate_at`), so the card's
+months read as gap over a slowing rate (`test_why_states_the_gap_and_the_slowing_rate`): `_cc_cn_crossing_sim` fills an optional `channels` dict with the four rate
 terms' cumulative ECI (`_CC_CHANNELS`, summing to `traj − anchor` exactly —
 `test_channels_account_for_the_whole_climb`), `_pc_at_years` reads each at its own
 sample's crossing for the *ECI closed* / *Share* columns, and *Without it* re-crosses

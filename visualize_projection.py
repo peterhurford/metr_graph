@@ -16193,9 +16193,21 @@ def _pc_fmt_horizon(hours):
             else f"{fmt_hrs(_PC_METR_CAP_HRS)}+")
 
 
+def _pc_rate_at(cum, grid, t):
+    """Per-sample ECI/yr of a cumulative (n, len(grid)) array over the grid
+    step holding `t` (years, per sample). NaN where `t` is NaN."""
+    tt = np.nan_to_num(np.asarray(t, dtype=float), nan=0.0)
+    dt = grid[1] - grid[0] if len(grid) > 1 else 1.0
+    idx = np.clip((tt / dt).astype(int), 0, len(grid) - 2)
+    rows = np.arange(len(cum))
+    out = (cum[rows, idx + 1] - cum[rows, idx]) / dt
+    return np.where(np.isnan(np.asarray(t, dtype=float)), np.nan, out)
+
+
 def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    cn_gain, cn_extra, cn_run_mo, us_run_mo, anchor_name,
-                   anchor_d, anchor_eci, horizon_year, notes=()):
+                   anchor_d, anchor_eci, horizon_year, notes=(),
+                   t_pause=None, pause_label=None, surpass_mo=None):
     """Bottom-of-panel breakdown: which channel closed how much of the gap.
 
     Two readings of the same sampled paths, because neither alone answers
@@ -16209,7 +16221,10 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
 
     `years` is the final crossing (run-length shift included), `years_base`
     the same without that shift, `target0`/`traj0`/`grid0` the organic bar
-    and paths the channels accumulated against.
+    and paths the channels accumulated against. With `t_pause` (years from
+    China's anchor, per sample) a lead line states the gap left at the pause
+    and the table gains each channel's rate at the pause and at the crossing:
+    the gap over that slowing rate is the months on the card.
     """
     ok = np.isfinite(years)
     if ok.sum() < 100:
@@ -16236,6 +16251,14 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     for k, arr in cum.items():
         contrib[k] = float(np.nanmedian(
             _pc_at_years(arr, grid0, years - cn_extra)))
+    # Each channel's pace at the pause and just before the crossing. The
+    # level noise is a one-off offset, not a rate, so it is left out.
+    rates = {}
+    if t_pause is not None:
+        t_cross = np.where(ok, np.maximum(years - cn_extra - 1e-6, 0.0), np.nan)
+        for k, arr in cum.items():
+            rates[k] = (float(np.nanmedian(_pc_rate_at(arr, grid0, t_pause))),
+                        float(np.nanmedian(_pc_rate_at(arr, grid0, t_cross))))
     if cn_run_mo != us_run_mo:
         contrib['run'] = cn_gain
     total_eci = sum(contrib.values())
@@ -16248,20 +16271,52 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
             label = _PC_CHANNEL_LABELS[k]
             d = _delta(_pc_cross_years(traj0 - cum[k], grid0, target0)
                        + cn_extra)
-        rows.append({
-            "Channel": label,
+        row = {"Channel": label}
+        if rates:
+            r0, r1 = rates.get(k, (None, None))
+            row["ECI/yr at pause"] = "—" if r0 is None else f"{r0:.1f}"
+            row["ECI/yr at crossing"] = "—" if r1 is None else f"{r1:.1f}"
+        row.update({
             "ECI closed": f"{eci:+.1f}",
             "Share": f"{eci / total_eci:.0%}" if total_eci else "—",
             "Without it": (f"not by {horizon_year}" if d is None else
                            f"{d:+.1f} mo"),
         })
-    rows.append({"Channel": f"**Total** — the whole gap, closed over "
-                            f"**{total_mo:.1f} months** from "
-                            f"{pretty(anchor_name)} ({anchor_d:%b %Y}, ECI "
-                            f"{anchor_eci:.0f})",
-                 "ECI closed": f"{total_eci:+.1f}",
-                 "Share": "100%", "Without it": "—"})
+        rows.append(row)
+    total = {"Channel": f"**Total** — the whole gap, closed over "
+                        f"**{total_mo:.1f} months** from "
+                        f"{pretty(anchor_name)} ({anchor_d:%b %Y}, ECI "
+                        f"{anchor_eci:.0f})"}
+    if rates:
+        total["ECI/yr at pause"] = f"{sum(r[0] for r in rates.values()):.1f}"
+        total["ECI/yr at crossing"] = f"{sum(r[1] for r in rates.values()):.1f}"
+    total.update({"ECI closed": f"{total_eci:+.1f}", "Share": "100%",
+                  "Without it": "—"})
+    rows.append(total)
     st.markdown("##### Why that long?")
+    if rates:
+        at_pause = _pc_at_years(traj0, grid0, t_pause)
+        cn_at = float(np.nanmedian(at_pause))
+        gap = float(np.nanmedian(np.asarray(target0) - at_pause))
+        r0 = sum(r[0] for r in rates.values())
+        r1 = sum(r[1] for r in rates.values())
+        _fn_line(
+            f"When the US pauses ({pause_label}), China is at about "
+            f"**ECI {cn_at:.0f}**, so **{gap:.1f} ECI** is left to close. It "
+            f"climbs at **{r0:.1f} ECI/yr** then, slowing to **{r1:.1f}** by "
+            "the crossing as distillation and diffusion dry up"
+            + (f": about **{surpass_mo:.0f}** months on the card."
+               if surpass_mo is not None else "."),
+            ("dry up", "Diffusion fades over the year after the pause, as "
+                       "China absorbs what the US had published. "
+                       "Distillation fades as China nears the best model it "
+                       "can learn from, which with models withheld sits "
+                       "below the bar. Innovation and compute keep going."),
+            *([("months on the card", "Roughly the gap over the average "
+                                      "of that slowing rate; the card also "
+                                      "nets out the one-month release lag, "
+                                      "and is a median over paths.")]
+              if surpass_mo is not None else []))
     st.table(rows)
     _fn_caption(
         f"The {total_mo:.1f} months run from China's last frontier model, not "
@@ -17060,7 +17115,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         us_run_mo=us_run_mo, anchor_name=anchor_name, anchor_d=anchor_d,
         anchor_eci=anchor_eci,
         horizon_year=(horizon.year if horizon is not None else _PC_HORIZON.year),
-        notes=_notes)
+        notes=_notes, t_pause=t_pause_s, pause_label=f"{d_pause_v:%b %Y}",
+        surpass_mo=s50)
 
 
 def render_pacing():

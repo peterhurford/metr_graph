@@ -1639,6 +1639,24 @@ class TestPacingTab:
         breakdown table renders after it, so position is not an address."""
         return next(t.value for t in at.table if "Entity" in t.value.columns)
 
+    def test_why_states_the_gap_and_the_slowing_rate(self):
+        """The breakdown says how much gap is left at the pause and how fast
+        China closes it: each channel's rate at the pause and at the
+        crossing, distillation and diffusion drying up, innovation not."""
+        at = self._app()
+        lead = [str(m.value) for m in at.markdown
+                if "When the US pauses" in str(m.value)]
+        assert len(lead) == 1 and "left to close" in lead[0]
+        why = next(t.value for t in at.table if "Channel" in t.value.columns)
+        assert {"ECI/yr at pause", "ECI/yr at crossing"} <= set(why.columns)
+        rate = {str(r["Channel"]).split(" ")[0]: (float(r["ECI/yr at pause"]),
+                                                  float(r["ECI/yr at crossing"]))
+                for _, r in why.iterrows() if r["ECI/yr at pause"] != "—"}
+        assert rate["Distillation"][1] < rate["Distillation"][0]
+        assert rate["Diffusion"][1] < rate["Diffusion"][0]
+        assert rate["Indigenous"][1] == pytest.approx(rate["Indigenous"][0],
+                                                      abs=0.2)
+
     @staticmethod
     def _paired(el):
         """Run `el` (the app or a widget) on a fixed seed, so two Monte Carlo
