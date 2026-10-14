@@ -383,6 +383,21 @@ def test_the_pairing_run_stops_where_the_pairing_reads(slow_years):
                                   short["workflow_progress"]["capability_log"])
 
 
+def test_a_judgment_cap_only_ever_slows_research():
+    """Capping AI research judgment at a multiple of today's never speeds
+    research, binds once judgment would pass it, and 0 is no cap."""
+    onset = np.full(50, 0.5)
+    base = dict(years=6)
+    free = tk.simulate(base, n=50, onset_years=onset)
+    capped = tk.simulate(dict(base, judgment_cap=2.0), n=50, onset_years=onset)
+    a = free["workflow_progress"]["capability_log"][:, -1]
+    b = capped["workflow_progress"]["capability_log"][:, -1]
+    assert (b <= a + 1e-9).all() and (b < a - 1e-3).any()
+    np.testing.assert_allclose(
+        tk.simulate(dict(base, judgment_cap=0.0), n=50, onset_years=onset)["software_log"],
+        free["software_log"])
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])

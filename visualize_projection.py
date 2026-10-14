@@ -17631,6 +17631,8 @@ _TK_DEFAULTS.update({
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
     "tk_pace_today": 1.7, "tk_returns": 1.0, "tk_dc_compute": True,
     "tk_coding_pairing": 0.7,
+    "tk_wf_humans": 10_000, "tk_wf_hiring": 30.0, "tk_wf_decline": -30.0,
+    "tk_wf_copies": 75_000, "tk_wf_power": 10.0,
 })
 _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
 
@@ -18519,7 +18521,21 @@ _TK_AI_COPIES_TODAY = 75_000
 _TK_AI_COMPETENCE_POWER = 10
 
 
-def _tk_workforce(result, eci, humans=_TK_HUMAN_RESEARCHERS, copies0=_TK_AI_COPIES_TODAY):
+def _tk_workforce_settings():
+    """The workforce chart's assumptions from the sidebar (*Advanced*):
+    (humans today, yearly growth to RSI, yearly change after, AI copies
+    today, competence power)."""
+    g = st.session_state.get
+    return (float(g("tk_wf_humans", _TK_HUMAN_RESEARCHERS)),
+            1 + float(g("tk_wf_hiring", 100 * (_TK_HIRING_GROWTH - 1))) / 100,
+            1 + float(g("tk_wf_decline", 100 * (_TK_POST_RSI_DECLINE - 1))) / 100,
+            float(g("tk_wf_copies", _TK_AI_COPIES_TODAY)),
+            float(g("tk_wf_power", _TK_AI_COMPETENCE_POWER)))
+
+
+def _tk_workforce(result, eci, humans=_TK_HUMAN_RESEARCHERS, copies0=_TK_AI_COPIES_TODAY,
+                  hiring=_TK_HIRING_GROWTH, decline=_TK_POST_RSI_DECLINE,
+                  power=_TK_AI_COMPETENCE_POWER):
     """(humans, AIs, FTE) per draw and month. Humans start at `humans`, grow
     `_TK_HIRING_GROWTH` a year until the draw's RSI and shrink by
     `_TK_POST_RSI_DECLINE` a year after it. AI copies start at `copies0` and
@@ -18530,13 +18546,13 @@ def _tk_workforce(result, eci, humans=_TK_HUMAN_RESEARCHERS, copies0=_TK_AI_COPI
     wp = result["workflow_progress"]
     years = wp["years"][None, :]
     rsi = np.minimum(result["events"]["RSI"], 1e3)[:, None]
-    people = humans * np.exp(np.log(_TK_HIRING_GROWTH) * np.minimum(years, rsi)
-                             + np.log(_TK_POST_RSI_DECLINE) * np.maximum(years - rsi, 0))
+    people = humans * np.exp(np.log(hiring) * np.minimum(years, rsi)
+                             + np.log(decline) * np.maximum(years - rsi, 0))
     h0 = np.clip(result["outcomes"]["Today"]["human_mean"], 1e-3, 1 - 1e-3)
     worth0 = humans * (1 - h0) / h0 / copies0
     copies = result["params"]["ai_copies"] * np.maximum(wp["software_realized_log"], 0)
     ais = copies0 * np.exp(wp["compute_log"] + copies)
-    worth = worth0[:, None] * (eci["paths"] / eci["now"]) ** _TK_AI_COMPETENCE_POWER
+    worth = worth0[:, None] * (eci["paths"] / eci["now"]) ** power
     return people, ais, people + ais * worth
 
 
@@ -18555,11 +18571,12 @@ def _tk_count(v):
     return f"{v:.3g}"
 
 
-def _tk_workforce_fig(result, today, eci, markers=(), humans=_TK_HUMAN_RESEARCHERS):
+def _tk_workforce_fig(result, today, eci, markers=()):
     """Left: the research workforce in heads, humans and AI researchers.
     Right: in human full-time equivalents. Medians with middle-80% bands."""
     from plotly.subplots import make_subplots
-    people, ais, fte = _tk_workforce(result, eci, humans)
+    humans, hiring, decline, copies0, power = _tk_workforce_settings()
+    people, ais, fte = _tk_workforce(result, eci, humans, copies0, hiring, decline, power)
     x = _tk_dates(result, today)
     fig = make_subplots(rows=1, cols=2, horizontal_spacing=0.09,
                         subplot_titles=["Researchers (heads)", "Human full-time equivalents"])
@@ -18929,6 +18946,13 @@ def _render_takeoff(loading):
                    "Today's judgment rate is measured on today's models. Above 0, judgment "
                    "gains compound as AI passes human level (b falls over time); below 0 "
                    "they fade as easy wins run out (b rises). 0 holds today's rate.")
+            number("Cap on AI research judgment (\u00d7 today's; 0 = none)", "judgment_cap",
+                   0.0, 1000.0, 1.0,
+                   "Stops AI research judgment improving past this multiple of today's. "
+                   "AI Futures caps AI research taste at about 4\u00d7 the best human "
+                   "researcher; today's AI judgment sits below the best human's, so their "
+                   "cap is a larger number on this scale, by an amount nothing measures. "
+                   "0 leaves it uncapped.")
             number("Labor\u2013compute substitutability (\u03c1)", "substitution", -3.0, 0.5, 0.1,
                    "How research labor and experiment compute combine (CES exponent). "
                    "\u22121 is a harmonic mean, where unlimited labor at most doubles "
@@ -18962,9 +18986,9 @@ def _render_takeoff(loading):
                    "validation. The same gain never counts in both, and these also skip "
                    "the wait for scale. With \u03c1 above, this decides most of the gap "
                    "to Forethought, whose model has no wait: 100 here on a one-week fast "
-                   "cycle, with \u03c1 at 0.5 and no \u03c1 spread, gives 65% of scenarios "
-                   "3 years of progress in RSI's first year and 21% 10 years, against "
-                   "Forethought's 57% and 18% (16% and 1% at the defaults).")
+                   "cycle gives 56% of scenarios 3 years of progress in RSI's first year "
+                   "and 24% 10 years, about Forethought's 57% and 18%; adding \u03c1 at 0.5 "
+                   "with no spread gives 94% and 63% (24% and 2% at the defaults).")
             number("Compute growth after RSI (\u00d7 its rate)", "rsi_compute_boost",
                    0.5, 5.0, 0.25,
                    "Multiplies each scenario's log compute growth after its own RSI "
@@ -19027,6 +19051,18 @@ def _render_takeoff(loading):
                    "How much more compute than the frontier had when a gain was found "
                    "models must train at before its scale-dependent share counts. 1 is "
                    "10\u00d7, about 2 years at today's compute growth. Nothing measures it.")
+            st.markdown("**Workforce chart (a readout; moves no date)**")
+            number("Human AI researchers today", "wf_humans", 100, 1_000_000, 1000,
+                   "Frontier-lab research staff, an order-of-magnitude guess.")
+            number("Human hiring growth until RSI (%/yr)", "wf_hiring", -50.0, 200.0, 5.0)
+            number("Human staff change after RSI (%/yr)", "wf_decline", -90.0, 50.0, 5.0,
+                   "Negative: staff shrink once autopilot makes them unneeded.")
+            number("AI research-agent copies today", "wf_copies", 100, 100_000_000, 5000,
+                   "Copies running today, an estimate. Their total worth is set by the "
+                   "automation index's share of today's work, so this splits it into heads.")
+            number("How fast each copy's worth grows with capability (power of ECI)",
+                   "wf_power", 0.0, 30.0, 1.0,
+                   "Each copy is worth (ECI / today's) to this power times today's worth.")
             number("Delay before AI speeds compute growth (months after RSI)",
                    "rsi_compute_delay", 0.0, 60.0, 3.0,
                    "How long after a scenario's RSI the compute-growth multiplier "
@@ -19480,22 +19516,23 @@ def _render_takeoff(loading):
     }), hide_index=True, width="stretch")
 
     st.subheader("3. The research workforce")
+    wf_humans, wf_hiring, wf_decline, wf_copies, wf_power = _tk_workforce_settings()
     _fn_caption(
         "How many researchers there are, human and AI, and what they add up to in human "
         "full-time equivalents.",
         ("How many researchers",
-         f"Human research staff start at {_TK_HUMAN_RESEARCHERS:,}, an order-of-magnitude "
-         f"assumption for frontier labs, grow {_TK_HIRING_GROWTH - 1:.0%} a year while labs "
-         f"keep hiring and shrink {1 - _TK_POST_RSI_DECLINE:.0%} a year after each scenario's "
+         f"Human research staff start at {wf_humans:,.0f}, an order-of-magnitude "
+         f"assumption for frontier labs, change {wf_hiring - 1:+.0%} a year while labs "
+         f"keep hiring and {wf_decline - 1:+.0%} a year after each scenario's "
          "RSI, once autopilot makes them unneeded; both rates are assumptions. AI research "
-         f"agents start at {_TK_AI_COPIES_TODAY:,} copies running today (an estimate) and grow "
+         f"agents start at {wf_copies:,.0f} copies running today (an estimate) and grow "
          "with the compute for running agents and with more copies as algorithms improve."),
         ("human full-time equivalents",
          "Today the copies together do the automation index's share of research work, so "
-         f"each is worth about {_tk_copy_worth_today(result):.2f} of a person. Each grows in "
-         f"worth as (ECI / today's)^{_TK_AI_COMPETENCE_POWER}: about "
-         f"{(200 / eci['now']) ** _TK_AI_COMPETENCE_POWER:.0f}\u00d7 at ECI 200, about "
-         f"{(250 / eci['now']) ** _TK_AI_COMPETENCE_POWER:.0f}\u00d7 at 250. That "
+         f"each is worth about {_tk_copy_worth_today(result, wf_humans, wf_copies):.2f} of a "
+         f"person. Each grows in worth as (ECI / today's)^{wf_power:g}: about "
+         f"{(200 / eci['now']) ** wf_power:.0f}\u00d7 at ECI 200, about "
+         f"{(250 / eci['now']) ** wf_power:.0f}\u00d7 at 250. All set under Advanced. That "
          "power is a stated judgment, not a fit; the model's research speed comes from its "
          "own labor equations, not from this chart."))
     st.plotly_chart(_tf(_tk_to(_tk_workforce_fig(result, today, eci, markers), view_end)),

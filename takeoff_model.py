@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v23-per-scenario-al5-gap"
+MODEL_VERSION = "takeoff-v24-judgment-cap"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -59,6 +59,9 @@ DEFAULTS = {
     # judgment gains compound as AI gets more capable (b falls), below 0 they
     # fade (b rises). 0 keeps today's measured rate throughout.
     "judgment_drift": 0.0,
+    # Ceiling on AI research judgment, as a multiple of today's AI judgment;
+    # 0 is no ceiling. AI Futures caps AI research taste near 4x the best human.
+    "judgment_cap": 0.0,
     # Per-draw spread on the four settings that decide whether takeoff runs
     # away (TAKEOFF_MODEL.md, *Parameter uncertainty*): 1-sigma of ln r,
     # 1-sigma of ln(judgment elasticity), 1-sigma of the drift in percentage
@@ -152,6 +155,7 @@ def validate(params):
             or not 0 <= p["ceiling_high_oom"] <= 60 \
             or not (p["ceiling_high_oom"] == 0 or 0 < p["ceiling_low_oom"] <= p["ceiling_high_oom"]) \
             or p["rsi_autopilot"] not in (0, 1) or not 0 <= p["ai_copies"] <= 2 \
+            or not (p["judgment_cap"] == 0 or p["judgment_cap"] >= 1) \
             or not 0 <= p["scale_dependent"] <= 100 or not 0 <= p["scale_dependent_spread"] <= 400 \
             or not 0 < p["scale_lag_oom"] <= 10 or not 0 <= p["scale_lag_spread"] <= 400:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
@@ -679,6 +683,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             ai_taste_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
                                         np.log(transfer) + judgment_gain_log(
                                             effective, taste_slope, drift))
+            if p["judgment_cap"]:
+                ai_taste_log = np.minimum(ai_taste_log, np.log(p["judgment_cap"]))
             with np.errstate(divide="ignore"):   # a share of 0 or 1 drops a term
                 quality_log = np.logaddexp(np.log(direction),
                                            np.log1p(-direction) + ai_taste_log)

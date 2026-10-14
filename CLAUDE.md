@@ -41,7 +41,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v23-per-scenario-al5-gap`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v24-judgment-cap`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -110,7 +110,10 @@ Amdahl term by the deployed model's paid-off algorithmic efficiency to that powe
 copies on the same compute (log space, so a runaway cannot overflow;
 `test_more_copies_speed_only_the_work_ai_does`). `_tk_copies_yearly` nets its ~4%/yr of
 today's labor growth out of the staff-survey coding fit, and `_tk_automation_growth` credits
-it over the evidence window before research judgment is fitted. Coding counts as automated at the
+it over the evidence window before research judgment is fitted. `judgment_cap` (default 0,
+none) caps AI research judgment at a multiple of today's
+(`test_a_judgment_cap_only_ever_slows_research`); AI Futures caps taste near 4× the best
+human, which maps to a larger, unmeasured number here. Coding counts as automated at the
 inherited date or once a deployed model reaches ECI 250 (`coding_capability`, from
 `_tk_eci_scale`), returned as `coding_at` with `onset` left exact
 (`test_a_model_at_the_coding_capability_has_automated_coding`). Research acceleration
@@ -223,7 +226,8 @@ with the milestone medians marked)), **2. People step out of the loop**
 (`_tk_humans_fig`), **3. The research workforce** (`_tk_workforce_fig`: heads, humans from
 `_TK_HUMAN_RESEARCHERS` growing `_TK_HIRING_GROWTH` a year to each draw's RSI and shrinking
 by `_TK_POST_RSI_DECLINE` after, and AI copies from `_TK_AI_COPIES_TODAY` (75k, an
-estimate), growing with agent compute and more copies; and human FTEs, each copy worth today
+estimate; all five workforce assumptions are *Advanced* inputs, `tk_wf_*`, read by
+`_tk_workforce_settings`), growing with agent compute and more copies; and human FTEs, each copy worth today
 the automation index's share of today's work spread over those copies (~0.25 people), rising
 as (ECI / today's)^`_TK_AI_COMPETENCE_POWER`. Counts
 read k/M/B/T (`_tk_count`, axis `exponentformat="B"`), carried in `text` so today-forward

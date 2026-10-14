@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v23-per-scenario-al5-gap`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v24-judgment-cap`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -209,15 +209,12 @@ of effective compute here. Read through the two ECI rates, under the software ce
 the scale-dependent share, its median is 1.8; 16% of scenarios make 3 years or more and
 1% make 10, against Forethought's 57% and 18%, whose model has the ceiling but not the scale-dependent share. The yardsticks differ: Forethought counts about 10x a
 year of effective compute as a year, holds compute fixed and starts at full automation of AI
-R&D. Two features account for most of the gap: at today's defaults, letting every gain skip
-the training-run wait on a one-week cycle, with labor and compute as substitutes (rho 0.5, no
-spread), gives 65% and 21%, against Forethought's 57% and 18%. The finer breakdown, measured
-earlier with one ECI rate and neither the ceiling nor scale-dependent gains, against the
-2024-26 trend (7.8x a year, where defaults give 13% and 2%): with labor and
-compute as substitutes (rho 0.5, no spread) and every gain delivered on a one-week cycle
-instead of waiting for a training run, 50% make 3 years and 30% make 10;
-r at Forethought's 2025 central 1.2 then gives 57% and 37%. Either alone gives 23% or 27%;
-AI speed (100x) and keeping compute growth after 2030 move nothing.
+R&D. Two features account for most of the gap. At today's defaults (24% and 2%), letting
+every gain skip the training-run wait on a one-week cycle gives 56% and 24%; labor and
+compute as substitutes (rho 0.5, no spread) gives 53% and 5%; both give 94% and 63%, and
+r at Forethought's 2025 central 1.2 on top 96% and 70%. Either alone now about matches
+Forethought; both together overshoot it, since the model also has more AI copies and
+autopilot, which Forethought's labor already stands for.
 
 ## Evidence calibration
 
