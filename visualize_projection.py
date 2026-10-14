@@ -16640,7 +16640,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # whole band takes the cut — the conservative reading of the lever.
         g_lo_eff, g_hi_eff = g_lo_eff * dom_keep, g_hi_eff * dom_keep
     pure = _cc_pure_innovation_band(cc_rows)
-    kw = dict(us_anchor=us_best[1], us_rate=us_rate_s, us_pause_level=level_s,
+    # The US level the distillation gap sees is the trend's value at China's
+    # anchor date, not the US's later best (the bar's climb already counts
+    # from us_best's own date via _us_dt).
+    us_anchor_cn = us_best[1] - us_rate * (us_best[0] - anchor_d).days / 365.25
+    kw = dict(us_anchor=us_anchor_cn, us_rate=us_rate_s, us_pause_level=level_s,
               a_partial=a_partial, g_lo=g_lo_eff,
               g_hi=g_hi_eff, algo_lo=a_lo, algo_mid=a_mid,
               algo_hi=a_hi, pace_lo=pace_lo, pace_hi=pace_hi,

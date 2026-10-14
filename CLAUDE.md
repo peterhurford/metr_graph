@@ -1457,7 +1457,8 @@ at the catalogued China-accessible pace (sites abroad) vs the export-control ban
 The bar is the best model the US has *trained* by the pause: the released-frontier
 climb (measured from us_best's release date, not the China-anchored grid) plus
 `_PC_SHIP_LAG_DAYS` (the realized trained→shipped lag, GPT-5.5 Pro / Mythos card)
-of extra climb. Three scenario checkboxes plus a slowdown slider: `pc_withhold` (default **on**) — a US
+of extra climb. The US level the distillation gap starts from is the US trend at China's
+anchor date (`us_anchor_cn`), not the US's later best. Three scenario checkboxes plus a slowdown slider: `pc_withhold` (default **on**) — a US
 *release freeze from pause-run start*: nothing ships once the final run begins, so
 distillation's teacher is the released frontier as of run start (`dist_teacher`, ~one
 run's climb + ship lag below the bar); labs do ship during big runs, so this is a
