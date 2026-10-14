@@ -274,6 +274,9 @@ onsets. Forward activity and mechanistic effort are alternative estimates, blend
 fading weight, not multiplied. Current activity normalization only affects the displayed
 2025-baseline fan, not today's already-assisted productivity. `_tk_simulate` still returns
 2025-unit quantiles of pace, the reference's own pace and cumulative deliveries.
+Its cached result keeps per draw only `capability_log`, `software_realized_log` and
+`compute_log` (the factor chart reads `factor_medians`; `_TK_UNREAD` lists what it drops):
+each (draws x months) array is ~3.4 MB held in memory, and Community Cloud's floor is 690 MB.
 `tk_pace_today` (default `_tk_pace_today_default()`: OpenAI's experiment trend carried to
 today) sets today's
 pace directly; each draw keeps its activity spread around it. Rebase each draw before taking quantiles; never multiply quantile bands.
