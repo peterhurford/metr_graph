@@ -16208,7 +16208,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    cn_gain, cn_extra, cn_run_mo, us_run_mo, anchor_name,
                    anchor_d, anchor_eci, horizon_year, notes=(),
                    t_pause=None, pause_label=None, surpass_mo=None,
-                   withhold=False, dist_stop_t=None, remote_stop_t=None):
+                   withhold=False, dist_stop_t=None, remote_stop_t=None,
+                   comp_dead=None):
     """Bottom-of-panel breakdown: why China's catch-up takes the months it does.
 
     The table gives each source's rate at the pause, its average from the
@@ -16218,7 +16219,9 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     "Stopped" from the stop lever's date (`dist_stop_t`, years from China's
     anchor) and "Dried up" once China has caught its teacher (the last
     pre-freeze release when `withhold`, else the bar); the abroad compute
-    row reads "Stopped" from the remote-access cut (`remote_stop_t`). `years` is
+    row reads "Stopped" from the remote-access cut (`remote_stop_t`), and the
+    compute rate "Regrowing" inside that cut's setback window (`comp_dead`).
+    `years` is
     the final crossing
     (run-length shift included), `target0`/`traj0`/`grid0` the organic bar
     and paths the channels accumulated against, `t_pause` years from China's
@@ -16284,6 +16287,17 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                     label += " (rate: all compute)"
                 shown = True
         start, mid, end = _fmt(r[0]), _fmt(avg), _fmt(r[1])
+        if (comp_dead is not None and r[0] is not None
+                and k in ('compute', 'compute_domestic', 'compute_abroad')):
+            # Inside the setback China is rebuilding to the run size it had
+            # abroad, which adds no new capability.
+            for when, col in ((t_pause, 0), (t_cross, 1)):
+                if comp_dead[0] <= float(np.nanmedian(when)) < comp_dead[1] \
+                        and r[col] < 0.05:
+                    if col == 0:
+                        start = "Regrowing"
+                    else:
+                        end = "Regrowing"
         if k == 'compute_abroad' and remote_stop_t is not None:
             if float(np.nanmedian(t_pause)) >= remote_stop_t:
                 start = mid = "Stopped"
@@ -16335,7 +16349,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
 
     def _shade(v):
         return {"Stopped": "background-color: #F4CCCC; color: #7F1010",
-                "Dried up": "background-color: #FCE8D5; color: #8A4B00"
+                "Dried up": "background-color: #FCE8D5; color: #8A4B00",
+                "Regrowing": "background-color: #E3EAF5; color: #2B4C7E"
                 }.get(v, "")
 
     df = pandas.DataFrame(rows)
@@ -16357,6 +16372,10 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                if on]
         legend.append("<b>Stopped</b>: cut by the " + " and ".join(cut)
                       + (" levers." if len(cut) > 1 else " lever."))
+    if "Regrowing" in tags:
+        legend.append("<b>Regrowing</b>: rebuilding on domestic clusters to "
+                      "the run size it had abroad, which adds no capability, "
+                      f"until {anchor_d + timedelta(days=comp_dead[1] * 365.25):%b %Y}.")
     if "Dried up" in tags:
         legend.append("<b>Dried up</b>: China has caught "
                       + ("the last model the US released before withholding "
@@ -17148,7 +17167,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         notes=_notes, t_pause=t_pause_s, pause_label=f"{d_pause_v:%b %Y}",
         surpass_mo=s50, withhold=bool(withhold),
         dist_stop_t=kw.get('t_dist_stop'),
-        remote_stop_t=t_cut_r if stop_remote else None)
+        remote_stop_t=t_cut_r if stop_remote else None,
+        comp_dead=comp_dead)
 
 
 def render_pacing():

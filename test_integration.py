@@ -1919,6 +1919,9 @@ class TestPacingTab:
         tbl = next(x.value for x in at.table if "Source" in x.value.columns)
         abroad = tbl[tbl["Source"].str.startswith("Compute, clusters abroad")]
         assert list(abroad.iloc[0][1:]) == ["Stopped"] * 3
+        # The domestic row is rebuilding at the pause, not missing data.
+        dom = tbl[tbl["Source"].str.startswith("Compute, domestic")].iloc[0]
+        assert dom["ECI/yr at pause"] == "Regrowing"
         # Dating the cut later leaves part of it standing.
         when = at.select_slider(key="pc_remote_when").options
         self._paired(at.select_slider(key="pc_remote_when").set_value(
