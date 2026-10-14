@@ -17594,6 +17594,7 @@ _TK_DEFAULTS.update({
     "tk_cal_capability": 2.0, "tk_cal_yield": 1.0, "tk_cal_validated": 0.0,
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
     "tk_pace_today": 1.7, "tk_returns": 1.0, "tk_dc_compute": True,
+    "tk_coding_pairing": 0.7,
 })
 
 # Human hours a task at each automation level still takes, as a share of
@@ -18289,6 +18290,27 @@ def _tk_clip(result, years):
     return dict(result, workflow_progress={k: cut(v) for k, v in wp.items()})
 
 
+# How closely each scenario's inherited coding date tracks its own capability
+# growth: the correlation of a Gaussian copula between the two. The RSI tab's
+# dates and Takeoff's paths read the same underlying progress, but the RSI
+# tab's also carry benchmark-specific noise, so less than 1. A judgment call.
+_TK_PAIRING_YEARS = 4.0      # capability is compared this many years out
+
+
+def _tk_pair_onset(onset, capability, corr, seed=0):
+    """`onset` (the RSI tab's coding dates) reassigned across draws so a
+    later date goes with slower `capability`, at copula correlation `corr`.
+    Only the pairing moves, so the dates' distribution is exactly the RSI
+    tab's."""
+    n = len(onset)
+    slow = takeoff.normal_scores(2 * (np.argsort(np.argsort(-capability)) + 0.5) / n - 1)
+    noise = np.random.default_rng(seed).standard_normal(n)
+    latent = corr * slow + np.sqrt(max(1 - corr ** 2, 0)) * noise
+    paired = np.empty(n)
+    paired[np.argsort(latent, kind="stable")] = np.sort(onset)
+    return paired
+
+
 def _tk_gap(earlier, later, horizon):
     """(years from `earlier` to `later`, mask of draws whose `earlier` falls by
     `horizon`). A `later` past the horizon is +inf: censored, not dropped."""
@@ -18391,6 +18413,14 @@ def render_takeoff():
                              "chart horizon. Off: the flat rate below.")
             number("Compute growth per year (×)", "compute_growth", 1.0, 5.0, 0.1,
                    "Used when the data-center projection is off.")
+            number("Coding date tracks capability (correlation)", "coding_pairing",
+                   0.0, 1.0, 0.1,
+                   "How closely each scenario's coding-automation date, from the RSI "
+                   "tab, follows its own capability growth: a late date goes with a "
+                   "slow scenario. 0 pairs them at random; 1 matches them exactly. "
+                   "The RSI tab's dates themselves are unchanged. 0.7 is a judgment: "
+                   "both read the same progress, but the RSI tab's fits carry "
+                   "benchmark-specific noise too.")
             number(f"Compute growth kept after {_TK_COMPUTE_SLOW_YEAR} (%)",
                    "compute_slowdown", 0.0, 100.0, 5.0,
                    "Share of each scenario's log compute growth that continues from the "
@@ -18605,9 +18635,21 @@ def render_takeoff():
     # A model at ultraintelligence has automated coding whatever the RSI tab's
     # date says, so RSI no longer waits on a late inherited date past it.
     _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute)
+    coding_level = (_TK_ULTRA_ECI - eci_now) * eci_base / eci_ppy
     result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
                           experiment_starts, experiment_slopes, pace_yield, compute_rates,
-                          hist_compute, (_TK_ULTRA_ECI - eci_now) * eci_base / eci_ppy)
+                          hist_compute, coding_level)
+    # Late coding dates go with slow scenarios: rank the first run's capability
+    # growth, reassign the RSI tab's dates along it, and run again.
+    corr = float(st.session_state["tk_coding_pairing"])
+    if corr > 0:
+        wp = result["workflow_progress"]
+        k = min(int(np.searchsorted(wp["years"], _TK_PAIRING_YEARS)), len(wp["years"]) - 1)
+        onset_years = _tk_pair_onset(onset_years, wp["capability_log"][:, k], corr,
+                                     int(params["seed"]))
+        result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
+                              experiment_starts, experiment_slopes, pace_yield, compute_rates,
+                              hist_compute, coding_level)
     # The ECI trend reflects the compute growth behind it: the data-center
     # series' own historical fit when its projection is in use.
     result["hist_compute"] = hist_compute

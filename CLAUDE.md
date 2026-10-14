@@ -56,7 +56,10 @@ This remains shared with the RSI tab. The display horizon does not clip its tail
 
 `_pc_rsi_onset` mixes the same components as the RSI projection (`_pc_blend_parts`, AL5
 left out), so the exact-CDF invariant holds against the projection as shown
-(`test_coding_automation_inherits_the_exact_final_rsi_cdf`). RSI is the first time research direction is at
+(`test_coding_automation_inherits_the_exact_final_rsi_cdf`). `render_takeoff` then runs
+twice: `_tk_pair_onset` reassigns those dates so later ones go with slower capability
+(`tk_coding_pairing`, copula correlation, default 0.7), which moves the pairing only, never
+the CDF (`test_coding_dates_pair_with_capability_without_changing_their_distribution`). RSI is the first time research direction is at
 or under `full_human`% of baseline human hours with the coding date arrived
 (`test_capability_paths_span_the_grid_and_rsi_waits_for_coding`).
 

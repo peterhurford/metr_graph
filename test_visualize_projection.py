@@ -5263,6 +5263,19 @@ class TestTakeoffRsiCalibration:
         assert with_aut["quality_slope"] < without["quality_slope"]
 
 
+def test_coding_dates_pair_with_capability_without_changing_their_distribution():
+    """Reassigning the RSI tab's dates keeps them exactly, and puts late dates
+    on slow scenarios as strongly as the correlation says."""
+    rng = np.random.default_rng(1)
+    onset = np.r_[rng.uniform(0, 3, 1999), np.inf]
+    capability = rng.standard_normal(2000)
+    rank = lambda x: np.argsort(np.argsort(x))
+    for corr, lo, hi in ((0.0, -0.1, 0.1), (0.7, -0.75, -0.55), (1.0, -1.0, -0.999)):
+        paired = vp._tk_pair_onset(onset, capability, corr)
+        np.testing.assert_array_equal(np.sort(paired), np.sort(onset))
+        assert lo <= np.corrcoef(rank(paired), rank(capability))[0, 1] <= hi, corr
+
+
 def test_takeoff_durations_read_in_the_coarsest_fitting_unit():
     end = datetime(2040, 12, 31)
     span = lambda y: vp._tk_span(y, end)

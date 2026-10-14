@@ -1133,11 +1133,11 @@ class TestTakeoffTab:
 
         monkeypatch.setattr(tk, "simulate", capture)
         at = _fresh_app()
-        # Takeoff drops the AL5 card from the blend it inherits, so the RSI curve
-        # it must reproduce is the one with that weight at zero.
+        # Takeoff only re-pairs these dates with its scenarios, so their CDF is
+        # the RSI tab's exactly.
         at.query_params.update(tab="rsi", rsi_atc_penalty="50",
                                rsi_timing=timing, rsi_notyet=condition, rsi_notyet_ramp="180",
-                               pc_rsiw_rli_90="70", pc_rsiw_al5_90="0", tk_seed="9182")
+                               pc_rsiw_rli_90="70", tk_seed="9182")
         at.run()
         _assert_no_error(at, "RSI / inherited configuration")
         curve = json.loads(at.get("plotly_chart")[-1].proto.spec)["data"][-1]

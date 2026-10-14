@@ -28,6 +28,12 @@ RSI requires the coding date to have arrived, or a deployed model at ECI 250: a 
 ultraintelligence has automated coding whatever the inherited date says. This anchoring
 constraint is not a joint statistical fit of coding and research capabilities.
 
+The RSI tab's coding dates and this model's capability paths read the same underlying
+progress, so a late coding date should go with a slow scenario. The app runs the model
+once, ranks scenarios by capability four years out, reassigns the coding dates along that
+ranking through a Gaussian copula (correlation 0.7 by default, a judgment), and runs
+again. Only the pairing changes; the dates' distribution is the RSI tab's exactly.
+
 ## Fast and slow feedback
 
 Research combines labor and experiment compute through a CES mean (`substitution`, default
