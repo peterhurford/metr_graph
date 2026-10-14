@@ -5153,22 +5153,33 @@ class TestMilestoneCardLayout:
 
 
 class TestTakeoffYearlyProgress:
-    """Years of 2025-level progress per calendar year: ECI gained over the
-    frontier's fitted points a year, +inf once a draw has run away."""
+    """Years of 2025-level ECI progress per calendar year: ECI gained over the
+    frontier's fitted points a year, +inf once a draw has run away; last year
+    measured, this year measured to today then projected."""
 
-    def test_the_trend_makes_one_year_a_year_and_a_runaway_is_unbounded(self):
+    def test_measured_partly_measured_and_projected_years(self):
         today = datetime(2026, 10, 13)
         years = np.arange(0, 6, 1 / 12)
         ppy = 15.0
-        paths = np.vstack([170 + ppy * years, 170 + 2 * ppy * years, 170 + ppy * years])
+        frontier = [{"date": datetime(2024, 12, 1), "eci_score": 140.0},
+                    {"date": datetime(2025, 12, 1), "eci_score": 152.0},
+                    {"date": datetime(2026, 9, 1), "eci_score": 165.0}]
+        paths = np.vstack([165 + ppy * years, 165 + 2 * ppy * years, 165 + ppy * years])
         result = {"workflow_progress": {"years": years},
                   "stopped_at": np.array([np.inf, np.inf, 2.5])}
-        rows = vp._tk_yearly_progress(result, {"paths": paths, "ppy": ppy}, today, 2035)
-        assert [y for y, _ in rows] == [2027, 2028, 2029, 2030, 2031]   # grid ends Sep 2032
-        for year, made in rows:
+        eci = {"paths": paths, "ppy": ppy, "frontier": frontier, "now": 165.0}
+        rows = vp._tk_yearly_progress(result, eci, today, 2035)
+        assert [(y, k) for y, _, k in rows][:3] == [
+            (2025, "measured"), (2026, "partly"), (2027, "projected")]
+        assert rows[-1][0] == 2031                       # the grid ends Sep 2032
+        np.testing.assert_allclose(rows[0][1], 12 / 15)  # 140 -> 152 over 2025
+        # 2026: 152 -> 165 measured, then the rest of the year projected.
+        rest = (datetime(2027, 1, 1) - today).days / 365.25
+        assert rows[1][1][0] == pytest.approx((13 + ppy * rest) / ppy, rel=1e-3)
+        for year, made, kind in rows[2:]:
             assert made[0] == pytest.approx(1, abs=0.003)   # a calendar year is 365 or 366 days
             assert made[1] == pytest.approx(2, abs=0.006)
-        stopped = {y: v[2] for y, v in rows}
+        stopped = {y: v[2] for y, v, _ in rows}
         assert np.isfinite(stopped[2028]) and np.isinf(stopped[2029])
 
 

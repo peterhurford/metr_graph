@@ -177,9 +177,11 @@ human labor, AI capabilities and compute (`pace_factors` `labor`/`ai`/`compute`,
 `resources`; `test_pace_factors_multiply_back_to_the_pace`), then *Compute going in*
 (`_tk_compute_fig`, each draw's `workflow_progress["compute_log"]`, post-RSI boost included,
 with the milestone medians marked)), **2. People step out of the loop**
-(`_tk_humans_fig`), **3. What it does to capability (ECI)** (plus *2025-level progress in
+(`_tk_humans_fig`), **3. What it does to capability (ECI)** (plus *2025-level ECI progress in
 each year*, `_tk_yearly_fig`: ECI gained per calendar year over the frontier's fitted
-points a year, a different 2025 unit from chart 1's experiments) and **4. When it happens, and
+points a year, a different 2025 unit from chart 1's experiments; last year is measured off
+the frontier, this year measured to today then projected, each kind its own colour, and
+its line labels are placed by hand since a log axis reads an annotation's y as the exponent) and **4. When it happens, and
 how fast** (`_tk_dist_fig`: density and cumulative share of the RSI and ultraintelligence
 dates and the gap between them). `test_default_render_and_stable_rerun` pins the order.
 

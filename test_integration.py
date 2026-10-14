@@ -1012,9 +1012,9 @@ class TestTakeoffTab:
         for name in ("Next-step wins", "Staff speedup", "Experiments/researcher"):
             assert name in titles
         yearly = json.loads(_tk_charts(at)[6].proto.spec)
-        # One bar per full calendar year from next year to the sidebar's year.
-        assert yearly["data"][0]["x"] == list(range(datetime.now().year + 1, 2031))
-        assert yearly["layout"]["yaxis"]["title"]["text"] == "Years of 2025-level progress"
+        # Last year measured, this year partly, then each year to the sidebar's.
+        assert yearly["data"][0]["x"] == list(range(datetime.now().year - 1, 2031))
+        assert yearly["layout"]["yaxis"]["title"]["text"] == "Years of 2025-level ECI progress"
         compute = json.loads(_tk_charts(at)[3].proto.spec)
         assert {"Compute in the model", "Middle 80% of scenarios"} <= {
             d.get("name") for d in compute["data"]}

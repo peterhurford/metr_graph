@@ -18226,15 +18226,22 @@ _TK_YEARLY_VIEW = 100
 
 
 def _tk_yearly_progress(result, eci, today, last_year):
-    """[(year, per-draw years of 2025-level progress made that year)] for each
-    full calendar year from next year to `last_year`.
+    """[(year, per-draw years of 2025-level ECI progress made that year, kind)]
+    from the last full measured year to `last_year`; kind is 'measured',
+    'partly' (this year: measured to today, projected after) or 'projected'.
 
     2025-level progress is the ECI frontier's fitted climb (`eci['ppy']`
     points a year, fitted on the 2024-26 frontier), so a year that adds
-    2 x ppy ECI points made two years of it. A draw that runs away
+    2 x ppy ECI points made two years of it. Measured gains read the US-best
+    frontier's running maximum at each Jan 1. A draw that runs away
     numerically by the end of a year made unboundedly many (+inf)."""
     years = result["workflow_progress"]["years"]
     paths = eci["paths"]
+    n = paths.shape[0]
+
+    def measured(when):
+        scores = [m['eci_score'] for m in eci["frontier"] if m['date'] <= when]
+        return scores[-1] if scores else None
 
     def at(when):
         t = (when - today).total_seconds() / (365.25 * 86400)
@@ -18243,43 +18250,68 @@ def _tk_yearly_progress(result, eci, today, last_year):
         return paths[:, j - 1] * (1 - w) + paths[:, j] * w, t
 
     out = []
+    last_full = today.year - 1
+    lo, hi = measured(datetime(last_full, 1, 1)), measured(datetime(today.year, 1, 1))
+    if lo is not None and hi is not None:
+        out.append((last_full, np.full(n, (hi - lo) / eci["ppy"]), "measured"))
+    if hi is not None:
+        rest, _ = at(datetime(today.year + 1, 1, 1))
+        out.append((today.year, (eci["now"] - hi + rest - paths[:, 0]) / eci["ppy"], "partly"))
     for year in range(today.year + 1, last_year + 1):
         start, _ = at(datetime(year, 1, 1))
         end, t_end = at(datetime(year + 1, 1, 1))
         if t_end > years[-1] + 1e-9:
             break
         made = (end - start) / eci["ppy"]
-        out.append((year, np.where(result["stopped_at"] <= t_end, np.inf, made)))
+        out.append((year, np.where(result["stopped_at"] <= t_end, np.inf, made), "projected"))
     return out
 
 
-def _tk_yearly_fig(rows):
-    """Bars of the median years of 2025-level progress made in each calendar
-    year, middle 80% as whiskers, against 1 (2025's own pace) and
-    Forethought's 3 and 10."""
-    years = [y for y, _ in rows]
-    q = np.array([np.quantile(v, [.1, .5, .9]) for _, v in rows])
+# Bar colour per kind of year on the yearly-progress chart.
+_TK_YEARLY_COLORS = {"measured": "#7f8c8d", "partly": "#d98880", "projected": "#c0392b"}
+
+
+def _tk_yearly_fig(rows, today):
+    """Bars of the median years of 2025-level ECI progress made in each
+    calendar year, middle 80% as whiskers: the last full year measured, this
+    year measured to today then projected, later years projected. Lines at 1
+    (the 2024-26 trend), and Forethought's 3 and 10."""
+    years = [y for y, _, _ in rows]
+    q = np.array([np.quantile(v, [.1, .5, .9]) for _, v, _ in rows])
     shown = np.minimum(q, _TK_YEARLY_VIEW)
-    hover = [f"{y}: {_tk_yrs(m)} of 2025-level progress (median)<br>"
-             f"Middle 80%: {_tk_yrs(lo)} to {_tk_yrs(hi)}<br>"
-             f"{100 * np.mean(v >= 3):.0f}% of scenarios make 3+ years, "
-             f"{100 * np.mean(v >= 10):.0f}% make 10+, "
-             f"{100 * np.mean(~np.isfinite(v)):.0f}% run away"
-             for (y, v), (lo, m, hi) in zip(rows, q)]
+    basis = {"measured": "measured", "partly": f"measured to {today:%b %-d}, then projected",
+             "projected": "projected"}
+    hover = []
+    for (y, v, kind), (lo, m, hi) in zip(rows, q):
+        text = f"{y} ({basis[kind]}): {_tk_yrs(m)} of 2025-level ECI progress"
+        if kind != "measured":
+            text += (f" (median)<br>Middle 80%: {_tk_yrs(lo)} to {_tk_yrs(hi)}<br>"
+                     f"{100 * np.mean(v >= 3):.0f}% of scenarios make 3+ years, "
+                     f"{100 * np.mean(v >= 10):.0f}% make 10+, "
+                     f"{100 * np.mean(~np.isfinite(v)):.0f}% run away")
+        hover.append(text)
+    spread = [k != "measured" for _, _, k in rows]
     fig = go.Figure(go.Bar(
-        x=years, y=shown[:, 1], name="Median scenario", marker_color="#c0392b",
-        error_y=dict(type="data", symmetric=False, array=shown[:, 2] - shown[:, 1],
-                     arrayminus=shown[:, 1] - shown[:, 0], color="#555", thickness=1.5),
+        x=years, y=shown[:, 1], name="Median scenario",
+        marker_color=[_TK_YEARLY_COLORS[k] for _, _, k in rows],
+        error_y=dict(type="data", symmetric=False,
+                     array=np.where(spread, shown[:, 2] - shown[:, 1], 0),
+                     arrayminus=np.where(spread, shown[:, 1] - shown[:, 0], 0),
+                     color="#555", thickness=1.5),
         hovertext=hover, hoverinfo="text"))
-    for level, label in ((1, "2025's pace"), (3, "3 years in one"), (10, "10 years in one")):
+    for level, label in ((1, "2024\u201326 trend"), (3, "3 years in one"), (10, "10 years in one")):
         fig.add_hline(y=level, line_dash="dash" if level == 1 else "dot",
-                      line_color="#777" if level == 1 else "#b0b0b0", line_width=1,
-                      annotation_text=label, annotation_position="top left",
-                      annotation_font=dict(size=11, color="#888"))
+                      line_color="#777" if level == 1 else "#b0b0b0", line_width=1)
+        # On a log axis an annotation's y is the exponent, so place it by hand.
+        fig.add_annotation(x=0, xref="paper", xanchor="left", y=np.log10(level),
+                           yanchor="bottom", text=label, showarrow=False,
+                           font=dict(size=11, color="#888"))
     fig.update_layout(
         height=340, margin=dict(l=55, r=20, t=30, b=40), showlegend=False,
-        xaxis=dict(tickmode="array", tickvals=years, ticktext=[str(y) for y in years]),
-        yaxis=dict(type="log", title="Years of 2025-level progress",
+        xaxis=dict(tickmode="array", tickvals=years,
+                   ticktext=[f"{y}<br><span style='font-size:10px'>{'measured' if k == 'measured' else 'partly measured' if k == 'partly' else ''}</span>"
+                             for y, _, k in rows]),
+        yaxis=dict(type="log", title="Years of 2025-level ECI progress",
                    range=[np.log10(0.3), np.log10(_TK_YEARLY_VIEW)]))
     return fig
 
@@ -19040,24 +19072,26 @@ def _render_takeoff(loading):
          "no new model has shipped yet."))
     st.plotly_chart(_tf(_tk_to(_tk_eci_fig(result, today, eci, markers), view_end)),
                     width="stretch")
-    st.markdown("**2025-level progress in each year (ECI trend)**")
+    st.markdown("**2025-level ECI progress in each year**")
     _fn_caption(
-        "How many years of capability progress at 2025's pace each calendar year makes; "
-        "1 is 2025 itself. Not chart 1's \u00d7 2025, which counts experiments.",
+        "How many years of ECI progress, at the frontier's 2024\u201326 pace, each calendar "
+        f"year makes: {today.year - 1} measured, {today.year} measured to today, later "
+        "years projected. Not chart 1's \u00d7 2025, which counts experiments.",
         ("Not chart 1's",
-         "Chart 1 measures research pace by OpenAI's experiments per researcher, already "
-         "about 2\u00d7 2025 today. This chart measures capability (ECI) gained, where "
-         "today's pace is about 1\u00d7, since the ECI trend is fitted on 2024\u201326 models."),
-        ("2025's pace",
-         f"The ECI frontier's fitted climb, {eci['ppy']:.1f} points a year over 2024\u201326: "
-         "a year adding twice that made two years of progress. Bars are the median "
+         "Chart 1 measures research by OpenAI's experiments per researcher, about 2\u00d7 "
+         "2025 today. This chart measures capability (ECI) gained, which has not "
+         "doubled since: compare the measured bars. Research is also only part of capability "
+         "growth: algorithms are under half of it today, compute the rest, and most "
+         "research gains wait for a training run before they count."),
+        ("2024\u201326 pace",
+         f"The ECI frontier's fitted climb, {eci['ppy']:.1f} points a year from Feb 2024 to "
+         "today: a year adding twice that made two years. A calendar year's measured gain "
+         "can sit off 1, since releases land unevenly across years. Bars are the median "
          "scenario, whiskers the middle 80%; the hover gives the share making 3 and 10 "
-         "years, Forethought's thresholds. The first year sits near 1 because ECI is "
-         "floored at today's trend until the next model ships. A scenario whose research "
-         "runs away counts as more than any number; the axis stops at "
-         f"{_TK_YEARLY_VIEW}."))
-    st.plotly_chart(_tk_yearly_fig(_tk_yearly_progress(result, eci, today, view_end.year)),
-                    width="stretch")
+         "years, Forethought's thresholds. A scenario whose research runs away counts as "
+         f"more than any number; the axis stops at {_TK_YEARLY_VIEW}."))
+    st.plotly_chart(_tk_yearly_fig(_tk_yearly_progress(result, eci, today, view_end.year),
+                                   today), width="stretch")
 
     st.subheader("4. When it happens, and how fast")
     gap, reached = _tk_gap(rsi, eci["ultra"], horizon)
