@@ -4608,45 +4608,6 @@ class TestPacing:
             assert prev is None or med > prev
             prev = med
 
-    def test_revenue_eta_reproduces_the_revenue_tab_defaults(self):
-        """The $1T card is the Revenue tab's own fit: OLS on log2(ARR) over
-        every point, DT lognormal over [max(10, DT x 0.65), DT x 1.5]."""
-        series = [vp._OPENAI_REVENUE, vp._ANTHROPIC_REVENUE]
-        anchor = max(vp._parse_revenue(d)[0][-1] for d in series)
-        want = None
-        for data in series:
-            dates, vals = vp._parse_revenue(data)
-            days = np.array([(d - dates[0]).days for d in dates], dtype=float)
-            intercept, slope = vp.fit_line(days, np.log2(np.array(vals)))
-            dt = 1.0 / slope
-            # The lognormal CI's central value, as the sibling tests use.
-            dt_c = np.sqrt(max(10.0, dt * 0.65) * (dt * 1.5))
-            d_to = ((np.log2(vp._PC_REV_TARGET_B)
-                     - (intercept + slope * days[-1])) * dt_c
-                    + (dates[-1] - anchor).days)
-            want = d_to if want is None else min(want, d_to)
-        early, med, late = vp._pc_revenue_eta(series, n=20000)
-        assert early < med < late
-        assert abs((med - (anchor + timedelta(days=want))).days) < 60
-
-    def test_revenue_eta_dates_the_leader_not_an_average(self):
-        """"Leading company" is a per-sample minimum: two identical series
-        give the same answer as one, a slower second company never delays
-        it, and a higher bar is never reached earlier."""
-        fast = vp._ANTHROPIC_REVENUE
-        slow = [(d, v / 50) for d, v in fast]          # same slope, far behind
-        solo = vp._pc_revenue_eta([fast], n=20000)[1]
-        pair = vp._pc_revenue_eta([fast, slow], n=20000)[1]
-        assert abs((pair - solo).days) < 45
-        assert vp._pc_revenue_eta([fast, fast], n=20000)[1] <= \
-            solo + timedelta(days=45)
-        assert vp._pc_revenue_eta(series := [fast], target_b=2000.0,
-                                  n=20000)[1] > \
-            vp._pc_revenue_eta(series, target_b=500.0, n=20000)[1]
-        # A flat or shrinking company contributes no crossing at all.
-        flat = [(d, 1.0) for d, _ in fast]
-        assert vp._pc_revenue_eta([flat]) is None
-
     def test_each_card_hover_names_the_clock_its_dates_are_on(self):
         """The release_dated flag each card is registered with decides whether
         `_pc_report_lag` pulls it back, and the card's hover ends with the
@@ -4660,7 +4621,7 @@ class TestPacing:
         assert set(notes) == set(vp._PC_RSI_WEIGHTS) | set(vp._PC_RSI_CARD_ONLY)
         internal = ("cobench_", "rdauto_", "al5_", "staff_", "code_",
                     "experiments_")
-        released = ("metr_", "eci_", "rli_", "nextstep_", "rev_1t")
+        released = ("metr_", "rli_", "nextstep_")
         for slug, note in notes.items():
             if slug.startswith(internal):
                 assert "internal evaluation" in note, slug
@@ -5184,11 +5145,11 @@ class TestMilestoneCardLayout:
             # Balanced: no row carries two more cards than another.
             assert max(sizes) - min(sizes) <= 1, (n, sizes)
 
-    def test_the_live_card_count_lays_out_four_four_three(self):
+    def test_the_live_card_count_lays_out_four_three_three(self):
         """The shape the RSI tab actually renders today. If a milestone is
         added or dropped, retarget this deliberately."""
-        assert len(vp._PC_RSI_WEIGHTS) + len(vp._PC_RSI_CARD_ONLY) == 11
-        assert vp._pc_card_rows(11) == [4, 4, 3]
+        assert len(vp._PC_RSI_WEIGHTS) + len(vp._PC_RSI_CARD_ONLY) == 10
+        assert vp._pc_card_rows(10) == [4, 3, 3]
 
 
 class TestTakeoffRsiCalibration:
@@ -5285,24 +5246,3 @@ def test_takeoff_durations_read_in_the_coarsest_fitting_unit():
     assert span(0.5) == "6 mo"
     assert span(1.83) == "1.8 yr"
     assert span(np.inf) == "not by 2040"
-
-
-class TestTakeoffB:
-    """The AI Futures Model's takeoff statistic, read off Takeoff's settings."""
-
-    def test_b_is_one_where_judgment_matches_difficulty(self):
-        p = dict(taste_slope=0.5, difficulty=0.5, transfer=60, uncertainty=0)
-        assert vp._tk_takeoff_b(p)["median"] == pytest.approx(1.0)
-        faster = vp._tk_takeoff_b(dict(p, taste_slope=1.0))
-        assert faster["median"] == pytest.approx(2 ** -0.5)
-        assert faster["accelerating"] == 1.0
-
-    def test_accelerating_share_reads_the_simulated_draws(self):
-        p = dict(taste_slope=0.3, difficulty=0.5, transfer=60)
-        draws = {"taste_slope": np.array([0.3, 0.3, 0.3, 0.3]),
-                 "difficulty": np.array([0.2, 0.5, 0.6, 0.7])}
-        assert vp._tk_takeoff_b(p, draws)["accelerating"] == 0.25
-
-    def test_no_feedback_has_no_b(self):
-        assert vp._tk_takeoff_b(dict(taste_slope=0.0, difficulty=0.5,
-                                     transfer=60, uncertainty=40)) is None

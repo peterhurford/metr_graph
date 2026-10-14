@@ -891,7 +891,7 @@ class TestRsiTab:
         helps = {str(m.label): (m.proto.help or "") for m in at.metric}
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         milestones = list(t["Milestone"])
-        assert len(milestones) >= 10
+        assert len(milestones) == 9
         for lab in milestones:
             assert lab in helps, lab
             h = helps[lab]
@@ -985,10 +985,13 @@ class TestTakeoffTab:
         # RSI evidence, pace, pace factors, people, ECI and the distributions.
         assert len(_tk_charts(at)) == 6
         # The evidence first, then the takeoff model.
-        assert [h.value for h in at.header] == ["Takeoff", "The evidence", "The takeoff model"]
+        # The takeoff model's loop and cards lead, then the evidence, then the
+        # model's charts.
+        assert [h.value for h in at.header] == ["Takeoff", "The takeoff model", "The evidence",
+                                                "Inside the takeoff model"]
         subs = [s.value for s in at.subheader]
-        assert subs.index("CoBench") < subs.index("RSI projection (tentative)")
-        assert subs[subs.index("RSI projection (tentative)") + 1:][:5] == [
+        assert subs.index("CoBench") < subs.index("Automated coder projection")
+        assert subs[subs.index("Automated coder projection") + 1:][:5] == [
             "What the evidence feeds in", "1. Research speeds up", "2. People step out of the loop",
             "3. What it does to capability (ECI)", "4. When it happens, and how fast"]
         import json
@@ -1009,7 +1012,9 @@ class TestTakeoffTab:
             assert name in titles
         eci = json.loads(_tk_charts(at)[4].proto.spec)
         [projected] = [d for d in eci["data"] if d.get("name") == "Projected ECI"]
-        assert projected["x"][-1].startswith("2030-12")
+        # The axis ends on the sidebar's year end; the line runs a month past it.
+        assert eci["layout"]["xaxis"]["range"][1].startswith("2030-12-31")
+        assert projected["x"][-1] > "2030-12-31"
         import base64
 
         def _ys(trace):
@@ -1191,8 +1196,7 @@ class TestTakeoffTab:
         # The year crops the charts; the cards come from scenarios run to 2040.
         assert [(m.label, m.value) for m in at.metric] == cards
         eci = json.loads(_tk_charts(at)[4].proto.spec)
-        [projected] = [d for d in eci["data"] if d.get("name") == "Projected ECI"]
-        assert projected["x"][-1].startswith("2035-12")
+        assert eci["layout"]["xaxis"]["range"][1].startswith("2035-12-31")
         at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_end_year").value == 2030
         assert "tk_end_year" not in at.query_params
@@ -1250,7 +1254,8 @@ class TestTakeoffTab:
         assert not any(m.label.startswith("FOOM") for m in at.metric)
 
         def ci80():
-            text = [c.value for c in at.caption if c.value.startswith("80% CI")][-1]
+            # The fifth headline card, RSI -> ultraintelligence, leads the page.
+            text = [c.value for c in at.caption if c.value.startswith("80% CI")][4]
             return text
         wide = ci80()
         for key in tk.POINT_ESTIMATE:
@@ -2160,7 +2165,7 @@ class TestTodayForwardMode:
         assert not [c for c in at.checkbox if c.key == "today_fwd"]
 
     def test_takeoff_converts_its_projections_not_the_evidence(self):
-        """The RSI projection's CDF and the four takeoff projections go
+        """The RSI projection's CDF and the five takeoff projections go
         forward; the evidence charts above them keep their history."""
         at = _fresh_app()
         at.run()
@@ -2168,7 +2173,7 @@ class TestTodayForwardMode:
         at.checkbox(key="today_fwd").set_value(True).run()
         specs = self._specs(at)
         fwd = [sp for sp in specs if self._starts_today(sp)]
-        assert len(fwd) == 5
+        assert len(fwd) == 6
         assert fwd[0]["layout"]["yaxis"]["title"]["text"] == "Chance crossed by then"
         assert len(specs) > len(fwd)
 

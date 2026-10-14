@@ -1069,11 +1069,11 @@ _RSI_SURVEY = [
 # this. Self-reports to one significant figure don't support anything tighter.
 _RSI_SURVEY_POS_FACTOR = 1.5
 
-# The survey fan runs a year past the last round rather than to the tab's
-# *Project through* year. Three coarse points 4.5 months apart compound to
-# ~10^6x by end-2028, which squashes the data itself into the bottom decile of
-# a log axis; the CoBench half keeps the sidebar horizon.
-_RSI_SURVEY_HORIZON_DAYS = 365
+# The survey and code fans run to the tab's *Project through* year like every
+# other chart, but their log axes stop at this multiple of the milestone bar:
+# compounding to ~10^6x by 2028 would squash the measured points into the
+# bottom decile, so the fan runs off the top instead.
+_RSI_MULTIPLE_VIEW = 10
 
 
 @st.cache_data
@@ -1184,10 +1184,6 @@ _RSI_CODE_POS_FACTOR = 1.3
 # calibration guard on the digitization.
 _RSI_CODE_CHART_FROM = datetime(2024, 1, 1)
 
-# Same reason the survey fan stops short of the tab's horizon: a multiple on a
-# ~160-day doubling time leaves the chart long before the projection year, and
-# squashes the measured bars into the bottom of a log axis.
-_RSI_CODE_HORIZON_DAYS = 365
 
 _RSI_CODE_RAW = [
     ("2021Q2", 1.40), ("2021Q3", 1.15), ("2021Q4", 0.87),
@@ -5965,6 +5961,10 @@ def _dt_t_interval(days, ys, intercept, slope):
     return float(lo), float(hi)
 
 
+# The CoBench rate's slow edge, as a multiple of the slowest frontier step.
+_RSI_SLOW_STEP_MULT = 2.0
+
+
 def _rsi_dt_ci(frontier, fit_dt):
     """Default 80% CI on the odds-doubling time, in days.
 
@@ -5972,7 +5972,9 @@ def _rsi_dt_ci(frontier, fit_dt):
     assumes enough points for the fit to mean something. A handful of frontier
     points whose segment rates disagree do not, so the consecutive-segment rates
     widen that interval wherever they fall outside it, and the slope's own 80%
-    t-interval (`_dt_t_interval`) widens it further — never narrow it.
+    t-interval (`_dt_t_interval`) widens it further — never narrow it. The
+    slow edge reaches twice the slowest segment: one early jump sets the fit,
+    and the later steps ran several times slower.
     """
     lo, hi = max(5.0, fit_dt / 2), fit_dt * 2
     for a, b in zip(frontier, frontier[1:]):
@@ -5981,7 +5983,7 @@ def _rsi_dt_ci(frontier, fit_dt):
         if d <= 0 or gain <= 0:
             continue
         seg_dt = np.log(2) * d / gain
-        lo, hi = min(lo, seg_dt), max(hi, seg_dt)
+        lo, hi = min(lo, seg_dt), max(hi, _RSI_SLOW_STEP_MULT * seg_dt)
     base, icpt, slope = _rsi_fit(frontier)
     tband = _dt_t_interval(
         [(m['date'] - base).days for m in frontier],
@@ -6151,8 +6153,9 @@ def render_rsi(end_year):
     proj_slope = np.log(2) / proj_dt
 
     _pos_sigma = (_logit(rsi_pos_hi / 100) - _logit(rsi_pos_lo / 100)) / (2 * 1.282)
-    _fitted_logit = _intercept + _slope * (current['date'] - _base).days
-    proj_start_logit = np.random.normal(_fitted_logit, max(_pos_sigma, 0), n)
+    # The fan starts at the measured score, as the milestone card does.
+    proj_start_logit = np.random.normal(_logit(current['cobench'] / 100),
+                                        max(_pos_sigma, 0), n)
 
     proj_end_date = datetime(rsi_end_year, 12, 31)
     proj_days = np.arange(0, (proj_end_date - current['date']).days + 1, dtype=float)
@@ -6219,8 +6222,7 @@ def render_rsi(end_year):
         margin=dict(l=50, r=60, t=50, b=40),
         font=dict(color='#1a1a2e'),
         xaxis=dict(title="Release date",
-                   range=[rsi_all[0]['date'] - timedelta(days=25),
-                          proj_end_date + timedelta(days=25)],
+                   range=[rsi_all[0]['date'] - timedelta(days=25), proj_end_date],
                    gridcolor='rgba(0,0,0,0.1)',
                    tickfont=dict(color='#1a1a2e'), zeroline=False,
                    title_font=dict(color='#1a1a2e')),
@@ -6250,8 +6252,8 @@ def render_rsi(end_year):
          "transcripts.” — Fable 5.1 & Mythos 5.1 system card, p. 37"))
 
     _render_rsi_automation(rsi_end_year)
-    _render_rsi_survey()
-    _render_rsi_code()
+    _render_rsi_survey(rsi_end_year)
+    _render_rsi_code(rsi_end_year)
     _render_rsi_experiments(rsi_end_year)
     _render_rsi_direction(rsi_end_year)
 
@@ -6327,7 +6329,7 @@ def _render_rsi_automation(end_year):
 
     if lag is not None:
         steps = _rsi_auto_ladder(rows)
-        cols = st.columns(len(steps) + 2)
+        cols = st.columns(len(steps) + 3)
         for col, (lo, hi, days) in zip(cols, steps):
             spread = _rsi_auto_lag_spread(rows, lo, hi)
             with col:
@@ -6343,27 +6345,36 @@ def _render_rsi_automation(end_year):
                                f"{_RSI_AUTO_REF_SWEEP[-1]:.0f}% it runs "
                                f"{spread[0] / 30.44:.1f}–"
                                f"{spread[1] / 30.44:.1f} months.")
-        with cols[-2]:
+        with cols[-3]:
             st.metric("AL4+ → AL5 (assumed)",
                       f"{lag['ladder'] / 30.44:.1f} mo",
                       help="Not measured. The measured steps continue by "
                            f"about {(steps[-1][2] - steps[-2][2]) / 30.44:+.1f} "
                            "months each, and this extends that increment one "
                            "rung past the data.")
-        with cols[-1]:
-            _at_ladder = _inv_logit(
-                icpt + slope * ((rows[-1]['date'] - base).days
-                                - lag['ladder'])) * 100
-            st.metric("… raised by the zeros to",
-                      f"{lag['censor'] / 30.44:.1f} mo",
-                      help="The absence of an AL5 band is evidence. At the "
-                           "extrapolated lag AL5 would already have been "
-                           f"about {_at_ladder:.1f}% in "
-                           f"{rows[-1]['date']:%b %Y} — above the "
-                           f"figure's ~{_RSI_AUTO_FLOOR:g}pt floor, so it "
-                           "would show. This is the shortest lag that keeps "
-                           "it invisible, and it is the one the projection "
-                           "uses.")
+        # When each rung reaches the milestone bar: the cards in the
+        # Capabilities Milestones row below, read off the same cached draws.
+        comps, *_ = _pc_rsi_components(
+            datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
+            st.session_state.get("rsi_timing", _RSI_DEFAULTS["rsi_timing"]),
+            st.session_state.get("rsi_notyet", True),
+            st.session_state.get("rsi_notyet_ramp", _RSI_DEFAULTS["rsi_notyet_ramp"]))
+        by_slug = {c[0]: c for c in comps}
+        for col, slug, label, help in (
+                (cols[-2], f"rdauto_{_RSI_AUTO_TARGET:.0f}",
+                 f"AL4 reaches {_RSI_AUTO_TARGET:.0f}%",
+                 "Claude leading this share of Anthropic's model R&D, a person "
+                 "supervising: the fitted AL4 rung."),
+                (cols[-1], f"al5_{_RSI_AL5_TARGET:.0f}",
+                 f"AL5 reaches {_RSI_AL5_TARGET:.0f}%",
+                 "Fully autonomous model R&D: the AL4 date shifted by the assumed "
+                 "AL4 \u2192 AL5 lag, raised so AL5 would still be invisible in the "
+                 "latest month, as it is.")):
+            if slug in by_slug:
+                early, med, late = _pc_eta_dates(by_slug[slug][2], by_slug[slug][3])
+                with col:
+                    st.metric(label, f"{med:%b %Y}", help=help)
+                    st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")
 
         with st.expander("Assumption: the AL4 → AL5 lag"):
             lag_mo = _ss_number_input(
@@ -6531,8 +6542,7 @@ def _render_rsi_automation(end_year):
         height=580, margin=dict(l=50, r=60, t=86, b=40),
         font=dict(color='#1a1a2e'),
         xaxis=dict(title="Month rated",
-                   range=[rows[0]['date'] - timedelta(days=20),
-                          max(x_end, rows[-1]['date']) + timedelta(days=20)],
+                   range=[rows[0]['date'] - timedelta(days=20), max(x_end, rows[-1]['date'])],
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         yaxis=dict(title="Share of model R&D tasks at this level or above",
@@ -6594,7 +6604,7 @@ def _render_rsi_automation(end_year):
          "nothing."))
 
 
-def _render_rsi_survey():
+def _render_rsi_survey(end_year):
     """The report's other substitution series: self-reported researcher uplift.
 
     Fitted and projected the same way the CoBench half is, but on log(multiple)
@@ -6621,7 +6631,8 @@ def _render_rsi_survey():
         sigma = np.log(_RSI_SURVEY_POS_FACTOR) / 1.282
         start_log = np.random.normal(fitted, sigma, n)
 
-        pdays = np.arange(0, _RSI_SURVEY_HORIZON_DAYS + 1, dtype=float)
+        pdays = np.arange(0, max((datetime(end_year, 12, 31) - cur['date']).days, 1) + 1,
+                          dtype=float)
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
         traj = np.exp(start_log[:, None] + pdays[None, :] * proj_slope[:, None])
         pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
@@ -6652,7 +6663,8 @@ def _render_rsi_survey():
                        for d, y in zip(pdates, pct[50])],
             hoverinfo='text'))
         x_end = pdates[-1]
-        y_top = max(float(pct[95][-1]), _PC_RSI_SURVEY_TARGET_X * 1.3)
+        y_top = min(float(pct[95][-1]), _PC_RSI_SURVEY_TARGET_X * _RSI_MULTIPLE_VIEW)
+        y_top = max(y_top, _PC_RSI_SURVEY_TARGET_X * 1.3)
     else:
         x_end, y_top = cur['date'], _PC_RSI_SURVEY_TARGET_X * 1.3
 
@@ -6692,8 +6704,7 @@ def _render_rsi_survey():
         height=480, margin=dict(l=50, r=60, t=40, b=40),
         font=dict(color='#1a1a2e'),
         xaxis=dict(title="Survey round",
-                   range=[base - timedelta(days=30),
-                          max(x_end, rows[-1]['date']) + timedelta(days=30)],
+                   range=[base - timedelta(days=30), max(x_end, rows[-1]['date'])],
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         yaxis=dict(title="Self-reported output vs. no AI assistance",
@@ -6730,7 +6741,7 @@ def _render_rsi_survey():
                                               "than about the future."))
 
 
-def _render_rsi_code():
+def _render_rsi_code(end_year):
     """Anthropic's own merged-code volume per engineer.
 
     The counted counterpart to the self-reported survey above, fitted the same
@@ -6762,7 +6773,8 @@ def _render_rsi_code():
         start_log = np.random.normal(
             fitted, np.log(_RSI_CODE_POS_FACTOR) / 1.282, n)
 
-        pdays = np.arange(0, _RSI_CODE_HORIZON_DAYS + 1, dtype=float)
+        pdays = np.arange(0, max((datetime(end_year, 12, 31) - cur['date']).days, 1) + 1,
+                          dtype=float)
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
         traj = np.exp(start_log[:, None] + pdays[None, :] * proj_slope[:, None])
         pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
@@ -6794,7 +6806,8 @@ def _render_rsi_code():
                        for d, y in zip(pdates, pct[50])],
             hoverinfo='text'))
         x_end = pdates[-1]
-        y_top = max(float(pct[95][-1]), _RSI_CODE_TARGET * 1.3)
+        y_top = min(float(pct[95][-1]), _RSI_CODE_TARGET * _RSI_MULTIPLE_VIEW)
+        y_top = max(y_top, _RSI_CODE_TARGET * 1.3)
     else:
         x_end, y_top = cur['date'], _RSI_CODE_TARGET * 1.3
 
@@ -6840,8 +6853,7 @@ def _render_rsi_code():
         height=480, margin=dict(l=50, r=60, t=50, b=40),
         font=dict(color='#1a1a2e'),
         xaxis=dict(title="Quarter",
-                   range=[_RSI_CODE_CHART_FROM,
-                          max(x_end, cur['date']) + timedelta(days=30)],
+                   range=[_RSI_CODE_CHART_FROM, max(x_end, cur['date'])],
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         yaxis=dict(title="Lines merged per active contributor "
@@ -7138,8 +7150,7 @@ def _render_rsi_direction(end_year):
         height=520, margin=dict(l=50, r=60, t=50, b=40),
         font=dict(color='#1a1a2e'),
         xaxis=dict(title="Release date",
-                   range=[rows[0]['date'] - timedelta(days=25),
-                          max(x_end, rows[-1]['date']) + timedelta(days=25)],
+                   range=[rows[0]['date'] - timedelta(days=25), max(x_end, rows[-1]['date'])],
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         yaxis=dict(title="Sampled turns where the model's next step won (%)",
@@ -15178,9 +15189,8 @@ def _pc_ramp_for(timing_label, ramp_days):
 # late-but-uncertain milestone widens the answer instead of just shifting it.
 # Keyed by slug because the card labels are built from the target constants.
 _PC_RSI_WEIGHTS = {
-    # Equal credence across the nine research cards. The revenue card stays on
-    # the tab but carries no weight: earnings are not a measure of AI doing AI
-    # research. AL5 is a card only (`_PC_RSI_CARD_ONLY`), outside the blend.
+    # Equal credence across the nine research cards. AL5 is a card only
+    # (`_PC_RSI_CARD_ONLY`), outside the blend.
     "metr_p50": 10.0,
     "metr_p80": 10.0,
     "rli_90": 10.0,
@@ -15190,7 +15200,6 @@ _PC_RSI_WEIGHTS = {
     "experiments_10x": 10.0,
     "rdauto_90": 10.0,
     "nextstep_90": 10.0,
-    "rev_1t": 0.0,
 }
 _PC_RSI_W_KEY = "pc_rsiw_"        # session-state prefix, one float per slug
 # Cards shown in the milestone row but left out of the RSI projection, its
@@ -15545,7 +15554,7 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
     early, med, late = (origin + timedelta(days=float(d))
                         for d in np.percentile(blend_days, [10, 50, 90]))
 
-    st.subheader("RSI projection (tentative)")
+    st.subheader("Automated coder projection")
     _b1, _b2 = st.columns(2)
     with _b1:
         st.metric("Blended median", med.strftime('%b %Y'))
@@ -15766,20 +15775,6 @@ def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_
                  "study's own practical ceiling \u2014 what a judge shown the "
                  "finished session scores \u2014 and the sampled turns were "
                  "selected for having room for improvement."))
-    _cap.append(("rev_1t", "Leading company revenue >$1T",
-                 _pc_revenue_eta([_OPENAI_REVENUE, _ANTHROPIC_REVENUE],
-                                 n=n, samples=True), True,
-                 "Revenue tab at its defaults, per company: OLS on "
-                 "log2(ARR) over every point, doubling time over "
-                 "[max(10, DT\u00d70.65), DT\u00d71.5], 0.3 log2 position "
-                 "\u03c3 \u2014 then whichever company crosses first. That "
-                 "fit is a near-perfect 3.7-year exponential, so this is "
-                 "much the tightest card here; treat the narrowness as the "
-                 "fit's, not the world's. Anthropic's run rate counts "
-                 "cloud-partner sales that OpenAI's omits, so where it leads "
-                 "the date may read about a month early."))
-    # Revenue is release-dated because ARR is earned by *shipped* models, so
-    # a crossing sits on the release clock exactly as a benchmark score does.
     _notes = {slug: note + _pc_clock_note(rel, timing_label)
               for slug, _l, r, rel, note in _cap if r is not None}
     _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label, n=n))
@@ -15969,10 +15964,12 @@ def _pc_rsi_eta(frontier, target_pct=_RSI_SUBSTITUTION_BAR, n=None, samples=Fals
     dt_lo, dt_hi = _rsi_dt_ci(frontier, np.log(2) / slope)
     proj_slope = np.log(2) / np.maximum(_lognormal_from_ci(dt_lo, dt_hi, n), 1.0)
     cur = frontier[-1]
-    fitted = intercept + slope * (cur['date'] - base).days
+    # From the measured score, not the fitted line: the fit is steepened by
+    # one early jump and runs above the latest model.
+    measured = _logit(cur['cobench'] / 100)
     pos_lo = _logit(round(max(cur['cobench'] - _PC_RSI_POS_CI, 1.0), 1) / 100)
     pos_hi = _logit(round(min(cur['cobench'] + _PC_RSI_POS_CI, 99.0), 1) / 100)
-    start = np.random.normal(fitted, max((pos_hi - pos_lo) / (2 * 1.282), 0), n)
+    start = np.random.normal(measured, max((pos_hi - pos_lo) / (2 * 1.282), 0), n)
     days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
     return _pc_eta_out(cur['date'], days_to, samples)
 
@@ -16090,60 +16087,6 @@ def _pc_nextstep_eta(frontier, target_pct=_RSI_DIR_TARGET, n=None,
     start = np.random.normal(fitted, max(float(sigma), 0), n)
     days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
     return _pc_eta_out(cur['date'], days_to, samples)
-
-
-# The revenue companion, and the only milestone here that isn't a benchmark:
-# ARR is a revealed-preference bar. $1T is the Revenue tab's own top
-# milestone (`_REV_MILESTONES`) — roughly a third of today's US software
-# sector bought from one seller, which is hard to explain unless the product
-# substitutes for labour rather than assisting it.
-_PC_REV_TARGET_B = 1000.0
-
-
-def _pc_revenue_eta(series, target_b=_PC_REV_TARGET_B, n=None, samples=False):
-    """(early, median, late) dates for the *leading* company's ARR to reach
-    `target_b` ($B).
-
-    Reproduces `render_revenue()` at its defaults for each company — OLS on
-    log2(ARR) over every point, doubling time lognormal over
-    [max(10, DT x 0.65), DT x 1.5], position normal on the fitted last value
-    with the tab's 0.3 log2 sigma — and then takes whichever company gets
-    there first **per sample**, which is what "the leading company" means:
-    the milestone is a claim about the frontier of commercial scale, not
-    about a particular seller.
-
-    The two companies' draws are independent. They plainly aren't in
-    reality, but a common shock would narrow the answer on nothing measured,
-    and independence is the assumption that doesn't quietly do that.
-
-    `series` is a list of raw (date, ARR) tables. Returns None when no
-    company has a positive fitted slope. The dates come out on the release
-    clock — ARR is earned by shipped models — so the caller lags them like
-    a benchmark score.
-    """
-    n = n or N_SAMPLES
-    anchor = max(_parse_revenue(d)[0][-1] for d in series)
-    best = None
-    for data in series:
-        dates, vals = _parse_revenue(data)
-        if len(vals) < 3:
-            continue
-        base = dates[0]
-        days = np.array([(d - base).days for d in dates], dtype=float)
-        intercept, slope = fit_line(days, np.log2(np.array(vals)))
-        if slope <= 0:
-            continue
-        dt = 1.0 / slope
-        proj_dt = _lognormal_from_ci(max(10.0, dt * 0.65), dt * 1.5, n)
-        start = np.random.normal(intercept + slope * days[-1], 0.3, n)
-        days_to = np.maximum(np.log2(target_b) - start, 0.0) * proj_dt
-        # Onto one anchor, so the per-sample minimum compares like with like:
-        # the companies' series end on different dates.
-        days_to += (dates[-1] - anchor).days
-        best = days_to if best is None else np.minimum(best, days_to)
-    if best is None:
-        return None
-    return _pc_eta_out(anchor, best, samples)
 
 
 def _pc_condition_on_today(components, today, ramp_days=0.0):
@@ -18017,34 +17960,12 @@ def _tk_dist_fig(rsi, ultra, gap, today, view_years, sim_end):
     fig.update_yaxes(rangemode="tozero", row=1, col=2)
     fig.update_yaxes(title_text="Cumulative %", range=[0, 100], row=2, col=1)
     fig.update_yaxes(range=[0, 100], row=2, col=2)
-    fig.update_xaxes(range=[mids[0], mids[-1]], col=1)
+    fig.update_xaxes(range=[today, today + timedelta(days=float(view_years * 365.25))], col=1)
     fig.update_xaxes(range=[g_edges[0], g_edges[-1]], col=2)
     fig.update_xaxes(title_text=f"Time from RSI to ECI {_TK_ULTRA_ECI:g}", row=2, col=2)
     fig.update_layout(height=560, margin=dict(l=55, r=20, t=40, b=40),
                       legend=dict(orientation="h", y=-0.12))
     return fig
-
-
-def _tk_takeoff_b(params, draws=None):
-    """The AI Futures Model's takeoff statistic for these settings.
-
-    With AI directing research, judgment grows as exp(s * software) and
-    difficulty makes software grow as log(cumulative effort) / beta, so the
-    research uplift goes as effort^(s / beta) and successive uplift doublings
-    take b = 2^(beta / s - 1) times as long. Returns {'median', 'accelerating',
-    'after_100x'}, or None without feedback. 'accelerating' (b < 1) reads the
-    simulator's own per-draw s and beta (`result["draws"]`) when given.
-    """
-    s, beta = params["taste_slope"], params["difficulty"]
-    if s <= 0 or params["transfer"] <= 0:
-        return None
-    if draws is None:
-        draws = {"taste_slope": np.array([s]), "difficulty": np.array([beta])}
-    drift = params.get("judgment_drift", 0.0) / 100
-    later = s * (1 + drift) ** 2          # the elasticity after 100x more capability
-    return {"median": float(2 ** (beta / s - 1)),
-            "accelerating": float(np.mean(draws["taste_slope"] > draws["difficulty"])),
-            "after_100x": float(2 ** (beta / later - 1)) if later > 0 else None}
 
 
 def _tk_eci_scale(params, hist=None):
@@ -18262,11 +18183,6 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
                         ("reference_2025_quantiles", progress["reference_pace"]),
                         ("cumulative_2025_quantiles", progress["validated_baseline_months"])):
         progress[key] = np.quantile(values * baseline, [.1, .5, .9], axis=0).T
-    def first(threshold):
-        reached = progress["pace"] * baseline >= threshold
-        return np.where(reached.any(axis=1), grid[np.argmax(reached, axis=1)], np.inf)
-    result["pace_events_2025"] = {f"{threshold}× 2025 research pace": first(threshold)
-                                  for threshold in (2, 5)}
     return result
 
 
@@ -18280,7 +18196,9 @@ def _tk_clip(result, years):
     for charts that show less than the simulation ran."""
     wp = result["workflow_progress"]
     T, n = len(wp["years"]), len(result["onset"])
-    keep = max(int(np.searchsorted(wp["years"], years, side="right")), 2)
+    # One month past `years`, so a line reaches the axis end instead of
+    # stopping at the last whole month before it.
+    keep = min(max(int(np.searchsorted(wp["years"], years, side="right")) + 1, 2), T)
 
     def cut(v):
         if isinstance(v, dict):
@@ -18312,6 +18230,13 @@ def _tk_pair_onset(onset, capability, corr, seed=0):
     paired = np.empty(n)
     paired[np.argsort(latent, kind="stable")] = np.sort(onset)
     return paired
+
+
+def _tk_to(fig, end):
+    """End a Takeoff chart's calendar axis on `end`, the sidebar's year end."""
+    rng = fig.layout.xaxis.range
+    lo = rng[0] if rng else min(tr.x[0] for tr in fig.data if tr.x is not None and len(tr.x))
+    return fig.update_xaxes(range=[lo, end])
 
 
 def _tk_gap(earlier, later, horizon):
@@ -18370,13 +18295,16 @@ def render_takeoff():
     st.header("Takeoff")
     st.warning("Warning: RSI projections under construction, these are simple "
                "models and not 'all things considered' takes.")
+    # The takeoff model's loop and headline cards lead the page, but they need
+    # the evidence's settings first: drawn into this slot once computed.
+    top = st.container()
     render_rsi(st.session_state["tk_end_year"])
     st.markdown("---")
     with st.sidebar:
         st.subheader("Takeoff assumptions")
         st.button("Reset to defaults", key="tk_reset", on_click=_tk_reset)
-        st.caption("Coding automation inherits the RSI projection above; its "
-                   "settings are in the RSI evidence section.")
+        st.caption("Coding automation comes from the automated coder projection; "
+                   "its settings are in the RSI evidence section.")
         with st.expander("What decides ultraintelligence", expanded=True):
             st.caption("Across a plausible range, the first three each move the "
                        "ultraintelligence date 3\u20138 months; \u03c1 about a month, since "
@@ -18428,8 +18356,8 @@ def render_takeoff():
                    "How closely each scenario's coding-automation date, from the RSI "
                    "tab, follows its own capability growth: a late date goes with a "
                    "slow scenario. 0 pairs them at random; 1 matches them exactly. "
-                   "The RSI projection's dates themselves are unchanged. 0.7 is a judgment: "
-                   "both read the same progress, but the RSI projection's fits carry "
+                   "The automated coder projection's dates are unchanged. 0.7 is a judgment: "
+                   "both read the same progress, but the projection's fits carry "
                    "benchmark-specific noise too.")
             number(f"Compute growth kept after {_TK_COMPUTE_SLOW_YEAR} (%)",
                    "compute_slowdown", 0.0, 100.0, 5.0,
@@ -18570,154 +18498,156 @@ def render_takeoff():
                    "Whitfill & Wu's two specifications (near 0 and 2.6).")
             number("Simulation seed", "seed", 0, 4294967295, 1)
 
-    st.header("The takeoff model")
-    st.markdown(_TK_LOOP_HTML, unsafe_allow_html=True)
-    _fn_line(
-        "Brakes: **limited compute**, **ideas get harder to find**, and "
-        "**people still check the work**.",
-        ("limited compute",
-         "AI labor and experiment compute combine so the scarcer one limits: "
-         "more AI labor alone can at most double throughput. Better research "
-         "judgment is not capped this way."),
-        ("ideas get harder to find",
-         "Pace is divided down as algorithms improve. The loop speeds up only if "
-         "each model adds research capacity faster than difficulty rises."),
-        ("people still check the work",
-         "Direction, experiment design and verification each need a falling "
-         "share of human hours as models improve."))
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    end_date = datetime(_TK_SIM_END_YEAR, 12, 31)
-    horizon = (end_date - today).total_seconds() / (365.25 * 86400)
-    view_end = datetime(int(st.session_state["tk_end_year"]), 12, 31)
-    view_years = (view_end - today).total_seconds() / (365.25 * 86400)
-    onset_days, rsi_settings = _pc_rsi_onset(today)
-    if onset_days is None:
-        st.info("The RSI projection has no available draws. Adjust its weights above.")
-        return
-    onset_years = onset_days / 365.25
-    params = {k: st.session_state["tk_" + k] for k in takeoff.DEFAULTS
-              if k not in _TK_NOT_WIDGETS}
-    # Difficulty is set through the returns to research, r = lambda / difficulty,
-    # with lambda held at the reference exponent so the parallelization setting
-    # moves returns to inputs alone, not how fast ideas get harder.
-    params["difficulty"] = _TK_R_REF_PARALLEL / float(st.session_state["tk_returns"])
-    # Every path begins today and ends at the selected calendar horizon.
-    # Past coding dates stay intact; we do not invent pre-today research history.
-    params["years"] = horizon
-    params["compute_slow_years"] = max(
-        (datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31) - today).total_seconds() / (365.25 * 86400), 0)
-    try:
-        takeoff.validate(params)
-    except ValueError as exc:
-        st.error(str(exc))
-        return
-    evidence = load_rsi_experiments()
-    observed_growth = evidence[-1]["mult"] / evidence[0]["mult"]
-    calibration = None
-    if params["transfer"] > 0:
-        calibration = takeoff.calibrate_feedback(
-            observed_growth, st.session_state["tk_cal_compute"],
-            st.session_state["tk_cal_capability"], st.session_state["tk_cal_yield"],
-            st.session_state["tk_cal_validated"] or None,
-            transfer=params["transfer"] / 100, coding_slope=params["coding_slope"],
-            parallel=params["parallelization"], substitution=params["substitution"],
-            automation_growth=_tk_automation_growth(load_rsi_automation(), evidence,
-                                                    params["ai_speed"]))
-        w = st.session_state["tk_cal_weight"] / 100
-        calibration["quality_prior"] = params["taste_slope"]
-        calibration["weight"] = w
-        params["taste_slope"] = (1 - w) * params["taste_slope"] + w * calibration["quality_slope"]
-    n = len(onset_years)
-    activity = _tk_rsi_activity(evidence, today, n)
-    if activity is None:
-        st.info("The RSI experiment series has no positive growth projection to inherit.")
-        return
-    experiment_starts, experiment_slopes = activity
-    # Today's pace is set directly; scenarios keep the activity draws' spread
-    # around it. Reporting only: the simulated dynamics never see it.
-    pace_today = float(st.session_state["tk_pace_today"])
-    pace_yield = pace_today / float(np.median(np.exp(experiment_starts)))
-    dc = (_tk_dc_compute(today, n)
-          if st.session_state["tk_dc_compute"] else None)
-    compute_rates, hist_compute = dc if dc else (None, None)
-    # A model at ultraintelligence has automated coding whatever the RSI projection's
-    # date says, so RSI no longer waits on a late inherited date past it.
-    _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute)
-    coding_level = (_TK_ULTRA_ECI - eci_now) * eci_base / eci_ppy
-    result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
-                          experiment_starts, experiment_slopes, pace_yield, compute_rates,
-                          hist_compute, coding_level)
-    # Late coding dates go with slow scenarios: rank the first run's capability
-    # growth, reassign the RSI projection's dates along it, and run again.
-    corr = float(st.session_state["tk_coding_pairing"])
-    if corr > 0:
-        wp = result["workflow_progress"]
-        k = min(int(np.searchsorted(wp["years"], _TK_PAIRING_YEARS)), len(wp["years"]) - 1)
-        onset_years = _tk_pair_onset(onset_years, wp["capability_log"][:, k], corr,
-                                     int(params["seed"]))
+    with top:
+        st.header("The takeoff model")
+        st.markdown(_TK_LOOP_HTML, unsafe_allow_html=True)
+        _fn_line(
+            "Brakes: **limited compute**, **ideas get harder to find**, and "
+            "**people still check the work**.",
+            ("limited compute",
+             "AI labor and experiment compute combine so the scarcer one limits: "
+             "more AI labor alone can at most double throughput. Better research "
+             "judgment is not capped this way."),
+            ("ideas get harder to find",
+             "Pace is divided down as algorithms improve. The loop speeds up only if "
+             "each model adds research capacity faster than difficulty rises."),
+            ("people still check the work",
+             "Direction, experiment design and verification each need a falling "
+             "share of human hours as models improve."))
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = datetime(_TK_SIM_END_YEAR, 12, 31)
+        horizon = (end_date - today).total_seconds() / (365.25 * 86400)
+        view_end = datetime(int(st.session_state["tk_end_year"]), 12, 31)
+        view_years = (view_end - today).total_seconds() / (365.25 * 86400)
+        onset_days, rsi_settings = _pc_rsi_onset(today)
+        if onset_days is None:
+            st.info("The automated coder projection has no available draws. Adjust its weights below.")
+            return
+        onset_years = onset_days / 365.25
+        params = {k: st.session_state["tk_" + k] for k in takeoff.DEFAULTS
+                  if k not in _TK_NOT_WIDGETS}
+        # Difficulty is set through the returns to research, r = lambda / difficulty,
+        # with lambda held at the reference exponent so the parallelization setting
+        # moves returns to inputs alone, not how fast ideas get harder.
+        params["difficulty"] = _TK_R_REF_PARALLEL / float(st.session_state["tk_returns"])
+        # Every path begins today and ends at the selected calendar horizon.
+        # Past coding dates stay intact; we do not invent pre-today research history.
+        params["years"] = horizon
+        params["compute_slow_years"] = max(
+            (datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31) - today).total_seconds() / (365.25 * 86400), 0)
+        try:
+            takeoff.validate(params)
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        evidence = load_rsi_experiments()
+        observed_growth = evidence[-1]["mult"] / evidence[0]["mult"]
+        calibration = None
+        if params["transfer"] > 0:
+            calibration = takeoff.calibrate_feedback(
+                observed_growth, st.session_state["tk_cal_compute"],
+                st.session_state["tk_cal_capability"], st.session_state["tk_cal_yield"],
+                st.session_state["tk_cal_validated"] or None,
+                transfer=params["transfer"] / 100, coding_slope=params["coding_slope"],
+                parallel=params["parallelization"], substitution=params["substitution"],
+                automation_growth=_tk_automation_growth(load_rsi_automation(), evidence,
+                                                        params["ai_speed"]))
+            w = st.session_state["tk_cal_weight"] / 100
+            calibration["quality_prior"] = params["taste_slope"]
+            calibration["weight"] = w
+            params["taste_slope"] = (1 - w) * params["taste_slope"] + w * calibration["quality_slope"]
+        n = len(onset_years)
+        activity = _tk_rsi_activity(evidence, today, n)
+        if activity is None:
+            st.info("The RSI experiment series has no positive growth projection to inherit.")
+            return
+        experiment_starts, experiment_slopes = activity
+        # Today's pace is set directly; scenarios keep the activity draws' spread
+        # around it. Reporting only: the simulated dynamics never see it.
+        pace_today = float(st.session_state["tk_pace_today"])
+        pace_yield = pace_today / float(np.median(np.exp(experiment_starts)))
+        dc = (_tk_dc_compute(today, n)
+              if st.session_state["tk_dc_compute"] else None)
+        compute_rates, hist_compute = dc if dc else (None, None)
+        # A model at ultraintelligence has automated coding whatever the RSI projection's
+        # date says, so RSI no longer waits on a late inherited date past it.
+        _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute)
+        coding_level = (_TK_ULTRA_ECI - eci_now) * eci_base / eci_ppy
         result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
                               experiment_starts, experiment_slopes, pace_yield, compute_rates,
                               hist_compute, coding_level)
-    # The ECI trend reflects the compute growth behind it: the data-center
-    # series' own historical fit when its projection is in use.
-    result["hist_compute"] = hist_compute
-    rsi = result["events"]["RSI"]
-    eci = _tk_eci(result, params)
-    def _card(col, label, samples, help):
-        col.metric(label, _tk_date(takeoff.quantile(samples, 0.5, horizon), today),
-                   help=help + f" {100 * np.mean(samples <= horizon):.0f}% of scenarios "
-                               f"by {end_date:%b %Y}.")
-        for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
-            col.caption(f"{level}% CI: {_tk_date(takeoff.quantile(samples, lo, horizon), today)}"
-                        f" \u2013 {_tk_date(takeoff.quantile(samples, hi, horizon), today)}")
+        # Late coding dates go with slow scenarios: rank the first run's capability
+        # growth, reassign the RSI projection's dates along it, and run again.
+        corr = float(st.session_state["tk_coding_pairing"])
+        if corr > 0:
+            wp = result["workflow_progress"]
+            k = min(int(np.searchsorted(wp["years"], _TK_PAIRING_YEARS)), len(wp["years"]) - 1)
+            onset_years = _tk_pair_onset(onset_years, wp["capability_log"][:, k], corr,
+                                         int(params["seed"]))
+            result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
+                                  experiment_starts, experiment_slopes, pace_yield, compute_rates,
+                                  hist_compute, coding_level)
+        # The ECI trend reflects the compute growth behind it: the data-center
+        # series' own historical fit when its projection is in use.
+        result["hist_compute"] = hist_compute
+        rsi = result["events"]["RSI"]
+        eci = _tk_eci(result, params)
+        def _card(col, label, samples, help):
+            col.metric(label, _tk_date(takeoff.quantile(samples, 0.5, horizon), today),
+                       help=help + f" {100 * np.mean(samples <= horizon):.0f}% of scenarios "
+                                   f"by {end_date:%b %Y}.")
+            for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
+                col.caption(f"{level}% CI: {_tk_date(takeoff.quantile(samples, lo, horizon), today)}"
+                            f" \u2013 {_tk_date(takeoff.quantile(samples, hi, horizon), today)}")
 
-    def _gap_card(col, label, earlier, later, help):
-        gap, reached = _tk_gap(earlier, later, horizon)
-        if not reached.any():
-            col.metric(label, "\u2014", help=help + " No scenario reaches the first "
-                       f"milestone by {end_date:%b %Y}.")
-            return
-        g = gap[reached]
-        col.metric(label, _tk_span(takeoff.quantile(g, 0.5), end_date),
-                   help=help + f" Among the {100 * np.mean(reached):.0f}% of scenarios "
-                   f"reaching the first by {end_date:%b %Y}; one not reaching the second "
-                   "by then counts as longer, so late starters read long.")
-        for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
-            col.caption(f"{level}% CI: {_tk_span(takeoff.quantile(g, lo), end_date)}"
-                        f" \u2013 {_tk_span(takeoff.quantile(g, hi), end_date)}")
+        def _gap_card(col, label, earlier, later, help):
+            gap, reached = _tk_gap(earlier, later, horizon)
+            if not reached.any():
+                col.metric(label, "\u2014", help=help + " No scenario reaches the first "
+                           f"milestone by {end_date:%b %Y}.")
+                return
+            g = gap[reached]
+            col.metric(label, _tk_span(takeoff.quantile(g, 0.5), end_date),
+                       help=help + f" Among the {100 * np.mean(reached):.0f}% of scenarios "
+                       f"reaching the first by {end_date:%b %Y}; one not reaching the second "
+                       "by then counts as longer, so late starters read long.")
+            for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
+                col.caption(f"{level}% CI: {_tk_span(takeoff.quantile(g, lo), end_date)}"
+                            f" \u2013 {_tk_span(takeoff.quantile(g, hi), end_date)}")
 
-    a, b, c = st.columns(3)
-    _card(a, "Full coding automation", result["onset"],
-          "The RSI projection above, each date paired with a scenario of matching "
-          "capability growth.")
-    _card(b, "RSI: AI directs research", rsi,
-          f"Research direction at or under {params['full_human']:g}% of its baseline "
-          "human hours, after coding automation: the AI chooses what to try next.")
-    _card(c, f"Ultraintelligence: ECI {_TK_ULTRA_ECI:g}", eci["ultra"],
-          f"First month a scenario's ECI reaches {_TK_ULTRA_ECI:g} (today's frontier: "
-          f"{eci['now']:.0f}).")
-    a, b = st.columns(2)
-    _gap_card(a, "Coding automation \u2192 RSI", result["coding_at"], rsi,
-              "Time from each scenario's coding-automation date (the RSI projection's, or the "
-              f"month its ECI reaches {_TK_ULTRA_ECI:g} if sooner) to its RSI date.")
-    _gap_card(b, "RSI \u2192 ultraintelligence", rsi, eci["ultra"],
-              "How fast the takeoff is: time from each scenario's RSI date to its "
-              f"ECI reaching {_TK_ULTRA_ECI:g}. A model that reaches ECI "
-              f"{_TK_ULTRA_ECI:g} counts as having automated coding, so RSI never waits on "
-              "a later coding date from the RSI projection.")
-    medians = [(label, takeoff.quantile(samples, 0.5, horizon))
-               for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
-                                      ("Ultraintelligence", eci["ultra"]))]
-    markers = [(label, today + timedelta(days=float(t * 365.25)))
-               for label, t in medians if 0 <= t <= view_years]
-    # Charts stop at the sidebar's year; everything quoted above runs to the end.
-    result = _tk_clip(result, view_years)
-    eci = dict(eci, paths=eci["paths"][:, :len(result["workflow_progress"]["years"])])
+        a, b, c = st.columns(3)
+        _card(a, "Full coding automation", result["onset"],
+              "The automated coder projection below, each date paired with a scenario of matching "
+              "capability growth.")
+        _card(b, "RSI: AI directs research", rsi,
+              f"Research direction at or under {params['full_human']:g}% of its baseline "
+              "human hours, after coding automation: the AI chooses what to try next.")
+        _card(c, f"Ultraintelligence: ECI {_TK_ULTRA_ECI:g}", eci["ultra"],
+              f"First month a scenario's ECI reaches {_TK_ULTRA_ECI:g} (today's frontier: "
+              f"{eci['now']:.0f}).")
+        a, b = st.columns(2)
+        _gap_card(a, "Coding automation \u2192 RSI", result["coding_at"], rsi,
+                  "Time from each scenario's coding-automation date (the automated coder projection's, or the "
+                  f"month its ECI reaches {_TK_ULTRA_ECI:g} if sooner) to its RSI date.")
+        _gap_card(b, "RSI \u2192 ultraintelligence", rsi, eci["ultra"],
+                  "How fast the takeoff is: time from each scenario's RSI date to its "
+                  f"ECI reaching {_TK_ULTRA_ECI:g}. A model that reaches ECI "
+                  f"{_TK_ULTRA_ECI:g} counts as having automated coding, so RSI never waits on "
+                  "a later coding date from the automated coder projection.")
+        medians = [(label, takeoff.quantile(samples, 0.5, horizon))
+                   for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
+                                          ("Ultraintelligence", eci["ultra"]))]
+        markers = [(label, today + timedelta(days=float(t * 365.25)))
+                   for label, t in medians if 0 <= t <= view_years]
+        # Charts stop at the sidebar's year; everything quoted above runs to the end.
+        result = _tk_clip(result, view_years)
+        eci = dict(eci, paths=eci["paths"][:, :len(result["workflow_progress"]["years"])])
 
+    st.header("Inside the takeoff model")
     st.subheader("What the evidence feeds in")
     _fn_caption(
         "Each trend sets one rate below. The automation index is drawn into chart "
-        "2, the RSI projection dates coding automation, and compute growth comes "
+        "2, the automated coder projection dates coding automation, and compute growth comes "
         "from the Data Centers tab's US projection (sidebar toggle).",
         ("sets one rate",
          "Growth rates are divided by the experiment calibration's assumed "
@@ -18735,33 +18665,10 @@ def render_takeoff():
          "progress while successors train. Medians, with the middle 80% shaded. "
          f"The axis stops at {_TK_PACE_VIEW:,}\u00d7; scenarios that run away "
          "leave the top of the chart."))
-    st.plotly_chart(_tf(_tk_pace_fig(
+    st.plotly_chart(_tf(_tk_to(_tk_pace_fig(
         result, today, markers,
-        history=_tk_pace_history(np.exp(experiment_starts) * pace_yield, today))),
+        history=_tk_pace_history(np.exp(experiment_starts) * pace_yield, today)), view_end)),
         width="stretch")
-    cols = st.columns(len(result["pace_events_2025"]) + 1)
-    for col, (name, values) in zip(cols, result["pace_events_2025"].items()):
-        col.metric(f"Research at {name.split()[0]} the 2025 pace",
-                   _tk_date(takeoff.quantile(values, .5, horizon), today),
-                   help=f"Median first month research pace reaches {name}; "
-                        f"{100 * np.mean(values <= horizon):.0f}% of scenarios get "
-                        f"there by {end_date:%b %Y}. Needs neither full automation "
-                        "nor a sustained streak.")
-    b = _tk_takeoff_b(params, result["draws"])
-    cols[-1].metric(
-        "Takeoff speed b", "no feedback" if b is None else f"{b['median']:.2f}",
-        help=None if b is None else
-        "Once AI directs research, each research speed-up doubling takes b times as "
-        "long as the last, from judgment alone: below 1 it accelerates. The AI "
-        "Futures Model's statistic, 2^(difficulty / judgment elasticity \u2212 1). "
-        f"Here {100 * b['accelerating']:.0f}% of scenarios accelerate"
-        + ("" if not params.get("judgment_drift") or b["after_100x"] is None else
-           f"; with the judgment-rate change set, b is {b['after_100x']:.2f} once AI is "
-           "100\u00d7 more capable")
-        + ". Their Dec 2025 "
-        "median is 1.21 (38% accelerate); AI 2027's was 0.64\u20130.78. b counts "
-        "judgment alone; scenarios also run away through AI labor where it "
-        "substitutes for compute, and through judgment gains compounding.")
     st.markdown("**What moves the pace**")
     _fn_caption(
         "Multiply the three factors and you get the dotted line.",
@@ -18770,7 +18677,7 @@ def render_takeoff():
          "one limiting, blended with OpenAI's experiment trend in year one. "
          "Research judgment rises with model capability. Harder ideas: each "
          "improvement makes the next harder to find."))
-    st.plotly_chart(_tf(_tk_factors_fig(result, today)), width="stretch")
+    st.plotly_chart(_tf(_tk_to(_tk_factors_fig(result, today), view_end)), width="stretch")
 
     st.subheader("2. People step out of the loop")
     _fn_caption(
@@ -18779,8 +18686,8 @@ def render_takeoff():
          "Checked per scenario, not on the medians. How fast human hours fall "
          "with capability is calibrated on the automation index, but the split "
          "across stages is assumed."))
-    st.plotly_chart(_tf(_tk_humans_fig(result, today, load_rsi_automation())),
-                    width="stretch")
+    st.plotly_chart(_tf(_tk_to(_tk_humans_fig(result, today, load_rsi_automation()),
+                               view_end)), width="stretch")
 
     st.subheader("3. What it does to capability (ECI)")
     _fn_caption(
@@ -18793,7 +18700,8 @@ def render_takeoff():
          "training compute (compute \u00d7 algorithmic efficiency) of the best "
          "deployed model. For the first year it is floored at the trend, since "
          "no new model has shipped yet."))
-    st.plotly_chart(_tf(_tk_eci_fig(result, today, eci, markers)), width="stretch")
+    st.plotly_chart(_tf(_tk_to(_tk_eci_fig(result, today, eci, markers), view_end)),
+                    width="stretch")
 
     st.subheader("4. When it happens, and how fast")
     gap, reached = _tk_gap(rsi, eci["ultra"], horizon)
@@ -18807,11 +18715,11 @@ def render_takeoff():
          f"Among the {100 * np.mean(reached):.0f}% of scenarios reaching RSI by "
          f"{end_date:%Y}; one not reaching ultraintelligence by then stays in the "
          "denominator."))
-    st.plotly_chart(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_years,
-                                 end_date), width="stretch")
+    st.plotly_chart(_tf(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_years,
+                                     end_date)), width="stretch")
     with st.expander("About this model"):
         st.markdown(
-            "- **Coding automation** is the RSI projection above.\n"
+            "- **Coding automation** is the automated coder projection above.\n"
             "- **RSI** is research direction handed to AI: at most "
             f"{params['full_human']:g}% of its baseline human hours, after coding "
             "automation.\n"

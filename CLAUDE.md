@@ -81,7 +81,7 @@ RSI gates on coding plus research direction under the human-hours bar
 inherited date or once a deployed model reaches ECI 250 (`coding_capability`, from
 `_tk_eci_scale`), returned as `coding_at` with `onset` left exact
 (`test_a_model_at_the_coding_capability_has_automated_coding`). Research acceleration
-has its own chart and 2×/5× first-crossing events. `_tk_eci` reads each draw's capability
+has its own chart and 2×/5× first-crossing events (internal; no card shows them). `_tk_eci` reads each draw's capability
 path as ECI, scaled so today's modeled growth equals the ECI frontier's fitted rate (not
 the ~3× smaller measured exchange rate), floored at that trend for `_TK_ECI_FLOOR_YEARS`
 (the shipping lag), the lift then fading over `_TK_ECI_FLOOR_FADE_YEARS` so no line steps down; `_TK_ECI_VIEW_MAX` caps the chart's view.
@@ -113,10 +113,9 @@ month a draw's ECI reaches `_TK_ULTRA_ECI` (250). ECI at RSI is fixed by constru
 human hours depend only on capability, so RSI is a capability threshold.
 Under the three headline cards, a row gives coding → RSI and RSI → ultraintelligence
 (`_tk_gap`, the FOOM readout) with 80%/90% intervals, over draws reaching the first by the
-horizon, a second past it counting as longer. Beside the 2×/5× cards, a *Takeoff speed b*
-card reads the AI Futures Model's statistic (`_tk_takeoff_b`): with AI directing research, uplift ∝ effort^(s/β),
-so successive uplift doublings take b = 2^(β/s − 1) as long (`TestTakeoffB`). Its median uses
-the settings; its accelerating share reads the simulator's per-draw s and β.
+horizon, a second past it counting as longer. The loop, brakes and these five cards lead
+the tab, above the evidence: they render into a `st.container()` slot made before
+`render_rsi`, since they need its settings first.
 `tk_dc_compute` (default on) feeds compute growth from the Data Centers tab:
 `_tk_dc_compute` samples the US largest-run projection (`_pc_projection`, as Pacing does)
 and averages each path over a fixed `_TK_DC_AVG_YEARS` (not the chart horizon, which
@@ -483,7 +482,7 @@ keys, not caveats.
 Three mechanisms, in order of preference:
 
 1. **`st.metric(..., help=…)`** where a metric exists. Native tooltip, no raw
-   HTML. The *Capabilities Milestones* row is the worked example: eleven cards,
+   HTML. The *Capabilities Milestones* row is the worked example: ten cards,
    each with its own note (`_notes` by slug, plus `_pc_clock_note()` for the
    release-vs-internal split), and a two-line caption under them. Widget `help=` does the same
    for controls, which is why every sidebar control has one.
@@ -531,7 +530,7 @@ CDF (`_tk_charts`).
 `render_rsi()` runs CoBench, then the R&D automation index,
 then the staff survey, then
 merged code per person, OpenAI experiment velocity, then research direction, then
-*Capabilities Milestones* + *RSI projection (tentative)* (`_pc_render_milestones()`,
+*Capabilities Milestones* + *Automated coder projection* (`_pc_render_milestones()`,
 moved here from the Pacing tab). The CoBench section plots that eval — Anthropic's
 internal AI R&D benchmark — against release
 date, with a fitted trend, a projection fan and `_RSI_SUBSTITUTION_BAR` drawn as
@@ -680,10 +679,10 @@ report the same statistic on the same sample (medians on superusers, then on a
 broader sample, then a geometric mean on an opt-in poll), so each point carries
 its `note` on hover and the caption says the rounds differ — and the survey is
 not discontinued, the report says only that no new round was run for Mythos 5.
-And the fan runs `_RSI_SURVEY_HORIZON_DAYS` past the last round rather than to the
-tab's *Project through* year: at the fitted doubling time the median runs several
-orders of magnitude past the data by end-decade, which on a log axis squashes the
-three actual points into the bottom decile. The chart draws
+The fan runs to the tab's *Project through* year like every chart, but the log axis
+stops at `_RSI_MULTIPLE_VIEW`× the bar (the code chart likewise): at the fitted doubling
+time the median runs orders of magnitude past the data by end-decade, which would squash
+the measured points into the bottom decile. The chart draws
 `_PC_RSI_SURVEY_TARGET_X` as its bar, the same one the milestone card dates.
 
 The tab's fourth section (`_render_rsi_code()`) is the counted counterpart to
@@ -1217,15 +1216,13 @@ human in the loop — reaching `_RSI_AL5_TARGET`, the same 90% bar, which is
 **not a fitted series** but the AL4 rung shifted by the ladder's own step (see
 the R&D automation section; it is a card only, `_PC_RSI_CARD_ONLY`, outside the projection,
 its weights and Takeoff's coding blend, and carries the loudest caveat), `_pc_nextstep_eta()` for the detour study's frontier reaching
-`_RSI_DIR_TARGET` (that study's own practical ceiling — see the RSI tab section),
-and `_pc_revenue_eta()` for the **leading** company's ARR reaching `_PC_REV_TARGET_B`
-(the Revenue tab's own top milestone) — the one bar here that isn't a benchmark, but still dated off
-released models, since ARR is what shipped models earn. They render at most `_PC_CARDS_PER_ROW` (4) to a row — wider and a label truncates mid-word — with the rows **balanced** rather than filled greedily, so eleven cards read 4–4–3 (`TestMilestoneCardLayout`). Each reproduces
+`_RSI_DIR_TARGET` (that study's own practical ceiling — see the RSI tab section). They render at most `_PC_CARDS_PER_ROW` (4) to a row — wider and a label truncates mid-word — with the rows **balanced** rather than filled greedily, so ten cards read 4–3–3 (`TestMilestoneCardLayout`). Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
 [DT/2, DT*2], position over the current model's CI, p50 slope fits the trend; RLI: single OLS in
 logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
 ± 1 point; RSI CoBench: single OLS in logit space, odds-doubling time over
-`_rsi_dt_ci()`'s widened interval, position ± `_PC_RSI_POS_CI`; RSI
+`_rsi_dt_ci()`'s widened interval (slow edge `_RSI_SLOW_STEP_MULT`× the slowest frontier
+step), position ± `_PC_RSI_POS_CI` around the measured score, not the fitted line; RSI
 survey: OLS on log(multiple) over every round the tab fits (the carried-over
 `estimated` point included, as on the tab), doubling time over
 `_rsi_survey_dt_ci()`'s t-widened interval, position over the
@@ -1236,24 +1233,16 @@ labelled months, odds-doubling over `_rsi_auto_dt_ci()`, position over the
 figure's own 90% interval on the latest month; AL5: that same draw shifted by a
 lag drawn over [censored ladder, `_RSI_AL5_TAU_HI_MULT`x it]; next-step: single OLS in
 logit space, odds-doubling over `_rsi_dir_dt_ci()`, position
-± `_RSI_DIR_POS_CI` points (the study's own binomial SE at n=`_RSI_DIR_N`);
-revenue: OLS on
-log2(ARR) over every point, DT lognormal over [max(10, DT×0.65), DT×1.5],
-position normal at the tab's 0.3 log2 σ — rather than
-fitting its own, so the tabs can't quote different dates for the same
-milestone. The revenue milestone takes whichever company crosses first
-**per sample** (independent draws — a common shock would narrow the answer
-on nothing measured) and re-anchors both to the later of the two series'
-last dates, since they end on different days. `test_metr_eta_reproduces_the_metr_tab_defaults`,
+± `_RSI_DIR_POS_CI` points (the study's own binomial SE at n=`_RSI_DIR_N`) — rather
+than fitting its own, so the tabs can't quote different dates for the same milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
 `test_rli_eta_reproduces_the_rli_tab_defaults` and
 `test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that.
 
-Five of the eleven are dated off *released* models (METR, RLI and the detour
-study — publicly benchmarked or run on shipped models — and revenue, since ARR is
-earned by shipped models); CoBench, the staff survey, merged code, experiment
+Four of the ten are dated off *released* models (METR p50 and p80, RLI and the detour
+study — publicly benchmarked or run on shipped models); CoBench, the staff survey, merged code, experiment
 velocity and both R&D-automation cards (AL4 and AL5) are internal
 measurements, driven by work on models the lab has internal access to
-before release. So `_pc_report_lag()` pulls the five back
+before release. So `_pc_report_lag()` pulls the four back
 by `_PC_REPORT_LAG_DAYS` (sampled over the range so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other six
 are already on that clock and must not be shifted twice.
 
@@ -1282,11 +1271,10 @@ evals, and the checkbox help says so.
 `test_condition_on_today_truncates_and_reweights`,
 `test_condition_ramp_discounts_the_near_future`.
 
-Under the cards sits *RSI projection (tentative)* (`_pc_render_rsi_blend()`):
+Under the cards sits *Automated coder projection* (`_pc_render_rsi_blend()`):
 no single benchmark defines the threshold, so each milestone is treated as one
 candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets: 10 for each of the nine
-research cards. The revenue card carries zero weight (earnings are not AI doing AI research),
-and AL5 is not in the projection at all. The result
+research cards; AL5 is not in the projection at all. The result
 is `_pc_rsi_blend()`, the **mixture of their date distributions, not an average
 of their medians**, drawn as a CDF (`_pc_rsi_dist_fig()`) between the
 cards and the weights table — cumulative rather than a density because a mixture
