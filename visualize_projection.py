@@ -55,6 +55,13 @@ st.markdown("""<style>
     .block-container { padding-top: 2rem !important; }
     /* The Takeoff tab's loading bar (`_tk_loading`), the app's only progress
        bar: boxed, tall and in large type so a multi-second wait reads as one. */
+    /* Takeoff's headline cards (the `tk_headline` slot): big dates, labels and CIs. */
+    .st-key-tk_headline [data-testid="stMetricValue"] { font-size: 3.4rem !important;
+        line-height: 1.15; font-weight: 700; }
+    .st-key-tk_headline [data-testid="stMetricLabel"] p { font-size: 1.25rem !important;
+        font-weight: 600; }
+    .st-key-tk_headline [data-testid="stCaptionContainer"],
+    .st-key-tk_headline [data-testid="stCaptionContainer"] * { font-size: 1.15rem !important; }
     [data-testid="stProgress"] { padding: 1.6rem 1.8rem; border-radius: 0.8rem;
         background: rgba(41,128,185,0.10); border: 2px solid rgba(41,128,185,0.45); }
     [data-testid="stProgress"] p { font-size: 1.75rem !important; line-height: 1.35; }
@@ -18717,7 +18724,7 @@ def _render_takeoff(loading):
                    "settings give the same numbers on every run. Change it to see how much "
                    "a number moves from sampling alone.")
 
-    with top.container():
+    with top.container(key="tk_headline"):
         st.header("The takeoff model")
         st.markdown(_TK_LOOP_HTML, unsafe_allow_html=True)
         _fn_line(
