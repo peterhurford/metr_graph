@@ -18625,7 +18625,9 @@ def _render_takeoff(loading):
                f"this says; the evidence charts stop by {_RSI_MAX_END_YEAR}.")
     st.header("Takeoff")
     st.warning("Warning: RSI projections under construction, these are simple "
-               "models and not 'all things considered' takes.")
+               "models and not 'all things considered' takes. They assume business as "
+               "usual: no pause, deliberate pacing or slowdown, and no war or other "
+               "disruption to labs, chips or power.")
     # The takeoff model's loop and headline cards lead the page, but they need
     # the evidence's settings first: drawn into this slot once computed.
     # The loading bar sits above the slot, so drawing the model's header and
@@ -18643,7 +18645,7 @@ def _render_takeoff(loading):
                    "its settings are in the RSI evidence section.")
         with st.expander("What decides ultraintelligence", expanded=True):
             st.caption("Across a plausible range, the first three each move the "
-                       "ultraintelligence date 2\u20135 months; \u03c1 and the training-run "
+                       "ultraintelligence date 2\u20136 months; \u03c1 and the training-run "
                        "wait 1\u20132 months (6 sooner if no gain waits). Compute growth "
                        "after RSI, delayed 18 months, leaves the median where 1\u00d7 does; "
                        "with no delay, 2\u00d7 brings it 3 months sooner. Everything under "
@@ -18715,6 +18717,17 @@ def _render_takeoff(loading):
                    "The automated coder projection's dates are unchanged. 0.7 is a judgment: "
                    "both read the same progress, but the projection's fits carry "
                    "benchmark-specific noise too.")
+            number("Software ceiling, low end (orders of magnitude)", "ceiling_low_oom",
+                   1.0, 60.0, 1.0,
+                   "Each scenario's limit on algorithmic efficiency, drawn uniformly "
+                   "between these ends, in orders of magnitude above today's. Returns "
+                   "to research fall linearly to zero as a scenario nears it, so no "
+                   "takeoff runs away without bound. Forethought's range is 6\u201316 "
+                   "orders above full automation.")
+            number("Software ceiling, high end (orders of magnitude; 0 = none)",
+                   "ceiling_high_oom", 0.0, 60.0, 1.0,
+                   "Upper end of the ceiling's range. 0 removes the ceiling: constant "
+                   "returns to research forever.")
             number("Delay before AI speeds compute growth (months after RSI)",
                    "rsi_compute_delay", 0.0, 60.0, 3.0,
                    "How long after a scenario's RSI the compute-growth multiplier "

@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v16-two-rate-eci"
+MODEL_VERSION = "takeoff-v17-software-ceiling"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -68,10 +68,19 @@ DEFAULTS = {
     # `rsi_compute_ramp` months. 1 leaves compute as projected; the size is an
     # assumption, with no published estimate.
     "rsi_compute_boost": 2.0, "rsi_compute_delay": 18.0, "rsi_compute_ramp": 12.0,
+    # Software ceiling (Forethought): returns to research fall linearly to 0
+    # as algorithmic efficiency nears a limit drawn uniformly this many orders
+    # of magnitude above today's. A high of 0 removes it.
+    "ceiling_low_oom": 6.0, "ceiling_high_oom": 16.0,
+    # Share of research that cannot outrun what compute alone would allow (the
+    # frozen-AI reference's pace): scale-dependent algorithmic progress
+    # (Gundlach et al. 2025). Logit-normal per draw, 1-sigma in logit units/100.
+    # Off by default until its strength is settled.
+    "compute_bound": 0.0, "compute_bound_spread": 100.0,
 }
 # Every spread at zero: each draw uses the settings themselves.
 POINT_ESTIMATE = {"uncertainty": 0, "returns_spread": 0, "judgment_spread": 0,
-                  "drift_spread": 0, "substitution_spread": 0}
+                  "drift_spread": 0, "substitution_spread": 0, "compute_bound_spread": 0}
 PRESETS = {
     "Central": {},
     "Fast": {"software_months": 6.0, "training_months": 1.0,
@@ -129,7 +138,10 @@ def validate(params):
             or not 0 <= p["baseline_inputs"] <= 200 or not -90 <= p["judgment_drift"] <= 300 \
             or not 0 <= p["compute_slowdown"] <= 100 or p["compute_slow_years"] < 0 \
             or not 0.5 <= p["rsi_compute_boost"] <= 5 \
-            or not 0 <= p["rsi_compute_delay"] <= 60 or not 0 <= p["rsi_compute_ramp"] <= 60:
+            or not 0 <= p["rsi_compute_delay"] <= 60 or not 0 <= p["rsi_compute_ramp"] <= 60 \
+            or not 0 <= p["ceiling_high_oom"] <= 60 \
+            or not (p["ceiling_high_oom"] == 0 or 0 < p["ceiling_low_oom"] <= p["ceiling_high_oom"]) \
+            or not 0 <= p["compute_bound"] <= 100 or not 0 <= p["compute_bound_spread"] <= 400:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
                          "baseline input growth in [0, 200]%.")
     return p
@@ -253,15 +265,38 @@ def grown(t, early, late, at):
     return e(early, head) + np.exp(early * head) * e(late, np.maximum(np.subtract(t, at), 0))
 
 
+def ceiling_step(log_x, log_amount, k, ceiling):
+    """Log of x = 1 - S / ceiling after research `amount` (log_amount) under
+    dS/dt = A x^k: returns to research falling linearly to 0 at the ceiling
+    (k = difficulty x ceiling). Exact for any k; x reaches 0 only for k < 1."""
+    k = np.asarray(k, dtype=float) * np.ones_like(np.asarray(log_x, dtype=float))
+    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+        above = -np.logaddexp(-(k - 1) * log_x, np.log(np.abs(k - 1))
+                              + log_amount - np.log(ceiling)) / (k - 1)
+        m = 1 - k
+        left = np.exp(m * log_x) - m * np.exp(np.minimum(log_amount, 700)) / ceiling
+        below = np.where(left > 0, np.log(np.maximum(left, 1e-300)) / m, -np.inf)
+        unit = log_x - np.exp(np.minimum(log_amount, 700)) / ceiling
+    return np.where(np.abs(k - 1) < 1e-9, unit, np.where(k > 1, above, below))
+
+
 def reference_software(years, rate, compute_rate, parallel, initial_throughput, difficulty,
-                       late_rate=None, at=np.inf):
+                       late_rate=None, at=np.inf, ceiling=np.inf):
     """Exact software progress with the same resources and frozen AI skills;
-    inputs grow at `compute_rate`, then `late_rate` from `at`."""
+    inputs grow at `compute_rate`, then `late_rate` from `at`, under a
+    software `ceiling` (natural log; inf for none)."""
     late = compute_rate if late_rate is None else late_rate
     effort = grown(years, parallel * np.asarray(compute_rate, dtype=float),
                    parallel * np.asarray(late, dtype=float), at)
     amount = rate * initial_throughput * effort
-    return np.log1p(difficulty * amount) / difficulty if np.all(difficulty > 0) else amount
+    if not np.all(difficulty > 0):
+        return amount
+    if np.all(np.isinf(ceiling)):
+        return np.log1p(difficulty * amount) / difficulty
+    with np.errstate(divide="ignore"):
+        log_x = ceiling_step(np.zeros_like(np.asarray(amount, dtype=float)), np.log(amount),
+                             difficulty * ceiling, ceiling)
+    return -ceiling * np.expm1(log_x)
 
 
 def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None,
@@ -311,7 +346,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # Rows fill in order, so appending a factor leaves the earlier draws unchanged.
     # Rows 4, 6, 7 and 11 fed retired milestones; they stay drawn so the others
     # keep their values.
-    z = normal_scores(rng.uniform(-1, 1, (18, n)))
+    raw = rng.uniform(-1, 1, (20, n))
+    z = normal_scores(raw)
     spread = p["uncertainty"] / 100
     factors = np.exp(spread * z)
     software_rate = np.log(2) * 12 / p["software_months"] * factors[0]
@@ -400,6 +436,17 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     transfer = p["transfer"] / 100
     # difficulty = lambda / r, so a lognormal r gives a lognormal difficulty.
     beta = p["difficulty"] * np.exp(p["returns_spread"] / 100 * z[15])
+    # Software ceiling in natural-log efficiency above today's stock, uniform
+    # between the settings (row 18); inf without one.
+    ceiling = (np.log(10) * (p["ceiling_low_oom"] + (p["ceiling_high_oom"] - p["ceiling_low_oom"])
+                             * (raw[18] + 1) / 2)
+               if p["ceiling_high_oom"] > 0 and p["difficulty"] > 0 else np.full(n, np.inf))
+    capped = np.isfinite(ceiling)
+    # Compute-bound share of research, logit-normal per draw (row 19).
+    with np.errstate(divide="ignore"):
+        bound_logit = np.log(p["compute_bound"]) - np.log(100 - p["compute_bound"]) \
+            if 0 < p["compute_bound"] < 100 else (np.inf if p["compute_bound"] >= 100 else -np.inf)
+    bound = 1 / (1 + np.exp(-(bound_logit + p["compute_bound_spread"] / 100 * z[19])))
     parallel = p["parallelization"]
     initial_throughput = np.broadcast_to(_ces((shares[2] / 0.2) ** parallel,
                                               (shares[1] / 0.4) ** parallel, rho), (n,)).copy()
@@ -530,21 +577,60 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             judgment_log = (1 - weight) * quality_log
             compute_part = (1 - weight) * compute_part + weight * parallel * compute_rate * mid
             labor_part = (1 - weight) * labor_part + weight * parallel * extra_rate * mid
+        # Difficulty: beta per unit of progress, rising toward the ceiling,
+        # where returns to research reach 0 (penalty = -beta C ln(1 - S/C)).
+        gained = software - initial_stock
+
+        def difficulty_at(progress):
+            """(log x, penalty) at `progress` above today's stock."""
+            with np.errstate(divide="ignore", invalid="ignore"):
+                lx = np.where(capped, np.log1p(-np.minimum(progress / ceiling, 1)), 0.0)
+                return lx, np.where(capped, -beta * np.where(capped, ceiling, 0) * lx,
+                                    beta * progress)
+
+        log_x, penalty = difficulty_at(gained)
+        reference_progress = reference_software(t, software_rate, input_rate,
+                                                parallel, initial_throughput, beta,
+                                                input_late, slow_at, ceiling)
+        _, ref_penalty = difficulty_at(reference_progress)
+        reference_pace = np.exp(np.minimum(np.log(initial_throughput)
+            + parallel * (base_compute_log + extra_log) - ref_penalty, 700))
+        # The compute-bound share of research runs no faster than the pace
+        # compute alone allows: the frozen-AI reference, plus any post-RSI
+        # compute boost it never gets. Equal to the pace with AI frozen.
+        # Compared at mid-step (a half-step predictor), so the cap converges
+        # with the step like the rest of the integration.
+        half_amount = np.log(software_rate) + research_log + np.log(
+            dt / 2, out=np.full(n, -np.inf), where=dt > 0)
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            mid_gained = np.where(
+                capped, -ceiling * np.expm1(ceiling_step(log_x, half_amount, beta * ceiling, ceiling)),
+                np.logaddexp(beta * gained, np.log(np.maximum(beta, 1e-300)) + half_amount)
+                / np.maximum(beta, 1e-300) if p["difficulty"] > 0
+                else gained + np.exp(np.minimum(half_amount, 100)))
+        _, mid_penalty = difficulty_at(mid_gained)
+        _, mid_ref_penalty = difficulty_at(reference_software(
+            t + dt / 2, software_rate, input_rate, parallel, initial_throughput, beta,
+            input_late, slow_at, ceiling))
+        allowed_log = (np.log(initial_throughput) + parallel * (compute_log + extra_log)
+                       - mid_ref_penalty)
+        over = np.minimum(allowed_log - (research_log - mid_penalty), 0)
+        bound_log = np.log1p(bound * np.expm1(over))
+        research_log = research_log + bound_log
+        compute_part = compute_part + bound_log
         log_amount = np.log(software_rate) + research_log + np.log(
             dt, out=np.full(n, -np.inf), where=dt > 0)
         # Derivative of the same discovery process being integrated below,
         # in multiples of today's software-progress rate. Snapshot near the
         # end of each monthly integration interval (at most one week long).
-        penalty = beta * (software - initial_stock)
         pace = np.exp(np.minimum(research_log - penalty, 700))
-        reference_progress = reference_software(t, software_rate, input_rate,
-                                                parallel, initial_throughput, beta,
-                                                input_late, slow_at)
-        reference_pace = np.exp(np.minimum(np.log(initial_throughput)
-            + parallel * (base_compute_log + extra_log) - beta * reference_progress, 700))
         if p["difficulty"] > 0:
-            updated = initial_stock + np.logaddexp(
-                beta * (software - initial_stock), np.log(beta) + log_amount) / beta
+            plain = initial_stock + np.logaddexp(
+                beta * gained, np.log(beta) + log_amount) / beta
+            with np.errstate(divide="ignore", invalid="ignore"):
+                near = initial_stock - ceiling * np.expm1(
+                    ceiling_step(log_x, log_amount, beta * ceiling, ceiling))
+            updated = np.where(capped, near, plain)
         else:
             updated = software + np.exp(np.minimum(log_amount, 100))
         # Stop numerically divergent draws explicitly, rather than silently
@@ -571,7 +657,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         pending_software[done] = np.where(adopted[done], (1 - fast_fraction) * snapshot[done], deployed_software[done])
         reference_snapshot = initial_stock + reference_software(run_start, software_rate, input_rate,
                                                  parallel, initial_throughput, beta,
-                                                 input_late, slow_at)
+                                                 input_late, slow_at, ceiling)
         reference_candidate = (1 - fast_fraction) * reference_snapshot + np.log(
             np.maximum(run_compute / reference_train_compute, 1e-12))
         reference_pending_capability[done] = np.maximum(reference_deployed[done], reference_candidate[done])
@@ -586,7 +672,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         reference_fast[fast_ready] = fast_fraction * (initial_stock[fast_ready] + reference_software(
             np.maximum(0, fast_next[fast_ready] - fast_time), software_rate[fast_ready],
             input_rate[fast_ready], parallel, initial_throughput[fast_ready], beta[fast_ready],
-            input_late[fast_ready], slow_at))
+            input_late[fast_ready], slow_at, ceiling[fast_ready]))
         fast_snapshot[fast_ready] = software[fast_ready]
         fast_next[fast_ready] += fast_time
         # For non-ready slow runs, only their already deployed algorithms count.
@@ -729,7 +815,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         "progress_multiple": delivered_rate,
         "compute_matched_advantage": advantage,
         "draws": {"taste_slope": taste_slope, "difficulty": beta,
-                  "judgment_drift": drift, "substitution": rho},
+                  "judgment_drift": drift, "substitution": rho,
+                  "ceiling_oom": ceiling / np.log(10), "compute_bound": bound},
         # Each draw's log compute growth a year before and after `slow_at`;
         # its compute is exp(log_level(t, rate, late, slow_at)) x today's.
         "compute": {"rate": compute_rate, "late": compute_late, "slow_at": slow_at},

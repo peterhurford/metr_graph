@@ -40,7 +40,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v16-two-rate-eci`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v17-software-ceiling`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -70,6 +70,14 @@ the judgment elasticity, its drift and ρ each carry their own literature-sized 
 (`test_the_spreads_leave_a_runaway_possible_not_certain`). `POINT_ESTIMATE` zeroes every
 spread; deterministic tests use it. The per-draw values come back as `result["draws"]`.
 Append new factor rows to `z`, never insert, so earlier draws stay paired across versions.
+Row 18 draws each scenario's software ceiling (`ceiling_low_oom`–`ceiling_high_oom`, default
+6–16 orders of magnitude above today's efficiency, Forethought's range): difficulty rises so
+returns to research fall linearly to 0 there (penalty −βC·ln(1−S/C); `ceiling_step` is the
+exact step, `reference_software` the same closed form), so with it no draw diverges
+(`test_the_software_ceiling_holds_every_draw_below_its_limit`); a high end of 0 removes it,
+which the runaway tests use. Row 19 draws `compute_bound`, the share of research capped at
+the pace compute alone allows (the frozen-AI reference, plus any post-RSI boost); it is 0 and
+has no control while its strength is undecided, and its weekly step is only first-order.
 
 The model starts with partial automation, today's already-assisted software progress,
 and an assumed existing undeployed backlog shared with the reference. Coding productivity
@@ -104,14 +112,16 @@ it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
 The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, two ECI rates,
-months to ultraintelligence from Jan 2030): the judgment elasticity (half/double: +3/−4),
-r (0.5/2: +5/−3), parallelization (0.8/0.3: +3/−2), ρ (−1/0: +1/−1, small since the
-spreads draw ρ per scenario anyway), the training-run wait `fast_share` (12.5/50%: +1/−2;
-100%: −6, and half the gap to Forethought) and `rsi_compute_boost` (default 2×), which multiplies each draw's
-log compute growth after its own RSI date, waiting `rsi_compute_delay` (18 months) then
+software ceiling, months to ultraintelligence from Mar 2030): the judgment elasticity
+(half/double: +2/−4), r (0.5/2: +6/−4), parallelization (0.8/0.3: +3/−3), ρ (−1/0: +1/−1,
+small since the spreads draw ρ per scenario anyway), the training-run wait `fast_share`
+(12.5/50%: +1/−2; 100%: −6, and half the gap to Forethought) and `rsi_compute_boost`
+(default 2×; under *Advanced*, the software ceiling moves it −2 if removed, +2 at 3–8
+orders of magnitude). The boost multiplies each draw's log compute growth after its own
+RSI date, waiting `rsi_compute_delay` (18 months) then
 ramping in over `rsi_compute_ramp` (12), never in the frozen-AI reference
 (`test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference`,
-`test_compute_boost_waits_its_delay_then_ramps_in`). Delayed, it leaves the
+`test_compute_boost_waits_its_delay_then_ramps_in`): delayed, it leaves the
 ultraintelligence median where no feedback puts it; switched on at once, 2× brings it
 3 months sooner. The rest,
 data-center compute included (~1 month), sit in one *Advanced* expander. Retarget that

@@ -45,7 +45,8 @@ def test_seeded_draws_and_rng_isolation():
 
 def test_baseline_growth_and_zero_transfer_remove_feedback():
     """With zero transfer, AI skill slopes cannot change the software path."""
-    p = dict(transfer=0, compute_growth=1.0, **tk.POINT_ESTIMATE, years=2, baseline_inputs=0)
+    p = dict(transfer=0, compute_growth=1.0, **tk.POINT_ESTIMATE, years=2, baseline_inputs=0,
+             ceiling_high_oom=0.0)
     a = tk.simulate(p, n=1)
     rate = np.log(2) * 12 / tk.DEFAULTS["software_months"]
     beta = tk.DEFAULTS["difficulty"]
@@ -490,7 +491,7 @@ def test_point_estimate_draws_the_settings_themselves():
     np.testing.assert_allclose(point["difficulty"], tk.DEFAULTS["difficulty"])
     np.testing.assert_allclose(point["judgment_drift"], 0.1)
     np.testing.assert_allclose(point["substitution"], -0.5)
-    spread = tk.simulate(p, n=50)["draws"]
+    spread = tk.simulate(dict(p, compute_bound=50.0), n=50)["draws"]
     assert all(np.ptp(v) > 0 for v in spread.values())
     # rho stays inside the range `validate` accepts.
     assert (spread["substitution"] >= -5).all() and (spread["substitution"] <= 0.9).all()
@@ -499,10 +500,32 @@ def test_point_estimate_draws_the_settings_themselves():
 def test_the_spreads_leave_a_runaway_possible_not_certain():
     """At the app's measured judgment elasticity (~0.28), some draws run away
     and most do not; at point estimates none does."""
-    p = dict(taste_slope=0.28, years=5)
+    p = dict(taste_slope=0.28, years=5, ceiling_high_oom=0.0)
     runaway = lambda r: np.mean(r["software_log"] >= 1e6 - 1)
     assert 0.02 < runaway(tk.simulate(p, n=400)) < 0.6
     assert runaway(tk.simulate(dict(p, **tk.POINT_ESTIMATE), n=400)) == 0
+
+
+def test_the_software_ceiling_holds_every_draw_below_its_limit():
+    """Returns to research fall linearly to 0 at each draw's ceiling: no draw
+    runs away, each stays under its own limit, and the closed form is the
+    integral of dS/dt = A (1 - S/C)^k. Without one, the same draws run away."""
+    p = dict(taste_slope=0.28, years=10)
+    r = tk.simulate(p, n=400)
+    limit = r["draws"]["ceiling_oom"] * np.log(10)
+    assert not np.isfinite(r["stopped_at"]).any()              # nothing diverges
+    # The stock also holds today's backlog, about a year's progress at most.
+    assert np.all(r["software_log"] < limit + 1.5)
+    assert 6 <= r["draws"]["ceiling_oom"].min() and r["draws"]["ceiling_oom"].max() <= 16
+    off = tk.simulate(dict(p, ceiling_high_oom=0.0), n=400)
+    assert np.mean(off["software_log"] >= 1e6 - 1) > 0.02
+    # Closed form against a fine Euler integration of the same equation.
+    a, k, c = 3.0, 4.0, 10.0
+    s, dt = 0.0, 1e-5
+    for _ in range(100000):
+        s += a * (1 - s / c) ** k * dt
+    exact = -c * np.expm1(tk.ceiling_step(np.array(0.0), np.log(a * 1.0), k, c))
+    assert float(exact) == pytest.approx(s, rel=1e-4)
 
 
 def test_compute_slows_to_its_late_rate_from_the_slowdown_date():
