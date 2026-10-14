@@ -1912,10 +1912,13 @@ class TestPacingTab:
         self._paired(at.checkbox(key="pc_stop_remote").check())
         _assert_no_error(at, "Pausing / why with remote access cut")
         rem = _rows(at)
-        # All compute is then domestic: the abroad row closes nothing (it
-        # shows a dash) and the domestic row carries the compute rate.
+        # All compute is then domestic: the abroad row reads Stopped and the
+        # domestic row carries the compute rate.
         assert rem.get("abroad", 0.0) == pytest.approx(0.0, abs=0.05)
         assert rem["domestic"] > 0
+        tbl = next(x.value for x in at.table if "Source" in x.value.columns)
+        abroad = tbl[tbl["Source"].str.startswith("Compute, clusters abroad")]
+        assert list(abroad.iloc[0][1:]) == ["Stopped"] * 3
         # Dating the cut later leaves part of it standing.
         when = at.select_slider(key="pc_remote_when").options
         self._paired(at.select_slider(key="pc_remote_when").set_value(
