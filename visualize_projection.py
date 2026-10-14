@@ -403,6 +403,12 @@ def superexp_trajectory(days, dt_0, halflife, dt_floor):
     return y_se + y_lin                                   # (n, d)
 
 
+def _pctiles(x, qs):
+    """{q: x's q-th percentile along axis 0} for each q, from one partition of
+    `x` rather than one per q (the same numbers, several times faster)."""
+    return dict(zip(qs, np.percentile(x, qs, axis=0)))
+
+
 def _logit(p):
     """Logit transform: log(p / (1-p)). p in (0,1)."""
     p = np.clip(p, 1e-10, 1 - 1e-10)
@@ -6203,7 +6209,7 @@ def render_rsi(end_year):
     proj_dates = [current['date'] + timedelta(days=int(d)) for d in proj_days]
     traj = _inv_logit(proj_start_logit[:, None] + proj_days[None, :] * proj_slope[:, None]) * 100
 
-    pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
+    pct = _pctiles(traj, (5, 10, 25, 50, 75, 90, 95))
 
     fig = go.Figure()
     for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
@@ -6468,7 +6474,7 @@ def _render_rsi_automation(end_year):
             traj = _inv_logit(
                 start_logit[:, None]
                 + (pdays[None, :] - shift[:, None]) * proj_slope[:, None]) * 100
-            pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 75, 90, 95)}
+            pct = _pctiles(traj, (5, 10, 25, 75, 90, 95))
             medians[key] = np.percentile(traj, 50, axis=0)
             for i, (lo, hi, color) in enumerate(bands[key]):
                 fig.add_trace(go.Scatter(
@@ -6676,7 +6682,7 @@ def _render_rsi_survey(end_year):
                           dtype=float)
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
         traj = np.exp(start_log[:, None] + pdays[None, :] * proj_slope[:, None])
-        pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
+        pct = _pctiles(traj, (5, 10, 25, 50, 75, 90, 95))
 
         for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
                                      (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
@@ -6818,7 +6824,7 @@ def _render_rsi_code(end_year):
                           dtype=float)
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
         traj = np.exp(start_log[:, None] + pdays[None, :] * proj_slope[:, None])
-        pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
+        pct = _pctiles(traj, (5, 10, 25, 50, 75, 90, 95))
 
         for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
                                      (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
@@ -7001,7 +7007,7 @@ def _render_rsi_experiments(end_year):
         days = np.unique(np.append(days, (end - cur).days))
         dates = [cur + timedelta(days=float(d)) for d in days]
         paths = np.exp(starts[:, None] + slopes[:, None] * days[None, :])
-        pct = {q: np.percentile(paths, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
+        pct = _pctiles(paths, (5, 10, 25, 50, 75, 90, 95))
         for lo, hi, alpha in [(5, 95, 0.10), (10, 90, 0.18), (25, 75, 0.28)]:
             fig.add_trace(go.Scatter(
                 x=dates + dates[::-1], y=list(pct[hi]) + list(pct[lo][::-1]),
@@ -7132,7 +7138,7 @@ def _render_rsi_direction(end_year):
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
         traj = _inv_logit(start_logit[:, None]
                           + pdays[None, :] * proj_slope[:, None]) * 100
-        pct = {q: np.percentile(traj, q, axis=0) for q in (5, 10, 25, 50, 75, 90, 95)}
+        pct = _pctiles(traj, (5, 10, 25, 50, 75, 90, 95))
 
         for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
                                      (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
@@ -7441,7 +7447,7 @@ def render_ukcyber():
         logit_traj = start_logit[:, None] + proj_days_arr[None, :] * proj_logit_slope[:, None]
     all_trajectories = _inv_logit(logit_traj) * 100
 
-    pct = {p: np.percentile(all_trajectories, p, axis=0) for p in (5, 10, 25, 50, 75, 90, 95)}
+    pct = _pctiles(all_trajectories, (5, 10, 25, 50, 75, 90, 95))
 
     # ── Chart ────────────────────────────────────────────────────────────
     st.header("AISI Narrow Cyber Tasks — open-weight lag behind the closed frontier")
@@ -12328,7 +12334,7 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     coef_algo = ((1.0 - share) * obs_slope * pace)[:, None]
     traj = eci_now + coef_phys * dlog[None, :] + coef_algo * dt_yrs[None, :]
 
-    pct = {p: np.percentile(traj, p, axis=0) for p in (5, 10, 25, 50, 75, 90, 95)}
+    pct = _pctiles(traj, (5, 10, 25, 50, 75, 90, 95))
 
     base = '#6A3D9A'
     r, g, b = int(base[1:3], 16), int(base[3:5], 16), int(base[5:7], 16)
@@ -13663,7 +13669,7 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
     horizon = max(datetime(2027, 12, 31), d90 + timedelta(days=180))
     x_dates = [anchor_d] + _cc_quarter_ends(anchor_d, horizon)
     dt = np.array([(d - anchor_d).days / 365.25 for d in x_dates])
-    pct_m = {p: np.percentile(traj_m, p, axis=0) for p in (10, 25, 50, 75, 90)}
+    pct_m = _pctiles(traj_m, (10, 25, 50, 75, 90))
     pct = {p: np.interp(dt, grid_yrs, pct_m[p]) for p in pct_m}
 
     figt = go.Figure()
@@ -14534,7 +14540,7 @@ def _render_cc_duv_ceiling(today):
     yrs = [y for y, *_ in us]
     paths = np.array([[10 ** (lv0 + lg * (y + 0.5 - 2026.5)) for y in yrs]
                       for lv0, lg in grid])
-    p10, p50, p90 = (np.percentile(paths, q, axis=0) for q in (10, 50, 90))
+    p10, p50, p90 = np.percentile(paths, (10, 50, 90), axis=0)
     xs = [_x(y) for y in yrs]
     trend_name = f"China's own trend (\u00d7{_DUV_CN_OUTPUT_GROWTH:g}/yr)"
     fig.add_trace(go.Scatter(
@@ -17110,7 +17116,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         marker=dict(size=4, color='#D62728', line=dict(color='white', width=0.5)),
         text=[_hover(d, s, n) for d, s, n in cn_fr],
         hoverinfo='text', name='China (actual)'))
-    pct = {p: np.percentile(traj, p, axis=0) for p in (10, 25, 50, 75, 90)}
+    pct = _pctiles(traj, (10, 25, 50, 75, 90))
     xs = [grid_d[i] for i in keep]
     for lo_p, hi_p, alpha in ((10, 90, 0.16), (25, 75, 0.20)):
         fig.add_trace(go.Scatter(
@@ -19172,8 +19178,11 @@ def _render_takeoff(loading):
             st.info("The automated coder projection has no available draws. Adjust its weights below.")
             return
         onset_years = onset_days / 365.25
-        params = {k: st.session_state["tk_" + k] for k in takeoff.DEFAULTS
-                  if k not in _TK_NOT_WIDGETS}
+        # A widget with integer bounds hands back an int where the default is a
+        # float; cast, or the first rerun misses `_tk_simulate`'s cache.
+        params = {k: float(st.session_state["tk_" + k])
+                  if isinstance(takeoff.DEFAULTS[k], float) else st.session_state["tk_" + k]
+                  for k in takeoff.DEFAULTS if k not in _TK_NOT_WIDGETS}
         # Difficulty is set through the returns to research, r = lambda / difficulty,
         # with lambda held at the reference exponent so the parallelization setting
         # moves returns to inputs alone, not how fast ideas get harder.
@@ -19229,21 +19238,23 @@ def _render_takeoff(loading):
         # scenario with its own AL4->AL5 gap.
         human_curve = _tk_ladder_curves(_tk_al_hours_now(), len(onset_years), params["seed"])
         _tk_loading(bar, 1)
-        result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
-                              experiment_starts, experiment_slopes, pace_yield, compute_rates,
-                              hist_compute, coding_level, coding_weights, human_curve)
-        # Late coding dates go with slow scenarios: rank the first run's capability
+        rest = (experiment_starts, experiment_slopes, pace_yield, compute_rates,
+                hist_compute, coding_level, coding_weights, human_curve)
+        # Late coding dates go with slow scenarios: rank a first run's capability
         # growth, reassign the RSI projection's dates along it, and run again.
+        # The pairing reads capability only at `_TK_PAIRING_YEARS` and the
+        # simulation is causal, so that first run stops a month past it
+        # (`test_the_pairing_run_stops_where_the_pairing_reads`).
         corr = float(st.session_state["tk_coding_pairing"])
         if corr > 0:
-            wp = result["workflow_progress"]
+            first = _tk_simulate(dict(params, years=min(horizon, _TK_PAIRING_YEARS + 1 / 12)),
+                                 onset_years, _TK_SOURCE_DIGEST, *rest)
+            wp = first["workflow_progress"]
             k = min(int(np.searchsorted(wp["years"], _TK_PAIRING_YEARS)), len(wp["years"]) - 1)
             onset_years = _tk_pair_onset(onset_years, wp["capability_log"][:, k], corr,
                                          int(params["seed"]))
             _tk_loading(bar, 2)
-            result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST,
-                                  experiment_starts, experiment_slopes, pace_yield, compute_rates,
-                                  hist_compute, coding_level, coding_weights, human_curve)
+        result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST, *rest)
         # The ECI trend reflects the compute growth behind it: the data-center
         # series' own historical fit when its projection is in use.
         result["hist_compute"] = hist_compute

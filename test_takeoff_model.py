@@ -363,6 +363,26 @@ def test_human_hours_can_follow_a_given_curve():
     assert (h2[3] > h[3]).all()
 
 
+@pytest.mark.parametrize("slow_years", [2.0, 6.0])
+def test_the_pairing_run_stops_where_the_pairing_reads(slow_years):
+    """The app's pairing run ends a month past the year it reads capability at;
+    that is exact only while nothing in a draw's past depends on the horizon."""
+    rng = np.random.default_rng(3)
+    n = 200
+    years = np.linspace(0, 20, 241)
+    curve = (years, np.vstack([np.exp(-years / rng.uniform(1, 5)) for _ in range(n)]))
+    kw = dict(n=n, onset_years=rng.uniform(0, 4, n), human_curve=curve,
+              compute_rates=rng.uniform(0.5, 1.5, n), historical_compute_rate=1.0,
+              coding_capability=6.0)
+    full = tk.simulate(dict(years=10, compute_slow_years=slow_years), **kw)
+    short = tk.simulate(dict(years=4 + 1 / 12, compute_slow_years=slow_years), **kw)
+    k = len(short["workflow_progress"]["years"])
+    np.testing.assert_array_equal(full["workflow_progress"]["years"][:k],
+                                  short["workflow_progress"]["years"])
+    np.testing.assert_array_equal(full["workflow_progress"]["capability_log"][:, :k],
+                                  short["workflow_progress"]["capability_log"])
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])
