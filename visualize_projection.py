@@ -18444,19 +18444,25 @@ def _tk_workforce_fig(result, today, eci, markers=(), humans=_TK_HUMAN_RESEARCHE
                         subplot_titles=["Researchers (heads)", "Human full-time equivalents"])
     for col, series in ((1, (("AI researcher copies", ais, "#d68910"),
                              ("Human researchers", people, "#2980b9"))),
-                        (2, (("Total (humans + AIs)", fte, "#8e44ad"),))):
+                        (2, (("AI (FTE)", fte - people, "#d68910"),
+                             ("Humans (FTE)", people, "#2980b9"),
+                             ("Total (humans + AIs)", fte, "#8e44ad")))):
         for name, values, color in series:
+            # The total is a dotted median over the two parts, without a band.
+            total = name.startswith("Total")
             q = np.quantile(values, [.1, .5, .9], axis=0)
             rgb = tuple(int(color[j:j + 2], 16) for j in (1, 3, 5))
-            fig.add_trace(go.Scatter(x=x, y=q[0], mode="lines", line=dict(width=0),
-                                     hoverinfo="skip", showlegend=False, name=name + " 10%"),
-                          row=1, col=col)
-            fig.add_trace(go.Scatter(x=x, y=q[2], mode="lines", line=dict(width=0),
-                                     fill="tonexty", hoverinfo="skip", showlegend=False,
-                                     fillcolor=f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.15)",
-                                     name=name + " 90%"), row=1, col=col)
+            if not total:
+                fig.add_trace(go.Scatter(x=x, y=q[0], mode="lines", line=dict(width=0),
+                                         hoverinfo="skip", showlegend=False,
+                                         name=name + " 10%"), row=1, col=col)
+                fig.add_trace(go.Scatter(x=x, y=q[2], mode="lines", line=dict(width=0),
+                                         fill="tonexty", hoverinfo="skip", showlegend=False,
+                                         fillcolor=f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.15)",
+                                         name=name + " 90%"), row=1, col=col)
             fig.add_trace(go.Scatter(
-                x=x, y=q[1], mode="lines", name=name, line=dict(color=color, width=2.5),
+                x=x, y=q[1], mode="lines", name=name,
+                line=dict(color=color, width=2 if total else 2.5, dash="dot" if total else None),
                 text=[_tk_count(v) for v in q[1]],
                 hovertemplate="%{x|%b %Y}<br>%{text}<extra>" + name + "</extra>"),
                 row=1, col=col)
