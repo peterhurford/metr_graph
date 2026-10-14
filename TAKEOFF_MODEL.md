@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v15-delayed-compute-feedback`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v16-two-rate-eci`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -56,8 +56,8 @@ date, `rsi_compute_boost` (default 2) multiplies its log compute growth, standin
 speeding chip design, fabs and spending: Forethought's chip-technology and chip-production
 feedback loops. It waits 18 months (a chip generation, a fab's build) and ramps in over a
 year; the frozen-AI reference never gets it. The size is an assumption. With the delay the
-ultraintelligence median stays at Aug 2030, as with no feedback, and the 80% interval's late
-edge moves from Aug 2032 to Apr 2032; at once, 2x gives Feb 2030. The
+ultraintelligence median stays where no feedback puts it (Jan 2030); at once, 2x brings it
+3 months sooner. The
 other research inputs keep their own growth, so research inputs slow by compute's share.
 
 Research judgment is gated by who directs research: people still in the direction stage
@@ -128,13 +128,17 @@ The 1% floor and stage halving times remain adjustable. Halving times use months
 progress at today's initial growth rate, not calendar months; accelerated capability progress
 compresses calendar durations. The available research system includes validated fast gains.
 
-**Capability as ECI.** Each draw's deployed effective compute (training compute × algorithmic
-efficiency, relative to today's model) is read as ECI: today's US frontier score plus a
-fixed number of points per unit of log effective compute, set so today's modeled growth
-equals the ECI frontier's fitted points per year. The measured exchange rate (about 6.4
-points per 10× training compute) would give a third of that slope, so the choice roughly
-triples every post-RSI gain read as ECI; both readings belong next to any bar picked off it.
-Ultraintelligence is to be defined as an ECI level on this chart.
+**Capability as ECI.** Each draw's deployed model is read as ECI from its two parts, both
+relative to today's model: today's US frontier score, plus 6.4 points per 10x of training
+compute (the Compute/capabilities tab's frontier-grade exchange rate), plus 31 points per
+10x of algorithmic efficiency, the rate that makes today's modeled growth equal the ECI
+frontier's fitted 15.7 points a year. Both rates fit that history; algorithms earn more
+because compute explains only about 3 of the 15.7 points (the tab's own pooled fit puts
+algorithms at 12 points a year, close to the 12.6 left over). The single-rate reading, 17.6
+points per 10x of either, also fits the history and is one checkbox away: it puts
+ultraintelligence at Aug 2030 against Jan 2030, since the takeoff after RSI is mostly
+algorithmic. Coding counts as automated once a model reaches ECI 250 under the same reading.
+Ultraintelligence is defined as an ECI level on this chart.
 
 ## Parameter uncertainty
 
@@ -162,11 +166,12 @@ progress accelerates.
 
 Forethought's own measure, years of progress made in the year after RSI, is counted in
 2025-level ECI progress: the 13.5 points the US frontier gained over 2025, about 5.8x a year
-of effective compute here. Its median is 1.8 (80%: 1.1 to 4.0); 17% of scenarios make 3
-years or more and 3% make 10, against Forethought's 57% and 18%. The yardsticks differ:
-Forethought counts about 10x a year of effective compute as a year, holds compute fixed and
-starts at full automation of AI R&D. Two features account for most of the gap. Measured
-against the 2024-26 trend (7.8x a year, where defaults give 13% and 2%): with labor and
+of effective compute here. Read through the two ECI rates its median is 2.3 (80%: 1.3 to
+6.1); 32% of scenarios make 3 years or more and 5% make 10, against Forethought's 57% and
+18% (one ECI rate: 1.8, 17% and 3%). The yardsticks differ: Forethought counts about 10x a
+year of effective compute as a year, holds compute fixed and starts at full automation of AI
+R&D. Two features account for most of the gap. Measured with one ECI rate against the
+2024-26 trend (7.8x a year, where defaults give 13% and 2%): with labor and
 compute as substitutes (rho 0.5, no spread) and every gain delivered on a one-week cycle
 instead of waiting for a training run, 50% make 3 years and 30% make 10;
 r at Forethought's 2025 central 1.2 then gives 57% and 37%. Either alone gives 23% or 27%;

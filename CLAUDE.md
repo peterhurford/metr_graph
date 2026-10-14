@@ -40,7 +40,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v15-delayed-compute-feedback`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v16-two-rate-eci`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -82,8 +82,13 @@ inherited date or once a deployed model reaches ECI 250 (`coding_capability`, fr
 `_tk_eci_scale`), returned as `coding_at` with `onset` left exact
 (`test_a_model_at_the_coding_capability_has_automated_coding`). Research acceleration
 has its own chart and 2×/5× first-crossing events (internal; no card shows them). `_tk_eci` reads each draw's capability
-path as ECI, scaled so today's modeled growth equals the ECI frontier's fitted rate (not
-the ~3× smaller measured exchange rate), floored at that trend for `_TK_ECI_FLOOR_YEARS`
+path as ECI at `result["eci_rates"]` (`_tk_eci_rates`, `tk_eci_two_rate`, default on): the
+training-compute part (`capability_log − validated_log`) at the CC tab's frontier-grade
+exchange rate (`_cc_frontier_grade_algo`, margin 3 then 5 then pooled), the algorithmic part
+(`validated_log`) at whatever makes today's modeled growth equal the ECI frontier's fitted
+rate (`TestTakeoffEciRates`); off, one rate for both. The coding test uses the same reading
+(`simulate(coding_weights=…)`). Two rates put ultraintelligence at Jan 2030, one at Aug
+2030. The path is floored at that trend for `_TK_ECI_FLOOR_YEARS`
 (the shipping lag), the lift then fading over `_TK_ECI_FLOOR_FADE_YEARS` so no line steps down; `_TK_ECI_VIEW_MAX` caps the chart's view.
 v7 adds a CES labor-compute mean (`substitution`), Amdahl labor gains as the human share
 falls (`ai_speed`), non-AI input growth holding the frozen-AI pace (`baseline_inputs`), a
@@ -97,17 +102,18 @@ it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `_TK_FACTOR_VIEW`. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
-The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, months to
-ultraintelligence): the judgment elasticity (half/double: +3/−5), r (0.5/2: +6/−5),
-parallelization (0.8/0.3: +3/−3), ρ (−1/0: +1/−2, small since the spreads draw ρ per
-scenario anyway), the training-run wait `fast_share` (12.5/50%: +1/−2; 100%: −6, and half
-the gap to Forethought) and `rsi_compute_boost` (default 2×), which multiplies each draw's
+The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, two ECI rates,
+months to ultraintelligence from Jan 2030): the judgment elasticity (half/double: +3/−4),
+r (0.5/2: +5/−3), parallelization (0.8/0.3: +3/−2), ρ (−1/0: +1/−1, small since the
+spreads draw ρ per scenario anyway), the training-run wait `fast_share` (12.5/50%: +1/−2;
+100%: −6, and half the gap to Forethought), `tk_eci_two_rate` (off: +7) and
+`rsi_compute_boost` (default 2×), which multiplies each draw's
 log compute growth after its own RSI date, waiting `rsi_compute_delay` (18 months) then
 ramping in over `rsi_compute_ramp` (12), never in the frozen-AI reference
 (`test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference`,
 `test_compute_boost_waits_its_delay_then_ramps_in`). Delayed, it leaves the
-ultraintelligence median where no feedback puts it (Aug 2030) and pulls the 80% interval's
-late edge from Aug 2032 to Apr 2032; switched on at once, 2× gives Feb 2030. The rest,
+ultraintelligence median where no feedback puts it; switched on at once, 2× brings it
+3 months sooner. The rest,
 data-center compute included (~1 month), sit in one *Advanced* expander. Retarget that
 grouping, and the expander's caption, if a rerun of the sweep reorders them.
 AI judgment is gated by the direction stage's human share, uncapped

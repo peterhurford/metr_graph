@@ -240,6 +240,21 @@ def test_compute_boost_waits_its_delay_then_ramps_in():
     assert gap[0, -1] == pytest.approx(rate * (0.25 + (3.5 - rsi - 1.5)), rel=1e-3)
 
 
+def test_coding_weights_measure_capability_by_its_parts():
+    """Unit weights reproduce the plain log-effective-compute test; weighting
+    the algorithmic part up reaches the same level sooner."""
+    onset = np.full(20, np.inf)
+    base = dict(years=6)
+    plain = tk.simulate(base, n=20, onset_years=onset, coding_capability=3.0)
+    unit = tk.simulate(base, n=20, onset_years=onset, coding_capability=3.0,
+                       coding_weights=(1.0, 1.0))
+    np.testing.assert_allclose(plain["coding_at"], unit["coding_at"])
+    heavy = tk.simulate(base, n=20, onset_years=onset, coding_capability=3.0,
+                        coding_weights=(0.5, 2.0))
+    assert (heavy["coding_at"] <= plain["coding_at"]).all()
+    assert (heavy["coding_at"] < plain["coding_at"]).any()
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])

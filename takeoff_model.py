@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v15-delayed-compute-feedback"
+MODEL_VERSION = "takeoff-v16-two-rate-eci"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -265,7 +265,8 @@ def reference_software(years, rate, compute_rate, parallel, initial_throughput, 
 
 
 def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None,
-             compute_rates=None, historical_compute_rate=None, coding_capability=None):
+             compute_rates=None, historical_compute_rate=None, coding_capability=None,
+             coding_weights=None):
     """Weekly research and successor cycles, with censored milestone draws.
 
     RSI is the first time research direction is at or under `full_human`% of
@@ -274,7 +275,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     (`capability_log`) covers the whole window. `compute_rates`, one log
     growth rate a year per draw, replaces `compute_growth` and its spread;
     `historical_compute_rate` is the compute growth behind today's steady pace
-    (default: each draw's own rate). `coding_capability`, a capability level
+    (default: each draw's own rate). `coding_weights` (w_compute, w_software)
+    measures capability as w_compute x its training-compute part plus
+    w_software x its algorithmic part (both natural logs vs today's model)
+    for that test, so the level can be an ECI gain; default 1 and 1, log
+    effective compute. `coding_capability`, a capability level
     (log effective compute), counts coding as automated once a deployed model
     reaches it, ahead of the inherited date; the result's `coding_at`.
 
@@ -602,7 +607,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         last_deploy[ready] = end[ready]
         effective = deployed + fast_deployed
         if coding_capability is not None:
-            capable = active & (effective >= coding_capability) & (coding > end)
+            level = effective
+            if coding_weights is not None:
+                software_part = deployed_software + fast_deployed
+                level = (coding_weights[0] * (deployed - deployed_software)
+                         + coding_weights[1] * software_part)
+            capable = active & (level >= coding_capability) & (coding > end)
             coding[capable] = end[capable]
         rows = np.flatnonzero(ready | fast_ready)
         future = workflow_grid[None, :] >= end[rows, None] - 1e-12
@@ -727,14 +737,17 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     }
 
 
-def progress_years(result, base_rate, window=1.0):
-    """Per draw, the years of progress at `base_rate` (log capability a year)
-    its deployed capability makes in the `window` years after RSI: Forethought's
-    "years of AI progress compressed into one year". NaN where RSI never comes
-    or the window runs past the horizon; +inf where the draw diverges inside it.
+def progress_years(result, base_rate, window=1.0, level=None):
+    """Per draw, the years of progress at `base_rate` (log capability a year,
+    or `level`'s units a year) its deployed capability makes in the `window`
+    years after RSI: Forethought's "years of AI progress compressed into one
+    year". `level` (draws x months) replaces the capability path, as when it
+    is read as ECI. NaN where RSI never comes or the window runs past the
+    horizon; +inf where the draw diverges inside it.
     """
     wp = result["workflow_progress"]
-    grid, cap = wp["years"], wp["capability_log"]
+    grid = wp["years"]
+    cap = wp["capability_log"] if level is None else level
     start = result["events"]["RSI"]
     end = start + window
     out = np.full(len(start), np.nan)

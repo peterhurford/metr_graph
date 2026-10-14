@@ -5185,6 +5185,36 @@ class TestTakeoffYearlyProgress:
         assert np.isfinite(stopped[2028]) and np.isinf(stopped[2029])
 
 
+class TestTakeoffEciRates:
+    """Two-rate ECI conversion: compute at the Compute/capabilities tab's
+    frontier-grade exchange rate, algorithms at whatever fits the frontier's
+    climb; one rate gives both the single fitted rate."""
+
+    def test_both_conversions_reproduce_the_frontiers_climb(self):
+        import takeoff_model as tk
+        hist = vp._tk_hist_compute_rate()
+        _, _, ppy, _ = vp._tk_eci_scale(tk.DEFAULTS, hist)
+        software = np.log(2) * 12 / tk.DEFAULTS["software_months"]
+        for two in (False, True):
+            per_compute, per_software, _ = vp._tk_eci_rates(tk.DEFAULTS, hist, two)
+            assert per_compute * hist + per_software * software == pytest.approx(ppy)
+        one = vp._tk_eci_rates(tk.DEFAULTS, hist, False)
+        assert one[0] == pytest.approx(one[1])
+
+    def test_compute_rate_is_the_frontier_grade_exchange_rate(self):
+        import takeoff_model as tk
+        rows = vp.load_eci_compute(_mtime=vp._eci_mtime())
+        full = vp.load_eci_frontier(_mtime=vp._eci_mtime(), full_window=True)
+        fit = (vp._cc_frontier_grade_algo(rows, full, margin=3.0)
+               or vp._cc_frontier_grade_algo(rows, full))
+        per_compute, per_software, src = vp._tk_eci_rates(
+            tk.DEFAULTS, vp._tk_hist_compute_rate(), True)
+        assert src == "two rates"
+        assert per_compute * np.log(10) == pytest.approx(fit["a_partial"])
+        # Algorithms earn more ECI per 10x than compute: the split's whole point.
+        assert per_software > per_compute
+
+
 class TestTakeoffRsiCalibration:
     """Takeoff defaults read off RSI data rather than set by hand."""
 
