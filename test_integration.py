@@ -1677,9 +1677,19 @@ class TestPacingTab:
                     and not src.startswith("Time"):
                 end = r["ECI/yr at crossing"]
                 rate[src] = (float(r["ECI/yr at pause"]),
-                             0.0 if end == "Blocked" else float(end))
+                             0.0 if end in ("Stopped", "Dried up")
+                             else float(end))
         assert rate["Distillation"][1] < rate["Distillation"][0]
         # The bottom row turns the three total rates into months, slowest last.
+        # At the defaults (models withheld, no stop lever) distillation dries
+        # up; the stop lever relabels it as stopped, from the pause on.
+        dist = why[why["Source"].str.startswith("Distillation")].iloc[0]
+        assert dist["ECI/yr at crossing"] == "Dried up"
+        at.checkbox(key="pc_stop_dist").check().run()
+        cut = next(t.value for t in at.table if "Source" in t.value.columns)
+        cut = cut[cut["Source"].str.startswith("Distillation")].iloc[0]
+        assert cut["ECI/yr at pause"] == cut["ECI/yr at crossing"] == "Stopped"
+        at.checkbox(key="pc_stop_dist").uncheck().run()
         months = why[why["Source"].str.startswith("Time")].iloc[0]
         m = [float(months[c].split()[0]) for c in
              ("ECI/yr at pause", "Average ECI/yr", "ECI/yr at crossing")]

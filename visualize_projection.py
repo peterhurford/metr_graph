@@ -16208,14 +16208,16 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    cn_gain, cn_extra, cn_run_mo, us_run_mo, anchor_name,
                    anchor_d, anchor_eci, horizon_year, notes=(),
                    t_pause=None, pause_label=None, surpass_mo=None,
-                   dist_blocked=False):
+                   withhold=False, dist_stop_t=None):
     """Bottom-of-panel breakdown: why China's catch-up takes the months it does.
 
     The table gives each source's rate at the pause, its average from the
     pause to the crossing (what it closes over that span) and its rate at the
     crossing (`_pc_rate_at`), then the months the gap would take at each total
-    rate: the average's is the actual catch-up. Distillation reads "Blocked"
-    at the crossing when a lever (`dist_blocked`) has dried it up. `years` is
+    rate: the average's is the actual catch-up. A distillation cell reads
+    "Stopped" from the stop lever's date (`dist_stop_t`, years from China's
+    anchor) and "Dried up" once China has caught its teacher (the last
+    pre-freeze release when `withhold`, else the bar). `years` is
     the final crossing
     (run-length shift included), `target0`/`traj0`/`grid0` the organic bar
     and paths the channels accumulated against, `t_pause` years from China's
@@ -16280,11 +16282,24 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                            if ravg is not None else None)
                     label += " (rate: all compute)"
                 shown = True
-        end = _fmt(r[1])
-        if k == 'distillation' and dist_blocked and r[1] is not None \
-                and r[1] < 0.05:
-            end = "Blocked"
-        rows.append({"Source": label, c0: _fmt(r[0]), c1: _fmt(avg), c2: end})
+        start, end = _fmt(r[0]), _fmt(r[1])
+        if k == 'distillation':
+            # Two different reasons for a zero: the lever cut it, or China
+            # caught the model it learns from.
+            for when, col in ((t_pause, 'start'), (t_cross, 'end')):
+                t_med = float(np.nanmedian(when))
+                val = r[0] if col == 'start' else r[1]
+                if dist_stop_t is not None and t_med >= dist_stop_t:
+                    tag = "Stopped"
+                elif val is not None and val < 0.05:
+                    tag = "Dried up"
+                else:
+                    continue
+                if col == 'start':
+                    start = tag
+                else:
+                    end = tag
+        rows.append({"Source": label, c0: start, c1: _fmt(avg), c2: end})
     r0 = sum(r[0] for r in rates.values())
     r1 = sum(r[1] for r in rates.values())
     rows.append({"Source": "Total", c0: _fmt(r0), c1: _fmt(ravg),
@@ -16310,8 +16325,9 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
           if surpass_mo is not None else []))
 
     def _shade(v):
-        return ("background-color: #F4CCCC; color: #7F1010"
-                if v == "Blocked" else "")
+        return {"Stopped": "background-color: #F4CCCC; color: #7F1010",
+                "Dried up": "background-color: #FCE8D5; color: #8A4B00"
+                }.get(v, "")
 
     df = pandas.DataFrame(rows)
     # The average is the column that sets the months, so it is lifted and the
@@ -16324,9 +16340,18 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
              .apply(lambda r: ["font-weight: bold" if r.name >= len(df) - 2
                                else ""] * len(r), axis=1)
              .hide(axis="index"))
-    if notes:
-        _fn_caption("Rates under these settings.",
-                    ("these settings", " ".join(notes)))
+    tags = {v for row in rows for v in row.values()}
+    legend = []
+    if "Stopped" in tags:
+        legend.append("<b>Stopped</b>: cut by the distillation lever.")
+    if "Dried up" in tags:
+        legend.append("<b>Dried up</b>: China has caught "
+                      + ("the last model the US released before withholding "
+                         "began." if withhold else "the paused US frontier."))
+    if legend or notes:
+        _fn_caption(" ".join(legend + (["Rates under these settings."]
+                                       if notes else [])),
+                    *([("these settings", " ".join(notes))] if notes else []))
 
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
@@ -17108,7 +17133,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         anchor_eci=anchor_eci,
         horizon_year=(horizon.year if horizon is not None else _PC_HORIZON.year),
         notes=_notes, t_pause=t_pause_s, pause_label=f"{d_pause_v:%b %Y}",
-        surpass_mo=s50, dist_blocked=bool(withhold or stop_dist))
+        surpass_mo=s50, withhold=bool(withhold),
+        dist_stop_t=kw.get('t_dist_stop'))
 
 
 def render_pacing():
