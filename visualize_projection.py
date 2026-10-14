@@ -12140,6 +12140,42 @@ def _cc_pure_innovation_band(cc_rows, eci_all=None):
     return (min(lo, hi), max(lo, hi))
 
 
+
+def _cc_cn_channels(cc_rows, cn_fr, a_partial, g_lo=None, g_hi=None):
+    """China's observed frontier growth split into channels, ECI/yr.
+
+    `obs` (the frontier slope since `_CC_CALIB_SINCE`) = `compute` (a_partial
+    x mid compute growth) + `diffusion` (no-external-teacher band mid minus
+    the pure-innovation band mid) + `distillation` (all-band iso-compute rate
+    minus the top band's) + `innovation` (the residual). The China tab's
+    breakdown and scenario chart and the Pausing tab's crossing sim all read
+    these, so the tabs size distillation alike. `pure`, `inno` and `algo` are
+    the sim's bands re-centred on them, keeping the source bands' widths.
+    None when a fit is unavailable.
+    """
+    g_lo = _CC_CN_COMPUTE_LO if g_lo is None else g_lo
+    g_hi = _CC_CN_COMPUTE_HI if g_hi is None else g_hi
+    obs = _cc_frontier_eci_slope(cn_fr, _CC_CALIB_SINCE)
+    isoc = _cc_iso_compute(cc_rows)
+    inno = _cc_innovation_algo_band(cc_rows)
+    pure = _cc_pure_innovation_band(cc_rows)
+    if not (obs and isoc and isoc.get('bands') and inno and pure):
+        return None
+    top = max(isoc['bands'], key=lambda b: b['center'])
+    dist = max(isoc['eci_per_yr'] - top['slope'], 0.0)
+    diff = max(0.5 * (inno[0] + inno[1]) - 0.5 * (pure[0] + pure[1]), 0.0)
+    comp = a_partial * 0.5 * (g_lo + g_hi)
+    innov = max(obs - comp - diff - dist, 0.0)
+    nodist, algo = innov + diff, innov + diff + dist
+    hw_p, hw_i = 0.5 * (pure[1] - pure[0]), 0.5 * (inno[1] - inno[0])
+    return {
+        'obs': obs, 'compute': comp, 'innovation': innov, 'diffusion': diff,
+        'distillation': dist,
+        'pure': (max(innov - hw_p, 0.0), min(innov + hw_p, nodist)),
+        'inno': (max(nodist - hw_i, 0.0), nodist + hw_i),
+        'algo': (algo - hw_i, algo, algo + hw_i),
+    }
+
 def _eci_to_metr_p50_min(eci_score, a=0):
     """ECI score → estimated METR p50 time-horizon in minutes (central, lo, hi).
 
@@ -12965,13 +13001,11 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     if (inno_band and pure_band and isoc_all and isoc_all.get('bands')
             and obs_us_fr and obs_cn_fr):
         top_b = max(isoc_all['bands'], key=lambda b: b['center'])
-        dist_prem = max(isoc_all['eci_per_yr'] - top_b['slope'], 0.0)
-        diff_mid = max(0.5 * (inno_band[0] + inno_band[1])
-                       - 0.5 * (pure_band[0] + pure_band[1]), 0.0)
+        ch = _cc_cn_channels(cc_rows, cn_fr, a_partial, g_cn_lo, g_cn_hi)
+        dist_prem, diff_mid = ch['distillation'], ch['diffusion']
         comp_us_t = a_partial * 0.5 * (g_us_lo + g_us_hi)
-        comp_cn_t = a_partial * 0.5 * (g_cn_lo + g_cn_hi)
+        comp_cn_t, inno_cn_r = ch['compute'], ch['innovation']
         inno_us_r = max(obs_us_fr - comp_us_t - diff_mid, 0.0)
-        inno_cn_r = max(obs_cn_fr - comp_cn_t - diff_mid - dist_prem, 0.0)
         st.markdown(
             "| Channel | ECI/yr | How it's measured |\n"
             "|---|---|---|\n"
@@ -13047,21 +13081,13 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         # algorithmic channel swapped or removed, the channels as measured in
         # the decomposition above: the US-measured algo rate in place of
         # China's, then no external distillation, then no diffusion either.
-        cn_obs = cn_eci_smid
+        ch_sc = _cc_cn_channels(cc_rows, cn_fr, a_partial, g_cn_lo, g_cn_hi)
+        cn_obs = ch_sc['obs'] if ch_sc else cn_eci_smid
         slope_usalgo = cn_obs + (us_algo - cn_algo)
-        inno_mid = 0.5 * (inno_band[0] + inno_band[1]) if inno_band else None
-        pure_mid = 0.5 * (pure_band[0] + pure_band[1]) if pure_band else None
-        isoc_sc = _cc_iso_compute(cc_rows)
-        dist_sc = (max(isoc_sc['eci_per_yr']
-                       - max(isoc_sc['bands'],
-                             key=lambda b: b['center'])['slope'], 0.0)
-                   if isoc_sc and isoc_sc.get('bands') else None)
-        slope_inno = (cn_obs - dist_sc
-                      if dist_sc is not None and inno_mid is not None else None)
-        diff_sc = (max(inno_mid - pure_mid, 0.0)
-                   if inno_mid is not None and pure_mid is not None else None)
-        slope_pure = (slope_inno - diff_sc
-                      if slope_inno is not None and diff_sc is not None else None)
+        dist_sc = ch_sc['distillation'] if ch_sc else None
+        diff_sc = ch_sc['diffusion'] if ch_sc else None
+        slope_inno = cn_obs - dist_sc if ch_sc else None
+        slope_pure = slope_inno - diff_sc if ch_sc else None
 
         # Anchor selector: project forward from today, or backdate to Jan
         # 2025 so the lines double as a backtest against China's actual points.
@@ -16502,6 +16528,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     else:
         a_lo, a_hi = min(us_algo, cn_algo), max(us_algo, cn_algo)
         a_mid = cn_algo
+    # The China tab's channel sizes, so its rate fits China's observed slope
+    # and distillation is sized as there; the measured bands are the fallback.
+    ch = _cc_cn_channels(cc_rows, cn_fr, a_partial)
+    if ch:
+        a_lo, a_mid, a_hi = ch['algo']
+        inno = ch['inno']
     # The US pace and hardware clock come from the sidebar-pooled US series
     # (capacity-online dates, run-length units) — the same roster the table
     # above races — falling back to the single-site country fit. σ-sampled,
@@ -16535,7 +16567,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         us_rate = _cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1)) or 15.0
         us_rate_s = np.full(n_s, us_rate)
     g_mid = 0.5 * (_CC_CN_COMPUTE_LO + _CC_CN_COMPUTE_HI)
-    pace_lo, pace_hi, _obs = _cc_cn_pace_band(cn_fr, a_mid + a_partial * g_mid)
+    pace_lo, pace_hi, _obs = _cc_cn_pace_band(
+        cn_fr, ch['obs'] if ch else a_mid + a_partial * g_mid)
     # The pause is the date the slider names, so every sample pauses
     # together and only the climb to it is uncertain — the frozen bar
     # carries the pace spread, the date does not.
@@ -16641,7 +16674,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # No catalogued domestic pace to decompose the band against, so the
         # whole band takes the cut — the conservative reading of the lever.
         g_lo_eff, g_hi_eff = g_lo_eff * dom_keep, g_hi_eff * dom_keep
-    pure = _cc_pure_innovation_band(cc_rows)
+    pure = ch['pure'] if ch else _cc_pure_innovation_band(cc_rows)
     # The US level the distillation gap sees is the trend's value at China's
     # anchor date, not the US's later best (the bar's climb already counts
     # from us_best's own date via _us_dt).

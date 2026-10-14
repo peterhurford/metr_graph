@@ -1892,6 +1892,33 @@ class TestCcGapEndRange:
         assert us_r[1] - us_r[0] < cn_r[1] - cn_r[0]
 
 
+class TestCcCnChannels:
+    def test_channels_sum_to_the_observed_slope_and_feed_the_sim(self):
+        """The China tab and the Pausing sim share one split of China's
+        growth: the channels add to its observed slope, and the sim's
+        bands, re-centred on them, start China at that slope."""
+        rows = vp.load_eci_compute(_mtime=vp._eci_mtime())
+        eci_all = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        cn_fr = vp._cc_country_frontier(eci_all, 'China')
+        fgm = vp._cc_frontier_grade_algo(
+            rows, vp.load_eci_frontier(_mtime=vp._eci_mtime(), full_window=True))
+        ch = vp._cc_cn_channels(rows, cn_fr, fgm['a_partial'])
+        parts = (ch['compute'] + ch['innovation'] + ch['diffusion']
+                 + ch['distillation'])
+        assert parts == pytest.approx(ch['obs'], abs=1e-9)
+        assert ch['distillation'] > 0 and ch['diffusion'] > 0
+        np.random.seed(0)
+        _, grid, traj = vp._cc_cn_crossing_sim(
+            150.0, 1e9, us_anchor=1e6, us_rate=0.0, a_partial=fgm['a_partial'],
+            g_lo=vp._CC_CN_COMPUTE_LO, g_hi=vp._CC_CN_COMPUTE_HI,
+            algo_lo=ch['algo'][0], algo_mid=ch['algo'][1], algo_hi=ch['algo'][2],
+            inno_lo=ch['inno'][0], inno_hi=ch['inno'][1],
+            pure_lo=ch['pure'][0], pure_hi=ch['pure'][1],
+            pace_lo=1.0, pace_hi=1.0, horizon_yrs=1.0, n=4000)
+        first_month = (traj[:, 1] - 150.0).mean() / grid[1]
+        assert first_month == pytest.approx(ch['obs'], abs=0.3)
+
+
 class TestCcCrossingBacktest:
     def test_level_noise_brings_the_80pct_band_near_80pct(self):
         """Rolling origins over China's 2025-26 releases: the crossing sim's

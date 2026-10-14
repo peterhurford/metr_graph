@@ -1244,7 +1244,11 @@ is its consumer. Load-bearing:
    offset is its own `level` entry, left out of Pausing's breakdown rows.
 3. **The end-year gap card's hover gives the fit-window range** (`_cc_gap_end_range` over
    `_CC_CALIB_SENS_STARTS`): China's slope swings on DeepSeek-R1's Jan 2025 jump.
-4. **Three-channel algorithmic engine.** `_cc_cn_crossing_sim` splits the measured
+4. **One channel split, shared.** `_cc_cn_channels` splits China's observed slope into
+   compute, innovation (residual), diffusion and distillation; the China tab's breakdown
+   chart and scenario chart and the Pausing sim's bands all read it, so the tabs size
+   distillation alike (`TestCcCnChannels`).
+5. **Three-channel algorithmic engine.** `_cc_cn_crossing_sim` splits the measured
    rate into innovation (`_cc_pure_innovation_band`, never decays) + diffusion
    (nodist − pure, decays only after a pause, `_CC_DIFF_ABSORB_YRS` absorption ramp
    via `t_pause`) + distillation (algo − nodist, decays with gap/gap₀). With
