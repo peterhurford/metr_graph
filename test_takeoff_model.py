@@ -398,6 +398,20 @@ def test_a_judgment_cap_only_ever_slows_research():
         free["software_log"])
 
 
+def test_elasticity_and_scale_dependence_share_one_factor():
+    """At the default correlation, draws where labor stands in for compute
+    have fewer scale-dependent gains; at 0 the two are independent, and the
+    share's own spread is unchanged either way."""
+    d = tk.simulate(dict(years=0.1), n=4000)["draws"]
+    elasticity = 1 / (1 - d["substitution"])
+    logit = np.log(d["scale_dependent"] / (1 - d["scale_dependent"]))
+    assert np.corrcoef(np.log(elasticity), logit)[0, 1] < -0.3
+    free = tk.simulate(dict(years=0.1, compute_bound_corr=0.0), n=4000)["draws"]
+    logit0 = np.log(free["scale_dependent"] / (1 - free["scale_dependent"]))
+    assert abs(np.corrcoef(np.log(1 / (1 - free["substitution"])), logit0)[0, 1]) < 0.1
+    assert np.std(logit) == pytest.approx(np.std(logit0), rel=0.05)
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])

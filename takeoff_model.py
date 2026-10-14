@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v24-judgment-cap"
+MODEL_VERSION = "takeoff-v25-compute-bound-correlation"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -88,6 +88,10 @@ DEFAULTS = {
     # found. Logit-normal share and lognormal lag per draw; spreads are each
     # 1-sigma (log-odds, log) times 100.
     "scale_dependent": 50.0, "scale_dependent_spread": 100.0,
+    # Correlation between a draw's labor-compute elasticity and its
+    # scale-dependent share, both readings of how compute-bound algorithmic
+    # progress is: where labor stands in for compute, fewer gains need scale.
+    "compute_bound_corr": 0.5,
     "scale_lag_oom": 1.0, "scale_lag_spread": 70.0,
 }
 # Every spread at zero: each draw uses the settings themselves.
@@ -156,6 +160,7 @@ def validate(params):
             or not (p["ceiling_high_oom"] == 0 or 0 < p["ceiling_low_oom"] <= p["ceiling_high_oom"]) \
             or p["rsi_autopilot"] not in (0, 1) or not 0 <= p["ai_copies"] <= 2 \
             or not (p["judgment_cap"] == 0 or p["judgment_cap"] >= 1) \
+            or not 0 <= p["compute_bound_corr"] <= 1 \
             or not 0 <= p["scale_dependent"] <= 100 or not 0 <= p["scale_dependent_spread"] <= 400 \
             or not 0 < p["scale_lag_oom"] <= 10 or not 0 <= p["scale_lag_spread"] <= 400:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
@@ -510,7 +515,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     with np.errstate(divide="ignore"):
         share_logit = (np.log(share_pct) - np.log(100 - share_pct) if 0 < share_pct < 100
                        else (np.inf if share_pct >= 100 else -np.inf))
-    scale_share = 1 / (1 + np.exp(-(share_logit + p["scale_dependent_spread"] / 100 * z[19])))
+    corr = p["compute_bound_corr"]
+    share_score = -corr * z[17] + np.sqrt(1 - corr ** 2) * z[19]
+    scale_share = 1 / (1 + np.exp(-(share_logit + p["scale_dependent_spread"] / 100 * share_score)))
     # The compute growth (natural log) a scale-dependent gain waits for (row 20).
     scale_lag = np.log(10) * p["scale_lag_oom"] * np.exp(p["scale_lag_spread"] / 100 * z[20])
     parallel = p["parallelization"]

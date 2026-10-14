@@ -19206,6 +19206,12 @@ def _render_takeoff(loading):
                    0, 400, 10,
                    "1\u03c3 of the scale-dependent share in log-odds, \u00d7100. 100 gives an "
                    "80% range of about 22\u201378% around 50%: one paper, on small models.")
+            number("Correlation: substitutability and the scale-dependent share",
+                   "compute_bound_corr", 0.0, 1.0, 0.1,
+                   "Both read how compute-bound algorithmic progress is, so a scenario "
+                   "where labor stands in for compute well tends to have fewer gains that "
+                   "need scale. 0 draws them independently. Fattens both tails: more "
+                   "scenarios where every brake is weak, and more where every one binds.")
             number("Spread on the scale-dependent wait (%)", "scale_lag_spread", 0, 400, 10,
                    "1\u03c3 of the log of the compute a scale-dependent gain waits for, "
                    "\u00d7100. 70 gives an 80% range of about 0.4\u20132.5\u00d7 the setting.")

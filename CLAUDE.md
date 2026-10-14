@@ -41,7 +41,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v24-judgment-cap`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v25-compute-bound-correlation`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -80,7 +80,7 @@ returns to research fall linearly to 0 there (penalty −βC·ln(1−S/C); `ceil
 exact step, `reference_software` the same closed form), so with it no draw diverges
 (`test_the_software_ceiling_holds_every_draw_below_its_limit`); a high end of 0 removes it,
 which the runaway tests use. Row 19 draws `scale_dependent` (median 50%, logit spread
-`scale_dependent_spread`), row 20 `scale_lag_oom` (median 1, lognormal
+`scale_dependent_spread`; drawn with `compute_bound_corr`, default 0.5, against ρ's draw so a substitutable scenario has fewer scale-dependent gains, `test_elasticity_and_scale_dependence_share_one_factor`; it moves the FOOM share 16% → 17%), row 20 `scale_lag_oom` (median 1, lognormal
 `scale_lag_spread`): of the gains a model gets through training, that share pays off only
 once models train at that many orders of magnitude more compute than the frontier had when
 the gain was found (Gundlach et al. 2025). Fast gains (tooling, kernels) are exempt, as the
