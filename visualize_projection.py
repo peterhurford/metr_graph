@@ -19298,7 +19298,9 @@ def _render_takeoff(loading):
          f"Each AI researcher counts as its speed ({result['params']['ai_speed']:g}\u00d7 a "
          "person on the work it does, the model's setting) times its competence, "
          "3 \u00d7 (ECI / 200)^10: about 0.5 at today's frontier, 3 at ECI 200, 28 at 250. "
-         "The competence form is a stated judgment, not a fit; the model's research speed "
+         "Speed is fixed, and today's AI head count is set by today's share of the work, so "
+         "speed changes how many AIs there are (fewer, faster ones), not the FTE total. The "
+         "competence form is a stated judgment, not a fit; the model's research speed "
          "comes from its own labor equations, not from this chart."))
     st.plotly_chart(_tf(_tk_to(_tk_workforce_fig(result, today, eci, markers), view_end)),
                     width="stretch")
