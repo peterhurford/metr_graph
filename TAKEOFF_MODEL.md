@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v20-rsi-autopilot`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v21-ai-copies`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -40,6 +40,15 @@ Research combines labor and experiment compute through a CES mean (`substitution
 -0.5; -1 is the old harmonic mean, under which unlimited labor at most doubles output),
 multiplies by research quality, and discounts increasingly difficult discoveries. Agents,
 experiments, and training have disjoint shares of one growing compute budget.
+
+Better algorithms also run more AI researchers on the same compute: AI's speed on the
+work it has taken over is multiplied by the deployed model's algorithmic efficiency (vs
+today's) to the power `ai_copies` (default 1). Since only AI's share speeds up, this adds
+about 4% a year to research labor today, while people do about a third of the work, and
+counts in full once autopilot takes over at RSI. The staff survey's coding fit is netted of
+that 4%, and the experiment calibration credits copies before research judgment. With it,
+ultraintelligence comes 2 months sooner (May against Jul 2030) and 24% of scenarios make 3
+years of progress in RSI's first year (17% without).
 
 Labor speeds up as the human share h of research hours falls, by Amdahl's law:
 (h0 + (1 - h0)/s) / (h + (1 - h)/s), with s = `ai_speed` (default 30x) and h0 today's

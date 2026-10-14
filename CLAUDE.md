@@ -40,7 +40,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v20-rsi-autopilot`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v21-ai-copies`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -101,7 +101,12 @@ RSI gates on coding plus research direction under the human-hours bar
 From each draw's RSI, `rsi_autopilot` (default on, *Autopilot from RSI*) zeroes every stage's human
 hours in the dynamics and the humans chart; the RSI outcomes keep the pre-autopilot hours
 (direction, experiments, verification), which the RSI card's hover quotes
-(`test_autopilot_drops_every_human_hour_from_rsi`). Coding counts as automated at the
+(`test_autopilot_drops_every_human_hour_from_rsi`). `ai_copies` (default 1) multiplies AI's speed in that
+Amdahl term by the deployed model's paid-off algorithmic efficiency to that power, as more
+copies on the same compute (log space, so a runaway cannot overflow;
+`test_more_copies_speed_only_the_work_ai_does`). `_tk_copies_yearly` nets its ~4%/yr of
+today's labor growth out of the staff-survey coding fit, and `_tk_automation_growth` credits
+it over the evidence window before research judgment is fitted. Coding counts as automated at the
 inherited date or once a deployed model reaches ECI 250 (`coding_capability`, from
 `_tk_eci_scale`), returned as `coding_at` with `onset` left exact
 (`test_a_model_at_the_coding_capability_has_automated_coding`). Research acceleration
@@ -128,10 +133,10 @@ it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
 series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
 The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, two ECI rates,
-software ceiling, scale-dependent gains; months to ultraintelligence from Aug 2030): the
-judgment elasticity (half/double: +2/−4), r (0.5/2: +5/−5), parallelization (0.8/0.3:
-+2/−3), ρ (−1/0: 0/−2, small since the spreads draw ρ per scenario anyway), the
-training-run wait `fast_share` (12.5/50%: +1/−4; 100%: −11, since fast gains also skip the
+software ceiling, scale-dependent gains, autopilot, copies; months to ultraintelligence
+from May 2030): the judgment elasticity (half/double: +2/−4), r (0.5/2: +6/−5),
+parallelization (0.8/0.3: +2/−2), ρ (−1/0: +2/−3), `ai_copies` (0/2: +2/−2), the
+training-run wait `fast_share` (12.5/50%: +2/−4; 100%: −12, since fast gains also skip the
 wait for scale), `scale_dependent` (25/75%: −2/+2) and `rsi_compute_boost` (default 2×;
 under *Advanced*, the software ceiling moves it −2 if removed, +2 at 3–8 orders of
 magnitude). The boost multiplies each draw's log compute growth after its own

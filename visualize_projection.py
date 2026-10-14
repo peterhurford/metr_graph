@@ -17670,13 +17670,14 @@ def _tk_elasticity(yearly_growth, experiments, capability_growth, transfer, fall
     return round(float(np.log((yearly_growth - 1 + transfer) / transfer) / np.log(cap)), 2)
 
 
-def _tk_survey_coding(rows, experiments, capability_growth, transfer):
+def _tk_survey_coding(rows, experiments, capability_growth, transfer, copies_yearly=1.0):
     """Coding-labor elasticity implied by the staff survey's yearly growth in
-    self-reported output, fitted on log(multiple) as the RSI tab does."""
+    self-reported output, fitted on log(multiple) as the RSI tab does, less
+    the part `copies_yearly` (more AI copies) already explains."""
     days = np.array([(r['date'] - rows[0]['date']).days for r in rows], dtype=float)
     _icpt, slope = fit_line(days, np.log([r['uplift'] for r in rows]))
-    return _tk_elasticity(np.exp(slope * 365.25), experiments, capability_growth,
-                          transfer, takeoff.DEFAULTS["coding_slope"])
+    return _tk_elasticity(np.exp(slope * 365.25) / copies_yearly, experiments,
+                          capability_growth, transfer, takeoff.DEFAULTS["coding_slope"])
 
 
 def _tk_nextstep_taste(frontier, experiments, capability_growth, transfer):
@@ -17721,13 +17722,27 @@ def _tk_evidence_window_growth(experiments):
             round(float(np.exp((compute + software) * years)), 2))
 
 
-def _tk_automation_growth(rows, experiments, ai_speed):
+def _tk_automation_growth(rows, experiments, ai_speed, copies_growth=1.0):
     """The Amdahl labor gain over the experiment evidence window, from the
-    automation index's human share at its two ends."""
+    automation index's human share at its two ends, with AI's share sped up
+    `copies_growth`x by the end (more copies as algorithms improved)."""
     def share(d):
         return _tk_ladder_human_share(min(rows, key=lambda r: abs((r['date'] - d).days)))
     h0, h1 = share(experiments[0]['date']), share(experiments[-1]['date'])
-    return float((h0 + (1 - h0) / ai_speed) / (h1 + (1 - h1) / ai_speed))
+    return float((h0 + (1 - h0) / ai_speed)
+                 / (h1 + (1 - h1) / (ai_speed * copies_growth)))
+
+
+def _tk_copies_yearly(rows, params=None):
+    """The yearly research-labor gain more copies alone give today: a year of
+    algorithmic progress at the software doubling, raised to `ai_copies`,
+    speeding only AI's share of the work at the automation index's latest
+    human share (Amdahl). It is netted out of the survey's coding fit."""
+    params = params or takeoff.DEFAULTS
+    h = _tk_ladder_human_share(rows[-1])
+    s = params["ai_speed"]
+    g = 2 ** (12 / params["software_months"] * params["ai_copies"])
+    return float((h + (1 - h) / s) / (h + (1 - h) / (s * g)))
 
 
 _TK_DEFAULTS["tk_cal_compute"], _TK_DEFAULTS["tk_cal_capability"] = \
@@ -17740,7 +17755,7 @@ _TK_DEFAULTS["tk_taste_slope"] = _tk_nextstep_taste(
     _TK_DEFAULTS["tk_transfer"] / 100)
 _TK_DEFAULTS["tk_coding_slope"] = _tk_survey_coding(
     load_rsi_survey(), load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
-    _TK_DEFAULTS["tk_transfer"] / 100)
+    _TK_DEFAULTS["tk_transfer"] / 100, _tk_copies_yearly(load_rsi_automation()))
 
 
 def _tk_pace_today_default(today=None):
@@ -18646,13 +18661,12 @@ def _render_takeoff(loading):
                    "its settings are in the RSI evidence section.")
         with st.expander("What decides ultraintelligence", expanded=True):
             st.caption("Across a plausible range, the first three each move the "
-                       "ultraintelligence date 2\u20135 months; \u03c1 up to 2 and the "
-                       "training-run wait 1\u20134 (11 sooner if no gain waits, as fast gains "
-                       "also skip the wait for scale). Compute growth after RSI, delayed 18 "
-                       "months, moves it a month at most; with no delay, 2\u00d7 brings it 6 "
-                       "months sooner. The scale-dependent share moves it 2 months either "
-                       "way across 25\u201375%. Everything under Advanced moves it a few "
-                       "months at most.")
+                       "ultraintelligence date 2\u20136 months; \u03c1, more AI researchers "
+                       "and the scale-dependent share about 2\u20133 each; the training-run "
+                       "wait 2\u20134 (12 sooner if no gain waits). Compute growth after RSI, "
+                       "delayed 18 months, barely moves it; with no delay, 2\u00d7 brings it "
+                       "5 months sooner. Everything under Advanced moves it a few months "
+                       "at most.")
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
@@ -18688,6 +18702,15 @@ def _render_takeoff(loading):
                    "gains at the pace AI-frozen research would make never wait. The labor"
                    "\u2013compute setting above is about discovering gains; this is about "
                    "when a discovered gain pays off.")
+            number("More AI researchers as algorithms improve (power)", "ai_copies",
+                   0.0, 2.0, 0.1,
+                   "Better algorithms let the same compute run more copies of the AI "
+                   "researcher: AI's share of research labor scales with the deployed "
+                   "model's algorithmic efficiency to this power, before the square-root "
+                   "returns and the compute bottleneck. 1 is one more copy per doubling of "
+                   "efficiency, the loop behind software-intelligence-explosion arguments; "
+                   "0 keeps the number of copies fixed. While people still do much of the "
+                   "work it adds little (about 4% a year today); after RSI it counts in full.")
             number("Gains that skip the training-run wait (%)", "fast_share", 0.0, 100.0, 5.0,
                    "Share of efficiency gains deployable at once through tooling, kernels "
                    "and small updates; the rest wait for a successor's training run and "
@@ -18959,8 +18982,10 @@ def _render_takeoff(loading):
                 st.session_state["tk_cal_validated"] or None,
                 transfer=params["transfer"] / 100, coding_slope=params["coding_slope"],
                 parallel=params["parallelization"], substitution=params["substitution"],
-                automation_growth=_tk_automation_growth(load_rsi_automation(), evidence,
-                                                        params["ai_speed"]))
+                automation_growth=_tk_automation_growth(
+                    load_rsi_automation(), evidence, params["ai_speed"],
+                    (st.session_state["tk_cal_capability"] / st.session_state["tk_cal_compute"])
+                    ** params["ai_copies"]))
             w = st.session_state["tk_cal_weight"] / 100
             calibration["quality_prior"] = params["taste_slope"]
             calibration["weight"] = w

@@ -316,6 +316,22 @@ def test_autopilot_drops_every_human_hour_from_rsi():
     assert np.median(cap_on) > np.median(cap_off)
 
 
+def test_more_copies_speed_only_the_work_ai_does():
+    """Better algorithms run more AI researchers on the same compute: with
+    people doing all the work that changes nothing; once AI does it, more
+    copies mean more research, and none (0) leaves the copy count fixed."""
+    onset = np.full(50, 0.5)
+    human = dict(years=4, human_direction=100.0, human_experiments=100.0,
+                 human_verification=100.0, human_floor=100.0, full_human=100.0,
+                 rsi_autopilot=0.0)
+    np.testing.assert_allclose(
+        tk.simulate(dict(human, ai_copies=1.0), n=50, onset_years=onset)["software_log"],
+        tk.simulate(dict(human, ai_copies=0.0), n=50, onset_years=onset)["software_log"])
+    on = tk.simulate(dict(years=6), n=50, onset_years=onset)
+    off = tk.simulate(dict(years=6, ai_copies=0.0), n=50, onset_years=onset)
+    assert np.median(on["software_log"]) > np.median(off["software_log"])
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])

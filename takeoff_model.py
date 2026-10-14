@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v20-rsi-autopilot"
+MODEL_VERSION = "takeoff-v21-ai-copies"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -48,6 +48,10 @@ DEFAULTS = {
     # Speed of AI on work it has taken over, relative to the people it
     # replaced; sets how much a falling human share speeds research (Amdahl).
     "ai_speed": 30.0,
+    # More copies: AI's share of research labor scales with the deployed
+    # model's algorithmic efficiency to this power, as the same inference
+    # compute runs more AI researchers. 0 leaves the number of copies fixed.
+    "ai_copies": 1.0,
     # Share of the non-AI input growth that would hold today's pace with AI
     # frozen (researchers, spending); 0 leaves compute the only growing input.
     "baseline_inputs": 100.0,
@@ -147,7 +151,7 @@ def validate(params):
             or not 0 <= p["rsi_compute_delay"] <= 60 or not 0 <= p["rsi_compute_ramp"] <= 60 \
             or not 0 <= p["ceiling_high_oom"] <= 60 \
             or not (p["ceiling_high_oom"] == 0 or 0 < p["ceiling_low_oom"] <= p["ceiling_high_oom"]) \
-            or p["rsi_autopilot"] not in (0, 1) \
+            or p["rsi_autopilot"] not in (0, 1) or not 0 <= p["ai_copies"] <= 2 \
             or not 0 <= p["scale_dependent"] <= 100 or not 0 <= p["scale_dependent_spread"] <= 400 \
             or not 0 < p["scale_lag_oom"] <= 10 or not 0 <= p["scale_lag_spread"] <= 400:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
@@ -623,7 +627,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         if p["rsi_autopilot"]:
             human_now[np.isfinite(events["RSI"]) & (t >= events["RSI"] - 1e-12)] = 0.0
         share_now = human_now @ WORKFLOW_WEIGHTS
-        amdahl_log = amdahl0 - np.log(share_now + (1 - share_now) / ai_speed)
+        # More copies of the AI researcher on the same compute as its
+        # algorithms improve: AI's share of the work speeds up with them.
+        # In logs, so a runaway's copies never overflow.
+        log_speed = np.log(ai_speed) + p["ai_copies"] * np.maximum(now[1], 0)
+        with np.errstate(divide="ignore"):
+            amdahl_log = amdahl0 - np.logaddexp(np.log(share_now),
+                                                np.log1p(-share_now) - log_speed)
         # People still directing research keep today's judgment; AI's applies
         # to the rest, so research quality is the direction-weighted mix.
         direction = human_now[:, 0]
