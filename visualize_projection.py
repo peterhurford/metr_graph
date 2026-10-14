@@ -13132,8 +13132,9 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                 f"| ~{mo_pure:.0f} mo |")
         st.markdown("\n".join(rows_md))
 
-        # Chart: the US-measured and no-external-distillation China lines vs
-        # the US frontier ceiling. Indigenous-only stays a table row.
+        # Chart: the no-external-distillation China line against the US
+        # frontier, the gap between them shaded and labelled at each year-end.
+        # The US-measured and indigenous-only rates stay table rows.
         figd = go.Figure()
         _dc_add_projection_band(figd, today, horizon)
         figd.add_trace(go.Scatter(
@@ -13141,23 +13142,57 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             line=dict(color='#1F77B4', width=1.5, dash='dot'),
             name='US frontier (ceiling)', hoverinfo='skip'))
         figd.add_trace(go.Scatter(
+            x=[d for d, s, n in us_fr], y=[s for d, s, n in us_fr],
+            mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
+            marker=dict(size=5, color='#1F77B4', line=dict(color='white', width=0.5)),
+            text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in us_fr],
+            hoverinfo='text', name='US (actual)'))
+        figd.add_trace(go.Scatter(
             x=[d for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
             mode='lines+markers', line=dict(color='#D62728', width=1.5),
             marker=dict(size=5, color='#D62728', line=dict(color='white', width=0.5)),
             text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in cn_fr],
             hoverinfo='text', name='China (actual)'))
-        figd.add_trace(go.Scatter(
-            x=bd_dates, y=list(cn_traj_us), mode='lines',
-            line=dict(color='#D62728', width=2.5, dash='dash'),
-            name=f'China · US-measured rate ({us_algo:.1f})',
-            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US-measured</extra>'))
         if cn_traj_inno is not None:
+            gap_bd = us_ceiling - cn_traj_inno
+            figd.add_trace(go.Scatter(
+                x=bd_dates + bd_dates[::-1],
+                y=list(us_ceiling) + list(cn_traj_inno[::-1]),
+                fill='toself', fillcolor='rgba(127,16,16,0.10)',
+                line=dict(width=0), hoverinfo='skip', name='Gap to US'))
             figd.add_trace(go.Scatter(
                 x=bd_dates, y=list(cn_traj_inno), mode='lines',
                 line=dict(color='#7F1010', width=2.5),
                 name=f"China · no ext. distillation (~{inno_mid:.0f})",
+                customdata=gap_bd,
                 hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                              '<br>%{customdata:.0f} behind the US'
                               '<extra>no ext. distillation</extra>'))
+            # Year-end gap labels, between the two lines.
+            for yr in range(max(anchor_date.year, today.year), horizon.year + 1):
+                ye = datetime(yr, 12, 31)
+                if ye <= anchor_date or ye > horizon:
+                    continue
+                i = min(range(len(bd_dates)),
+                        key=lambda j: abs((bd_dates[j] - ye).days))
+                figd.add_annotation(
+                    x=bd_dates[i],
+                    y=0.5 * (float(us_ceiling[i]) + float(cn_traj_inno[i])),
+                    text=f"\u2212{gap_bd[i]:.0f}", showarrow=False,
+                    xanchor='right' if yr == horizon.year else 'center',
+                    font=dict(size=12, color='#7F1010'),
+                    bgcolor='rgba(255,255,255,0.8)')
+        # Year-end gaps already recorded, between the two actual frontiers.
+        for yr in range(2024, today.year):
+            ye = datetime(yr, 12, 31)
+            us_v = [s for d, s, n in us_fr if d <= ye]
+            cn_v = [s for d, s, n in cn_fr if d <= ye]
+            if us_v and cn_v:
+                figd.add_annotation(
+                    x=ye, y=0.5 * (max(us_v) + max(cn_v)),
+                    text=f"\u2212{max(us_v) - max(cn_v):.0f}", showarrow=False,
+                    font=dict(size=12, color='#555555'),
+                    bgcolor='rgba(255,255,255,0.8)')
         figd.update_layout(
             height=420, plot_bgcolor='white', paper_bgcolor='white',
             margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
@@ -13176,24 +13211,20 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
              if bd_label == "Today" else
              f"Backdated to <b>Jan 2025</b> (China \u2248{cn_anchor:.0f} then) so "
              "the lines can be read against China's actual points.")
-            + (" The solid line cuts model access, keeping method diffusion;"
+            + (" The solid line cuts model access, keeping method diffusion; "
+               "the shading and red labels are its ECI gap to the US line, the "
+               "grey labels the recorded year-end gaps."
                if cn_traj_inno is not None else "")
-            + " the dashed line rides the US-measured rate. Both rest on thin "
-            "fits.",
+            + " The rates rest on thin fits.",
             *([("The solid line", "No external distillation: model access cut, "
                                   "papers still flowing "
                                   f"(~{inno_mid:.1f} ECI/yr, constant). China's "
                                   f"own measured rate, {cn_algo:.1f}, includes "
                                   "distillation.")]
               if cn_traj_inno is not None else []),
-            ("the dashed line", "Rides the US-measured rate: mid-compute US models, "
-                                "themselves teacher-fed \u2014 a follower rate, not "
-                                "the US frontier engine. Both China lines share the "
-                                f"compute term (~{compute_term_cn:.1f} ECI/yr) and "
-                                "differ only algorithmically."),
             ("thin fits", f"n={n_us_iso} US / n={n_cn_iso} China within \u00b10.4 "
                           "dex of median compute \u2014 so few same-budget US models "
-                          "that the edge is indicative, not measured."))
+                          "that the rates are indicative, not measured."))
 
     # ── When does China cross the target ECI? ─────────────────────────────────
     _render_cc_china_target(
@@ -13730,7 +13761,8 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
         f"({pretty(anchor_name)}, {anchor_d:%b %Y}), "
         f"<b>{target - anchor_eci:.1f} points</b> short, closing at a median "
         f"<b>~{rate_med:.0f} ECI/yr</b> \u2014 of which compute is the small "
-        "term, and the algorithmic part decays as the gap closes."
+        "term. This assumes model access stays open: the algorithmic part "
+        "includes distillation from US models, fading as the gap closes."
         + (" A crossing also waits for a release." if gap_d else ""),
         ("closing at a median", f"{algo_note}, plus "
                                 f"~{a_partial * 0.5 * (g_lo + g_hi):.1f} ECI/yr "
@@ -13743,9 +13775,10 @@ def _render_cc_china_target(*, cn_fr, us_fr, a_partial, b_algo, us_algo, cn_algo
                                       f"~{a_partial * g_hi:.1f} ECI/yr against "
                                       f"~{a_mid:.0f} algorithmic \u2014 moving "
                                       "the date by weeks."),
-        ("decays as the gap closes", "The algorithmic term falls toward an "
-                                     f"indigenous {inno_lo:.0f}\u2013"
-                                     f"{inno_hi:.0f} ECI/yr as China nears the "
+        ("fading as the gap closes", "The algorithmic term falls toward the "
+                                     "no-external-distillation "
+                                     f"{inno_lo:.0f}\u2013{inno_hi:.0f} ECI/yr "
+                                     "(the solid line above) as China nears the "
                                      "moving US frontier "
                                      f"({(y50 - float(np.nanmedian(years_const))) * 52.18:+.0f}"
                                      " weeks vs constant-rate)."),
