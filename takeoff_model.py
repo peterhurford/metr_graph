@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v25-compute-bound-correlation"
+MODEL_VERSION = "takeoff-v26-direction-two-sources"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -260,25 +260,29 @@ def workflow_state(capability_log, baseline_rate, starts, half_months, floor,
     shape instead (share relative to its start), at `reference_half` /
     `half_months` its pace: the halving times then only set each stage's
     speed along the curve. `share` is one curve, or one per draw (rows) on an
-    evenly spaced `years` grid.
+    evenly spaced `years` grid; a third element gives research direction (the
+    first stage) its own curve of the same form.
     """
     equivalent_years = np.maximum(capability_log, 0) / baseline_rate
     if curve is None:
         decline = np.exp(-np.log(2) * equivalent_years[:, None] * 12 / half_months)
     else:
-        years, share = curve
+        years, share = curve[0], curve[1]
         along = equivalent_years[:, None] * reference_half / half_months
-        if np.ndim(share) == 1:
-            decline = np.interp(along, years, share / share[0])
-        else:
+
+        def follow(shape, at):
+            if np.ndim(shape) == 1:
+                return np.interp(at, years, shape / shape[0])
             # One curve per draw on a shared, evenly spaced grid.
             last = len(years) - 1
-            pos = np.clip(along / (years[1] - years[0]), 0, last)
+            pos = np.clip(at / (years[1] - years[0]), 0, last)
             i0 = np.minimum(pos.astype(int), last - 1)
             w = pos - i0
-            rows = np.arange(len(share))[:, None]
-            decline = ((share[rows, i0] * (1 - w) + share[rows, i0 + 1] * w)
-                       / share[:, :1])
+            rows = np.arange(len(shape))[:, None]
+            return (shape[rows, i0] * (1 - w) + shape[rows, i0 + 1] * w) / shape[:, :1]
+        decline = follow(share, along)
+        if len(curve) > 2:      # research direction's own curve
+            decline[:, :1] = follow(curve[2], along[:, :1])
     return floor + (starts - floor) * decline
 
 

@@ -5234,6 +5234,30 @@ class TestTakeoffHumanSpeedup:
         assert fast["tk_human_direction"] < slow["tk_human_direction"]
 
 
+class TestTakeoffDirectionCurve:
+    """Research direction's human-hours curve averages the dates two sources
+    give, the automation index's ladder and the next-step study."""
+
+    def test_the_blend_crosses_any_bar_between_its_sources(self):
+        t = np.linspace(0, 10, 241)
+        a = np.vstack([np.exp(-t / 1.0), np.where(t < 2, 1.0, 0.01)])
+        b = np.vstack([np.exp(-t / 3.0), np.exp(-t / 0.5)])
+        blend = vp._tk_blend_in_time(t, a, b, 0.5)
+        cross = lambda row, lvl: float(np.interp(-lvl, -row / row[0], t))
+        for i in range(2):
+            for lvl in (0.5, 0.1, 0.05):
+                ca, cb, cm = cross(a[i], lvl), cross(b[i], lvl), cross(blend[i], lvl)
+                assert min(ca, cb) - 0.05 <= cm <= max(ca, cb) + 0.05
+                assert cm == pytest.approx((ca + cb) / 2, abs=0.06)
+
+    def test_nextstep_curve_reaches_zero_at_the_studys_ceiling(self):
+        t, curves = vp._tk_nextstep_curves(200, 42)
+        assert curves.shape == (200, len(t))
+        assert np.allclose(curves[:, 0], 1.0)
+        assert (np.diff(curves, axis=1) <= 1e-12).all()
+        assert (curves[:, -1] < 1e-3).mean() > 0.95      # the slowest draws may not get there
+
+
 class TestTakeoffRsiCalibration:
     """Takeoff defaults read off RSI data rather than set by hand."""
 

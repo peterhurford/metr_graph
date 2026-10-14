@@ -41,7 +41,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v25-compute-bound-correlation`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v26-direction-two-sources`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -256,7 +256,14 @@ ladder (AL4 from the projection's start at the "AL4 reaches 90%" card's median r
 AL4 shifted by an AL4→AL5 gap, AL2/AL3 on their own fits, nested), times the hours per
 level. `_tk_ladder_curves` gives each scenario its own gap, lognormal over the AL5 card's
 80% range from a fixed seed, so RSI carries the unmeasured AL5 rung's uncertainty; one
-curve per draw (rows on an even grid). `simulate(human_curve=…)` moves each stage along that shape in
+curve per draw (rows on an even grid). Research direction, the stage RSI is defined on, also
+reads the next-step study: `_tk_nextstep_curves` (the researcher's odds of the better step
+in excess of the odds left at the study's ceiling, per-draw rate over the card's range),
+averaged with the ladder in *dates*, not values (`_tk_blend_in_time`,
+`_TK_NEXTSTEP_WEIGHT` 0.5), so RSI lies between the two sources' dates
+(`TestTakeoffDirectionCurve`); `human_curve`'s third element carries it. The two agree
+independently: a median ~1.6 years each to 5% of direction's start.
+`simulate(human_curve=…)` moves each stage along that shape in
 capability-equivalent years (`workflow_state`; `test_human_hours_can_follow_a_given_curve`).
 The stage halving times only set each stage's pace along it, as the weighted halving over
 its own (1.5× for direction, 0.75× for verification at the defaults). The

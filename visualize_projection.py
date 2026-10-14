@@ -17845,6 +17845,52 @@ def _tk_ladder_curve(hours=None, years=40.0, lag_days=None):
     return t, np.minimum.accumulate(share, axis=-1)
 
 
+# Weight of the next-step study, against the automation index's ladder, in
+# research direction's human-hours curve (an average of the dates each gives).
+_TK_NEXTSTEP_WEIGHT = 0.5
+
+
+def _tk_nextstep_curves(n, seed, years=40.0, today=None):
+    """(years ahead, one research-direction curve per draw) from the next-step
+    study: the researcher's odds of picking the better step, in excess of the
+    odds left at the study's own ceiling (`_RSI_DIR_TARGET`, what a judge shown
+    the finished session reaches), so direction still needs people in
+    proportion to what they add past that ceiling. Each draw climbs from the
+    fit's value today at its own rate, lognormal over the "next-step reaches
+    90%" card's range, from a fixed seed. None if the fit is flat."""
+    frontier = rsi_dir_frontier_all
+    base, icpt, slope = _rsi_dir_fit(frontier)
+    if slope <= 0:
+        return None
+    dt_lo, dt_hi = _rsi_dir_dt_ci(frontier, round(np.log(2) / slope))
+    rng = np.random.default_rng(int(seed) + 11)
+    rate = np.log(2) / np.exp(rng.normal((np.log(dt_lo) + np.log(dt_hi)) / 2,
+                                         (np.log(dt_hi) - np.log(dt_lo)) / (2 * 1.282), n))
+    today = today or datetime.now()
+    start = icpt + slope * (today - base).days
+    t = np.linspace(0, years, int(years * 24) + 1)
+    p = _inv_logit(start + rate[:, None] * t[None, :] * 365.25)
+    ceiling = _RSI_DIR_TARGET / 100
+    floor_odds = (1 - ceiling) / ceiling
+    excess = np.maximum((1 - p) / p - floor_odds, 0)
+    return t, np.maximum(excess / excess[:, :1], 1e-6)
+
+
+def _tk_blend_in_time(t, a, b, weight):
+    """Per draw, the curve that reaches each level at `weight` of the way from
+    when curve `a` reaches it to when `b` does (both relative to their start,
+    non-increasing, rows per draw): an average of dates, not of values, so the
+    blend's crossing of any bar lies between the two curves' crossings."""
+    levels = np.geomspace(1.0, 1e-6, 600)
+    out = np.empty_like(a)
+    for i in range(len(a)):
+        ta = np.interp(-np.log(levels), -np.log(np.maximum(a[i] / a[i, 0], 1e-6)), t)
+        tb = np.interp(-np.log(levels), -np.log(np.maximum(b[i] / b[i, 0], 1e-6)), t)
+        when = np.maximum.accumulate((1 - weight) * ta + weight * tb)
+        out[i] = np.interp(t, when, levels, right=levels[-1])
+    return out
+
+
 def _tk_ladder_curves(hours, n, seed):
     """(years, one human-share curve per draw): `_tk_ladder_curve` with each
     draw's own AL4->AL5 gap, lognormal over the AL5 card's own 80% range
@@ -19312,6 +19358,13 @@ def _render_takeoff(loading):
         # Research hours follow the automation index's own projection, each
         # scenario with its own AL4->AL5 gap.
         human_curve = _tk_ladder_curves(_tk_al_hours_now(), len(onset_years), params["seed"])
+        # Research direction also reads the next-step study, an independent
+        # measurement of that stage: a log blend of the two curves.
+        nextstep = _tk_nextstep_curves(len(onset_years), params["seed"], today=today)
+        if human_curve is not None and nextstep is not None:
+            years_, ladder = human_curve
+            human_curve = (years_, ladder, _tk_blend_in_time(
+                years_, ladder, nextstep[1], _TK_NEXTSTEP_WEIGHT))
         _tk_loading(bar, 1)
         rest = (experiment_starts, experiment_slopes, pace_yield, compute_rates,
                 hist_compute, coding_level, coding_weights, human_curve)
@@ -19373,9 +19426,10 @@ def _render_takeoff(loading):
               "human hours, after coding automation: the AI chooses what to try next. "
               f"At that point experiment design still needs {left['experiments']:.0f}% of its "
               f"human hours and verification {left['verification']:.0f}% (medians); "
-              "human hours follow the automation index's projection, so this date rests "
-              "mostly on when AL5 (no human) tasks arrive, a level the index has never yet "
-              "rated a task at; "
+              "research direction's hours average the dates two independent sources give, "
+              "the automation index's projection (when AL5, no-human, tasks arrive, a level "
+              "never yet rated) and the next-step study (when AI's choice of next step "
+              "nears what a judge shown the finished session picks); "
               + ("on autopilot (the default) those are dropped, so from RSI on no stage needs "
                  "people." if params["rsi_autopilot"] else
                  "with autopilot off they keep falling at their own pace."))

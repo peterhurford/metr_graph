@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v25-compute-bound-correlation`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v26-direction-two-sources`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -144,7 +144,11 @@ rate, AL5 as AL4 shifted by a gap), times the human time each level takes, gives
 that holds people near the AL4 level (about 35% of hours) through 2027, then drops as AL5
 arrives. AL5 has never been measured, so each scenario draws its own AL4-to-AL5 gap over
 the AL5 card's 80% range: the share reaches 5% between 1.0 and 2.9 years after August 2026
-(80%), 1.6 at the median. RSI therefore rests mostly on that unmeasured rung. Each stage moves
+(80%), 1.6 at the median. Research direction, the stage RSI is defined on, also reads an
+independent source, the next-step study: direction needs people in proportion to the odds
+a researcher still picks the better step, above the odds left at the study's own ceiling.
+Its dates and the ladder's are averaged, half each. The two agree on the median (about 1.6
+years each to 5% of direction's start), so RSI rests on both rather than on AL5 alone. Each stage moves
 along that curve at its own pace (direction 1.5x the average, verification 0.75x), in
 months of capability progress at today's rate, so faster progress compresses it. A
 persistent human-work floor (default 0) and the stage paces remain adjustable. The available research system includes validated fast gains.
