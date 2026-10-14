@@ -62,11 +62,14 @@ st.markdown("""<style>
         font-weight: 600; }
     .st-key-tk_headline [data-testid="stCaptionContainer"],
     .st-key-tk_headline [data-testid="stCaptionContainer"] * { font-size: 1.15rem !important; }
-    [data-testid="stProgress"] { padding: 1.6rem 1.8rem; border-radius: 0.8rem;
-        background: rgba(41,128,185,0.10); border: 2px solid rgba(41,128,185,0.45); }
-    [data-testid="stProgress"] p { font-size: 1.75rem !important; line-height: 1.35; }
+    [data-testid="stProgress"] { min-height: 22rem; padding: 3rem 2.5rem;
+        display: flex; flex-direction: column; justify-content: center;
+        border-radius: 1rem; background: rgba(41,128,185,0.10);
+        border: 2px solid rgba(41,128,185,0.45); }
+    [data-testid="stProgress"] p { font-size: 1.75rem !important; line-height: 1.35;
+        text-align: center; margin-bottom: 1rem; }
     [data-testid="stProgress"] div[role="progressbar"] div {
-        height: 3rem !important; border-radius: 1.5rem !important; }
+        height: 4.5rem !important; border-radius: 2.25rem !important; }
     [data-testid="stTable"] table { margin-top: 0 !important; margin-bottom: 0.5rem !important; }
     .vp-fn, .vp-fn-a { position: relative; cursor: help; }
     /* Anchored: the note hangs off the words it qualifies. */
