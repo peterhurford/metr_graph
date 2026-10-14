@@ -15174,24 +15174,30 @@ def _pc_ramp_for(timing_label, ramp_days):
 # late-but-uncertain milestone widens the answer instead of just shifting it.
 # Keyed by slug because the card labels are built from the target constants.
 _PC_RSI_WEIGHTS = {
-    # Equal credence across the ten research cards. The ECI and revenue cards
-    # stay on the tab but carry no weight: general capability and earnings are
-    # not measures of AI doing AI research.
+    # Equal credence across the nine research cards. The revenue card stays on
+    # the tab but carries no weight: earnings are not a measure of AI doing AI
+    # research. AL5 is a card only (`_PC_RSI_CARD_ONLY`), outside the blend.
     "metr_p50": 10.0,
     "metr_p80": 10.0,
-    "eci_187_5": 0.0,
-    "eci_200": 0.0,
     "rli_90": 10.0,
     "cobench_85": 10.0,
     "staff_10x": 10.0,
     "code_30x": 10.0,
     "experiments_10x": 10.0,
     "rdauto_90": 10.0,
-    "al5_90": 10.0,
     "nextstep_90": 10.0,
     "rev_1t": 0.0,
 }
 _PC_RSI_W_KEY = "pc_rsiw_"        # session-state prefix, one float per slug
+# Cards shown in the milestone row but left out of the RSI projection, its
+# weights table and editor, and Takeoff's coding blend: AL5 dates full R&D
+# autonomy itself, not a candidate definition of the threshold.
+_PC_RSI_CARD_ONLY = ("al5_90",)
+
+
+def _pc_blend_parts(components):
+    """The milestone components the RSI projection mixes."""
+    return [c for c in components if c[0] not in _PC_RSI_CARD_ONLY]
 # Milestone cards wider than this truncate their labels mid-word.
 _PC_CARDS_PER_ROW = 4
 
@@ -15483,14 +15489,9 @@ def _pc_rsi_projection_samples(components, weights, origin, survival, raw_compon
     return mix, blend_days, raw_days
 
 
-# Cards that date full R&D automation itself. Takeoff reads them as a definition
-# of that milestone, so they leave the coding-automation blend it inherits.
-_TK_LADDER_SLUGS = ("al5_90",)
-
-
 def _pc_rsi_onset(today):
-    """(coding days, ladder days, settings): the final RSI projection less
-    `_TK_LADDER_SLUGS`, and those cards' own draws, on the selected clock."""
+    """(coding days, settings): the final RSI projection's sorted draws, on the
+    selected clock, for Takeoff's coding-automation dates."""
     # Reassign inherited widget keys so Streamlit keeps them on the Takeoff
     # page even though their editors only render on RSI.
     settings = {k: st.session_state.get(k, _RSI_DEFAULTS[k]) for k in
@@ -15501,22 +15502,14 @@ def _pc_rsi_onset(today):
     st.session_state.update(settings)
     components, survival, raw, _ = _pc_rsi_components(
         today, settings["rsi_timing"], settings["rsi_notyet"], settings["rsi_notyet_ramp"])
+    components, raw = _pc_blend_parts(components), raw and _pc_blend_parts(raw)
     weights = {slug: float(settings[_PC_RSI_W_KEY + slug])
                for slug, _, _, _ in components}
-    ladder_weights = {s: w for s, w in weights.items() if s in _TK_LADDER_SLUGS}
-    weights.update(dict.fromkeys(ladder_weights, 0.0))
     if not any(weights.values()):
-        return None, None, settings  # else the blend falls back to defaults, AL5 included
+        return None, settings
     _, days, _ = _pc_rsi_projection_samples(components, weights, today, survival, raw)
-    ladder = (_pc_rsi_projection_samples(
-        components, dict.fromkeys(ladder_weights, 1.0), today, None, None)[1]
-        if ladder_weights else None)
-
-    def final(d):
-        # Sorted: stable quantile pairing with takeoff's seeded draws.
-        return None if d is None else np.sort(
-            _pc_rsi_atc_samples(d, settings["rsi_atc_penalty"]))
-    return final(days), final(ladder), settings
+    # Sorted: stable quantile pairing with takeoff's seeded draws.
+    return np.sort(_pc_rsi_atc_samples(days, settings["rsi_atc_penalty"])), settings
 
 
 def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
@@ -15684,31 +15677,6 @@ def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_
              "the intercept and the position CI are re-fit here. "
              f"{_PC_METR_TARGET_HRS:.0f}h is about one work-month.")
             for lab, k in _PC_METR_LEVELS]
-    _eci_fr = _eci_entity_data("US best")[1]
-    # One footnote per bar, measured off the *pinned* jump ends — the same
-    # pair the targets were set from, so the count a card claims and the bar
-    # it dates can never disagree. Reading the far end off the live frontier
-    # would make the sentence re-describe a different jump on every rescore.
-    _eci_jump = {}
-    _from_name, _from = _PC_ECI_JUMP_FROM
-    _to_name, _to = _PC_ECI_JUMP_TO
-    _jump = _to - _from
-    if _jump > 0:
-        for _t in _PC_ECI_TARGETS:
-            _n = max(round((_t - _to) / _jump), 1)
-            _eci_jump[_t] = (
-                " {t:g} is {n} more jumps the size of {a} \u2192 {b} "
-                "({lo:g} \u2192 {hi:g}), i.e. +{j:.1f} apiece. The jump is "
-                "pinned to that pair, so a new record moves the frontier "
-                "toward this bar instead of pushing it away.".format(
-                    t=_t, n=_n, a=_from_name, b=_to_name,
-                    lo=_from, hi=_to, j=(_t - _to) / _n))
-    _cap += [(f"eci_{t:g}".replace(".", "_"), f"ECI reaches {t:g}",
-              _pc_eci_eta(_eci_fr, t, n=n, samples=True), True,
-              "Epoch ECI tab at its defaults: single OLS on the US-best "
-              "frontier, points/yr over [PPY/2, PPY\u00d72], position "
-              f"\u00b1{_PC_ECI_POS_CI:g}." + _eci_jump.get(t, ""))
-             for t in _PC_ECI_TARGETS]
     _cap.append((f"rli_{_PC_RLI_TARGET_PCT:.0f}",
                  f"RLI reaches {_PC_RLI_TARGET_PCT:.0f}%",
                  _pc_rli_eta(rli_frontier_all, n=n, samples=True), True,
@@ -15823,8 +15791,7 @@ def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_
 
 
 def _pc_rsi_components(today, timing_label, condition, ramp_days):
-    data_key = repr((frontier_all, _eci_entity_data("US best")[1],
-                     rli_frontier_all, rsi_frontier_all, load_rsi_survey(),
+    data_key = repr((frontier_all, rli_frontier_all, rsi_frontier_all, load_rsi_survey(),
                      load_rsi_code(), load_rsi_experiments(), rsi_dir_frontier_all,
                      _OPENAI_REVENUE, _ANTHROPIC_REVENUE))
     return _pc_milestone_components(timing_label, today, condition, ramp_days,
@@ -15867,10 +15834,10 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
             "card for its fit, its clock and what the bar means."
             + _cond_note)
 
-        _pc_render_rsi_blend(_cap, today, survival,
+        _pc_render_rsi_blend(_pc_blend_parts(_cap), today, survival,
                              horizon=(datetime(end_year, 12, 31)
                                       if end_year else None),
-                             raw_components=_cap_raw)
+                             raw_components=_cap_raw and _pc_blend_parts(_cap_raw))
 
 
 def _pc_when(rec, horizon=None):
@@ -15942,55 +15909,6 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
     start_hrs = np.random.lognormal(np.log(fitted_hrs), sigma, n)
     days_to = np.log2(target_hrs / start_hrs) * proj_dt
     return _pc_eta_out(cur['date'], days_to, samples)
-
-
-# The ECI companions, on the US-best frontier the ECI tab defaults to. Both
-# bars are today's frontier plus **whole jumps the size of GPT-5 -> the
-# current frontier** — two of them for 187.5, three for 200 — well above
-# anything the ECI tab draws (its own milestone table tops out at 170) and a
-# pure extrapolation of the same fit, a long way outside the frontier's
-# observed range. 170 was a card once, but it sits close enough to today's
-# frontier that it dated near-term model releases, not an RSI-scale
-# capability — its weight moved here.
-#
-# `_PC_ECI_JUMP_FROM` and `_PC_ECI_JUMP_TO` are the two ends of that jump.
-# **Both ends are pinned, not read off the live frontier.** The bar is
-# "two more jumps the size of the one we just watched", so re-floating the
-# far end onto each new record makes the bar recede as capability arrives:
-# a model that beats the frontier by X raises the anchor by X and the jump
-# by X, moving a two-jump bar by 3X. GPT-6 Astra did exactly that once, and
-# the ECI cards moved ~13 months *later* on a refresh that made every fixed
-# bar arrive earlier. Move these deliberately when the bar should mean
-# something new — not on every rescore. The names only have to identify a
-# frontier model near each score: when a rescore drops one off the frontier,
-# re-name it to a neighbour, don't re-number.
-_PC_ECI_TARGETS = (187.5, 200.0)
-_PC_ECI_JUMP_FROM = ("GPT-5", 150.0)
-_PC_ECI_JUMP_TO = ("GPT-5.5 Pro", 162.5)
-_PC_ECI_POS_CI = 2.0     # the ECI tab's default position CI, fitted score +/- 2
-
-
-def _pc_eci_eta(frontier, target, n=None, samples=False):
-    """(early, median, late) dates for an ECI frontier to reach `target`.
-
-    The ECI tab at its defaults — single OLS, +Pts/Yr lognormal over
-    [PPY/2, PPY*2], position normal over the fitted score +/- `_PC_ECI_POS_CI`.
-    Returns None if the fitted slope is flat or negative.
-    """
-    n = n or N_SAMPLES
-    base = frontier[0]['date']
-    days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
-    scores = np.array([m['eci_score'] for m in frontier])
-    slope = fit_line(days, scores)[1]
-    if slope <= 0:
-        return None
-    ppy = round(slope * 365.25, 1)
-    proj_dpp = _lognormal_from_ci(365.25 / round(ppy * 2, 1),
-                                  365.25 / round(ppy / 2, 1), n)
-    fitted = np.mean(scores - slope * days) + slope * days[-1]
-    start = np.random.normal(fitted, _PC_ECI_POS_CI / 1.282, n)
-    days_to = np.maximum((target - start) * proj_dpp, 0.0)
-    return _pc_eta_out(frontier[-1]['date'], days_to, samples)
 
 
 # The RLI companion, on the same frontier its tab charts. 90% is above the
@@ -18634,7 +18552,7 @@ def render_takeoff():
     horizon = (end_date - today).total_seconds() / (365.25 * 86400)
     view_end = datetime(int(st.session_state["tk_end_year"]), 12, 31)
     view_years = (view_end - today).total_seconds() / (365.25 * 86400)
-    onset_days, _ladder_days, rsi_settings = _pc_rsi_onset(today)
+    onset_days, rsi_settings = _pc_rsi_onset(today)
     if onset_days is None:
         st.info("The RSI projection has no available draws. Adjust its settings on the RSI tab.")
         return

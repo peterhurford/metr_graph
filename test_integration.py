@@ -841,8 +841,8 @@ class TestRsiTab:
         label = f"AL5: {vp._RSI_AL5_TARGET:.0f}% of R&D fully autonomous"
         assert label in [str(m.label) for m in at.metric]
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
-        row = t[t["Milestone"] == label]
-        assert len(row) == 1
+        # A card on the tab, but outside the RSI projection.
+        assert not (t["Milestone"] == label).any()
         figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
         fig = next(f for f in figures if any(
             "AL5 measured" in (tr.get("name") or "") for tr in f["data"]))
@@ -877,7 +877,7 @@ class TestRsiTab:
         helps = {str(m.label): (m.proto.help or "") for m in at.metric}
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         milestones = list(t["Milestone"])
-        assert len(milestones) > 10
+        assert len(milestones) >= 10
         for lab in milestones:
             assert lab in helps, lab
             h = helps[lab]

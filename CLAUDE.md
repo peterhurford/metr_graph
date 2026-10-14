@@ -54,10 +54,9 @@ it moves). Gaps have less follow-up for late starters and say so.
 and returns sorted exact final samples, including conditioning, penalty, and clock.
 This remains shared with the RSI tab. The display horizon does not clip its tail.
 
-`_TK_LADDER_SLUGS` (the AL5 card) is zeroed in the coding blend by `_pc_rsi_onset` — the
-exact-CDF invariant is against the RSI blend with that weight at zero
-(`test_coding_automation_inherits_the_exact_final_rsi_cdf`). It still returns the AL5 dates
-as `ladder_years`; Takeoff ignores them. RSI is the first time research direction is at
+`_pc_rsi_onset` mixes the same components as the RSI projection (`_pc_blend_parts`, AL5
+left out), so the exact-CDF invariant holds against the projection as shown
+(`test_coding_automation_inherits_the_exact_final_rsi_cdf`). RSI is the first time research direction is at
 or under `full_human`% of baseline human hours with the coding date arrived
 (`test_capability_paths_span_the_grid_and_rsi_waits_for_coding`).
 
@@ -481,7 +480,7 @@ keys, not caveats.
 Three mechanisms, in order of preference:
 
 1. **`st.metric(..., help=…)`** where a metric exists. Native tooltip, no raw
-   HTML. The *Capabilities Milestones* row is the worked example: thirteen cards,
+   HTML. The *Capabilities Milestones* row is the worked example: eleven cards,
    each with its own note (`_notes` by slug, plus `_pc_clock_note()` for the
    release-vs-internal split), and a two-line caption under them. Widget `help=` does the same
    for controls, which is why every sidebar control has one.
@@ -1189,21 +1188,11 @@ read.
 
 *Capabilities Milestones* and the RSI blend live at the **bottom of the RSI
 tab** (`_pc_render_milestones()`), not here — they are still named `_pc_*` with
-the ETA helpers they call, and the machinery is unchanged. Thirteen cards, driven by
+the ETA helpers they call, and the machinery is unchanged. Eleven cards, driven by
 the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_eta()`
 for the METR frontier reaching `_PC_METR_TARGET_HRS` — about one work-month — at each
 of `_PC_METR_LEVELS` (at the month-scale bar p50's earlier firing is its own card and
-weight rather than the exclusion it got at the old 40h bar), `_pc_eci_eta()` for the
-US-best ECI frontier reaching each of `_PC_ECI_TARGETS` (`_PC_ECI_JUMP_TO` plus **two
-and three more jumps the size of the pinned `_PC_ECI_JUMP_FROM` → `_PC_ECI_JUMP_TO` pair**,
-measured off those constants rather than the live frontier, since a floating anchor
-recedes exactly when capability arrives; `test_eci_target_is_two_more_pinned_jumps`
-checks the arithmetic and that both ends still name a model in the ECI table; well above anything that tab draws, and a lower card sat close
-enough to today's frontier that it dated model releases, not RSI, so its weight
-moved here). The cards are labelled *ECI reaches …*, not *US ECI* — the US-best
-frontier is stated in the hover. The 187.5 slug keeps the half-point
-(`eci_187_5`) — it keys the blend weight, and `{t:.0f}` would round it to a slug
-no weight matches, `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT`
+weight rather than the exclusion it got at the old 40h bar), `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT`
 (above that tab's own milestone table), `_pc_rsi_eta()` for the CoBench frontier
 reaching `_RSI_SUBSTITUTION_BAR` (Anthropic's own full-substitution bar, which the
 RSI tab dates too), `_pc_rsi_survey_eta()` for self-reported staff speedup reaching
@@ -1214,15 +1203,14 @@ R&D work reaching `_RSI_AUTO_TARGET` (the app's bar, not the post's — see the
 RSI tab section), `_pc_rsi_al5_eta()` for the AL5 share — model R&D with no
 human in the loop — reaching `_RSI_AL5_TARGET`, the same 90% bar, which is
 **not a fitted series** but the AL4 rung shifted by the ladder's own step (see
-the R&D automation section; it carries the same blend weight as every research card and the
-loudest caveat), `_pc_nextstep_eta()` for the detour study's frontier reaching
+the R&D automation section; it is a card only, `_PC_RSI_CARD_ONLY`, outside the projection,
+its weights and Takeoff's coding blend, and carries the loudest caveat), `_pc_nextstep_eta()` for the detour study's frontier reaching
 `_RSI_DIR_TARGET` (that study's own practical ceiling — see the RSI tab section),
 and `_pc_revenue_eta()` for the **leading** company's ARR reaching `_PC_REV_TARGET_B`
 (the Revenue tab's own top milestone) — the one bar here that isn't a benchmark, but still dated off
-released models, since ARR is what shipped models earn. They render at most `_PC_CARDS_PER_ROW` (4) to a row — wider and a label truncates mid-word — with the rows **balanced** rather than filled greedily, so thirteen cards read 4–3–3–3 and not 4–4–4–1 (`TestMilestoneCardLayout`). Each reproduces
+released models, since ARR is what shipped models earn. They render at most `_PC_CARDS_PER_ROW` (4) to a row — wider and a label truncates mid-word — with the rows **balanced** rather than filled greedily, so eleven cards read 4–4–3 (`TestMilestoneCardLayout`). Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
-[DT/2, DT*2], position over the current model's CI, p50 slope fits the trend;
-ECI: single OLS, +Pts/Yr over [PPY/2, PPY*2], position ± 2; RLI: single OLS in
+[DT/2, DT*2], position over the current model's CI, p50 slope fits the trend; RLI: single OLS in
 logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
 ± 1 point; RSI CoBench: single OLS in logit space, odds-doubling time over
 `_rsi_dt_ci()`'s widened interval, position ± `_PC_RSI_POS_CI`; RSI
@@ -1245,16 +1233,15 @@ milestone. The revenue milestone takes whichever company crosses first
 **per sample** (independent draws — a common shock would narrow the answer
 on nothing measured) and re-anchors both to the later of the two series'
 last dates, since they end on different days. `test_metr_eta_reproduces_the_metr_tab_defaults`,
-`test_eci_eta_reproduces_the_eci_tab_defaults`,
 `test_rli_eta_reproduces_the_rli_tab_defaults` and
 `test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that.
 
-Seven of the thirteen are dated off *released* models (METR, ECI, RLI and the detour
+Five of the eleven are dated off *released* models (METR, RLI and the detour
 study — publicly benchmarked or run on shipped models — and revenue, since ARR is
 earned by shipped models); CoBench, the staff survey, merged code, experiment
 velocity and both R&D-automation cards (AL4 and AL5) are internal
 measurements, driven by work on models the lab has internal access to
-before release. So `_pc_report_lag()` pulls the seven back
+before release. So `_pc_report_lag()` pulls the five back
 by `_PC_REPORT_LAG_DAYS` (sampled over the range so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other six
 are already on that clock and must not be shifted twice.
 
@@ -1285,8 +1272,9 @@ evals, and the checkbox help says so.
 
 Under the cards sits *RSI projection (tentative)* (`_pc_render_rsi_blend()`):
 no single benchmark defines the threshold, so each milestone is treated as one
-candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets: 10 for each research card. The ECI and revenue cards carry
-zero weight: they date general capability and earnings, not AI doing AI research. The result
+candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets: 10 for each of the nine
+research cards. The revenue card carries zero weight (earnings are not AI doing AI research),
+and AL5 is not in the projection at all. The result
 is `_pc_rsi_blend()`, the **mixture of their date distributions, not an average
 of their medians**, drawn as a CDF (`_pc_rsi_dist_fig()`) between the
 cards and the weights table — cumulative rather than a density because a mixture

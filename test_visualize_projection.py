@@ -2832,10 +2832,12 @@ class TestRsiMilestoneCards:
         retargeted bar must still find its weight."""
         slugs = [f"nextstep_{vp._RSI_DIR_TARGET:.0f}",
                  f"code_{vp._RSI_CODE_TARGET:.0f}x",
-                 f"rdauto_{vp._RSI_AUTO_TARGET:.0f}",
-                 f"al5_{vp._RSI_AL5_TARGET:.0f}"]
+                 f"rdauto_{vp._RSI_AUTO_TARGET:.0f}"]
         for slug in slugs:
             assert vp._PC_RSI_WEIGHTS.get(slug, 0) > 0, slug
+        # AL5 is a card only: no weight, no row in the projection.
+        al5 = f"al5_{vp._RSI_AL5_TARGET:.0f}"
+        assert al5 in vp._PC_RSI_CARD_ONLY and al5 not in vp._PC_RSI_WEIGHTS
 
 
 class TestUkCyberTlo:
@@ -4332,7 +4334,7 @@ class TestPacing:
             assert k in keys and defaults[k] == v, k
         for slug, w in vp._PC_RSI_WEIGHTS.items():
             assert defaults[vp._PC_RSI_W_KEY + slug] == w, slug
-        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100
+        assert sum(vp._PC_RSI_WEIGHTS.values()) == 90       # nine research cards
         assert 0 <= defaults["pc_pause_mo"] <= vp._PC_PAUSE_MO_MAX
         assert isinstance(defaults["pc_pause_mo"], int)
         assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
@@ -4403,67 +4405,6 @@ class TestPacing:
         p50 = vp._pc_metr_eta(vp.frontier_all, 'p50_min', n=20000)
         p80 = vp._pc_metr_eta(vp.frontier_all, 'p80_min', n=20000)
         assert all(b > a for a, b in zip(p50, p80))
-
-    def test_eci_eta_reproduces_the_eci_tab_defaults(self):
-        """The ECI card is the ECI tab's own fit: single OLS on the US-best
-        frontier, +Pts/Yr over [PPY/2, PPY*2]."""
-        fr = vp._eci_entity_data("US best")[1]
-        days = np.array([(m['date'] - fr[0]['date']).days for m in fr],
-                        dtype=float)
-        scores = np.array([m['eci_score'] for m in fr])
-        slope = vp.fit_line(days, scores)[1]
-        fitted = np.mean(scores - slope * days) + slope * days[-1]
-        prev = None
-        for target in vp._PC_ECI_TARGETS:
-            early, med, late = vp._pc_eci_eta(fr, target, n=20000)
-            assert early < med < late
-            want = fr[-1]['date'] + timedelta(
-                days=(target - fitted) * (365.25 / round(slope * 365.25, 1)))
-            assert abs((med - want).days) < 30
-            # A higher bar is never reached earlier.
-            assert prev is None or med > prev
-            prev = med
-
-    def test_eci_target_sits_above_the_eci_tabs_top_milestone(self):
-        """187.5 is a deliberate extrapolation past anything the ECI tab
-        draws — a bar near today's frontier dates model releases, not RSI."""
-        top = max(s for s, _l, _c in vp._ECI_US_MILESTONES)
-        assert min(vp._PC_ECI_TARGETS) > top
-
-    def test_eci_target_is_two_more_pinned_jumps(self):
-        """The bars are two and three jumps the size of GPT-5 → GPT-5.5 Pro, off
-        the *pinned* pair — not off the live frontier.
-
-        Floating the far end is self-defeating: a model that beats the
-        frontier by X raises both the anchor and the jump by X, so a two-jump
-        bar moves by 3X and the milestone recedes exactly when capability
-        arrives. GPT-6 Astra did that on 2026-09-03 and pushed these cards ~13
-        months later on a refresh that made every fixed bar earlier. So the
-        arithmetic is checked against the constants, and the frontier is only
-        required to still sit below the bars."""
-        name, lo = vp._PC_ECI_JUMP_FROM
-        to_name, hi = vp._PC_ECI_JUMP_TO
-        jump = hi - lo
-        assert jump > 0
-        for n, target in zip((2, 3), vp._PC_ECI_TARGETS):
-            assert abs(target - (hi + n * jump)) < 0.01, (n, target)
-        # Both ends must still name a real model, so a pinned number can't
-        # quietly stop referring to anything.
-        names = {(r.get("Model name") or "").strip()
-                 for r in csv.DictReader(open(os.path.join(
-                     os.path.dirname(vp.__file__),
-                     "epoch_capabilities_index.csv")))}
-        for nm in (name, to_name):
-            assert any(n == nm or n.startswith(nm + " (") for n in names), \
-                f"{nm} is not in the ECI table"
-        # The bars are extrapolations: the frontier has not reached them.
-        fr = vp._eci_entity_data("US best")[1]
-        assert fr[-1]['eci_score'] < min(vp._PC_ECI_TARGETS)
-        # The slug carries the half-point rather than rounding it away —
-        # it keys the blend weight, so "eci_188" would silently unweight it.
-        slugs = [f"eci_{t:g}".replace(".", "_") for t in vp._PC_ECI_TARGETS]
-        assert slugs == ["eci_187_5", "eci_200"]
-        assert [vp._PC_RSI_WEIGHTS[s] for s in slugs] == [0.0, 0.0]
 
     def test_rli_eta_reproduces_the_rli_tab_defaults(self):
         """The RLI 90% card is the RLI tab at its defaults: single OLS in
@@ -4715,7 +4656,7 @@ class TestPacing:
                                        microsecond=0)
         _cap, _surv, _raw, notes = vp._pc_milestone_components(
             "Training run finished", today, False, 0.0, 200, "test")
-        assert set(notes) == set(vp._PC_RSI_WEIGHTS)
+        assert set(notes) == set(vp._PC_RSI_WEIGHTS) | set(vp._PC_RSI_CARD_ONLY)
         internal = ("cobench_", "rdauto_", "al5_", "staff_", "code_",
                     "experiments_")
         released = ("metr_", "eci_", "rli_", "nextstep_", "rev_1t")
@@ -5242,11 +5183,11 @@ class TestMilestoneCardLayout:
             # Balanced: no row carries two more cards than another.
             assert max(sizes) - min(sizes) <= 1, (n, sizes)
 
-    def test_the_live_card_count_lays_out_four_three_three_three(self):
+    def test_the_live_card_count_lays_out_four_four_three(self):
         """The shape the RSI tab actually renders today. If a milestone is
         added or dropped, retarget this deliberately."""
-        assert len(vp._PC_RSI_WEIGHTS) == 13
-        assert vp._pc_card_rows(13) == [4, 3, 3, 3]
+        assert len(vp._PC_RSI_WEIGHTS) + len(vp._PC_RSI_CARD_ONLY) == 11
+        assert vp._pc_card_rows(11) == [4, 4, 3]
 
 
 class TestTakeoffRsiCalibration:
