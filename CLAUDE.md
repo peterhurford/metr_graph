@@ -1468,7 +1468,7 @@ at the catalogued China-accessible pace (sites abroad) vs the export-control ban
 The bar is the best model the US has *trained* by the pause: the released-frontier
 climb (measured from us_best's release date, not the China-anchored grid) plus
 `_PC_SHIP_LAG_DAYS` (the realized trained→shipped lag, GPT-5.5 Pro / Mythos card)
-of extra climb. The US level the distillation gap starts from is the US trend at China's
+of extra climb. The policy levers below (and their *Advanced* expander) draw in the sidebar, under *Policy levers* above *Compute settings*, through the `levers_box` slot `render_pacing` makes. The US level the distillation gap starts from is the US trend at China's
 anchor date (`us_anchor_cn`), not the US's later best. Three scenario checkboxes plus a slowdown slider: `pc_withhold` (default **on**) — a US
 *release freeze from pause-run start*: nothing ships once the final run begins, so
 distillation's teacher is the released frontier as of run start (`dist_teacher`, ~one
@@ -1481,7 +1481,7 @@ biggest domestic cluster, the compute term is dead until the domestic buildout r
 the lost OOMs at its catalogued pace, domestic band thereafter (also suppresses the
 China-accessible sensitivity, whose premise it removes). The pace band deliberately
 stays on the default compute band — it is shared with the CC crossing.
-Above the slider, `pc_duv_ban` and `pc_duv_service` (default off) compound the CTS-derived
+Beside them, `pc_duv_ban` and `pc_duv_service` (default off) compound the CTS-derived
 DUVi import and servicing cuts into it (see *lithography ceiling* above). Alongside them, `pc_dom_slow` (0–90%, default 0) slows China's *own* buildout —
 equipment/fab controls rather than access controls. The cut comes off the **domestic
 component** of each band, not the band itself: `g_hi_eff -= g_dom_hi·p`, likewise for

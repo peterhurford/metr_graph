@@ -16661,7 +16661,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                         us_steps=None, timing_label=_DC_TIMING_OPTIONS[0],
-                        horizon=None, caps_now=None, state_out=None):
+                        horizon=None, caps_now=None, state_out=None,
+                        levers_box=None):
     """If the US paused: China's catch-up to the paused frontier, in ECI.
 
     The pause is a **date the user names** (`pc_pause_mo`, rendered by
@@ -16708,7 +16709,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     by <year>" rather than searched for anyway.
 
     The state-of-play table's rows go into `state_out` (a list) for the
-    caller to draw above *Compute Thresholds*.
+    caller to draw above *Compute Thresholds*. The policy levers draw into
+    `levers_box`, the caller's slot at the top of the sidebar.
     """
     # Lockstep milestone offsets (see docstring).
     shift = _dc_timing_shift(timing_label, run_days)
@@ -16716,149 +16718,149 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     off_cn = timedelta(days=shift - run_days - _CC_RUN_COMPLETION_LAG.days)
     d_pause_v = pause_d + off_us
     st.subheader("When does China catch up?")
-    st.markdown("##### Policy levers")
-    cb1, cb2, cb3 = st.columns(3)
-    withhold = cb1.checkbox(
-        "US does not give access to strongest models at pause start",
-        key="pc_withhold",
-        value=True,
-        help="A release freeze: once the final threshold run starts, the US "
-             "ships nothing new, so the best queryable teacher is the last "
-             "generation released before run start — one run's climb (plus "
-             "the ship lag) below the bar. Uncheck to let the US keep "
-             "serving right up to (and including) the paused frontier.")
-    _lvl = _cc_cn_level_offset(load_eci_compute(_mtime=_eci_mtime()))
-    stop_dist = cb2.checkbox(
-        "Stop Chinese distillation as of today", key="pc_stop_dist",
-        help="API-level controls that block training against US model "
-             "outputs: the distillation channel is cut from today onward, "
-             "instead of decaying only as the gap closes. The cut stops the "
-             "forward rate only — measured distillation is mostly a level "
-             + (f"(~{_lvl[0]:+.0f} ECI at matched compute and date vs US "
-                "models, iso-compute rates indistinguishable), "
-                if _lvl else "advantage, ")
-             + "and points already banked stay banked.")
-    stop_remote = cb3.checkbox(
-        "Cut Chinese remote access to compute abroad", key="pc_stop_remote",
-        help="Chinese labs lose the Johor sites and rented "
-             "clusters abroad: their largest run falls back to the biggest "
-             "domestic cluster (a level setback the domestic buildout must "
-             "first regrow), and grows at the domestic catalogued pace "
-             "thereafter.")
-    _duv_end = horizon if horizon is not None else _PC_HORIZON
-    # The growth slider sits under Advanced, below this help text, so read it
-    # a rerun early, as the blend weights are.
-    _imp_cut = _duv_policy_cut(
-        today, _duv_end, growth=st.session_state.get(
-            "pc_duv_growth", _PC_DEFAULTS["pc_duv_growth"])) or 0.0
-    db1, db2, db3 = st.columns(3)
-    duv_ban = db1.checkbox(
-        "Ban DUV immersion lithography exports to China from 2027",
-        key="pc_duv_ban",
-        help="The China-wide DUVi import ban CTS proposes (Brown & Khan, "
-             f"[report]({_DUV_SOURCE_URL})). It lowers the report's ceiling "
-             "on China's AI chip output, but China's real output today sits "
-             "far below even the banned ceiling, so the ban bites only once "
-             f"output grows into it: **{_imp_cut:.0%}** less growth to "
-             f"{_duv_end.year}. That cut comes off China's domestic compute "
-             "growth, on top of the slider below. See the "
-             "China tab's lithography chart.")
-    duv_service = db2.checkbox(
-        "Ban servicing of DUVi at China's advanced fabs from 2027",
-        key="pc_duv_service",
-        help="No foreign servicing, spare parts or field upgrades for the "
-             "scanners making China's AI chips, so that fleet erodes at the "
-             "rate set under *Advanced*. Unlike the import ban it bites "
-             "straight away, because it hits the machines in use rather "
-             "than a ceiling China has not reached yet.")
-    methods_pause = db3.checkbox(
-        "US pauses publishing methods too", key="pc_methods_pause",
-        value=_PC_DEFAULTS["pc_methods_pause"],
-        help="On: the pause stops new US methods as well as models, and China "
-             f"absorbs what was already published over ~{_CC_DIFF_ABSORB_YRS:.0f}"
-             " yr, so diffusion dries up. Off: the US keeps publishing and "
-             "diffusion runs at full rate.")
-    dom_slow_user = st.slider(
-        "Slow China's domestic compute growth by", 0, _PC_DOM_SLOW_MAX,
-        value=_PC_DEFAULTS["pc_dom_slow"], step=1, format="%d%%",
-        key="pc_dom_slow",
-        help="Equipment, HBM and fab controls that bite on the buildout "
-             "itself: China's own clusters grow this much slower than the "
-             "catalogued domestic pace. The cut comes off the domestic "
-             "share of the compute term, so it bites whether or not remote "
-             "access is cut \u2014 and a slower domestic pace also makes the "
-             "remote-access setback take longer to regrow. 0% = the "
-             "catalogued buildout.")
-    with st.expander("Advanced"):
-        st.markdown("**When the controls bite**")
-        _opts = _pc_when_options(today)
-        for _k in ("pc_dist_when", "pc_remote_when"):
-            if st.session_state.get(_k, _PC_WHEN_NOW) not in _opts:
-                st.session_state.pop(_k, None)
-        s1, s2 = st.columns(2)
-        dist_when = s1.select_slider(
-            "Distillation cut off", options=_opts,
-            value=_PC_DEFAULTS["pc_dist_when"], key="pc_dist_when",
-            disabled=not stop_dist,
-            help="Enforcement takes time. Until this date China keeps "
-                 "distilling under the gap-decay law; after it the channel "
-                 "is gone. Needs the checkbox above.")
-        remote_when = s2.select_slider(
-            "Remote access cut off", options=_opts,
-            value=_PC_DEFAULTS["pc_remote_when"], key="pc_remote_when",
-            disabled=not stop_remote,
-            help="China's compute grows on the export-control band until "
-                 "this date, then takes the setback and continues at the "
-                 "domestic pace — so a later cut costs more OOM to regrow. "
-                 "Needs the checkbox above.")
-        st.caption("Both default to *Now*, which is what the checkboxes on "
-                   "their own mean. Moving a slider right buys China more "
-                   "time on that channel before it closes.")
-        st.divider()
-        st.markdown("**DUVi fleet without servicing**")
-        duv_decay = st.slider(
-            "Advanced-fab DUVi capacity lost per year", 0,
-            _DUV_SERVICE_DECAY_MAX, value=_PC_DEFAULTS["pc_duv_decay"],
-            step=1, format="%d%%", key="pc_duv_decay",
-            disabled=not duv_service,
-            help="A judgment, not the report's: CTS says a servicing ban "
-                 "would degrade the fleet but gives no rate. Low values "
-                 "assume China self-services and cannibalizes its legacy "
-                 "fleet for parts; high ones that lasers and stages go down "
-                 "without foreign consumables. Needs the checkbox above.")
-        duv_growth = st.slider(
-            "Growth of China's AI chip output (\u00d7/yr, median)",
-            *_DUV_CN_OUTPUT_GROWTH_RANGE,
-            value=_PC_DEFAULTS["pc_duv_growth"], step=0.1, format="\u00d7%.1f",
-            key="pc_duv_growth", disabled=not (duv_ban or duv_service),
-            help="How fast China's real output, in H100e, grows toward the "
-                 "lithography ceiling. The import ban bites only once output "
-                 "reaches the banned ceiling, so this rate decides how soon "
-                 "it matters. Epoch and SemiAnalysis put Ascend unit growth "
-                 "at \u00d71.3\u20132.7/yr for 2026\u201327, with per-chip "
-                 "performance rising on top. Needs a DUVi checkbox above.")
-        st.divider()
-        st.markdown("**Length of Chinese training run**")
-        us_run_mo = max(int(round(run_days / 30)), 1)
-        if not (us_run_mo <= st.session_state.get("pc_cn_run", us_run_mo)
-                <= _PC_CN_RUN_MAX):
-            st.session_state.pop("pc_cn_run", None)   # stale for this bar
-        cn_run_mo = st.slider(
-            "Months China trains its catch-up model for", us_run_mo,
-            _PC_CN_RUN_MAX, value=us_run_mo, step=1, key="pc_cn_run",
-            help=f"The bar is a {us_run_mo}-month US run, but China need "
-                 "not match its length. Running longer puts more total "
-                 "compute into one model and needs proportionally less "
-                 "cluster to do it — so the hardware is there sooner — "
-                 "while the run itself finishes later. It can go either "
-                 "way; the cards above show which.")
-        _fn_caption(
-            f"Defaults to {us_run_mo} \u2014 matching the bar, and no change from "
-            "the panel above. A longer run trades compute against wall clock.",
-            ("A longer run trades compute against wall clock",
-             f"An L-month run carries \u00d7L/{us_run_mo} the compute of the "
-             f"{us_run_mo}-month bar: China's whole path lifts by what that buys "
-             f"and shifts right by L\u2212{us_run_mo} months."))
+    if levers_box is None:
+        levers_box = st.sidebar.container()
+    with levers_box:
+        st.markdown("##### Policy levers")
+        withhold = st.checkbox(
+            "US does not give access to strongest models at pause start",
+            key="pc_withhold",
+            value=True,
+            help="A release freeze: once the final threshold run starts, the US "
+                 "ships nothing new, so the best queryable teacher is the last "
+                 "generation released before run start — one run's climb (plus "
+                 "the ship lag) below the bar. Uncheck to let the US keep "
+                 "serving right up to (and including) the paused frontier.")
+        _lvl = _cc_cn_level_offset(load_eci_compute(_mtime=_eci_mtime()))
+        stop_dist = st.checkbox(
+            "Stop Chinese distillation as of today", key="pc_stop_dist",
+            help="API-level controls that block training against US model "
+                 "outputs: the distillation channel is cut from today onward, "
+                 "instead of decaying only as the gap closes. The cut stops the "
+                 "forward rate only — measured distillation is mostly a level "
+                 + (f"(~{_lvl[0]:+.0f} ECI at matched compute and date vs US "
+                    "models, iso-compute rates indistinguishable), "
+                    if _lvl else "advantage, ")
+                 + "and points already banked stay banked.")
+        stop_remote = st.checkbox(
+            "Cut Chinese remote access to compute abroad", key="pc_stop_remote",
+            help="Chinese labs lose the Johor sites and rented "
+                 "clusters abroad: their largest run falls back to the biggest "
+                 "domestic cluster (a level setback the domestic buildout must "
+                 "first regrow), and grows at the domestic catalogued pace "
+                 "thereafter.")
+        _duv_end = horizon if horizon is not None else _PC_HORIZON
+        # The growth slider sits under Advanced, below this help text, so read it
+        # a rerun early, as the blend weights are.
+        _imp_cut = _duv_policy_cut(
+            today, _duv_end, growth=st.session_state.get(
+                "pc_duv_growth", _PC_DEFAULTS["pc_duv_growth"])) or 0.0
+        duv_ban = st.checkbox(
+            "Ban DUV immersion lithography exports to China from 2027",
+            key="pc_duv_ban",
+            help="The China-wide DUVi import ban CTS proposes (Brown & Khan, "
+                 f"[report]({_DUV_SOURCE_URL})). It lowers the report's ceiling "
+                 "on China's AI chip output, but China's real output today sits "
+                 "far below even the banned ceiling, so the ban bites only once "
+                 f"output grows into it: **{_imp_cut:.0%}** less growth to "
+                 f"{_duv_end.year}. That cut comes off China's domestic compute "
+                 "growth, on top of the slider below. See the "
+                 "China tab's lithography chart.")
+        duv_service = st.checkbox(
+            "Ban servicing of DUVi at China's advanced fabs from 2027",
+            key="pc_duv_service",
+            help="No foreign servicing, spare parts or field upgrades for the "
+                 "scanners making China's AI chips, so that fleet erodes at the "
+                 "rate set under *Advanced*. Unlike the import ban it bites "
+                 "straight away, because it hits the machines in use rather "
+                 "than a ceiling China has not reached yet.")
+        methods_pause = st.checkbox(
+            "US pauses publishing methods too", key="pc_methods_pause",
+            value=_PC_DEFAULTS["pc_methods_pause"],
+            help="On: the pause stops new US methods as well as models, and China "
+                 f"absorbs what was already published over ~{_CC_DIFF_ABSORB_YRS:.0f}"
+                 " yr, so diffusion dries up. Off: the US keeps publishing and "
+                 "diffusion runs at full rate.")
+        dom_slow_user = st.slider(
+            "Slow China's domestic compute growth by", 0, _PC_DOM_SLOW_MAX,
+            value=_PC_DEFAULTS["pc_dom_slow"], step=1, format="%d%%",
+            key="pc_dom_slow",
+            help="Equipment, HBM and fab controls that bite on the buildout "
+                 "itself: China's own clusters grow this much slower than the "
+                 "catalogued domestic pace. The cut comes off the domestic "
+                 "share of the compute term, so it bites whether or not remote "
+                 "access is cut \u2014 and a slower domestic pace also makes the "
+                 "remote-access setback take longer to regrow. 0% = the "
+                 "catalogued buildout.")
+        with st.expander("Advanced"):
+            st.markdown("**When the controls bite**")
+            _opts = _pc_when_options(today)
+            for _k in ("pc_dist_when", "pc_remote_when"):
+                if st.session_state.get(_k, _PC_WHEN_NOW) not in _opts:
+                    st.session_state.pop(_k, None)
+            dist_when = st.select_slider(
+                "Distillation cut off", options=_opts,
+                value=_PC_DEFAULTS["pc_dist_when"], key="pc_dist_when",
+                disabled=not stop_dist,
+                help="Enforcement takes time. Until this date China keeps "
+                     "distilling under the gap-decay law; after it the channel "
+                     "is gone. Needs the checkbox above.")
+            remote_when = st.select_slider(
+                "Remote access cut off", options=_opts,
+                value=_PC_DEFAULTS["pc_remote_when"], key="pc_remote_when",
+                disabled=not stop_remote,
+                help="China's compute grows on the export-control band until "
+                     "this date, then takes the setback and continues at the "
+                     "domestic pace — so a later cut costs more OOM to regrow. "
+                     "Needs the checkbox above.")
+            st.caption("Both default to *Now*, which is what the checkboxes on "
+                       "their own mean. Moving a slider right buys China more "
+                       "time on that channel before it closes.")
+            st.divider()
+            st.markdown("**DUVi fleet without servicing**")
+            duv_decay = st.slider(
+                "Advanced-fab DUVi capacity lost per year", 0,
+                _DUV_SERVICE_DECAY_MAX, value=_PC_DEFAULTS["pc_duv_decay"],
+                step=1, format="%d%%", key="pc_duv_decay",
+                disabled=not duv_service,
+                help="A judgment, not the report's: CTS says a servicing ban "
+                     "would degrade the fleet but gives no rate. Low values "
+                     "assume China self-services and cannibalizes its legacy "
+                     "fleet for parts; high ones that lasers and stages go down "
+                     "without foreign consumables. Needs the checkbox above.")
+            duv_growth = st.slider(
+                "Growth of China's AI chip output (\u00d7/yr, median)",
+                *_DUV_CN_OUTPUT_GROWTH_RANGE,
+                value=_PC_DEFAULTS["pc_duv_growth"], step=0.1, format="\u00d7%.1f",
+                key="pc_duv_growth", disabled=not (duv_ban or duv_service),
+                help="How fast China's real output, in H100e, grows toward the "
+                     "lithography ceiling. The import ban bites only once output "
+                     "reaches the banned ceiling, so this rate decides how soon "
+                     "it matters. Epoch and SemiAnalysis put Ascend unit growth "
+                     "at \u00d71.3\u20132.7/yr for 2026\u201327, with per-chip "
+                     "performance rising on top. Needs a DUVi checkbox above.")
+            st.divider()
+            st.markdown("**Length of Chinese training run**")
+            us_run_mo = max(int(round(run_days / 30)), 1)
+            if not (us_run_mo <= st.session_state.get("pc_cn_run", us_run_mo)
+                    <= _PC_CN_RUN_MAX):
+                st.session_state.pop("pc_cn_run", None)   # stale for this bar
+            cn_run_mo = st.slider(
+                "Months China trains its catch-up model for", us_run_mo,
+                _PC_CN_RUN_MAX, value=us_run_mo, step=1, key="pc_cn_run",
+                help=f"The bar is a {us_run_mo}-month US run, but China need "
+                     "not match its length. Running longer puts more total "
+                     "compute into one model and needs proportionally less "
+                     "cluster to do it — so the hardware is there sooner — "
+                     "while the run itself finishes later. It can go either "
+                     "way; the catch-up cards show which.")
+            _fn_caption(
+                f"Defaults to {us_run_mo} \u2014 matching the bar, so no change to "
+                "the catch-up. A longer run trades compute against wall clock.",
+                ("A longer run trades compute against wall clock",
+                 f"An L-month run carries \u00d7L/{us_run_mo} the compute of the "
+                 f"{us_run_mo}-month bar: China's whole path lifts by what that buys "
+                 f"and shifts right by L\u2212{us_run_mo} months."))
     # The DUVi policies and the slider are independent levers: they compound.
     duv_cut = (_duv_policy_cut(today, _duv_end, ban_imports=duv_ban,
                                decay=(duv_decay / 100.0 if duv_service
@@ -17500,6 +17502,10 @@ def render_pacing():
     # ── Sidebar ──
     with st.sidebar:
         st.header("Pacing")
+        # The pause panel fills this slot, so its policy levers lead the
+        # sidebar above the compute settings.
+        levers_box = st.container()
+        st.markdown("##### Compute settings")
         # A bookmarked URL can carry a stale label; drop it rather than raise.
         if st.session_state.get("pc_run") not in _PC_RUN_OPTIONS:
             st.session_state.pop("pc_run", None)
@@ -17612,7 +17618,7 @@ def render_pacing():
     _pc_render_us_pause(_today, pause_d, caps, run_days,
                         us_steps=_us_steps_raw, timing_label=timing_label,
                         horizon=pc_horizon, caps_now=caps_now,
-                        state_out=state_rows)
+                        state_out=state_rows, levers_box=levers_box)
 
     # ── Entities and projections ──
     series_all = series_unshifted
