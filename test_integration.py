@@ -1862,8 +1862,8 @@ class TestPacingTab:
     def test_chinese_run_length_trades_compute_against_wall_clock(self):
         """A longer Chinese run lifts the path (more compute in one model)
         and shifts it right (the run takes longer), so the crossing is a
-        U-curve in run length: a few extra months beat a year, which is
-        worse than matching.
+        U-curve in run length: a few extra months beat both matching and a
+        year (which about ties matching on the Takeoff tab's US bar).
         Matching the bar's length is the default and changes nothing."""
         at = self._app()
 
@@ -1887,9 +1887,8 @@ class TestPacingTab:
         self._paired(at.slider(key="pc_cn_run").set_value(12))
         _assert_no_error(at, "Pacing / 12-month Chinese run")
         long_run = _surpass_mo(at)
-        # A year of wall clock does not pay, and some moderate stretch beats it.
-        assert long_run > base
-        assert min(mids.values()) < long_run, (mids, long_run)
+        # Some moderate stretch beats both ends.
+        assert min(mids.values()) < min(base, long_run), (mids, base, long_run)
 
     def test_duvi_levers_compound_with_the_domestic_slider(self):
         """Each DUVi lever is named in the settings hover even when its cut
@@ -2156,8 +2155,8 @@ class TestPacingTab:
         assert sl.value == _pc_pause_default_mo()   # months; labelled a date
         assert sl.options[18] == f"{_pc_add_months(datetime.now(), 18):%b %Y}"
         base, base_d = _bar(at), _cross(at)
-        at.select_slider(key="pc_pause_mo").set_value(36).run()
-        _assert_no_error(at, "Pacing / pause 36 months out")
+        at.select_slider(key="pc_pause_mo").set_value(15).run()
+        _assert_no_error(at, "Pacing / pause 15 months out")
         assert _bar(at) > base
         assert _cross(at) > base_d
         at.select_slider(key="pc_pause_mo").set_value(18).run()
@@ -2165,7 +2164,7 @@ class TestPacingTab:
     def test_pacing_slows_the_us_and_delays_china(self):
         """The *Pace the US* slider opens at 100% (no pacing), where China
         does not catch the US in the window and the panel says so rather
-        than going blank; at 25% the US keeps climbing, so China catches it
+        than going blank; at 10% the US keeps climbing, so China catches it
         later than a pause, on a bar that has moved up."""
         at = _fresh_app()
         at.run()
@@ -2184,12 +2183,44 @@ class TestPacingTab:
 
         at.select_slider(key="pc_pace").set_value(0).run()
         paused, paused_bar = _cross(at, "paused US frontier")
-        at.select_slider(key="pc_pace").set_value(25).run()
-        _assert_no_error(at, "Pacing / paced at 25%")
+        at.select_slider(key="pc_pace").set_value(10).run()
+        _assert_no_error(at, "Pacing / paced at 10%")
         paced, start_bar = _cross(at, "paced US")
         assert paced > paused
         assert start_bar == paused_bar      # same US level when pacing starts
         assert any("At pacing start" in t.value.columns for t in at.table)
+
+    def test_us_path_inherits_takeoffs_coder_and_rsi(self):
+        """Unpaced, the US follows the Takeoff tab's scenarios, so its
+        automated-coder and RSI marks land within a couple of months of the
+        Takeoff cards' medians (the cards date the event, the marks the month
+        the released frontier reaches that scenario's ECI there). Pausing
+        before them leaves no mark."""
+        import json
+        at = _fresh_app()
+        at.query_params["tab"] = "takeoff"
+        at.run()
+        card = {str(m.label): datetime.strptime(str(m.value), "%b %Y")
+                for m in at.metric if str(m.label) in (
+                    "Full coding automation", "RSI: AI directs research")}
+        _switch_tab(at, "Pacing")
+
+        def marks(at):
+            out = {}
+            for el in at.get("plotly_chart"):
+                for tr in json.loads(el.proto.spec)["data"]:
+                    if tr.get("text") and str(tr["text"][0]).startswith("US "):
+                        out[tr["text"][0]] = datetime.fromisoformat(
+                            str(tr["x"][0])[:10])
+            return out
+
+        got = marks(at)
+        for name, label in (("US automated coder", "Full coding automation"),
+                            ("US RSI", "RSI: AI directs research")):
+            assert abs((got[name] - card[label]).days) <= 75, (name, got, card)
+        at.select_slider(key="pc_pace").set_value(0).run()
+        at.select_slider(key="pc_pause_mo").set_value(0).run()
+        assert "US RSI" not in marks(at)
 
     def test_renders_with_headline_and_table(self):
         at = self._app()

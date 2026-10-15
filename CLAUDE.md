@@ -1443,7 +1443,11 @@ and released paths; released trails trained by the ship lag, which reproduces th
 climb at 0). Crossing dates are percentiles over every sample, a never-crossed one counting as
 past the window, and the cards need over half to cross, else an info line replaces them and
 the breakdown (`test_pacing_slows_the_us_and_delays_china`). Pause-scenario tests set
-`pc_pace` to 0 in `TestPacingTab._app`. The pacing date and `_pc_render_us_pause()` follow. `pc_pause_mo` and
+`pc_pace` to 0 in `TestPacingTab._app`. The pacing date and `_pc_render_us_pause()` follow. The US path is the Takeoff tab's: `_pc_takeoff_us` reads `_tk_run`
+(seeded, so it neither depends on nor shifts this tab's stream) and each sample follows one
+Takeoff scenario's ECI path (`_pc_tk_interp`), the trained bar a ship lag ahead; the chart
+marks where the paced US reaches each scenario's ECI at automated coding and at RSI
+(`us_ms`). Without a Takeoff run the compute-derived straight climb stands in. `pc_pause_mo` and
 the `_pc_capacity_at()` reading it implies are rendered by `render_pacing()`, not
 by the panel, because the race below needs the same bar; the panel takes
 `pause_d` and `caps` as arguments. The US pauses on that date, frozen at whatever
@@ -1511,7 +1515,7 @@ channels don't speed up because a run is longer); the lift is applied by re-read
 the *same* sampled paths against a bar lowered by `cn_gain` via `_pc_cross_years`,
 which must reproduce the sim's own interpolated crossings exactly — that pairing is
 what makes the stated net free of MC noise. Live the answer is a U-curve with an
-interior optimum — a year is worse than matching — which is the point of the control.
+interior optimum (a few months beat both matching and a year), which is the point of the control.
 A dated remote cut
 must not slow the years *before* it: the band stays on the export-control default
 until the cut and `comp_slow=(t_cut, a_partial·g_domestic)` takes over after, while
