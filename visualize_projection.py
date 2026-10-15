@@ -16486,32 +16486,51 @@ def _pc_render_compute_ratios(ci, span):
                       gridcolor='rgba(0,0,0,0.10)', tickfont=dict(color='#222'),
                       title_font=dict(color='#222'))
 
-    def _cell(us_l, cn_l):
-        if us_l is None or cn_l is None:
-            return "\u2014"
-        r = 10 ** (us_l - cn_l)
-        return f"US {r:.1f}\u00d7" if r < 10 else f"US {r:,.0f}\u00d7"
+    # The table: one row per comparison, each cell both values then the
+    # ratio, columns dated.
+    def _ratio(r, lead="US"):
+        other = "China" if lead == "US" else "US"
+        if r < 1:
+            r, lead = 1 / r, other
+        return f"{lead} {r:.1f}\u00d7" if r < 10 else f"{lead} {r:,.0f}\u00d7"
 
+    def _runs(a, b, lead="US"):
+        if a is None or b is None:
+            return "\u2014"
+        return f"{a:.1f} vs {b:.1f} log OP \u2192 {_ratio(10 ** (a - b), lead)}"
+
+    def _inst(t, keep_):
+        us_v = world_m * lev[us_l] / 100 * gro[us_l] ** t
+        cn_v = world_m * lev[cn_l] / 100 * gro[cn_l] ** (t * keep_)
+        return (f"{us_v:,.0f}M vs {cn_v:,.0f}M H100e \u2192 "
+                f"{_ratio(us_v / cn_v)}")
+
+    c_p = f"{'Pause' if paused else 'Pacing starts'}, {pause_d:%b %Y}"
+    _xl = ci.get('cross_label') or t_cross_d
+    c_x = f"China catches up, {_xl:%b %Y}"
+    c_b = f"{_xl:%b %Y}, no compute levers"
     rows = []
-    for name, _c, cur, base in series:
-        row = {"": name, "At the pause": _cell(_us(t_p), _path(*cur, t_p)),
-               "At the crossing": _cell(_us(t_x), _path(*cur, t_x))}
+    for (name, _c, cur, base), label in zip(series, (
+            "Largest run: US trained vs. all China can use",
+            "Largest run: US trained vs. China's domestic clusters")):
+        row = {"Compares": label,
+               c_p: _runs(_us(t_p), _path(*cur, t_p)),
+               c_x: _runs(_us(t_x), _path(*cur, t_x))}
         if ci.get('levers'):
-            row["Same date, no compute levers"] = _cell(_us(t_x),
-                                                        _path(*base, t_x))
+            row[c_b] = _runs(_us(t_x), _path(*base, t_x))
         rows.append(row)
     if g_us > 0 and pace < 1:
-        rows.append({"": "US overhang: clusters \u00f7 largest run trained",
-                     "At the pause": f"{10 ** (_us_cap(t_p) - _us(t_p)):.1f}\u00d7",
-                     "At the crossing":
-                         f"{10 ** (_us_cap(t_x) - _us(t_x)):.1f}\u00d7",
-                     **({"Same date, no compute levers": "\u2014"}
-                        if ci.get('levers') else {})})
-    trow = {"": "Total installed compute",
-            "At the pause": f"US {_pc_wc_ratio([t_p], ci.get('dom_keep', 1.0))[0]:.1f}\u00d7",
-            "At the crossing": f"US {_pc_wc_ratio([t_x], ci.get('dom_keep', 1.0))[0]:.1f}\u00d7"}
+        def _over(t):
+            return (f"{_us_cap(t):.1f} vs {_us(t):.1f} log OP \u2192 "
+                    f"{10 ** (_us_cap(t) - _us(t)):.1f}\u00d7 unused")
+        rows.append({"Compares": "US overhang: what its clusters could train "
+                                 "vs. what it trains",
+                     c_p: _over(t_p), c_x: _over(t_x),
+                     **({c_b: _over(t_x)} if ci.get('levers') else {})})
+    trow = {"Compares": "Installed compute: US vs. China",
+            c_p: _inst(t_p, keep), c_x: _inst(t_x, keep)}
     if ci.get('levers'):
-        trow["Same date, no compute levers"] = f"US {_pc_wc_ratio([t_x])[0]:.1f}\u00d7"
+        trow[c_b] = _inst(t_x, 1.0)
     rows.append(trow)
 
     st.markdown("##### Compute: largest run, trained and trainable")
@@ -17960,6 +17979,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # The US clusters' own pace (log10/yr) and the pace slider: capacity
         # keeps growing through a pause; the run actually trained does not.
         'g_us': us_fit['g'] if us_fit else None, 'pace': pace,
+        # The crossing card's date, so the table's column names it alike.
+        'cross_label': v50,
     }
     if not crossed:
         return

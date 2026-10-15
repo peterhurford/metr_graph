@@ -1678,28 +1678,41 @@ class TestPacingTab:
         further ahead than the same date with no compute levers."""
         at = self._app()
 
+        def table(at):
+            return next(x.value for x in at.table if "Compares" in x.value.columns)
+
         def ratios(at):
-            t = next(x.value for x in at.table if "At the pause" in x.value.columns)
-            row = t[t[""].str.startswith("Largest run China can use")].iloc[0]
-            return {c: float(re.search(r"US ([\d.,]+)\u00d7", row[c]).group(1)
-                             .replace(",", ""))
+            """{column kind: US lead} on the all-China-can-use row, columns
+            named pause / cross / base by their date-bearing headers."""
+            t = table(at)
+            row = t[t["Compares"].str.contains("all China can use")].iloc[0]
+            kind = {c: ("base" if "no compute levers" in c else
+                        "cross" if "catches up" in c else "pause")
+                    for c in t.columns[1:]}
+            return {kind[c]: float(re.search(r"US ([\d.,]+)\u00d7", row[c])
+                                   .group(1).replace(",", ""))
                     for c in t.columns[1:]}
 
         base = ratios(at)
-        assert base["At the crossing"] < base["At the pause"]
+        assert base["cross"] < base["pause"]
         # Paused, US clusters keep growing past the frozen run: an overhang
         # that is 1x at the pause and grows by the crossing.
-        tbl = next(x.value for x in at.table if "At the pause" in x.value.columns)
-        over = tbl[tbl[""].str.startswith("US overhang")].iloc[0]
-        assert over["At the pause"] == "1.0\u00d7"
-        assert float(over["At the crossing"].rstrip("\u00d7")) > 1.0
+        tbl = table(at)
+        assert list(tbl.columns[1:3]) == [
+            c for c in tbl.columns if c.startswith(("Pause,", "China catches up,"))]
+        over = tbl[tbl["Compares"].str.startswith("US overhang")].iloc[0]
+        assert over.iloc[1].endswith("\u2192 1.0\u00d7 unused")
+        assert float(re.search(r"([\d.]+)\u00d7", over.iloc[2]).group(1)) > 1.0
+        # Each cell gives both sides' values, not a bare ratio.
+        assert " vs " in over.iloc[1] and "log OP" in over.iloc[1]
         at.checkbox(key="pc_duv_ban").check().run()
         at.checkbox(key="pc_duv_service").check().run()
         cut = ratios(at)
-        assert cut["At the crossing"] > cut["Same date, no compute levers"]
-        # Total installed compute is in the table and the chart too.
-        tbl = next(x.value for x in at.table if "At the pause" in x.value.columns)
-        assert "Total installed compute" in list(tbl[""])
+        assert cut["cross"] > cut["base"]
+        # Installed compute is in the table, in H100e, and in the chart too.
+        inst = table(at)
+        inst = inst[inst["Compares"].str.startswith("Installed compute")].iloc[0]
+        assert "M H100e" in inst.iloc[1]
         names = [d.get("name", "") for el in at.get("plotly_chart")
                  for d in json.loads(el.proto.spec)["data"]]
         assert "US (keeps installing whatever it trains)" in names
