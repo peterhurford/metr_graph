@@ -16733,9 +16733,9 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     # at the end, not one China holds from the pause), so that cell is blank.
     rows.append({"Source": "Crossover date", c0: _date(r0), c1: _date(ravg),
                  c2: ""})
-    st.markdown("##### Why that long?")
     st.warning("**Assumes ~SL5 secure weights - if not, China could catch up "
                "quickly by stealing US models.**", icon="\u26a0\ufe0f")
+    st.markdown("##### Why that long?")
 
     _fn_line(
         f"At the {'pacing start' if paced else 'pause'} ({pause_label}) "

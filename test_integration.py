@@ -1770,8 +1770,8 @@ class TestPacingTab:
         return el.run()
 
     def test_us_pause_panel_states_its_assumptions_in_the_body(self):
-        """The US-pause counterfactual renders its crossing metrics; Why
-        that long? opens with the weight-security alert and the methods
+        """The US-pause counterfactual renders its crossing metrics; the
+        weight-security alert sits above Why that long? and the methods
         toggle."""
         at = self._app()
         subs = " ".join(str(s.value) for s in at.subheader)
