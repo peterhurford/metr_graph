@@ -16563,6 +16563,9 @@ def _pc_takeoff_us(today):
             "coder": coder, "rsi": eci["at_rsi"]}
 
 
+# Top of the Pacing chart's ECI axis.
+_PC_ECI_VIEW_MAX = 260
+
 # Chart marks for each side's milestones.
 _PC_MS_SYMBOL = {"automated coder": "star", "RSI": "hexagram"}
 
@@ -17822,14 +17825,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _xtitle = {"Data center construction": "Training runs start",
                "Training run finished": "Training runs finish",
                "Model release": "Model releases"}[timing_label]
-    # A Takeoff runaway puts the US band in the hundreds, so the view stops
-    # just above China's fan and the US median, at most `_TK_ECI_VIEW_MAX`.
-    _tops = [lvl50, cross50, pct[90][keep[-1]] if keep else lvl50]
-    if _bk:
-        _tops.append(float(np.median(us_tr_grid[:, _bk[-1]])))
+    # A Takeoff runaway puts the bands in the hundreds, so the view stops at
+    # `_PC_ECI_VIEW_MAX`, just above ultraintelligence (`_TK_ULTRA_ECI`).
     _lows = [sc for d, sc, _n in us_fr + cn_fr if d >= datetime(2024, 1, 1)]
-    _y_rng = [min(_lows or [anchor_eci]) - 5,
-              min(max(_tops) + 15, _TK_ECI_VIEW_MAX)]
+    _y_rng = [min(_lows or [anchor_eci]) - 5, _PC_ECI_VIEW_MAX]
     fig.update_layout(
         height=440, plot_bgcolor='white', paper_bgcolor='white',
         margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
