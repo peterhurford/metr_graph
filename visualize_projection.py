@@ -18632,7 +18632,10 @@ def _tk_workforce(result, eci, humans=_TK_HUMAN_RESEARCHERS, copies0=_TK_AI_COPI
     h0 = np.clip(result["outcomes"]["Today"]["human_mean"], 1e-3, 1 - 1e-3)
     worth0 = humans * (1 - h0) / h0 / copies0
     copies = result["params"]["ai_copies"] * np.maximum(wp["software_realized_log"], 0)
-    ais = copies0 * np.exp(wp["compute_log"] + copies)
+    # Copies run on the agents' share of compute, which labs re-split away
+    # from as AI labor gets abundant (today's share is 1).
+    split = (wp["agent_share"] / wp["agent_share"][:, :1]) if "agent_share" in wp else 1.0
+    ais = copies0 * np.exp(wp["compute_log"] + copies) * split
     worth = worth0[:, None] * (eci["paths"] / eci["now"]) ** power
     return people, ais, people + ais * worth
 
@@ -18819,6 +18822,8 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
     logs = dict(f, difficulty=-f["difficulty"], pace=np.log(progress["pace"]))
     progress["factor_medians"] = {k: np.median(v - v[:, :1], axis=0) for k, v in logs.items()}
     progress["agent_share_quantiles"] = np.quantile(progress["agent_share"], [.1, .5, .9], axis=0).T
+    # The workforce chart reads it per draw; single precision halves its memory.
+    progress["agent_share"] = progress["agent_share"].astype(np.float32)
     for key in _TK_UNREAD:
         progress.pop(key)
     return result
@@ -18826,7 +18831,7 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
 
 # Per-draw (draws x months) arrays the tab never reads per draw.
 _TK_UNREAD = ("pace", "reference_pace", "validated_baseline_months", "validated_log",
-              "reference_log", "rate", "matched", "agent_share")
+              "reference_log", "rate", "matched")
 
 
 # The simulation, and every date, interval and share the tab quotes, runs to
@@ -19663,7 +19668,9 @@ def _render_takeoff(loading):
          f"keep hiring and {wf_decline - 1:+.0%} a year after each scenario's "
          "RSI, once autopilot makes them unneeded; both rates are assumptions. AI research "
          f"agents start at {wf_copies:,.0f} copies running today (an estimate) and grow "
-         "with the compute for running agents and with more copies as algorithms improve."),
+         "with the compute for running agents (total compute times the share labs give "
+         "them, which falls as they re-split toward experiments) and with more copies as "
+         "algorithms improve."),
         ("human full-time equivalents",
          "Today the copies together do the automation index's share of research work, so "
          f"each is worth about {_tk_copy_worth_today(result, wf_humans, wf_copies):.2f} of a "

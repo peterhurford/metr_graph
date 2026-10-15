@@ -113,7 +113,7 @@ re-split compute as AI changes*) re-splits the non-training compute between agen
 experiments by the CES first-order condition, anchored at today's 20/40 split and driven
 only by AI's change against the frozen-AI reference
 (`test_reallocation_follows_what_ai_changes`); section 1's *How the compute is split*
-(`_tk_split_fig`, from `agent_share_quantiles`) draws it. It moves FOOM about a point, since
+(`_tk_split_fig`, from `agent_share_quantiles`) draws it, and the workforce chart scales its AI copies by each draw's `agent_share` (kept per draw, float32). It moves FOOM about a point, since
 only 60% of compute is re-splittable. `ceiling_returns_corr` (default 0.5) ties each draw's
 ceiling rank to its r (`test_a_nearer_ceiling_comes_with_lower_returns`). Today's first run is unchanged and fixed-cycle
 tests set it to 0 (`test_serial_speedup_shortens_cycles_after_rsi_and_converges`). `ai_copies` (default 1) multiplies AI's speed in that

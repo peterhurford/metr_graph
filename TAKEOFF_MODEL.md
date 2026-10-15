@@ -223,16 +223,16 @@ The judgment elasticity is still calibrated once at the ρ setting, not per draw
 FOOM here means much progress fast after RSI, measured as the first-year progress card
 does (years of 2025-level ECI progress in the year after RSI). Pace doubling after RSI is
 the wrong measure: a scenario that runs to its software ceiling within months reads as
-slowing a year later. At today's defaults (seed 42) 41% of scenarios make 3+ years and 11%
+slowing a year later. At today's defaults (seed 42) 42% of scenarios make 3+ years and 13%
 make 10+. Split by each scenario's returns to research r and labor-compute elasticity
 sigma = 1/(1 - rho), the share making 10+ years is:
 
 | | sigma < 0.5 | 0.5-1 | >= 1 | all |
 |---|---|---|---|---|
-| r < 1 | 0% | 0% | 4% | 1% |
-| r 1-2 | 0% | 3% | 38% | 16% |
-| r > 2 | 2% | 9% | 63% | 29% |
-| all | 0% | 2% | 24% | 11% |
+| r < 1 | 0% | 0% | 4% | 2% |
+| r 1-2 | 0% | 3% | 44% | 19% |
+| r > 2 | 3% | 12% | 81% | 37% |
+| all | 1% | 3% | 29% | 13% |
 
 Substitution is the gate: below sigma 1 almost nothing FOOMs whatever r is, because labor
 alone can multiply research only so far against fixed experiment compute; at sigma >= 1
