@@ -210,12 +210,24 @@ RSI's first year from 5% to 2%.
 
 The judgment elasticity is still calibrated once at the ρ setting, not per draw.
 
-FOOM here means a short gap from RSI to ultraintelligence, which the tab reports with
-80%/90% intervals under the milestone cards. At the defaults 10% of scenarios reaching RSI
-by the end of 2031 get to ultraintelligence within 6 months and 22% within a year, against
-5% and 8% with every spread at zero (`POINT_ESTIMATE`). A quarter have judgment outrunning
-difficulty (b < 1), against the AI Futures Model's 38% and Forethought's ~60% chance that
-progress accelerates.
+FOOM here means much progress fast after RSI, measured as the first-year progress card
+does (years of 2025-level ECI progress in the year after RSI). Pace doubling after RSI is
+the wrong measure: a scenario that runs to its software ceiling within months reads as
+slowing a year later. At today's defaults (seed 42) 41% of scenarios make 3+ years and 11%
+make 10+. Split by each scenario's returns to research r and labor-compute elasticity
+sigma = 1/(1 - rho), the share making 10+ years is:
+
+| | sigma < 0.5 | 0.5-1 | >= 1 | all |
+|---|---|---|---|---|
+| r < 1 | 0% | 0% | 4% | 1% |
+| r 1-2 | 0% | 3% | 38% | 16% |
+| r > 2 | 2% | 9% | 63% | 29% |
+| all | 0% | 2% | 24% | 11% |
+
+Substitution is the gate: below sigma 1 almost nothing FOOMs whatever r is, because labor
+alone can multiply research only so far against fixed experiment compute; at sigma >= 1
+(about 40% of scenarios at the default rho of -0.2 and its spread) FOOM is common, and r
+scales it. The model's FOOM odds therefore rest mostly on the weight sigma >= 1 gets.
 
 Forethought's own measure, years of progress made in the year after RSI, is counted in
 2025-level ECI progress: the 13.5 points the US frontier gained over 2025, about 5.8x a year
