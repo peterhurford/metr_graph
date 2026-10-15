@@ -451,6 +451,18 @@ def test_reallocation_follows_what_ai_changes():
     assert np.median(subs["workflow_progress"]["agent_share"][:, -1]) > 0.2
 
 
+def test_a_nearer_ceiling_comes_with_lower_returns():
+    """At the default correlation, draws with higher r have farther ceilings;
+    at 0 they are independent; the ceiling stays uniform over its range."""
+    d = tk.simulate(dict(years=0.1), n=4000)["draws"]
+    r = 0.5 / d["difficulty"]
+    assert np.corrcoef(np.log(r), d["ceiling_oom"])[0, 1] > 0.3
+    assert 6 <= d["ceiling_oom"].min() and d["ceiling_oom"].max() <= 16
+    assert abs(np.median(d["ceiling_oom"]) - 11) < 0.5
+    free = tk.simulate(dict(years=0.1, ceiling_returns_corr=0.0), n=4000)["draws"]
+    assert abs(np.corrcoef(np.log(0.5 / free["difficulty"]), free["ceiling_oom"])[0, 1]) < 0.1
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])

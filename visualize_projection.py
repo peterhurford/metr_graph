@@ -18223,6 +18223,39 @@ def _tk_compute_fig(result, today, slow_date, hist=None, markers=()):
     return fig
 
 
+def _tk_split_fig(result, today, markers=()):
+    """How the compute is split: training's fixed share, and the rest between
+    running AI researchers and experiments (median, the AI researchers' middle
+    80% in the hover), stacked to 100%."""
+    p = result["params"]
+    train = p["training_share"] / 100
+    pool = 1 - train
+    q = result["workflow_progress"]["agent_share_quantiles"]
+    x = _tk_dates(result, today)
+    agents = q[:, 1]
+    fig = go.Figure()
+    for name, values, color, hover in (
+            ("Training", np.full(len(x), train), "#7f8c8d", None),
+            ("Running AI researchers", agents, "#d68910",
+             [f"{100 * m:.0f}% (middle 80%: {100 * lo:.0f}\u2013{100 * hi:.0f}%)"
+              for lo, m, hi in q]),
+            ("Experiments", pool - agents, "#2980b9", None)):
+        fig.add_trace(go.Scatter(
+            x=x, y=100 * values, mode="lines", stackgroup="split", name=name,
+            line=dict(color=color, width=1), fillcolor=color,
+            text=hover if hover else [f"{100 * v:.0f}%" for v in values],
+            hovertemplate="%{x|%b %Y}<br>%{text}<extra>" + name + "</extra>"))
+    for i, (label, when) in enumerate(markers):
+        fig.add_vline(x=when, line_dash="dot", line_color="#555", line_width=1)
+        fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper", text=label,
+                           showarrow=False, xanchor="left", font=dict(size=11, color="#555"))
+    fig.update_layout(height=300, margin=dict(l=55, r=20, t=20, b=40),
+                      xaxis=dict(range=[x[0], x[-1]]),
+                      yaxis=dict(range=[0, 100], ticksuffix="%", title="Share of compute"),
+                      legend=dict(orientation="h", y=-0.18), hovermode="x")
+    return fig
+
+
 def _tk_density(samples, edges):
     """Share of all draws per year of x in each bin of `edges`, lightly
     smoothed; draws outside the edges (never arriving included) count in the
@@ -18785,6 +18818,7 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
     f = progress.pop("pace_factors")
     logs = dict(f, difficulty=-f["difficulty"], pace=np.log(progress["pace"]))
     progress["factor_medians"] = {k: np.median(v - v[:, :1], axis=0) for k, v in logs.items()}
+    progress["agent_share_quantiles"] = np.quantile(progress["agent_share"], [.1, .5, .9], axis=0).T
     for key in _TK_UNREAD:
         progress.pop(key)
     return result
@@ -18792,7 +18826,7 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
 
 # Per-draw (draws x months) arrays the tab never reads per draw.
 _TK_UNREAD = ("pace", "reference_pace", "validated_baseline_months", "validated_log",
-              "reference_log", "rate", "matched")
+              "reference_log", "rate", "matched", "agent_share")
 
 
 # The simulation, and every date, interval and share the tab quotes, runs to
@@ -19279,6 +19313,11 @@ def _render_takeoff(loading):
                    0, 400, 10,
                    "1\u03c3 of the scale-dependent share in log-odds, \u00d7100. 100 gives an "
                    "80% range of about 22\u201378% around 50%: one paper, on small models.")
+            number("Correlation: returns to research and the software ceiling",
+                   "ceiling_returns_corr", 0.0, 1.0, 0.1,
+                   "A nearer ceiling comes with lower returns to research: algorithms "
+                   "close to their limits buy less per unit of effort. 0 draws them "
+                   "independently.")
             number("Correlation: substitutability and the scale-dependent share",
                    "compute_bound_corr", 0.0, 1.0, 0.1,
                    "Both read how compute-bound algorithmic progress is, so a scenario "
@@ -19568,6 +19607,18 @@ def _render_takeoff(loading):
     st.plotly_chart(_tf(_tk_to(_tk_compute_fig(
         result, today, datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31), result.get("hist_compute"),
         markers), view_end)), width="stretch")
+    st.markdown("**How the compute is split**")
+    _fn_caption(
+        "Training keeps its share; the rest goes to running AI researchers or to "
+        "experiments, re-split as AI changes what each is worth.",
+        ("re-split as AI changes",
+         "The labor-compute mean's first-order condition, anchored at today's split and "
+         "driven only by what AI changes. When AI labor is abundant and the two are "
+         "complements (most scenarios), compute moves to experiments, so the AI "
+         "researchers' share falls even as copies multiply. Sidebar: *Labs re-split "
+         "compute as AI changes* (off holds today's split)."))
+    st.plotly_chart(_tf(_tk_to(_tk_split_fig(result, today, markers), view_end)),
+                    width="stretch")
 
     st.subheader("2. People step out of the loop")
     _fn_caption(

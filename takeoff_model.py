@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v29-reallocation-option"
+MODEL_VERSION = "takeoff-v30-reallocation-and-ceiling-link"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -76,7 +76,7 @@ DEFAULTS = {
     # researchers and experiments as AI changes what each is worth, by the
     # labor-compute mean's first-order condition, anchored at today's split.
     # 0 keeps the split fixed.
-    "reallocate_compute": 0.0,
+    "reallocate_compute": 1.0,
     # Per-draw spread on the four settings that decide whether takeoff runs
     # away (TAKEOFF_MODEL.md, *Parameter uncertainty*): 1-sigma of ln r,
     # 1-sigma of ln(judgment elasticity), 1-sigma of the drift in percentage
@@ -97,6 +97,9 @@ DEFAULTS = {
     # as algorithmic efficiency nears a limit drawn uniformly this many orders
     # of magnitude above today's. A high of 0 removes it.
     "ceiling_low_oom": 6.0, "ceiling_high_oom": 16.0,
+    # Correlation between a draw's returns to research r and how far its
+    # ceiling is: algorithms near their limits buy less per unit of effort.
+    "ceiling_returns_corr": 0.5,
     # Share of algorithmic gains that pay off only at scale (Gundlach et al.
     # 2025): that share counts in full once training compute has grown
     # `scale_lag_oom` orders of magnitude past where it was when the gain was
@@ -176,7 +179,7 @@ def validate(params):
             or p["rsi_autopilot"] not in (0, 1) or not 0 <= p["ai_copies"] <= 2 \
             or not (p["judgment_cap"] == 0 or p["judgment_cap"] >= 1) \
             or p["serial_speedup"] not in (0, 1) or p["reallocate_compute"] not in (0, 1) \
-            or not 0 <= p["compute_bound_corr"] <= 1 \
+            or not 0 <= p["compute_bound_corr"] <= 1 or not 0 <= p["ceiling_returns_corr"] <= 1 \
             or not -90 <= p["hiring_growth"] <= 200 or not -90 <= p["staff_after_rsi"] <= 200 \
             or not 0 <= p["scale_dependent"] <= 100 or not 0 <= p["scale_dependent_spread"] <= 400 \
             or not 0 < p["scale_lag_oom"] <= 10 or not 0 <= p["scale_lag_spread"] <= 400:
@@ -539,8 +542,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     beta = p["difficulty"] * np.exp(p["returns_spread"] / 100 * z[15])
     # Software ceiling in natural-log efficiency above today's stock, uniform
     # between the settings (row 18); inf without one.
+    # Uniform between the settings, its rank tied to r's draw: higher r (row
+    # 15 low, since difficulty = lambda / r) goes with a farther ceiling.
+    link = p["ceiling_returns_corr"]
+    ceiling_rank = np.array([NormalDist().cdf(v) for v in
+                             -link * z[15] + np.sqrt(1 - link ** 2) * z[18]])
     ceiling = (np.log(10) * (p["ceiling_low_oom"] + (p["ceiling_high_oom"] - p["ceiling_low_oom"])
-                             * (raw[18] + 1) / 2)
+                             * ceiling_rank)
                if p["ceiling_high_oom"] > 0 and p["difficulty"] > 0 else np.full(n, np.inf))
     capped = np.isfinite(ceiling)
     # Scale-dependent share of algorithmic gains, logit-normal per draw (row 19).

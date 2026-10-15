@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v29-reallocation-option`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v30-reallocation-and-ceiling-link`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -103,12 +103,16 @@ capability grows faster than today, by today's growth rate over the current one,
 run should not outlast the time better methods take to beat it. Shorter runs train on less
 compute, which the adoption rule weighs. It moves ultraintelligence 3 months sooner (Nov
 against Feb 2030) and doubles the share making 10 years of progress in RSI's first year.
-Optionally, labs re-split the compute not used for training between running AI researchers
-and experiments as AI changes what each is worth, following the labor-compute mean's
-first-order condition from today's split. With AI labor abundant and the two complements,
-the agents' share falls from 20% toward 1% within five years. It is off by default: it
-raises the share making 10 years of progress in RSI's first year from 11% to 12%, because
-experiments can gain at most half again on their 40% share while training keeps its own.
+Labs re-split the compute not used for training between running AI researchers and
+experiments as AI changes what each is worth, following the labor-compute mean's
+first-order condition from today's split (on by default). With AI labor abundant and the
+two complements, the agents' share falls from 20% to about 5% by 2030 at the median. It
+moves little (the share making 10 years of progress in RSI's first year by about a point),
+because experiments can gain at most half again on their 40% share while training keeps its
+own. A scenario's software ceiling is also tied to its returns to research (correlation
+0.5): a nearer ceiling comes with lower r. That leaves the median alone and makes the
+high-r tail more explosive: among r > 2 scenarios where labor substitutes for compute, 81%
+make 10+ years of progress in RSI's first year, against 68% unlinked.
 The fast path validates its start-of-cycle discoveries over an assumed one month. The
 slow path freezes discoveries at training start, accumulates physical training compute,
 and deploys only after training plus validation (three plus one month by default).
