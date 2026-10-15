@@ -1452,7 +1452,7 @@ than a hardcoded month count, so the reset restores a *date*. The pause is on th
 **run-finished** clock; the displayed date carries `timing_label`'s
 offset, which is what keeps the US–China gap milestone-invariant. The US climb pace
 still comes from the **sidebar-pooled US series**, so the networking selector moves
-the bar, scaled by the China tab's US calibration (`_cc_rate_calibration`). Between the slider and the subheader sits the *state of play* table, off
+the bar, scaled by the China tab's US calibration (`_cc_rate_calibration`). Just above *Compute Thresholds* sits the *state of play* table (the panel hands its rows back through `state_out`), off
 that same `_pc_capacity_at()` reading (the race's own `_pc_projection` at the pause
 date, so the two sections cannot disagree) — three rows (US, China-accessible,
 China domestic-only) of each side's

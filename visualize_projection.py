@@ -16645,7 +16645,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                         us_steps=None, timing_label=_DC_TIMING_OPTIONS[0],
-                        horizon=None, caps_now=None):
+                        horizon=None, caps_now=None, state_out=None):
     """If the US paused: China's catch-up to the paused frontier, in ECI.
 
     The pause is a **date the user names** (`pc_pause_mo`, rendered by
@@ -16690,16 +16690,15 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     search grid and the chart's x-axis alike, so this panel ends where the
     timeline chart above it does. A crossing past it is reported as "not
     by <year>" rather than searched for anyway.
+
+    The state-of-play table's rows go into `state_out` (a list) for the
+    caller to draw above *Compute Thresholds*.
     """
     # Lockstep milestone offsets (see docstring).
     shift = _dc_timing_shift(timing_label, run_days)
     off_us = timedelta(days=shift - run_days)
     off_cn = timedelta(days=shift - run_days - _CC_RUN_COMPLETION_LAG.days)
     d_pause_v = pause_d + off_us
-    # Streamlit renders a container where it was created, so the
-    # state-of-play table lands here — between the date the caller drew and
-    # the question the rest of the panel answers.
-    state_box = st.container()
     st.subheader("When does China catch up?")
     st.markdown("##### Policy levers")
     cb1, cb2, cb3 = st.columns(3)
@@ -17081,7 +17080,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         traj = traj + cn_gain
         grid_yrs = grid_yrs + cn_extra
     # ── State of play at pause start: what each side has when the music
-    # stops, written into the slot under the slider. Compute comes from the
+    # stops, handed to the caller via `state_out`. Compute comes from the
     # threshold race's own projection (so the two sections cannot disagree),
     # capability from the same sampled ECI paths the chart draws, and the
     # METR horizon from the ECI->METR bridge the ECI tabs use. ──
@@ -17134,8 +17133,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             grid0, t_pause_s)
         state_rows.append(_state_row(_DC_CTY_CN_DOMESTIC, dom_pause_s,
                                      _behind_us(dom_pause_s)))
-    with state_box:
-        st.table(state_rows)
+    if state_out is not None:
+        state_out[:] = state_rows
 
     # Sensitivity: China's compute term at the catalogued China-accessible
     # buildout pace (Chinese labs' sites abroad included) instead of the
@@ -17593,9 +17592,11 @@ def render_pacing():
     threshold = _pc_race_threshold(caps)
     threshold_label = f"{_log_op(threshold)} log OP"
 
+    state_rows = []
     _pc_render_us_pause(_today, pause_d, caps, run_days,
                         us_steps=_us_steps_raw, timing_label=timing_label,
-                        horizon=pc_horizon, caps_now=caps_now)
+                        horizon=pc_horizon, caps_now=caps_now,
+                        state_out=state_rows)
 
     # ── Entities and projections ──
     series_all = series_unshifted
@@ -17632,6 +17633,11 @@ def render_pacing():
     recs.sort(key=lambda r: (
         (0, r['plan']) if r['crossed'] else
         (1, r['med'] or pc_horizon + timedelta(days=1)), -r['share']))
+
+    # The state of play at the pause sits right above the race it sets the
+    # bar for.
+    if state_rows:
+        st.table(state_rows)
 
     # ── Headline ──
     st.subheader("Compute Thresholds")
