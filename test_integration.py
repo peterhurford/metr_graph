@@ -1785,7 +1785,8 @@ class TestPacingTab:
         assert any("SL5 secure weights" in str(w.value) for w in at.warning)
         assert at.checkbox(key="pc_methods_pause").value is True
         # The clock line follows the sidebar default (run finished).
-        assert "Dates = training runs finish" in caps
+        clock = next(m.help for m in at.metric if "paused US frontier" in str(m.label))
+        assert "Dates are training-run finishes" in clock
 
     def test_pause_scenario_checkboxes(self):
         """Both scenario checkboxes render unchecked; cutting distillation
@@ -2033,8 +2034,8 @@ class TestPacingTab:
         diff_mo = ((d_rel.year - d_con.year) * 12 + d_rel.month - d_con.month)
         assert 1 <= diff_mo <= 5
         assert abs(s_rel - s_con) <= 1
-        caps = " ".join(str(c.value) for c in at.caption)
-        assert "Dates = model releases" in caps
+        clock = next(m.help for m in at.metric if "paused US frontier" in str(m.label))
+        assert "Dates are model releases" in clock
 
     def test_race_bar_is_the_state_of_play_us_run(self):
         """The race below runs to the US row's largest training run, at the
@@ -2134,8 +2135,8 @@ class TestPacingTab:
         at.radio(key="pc_end_year").set_value(2028).run()
         at.select_slider(key="pc_pause_mo").set_value(48).run()
         _assert_no_error(at, "Pacing / pause past the projection range")
-        info = " ".join(str(i.value) for i in at.info)
-        assert "does not reach the paused US frontier by 2028" in info
+        card = next(m for m in at.metric if "paused US frontier" in str(m.label))
+        assert str(card.value) == "After 2028"
         assert list(self._state(at)["At pause start"]) == [
             "United States", "China-accessible", "China (domestic only)"]
 
@@ -2177,8 +2178,9 @@ class TestPacingTab:
         pace = at.select_slider(key="pc_pace")
         assert pace.value == 100 and pace.options[0] == "100% \u00b7 no pacing"
         assert pace.options[-1] == "0% \u00b7 pause"
-        info = " ".join(str(i.value) for i in at.info)
-        assert "does not reach the paced US frontier" in info
+        card = next(m for m in at.metric if "paced US" in str(m.label))
+        assert str(card.value).startswith("After ")
+        assert "of samples by" in str(card.delta)
         assert at.get("plotly_chart")      # the race chart still draws
 
         def _cross(at, word):

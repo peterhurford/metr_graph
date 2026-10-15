@@ -17402,6 +17402,22 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _yr_end = horizon.year if horizon is not None else _PC_HORIZON.year
     v10 = v50 = v90 = None
     s50 = None
+    _mo = run_days // 30
+    _clock = {
+        "Data center construction":
+            f"Dates are training-run starts (cluster online); a {_mo}-month "
+            f"run finishes {_mo} months later and a release ~1 month after.",
+        "Training run finished":
+            "Dates are training-run finishes; a release follows ~1 month later.",
+        "Model release":
+            f"Dates are model releases ({_mo}-month run + ~1 month prep).",
+    }[timing_label] + (" Both countries' dates move together with the sidebar's "
+                       "*Date points at*, so the gap never changes.")
+    _card1 = ((f"China reaches paused US frontier "
+               f"(pause start {d_pause_v:%b %Y}, ECI ~{lvl50:.0f})")
+              if _paused else
+              (f"China catches the paced US (from {d_pause_v:%b %Y} at "
+               f"{pace:.0%}, ECI ~{lvl50:.0f} then)"))
     if crossed:
         d10, d50, d90 = (_pdate(q) for q in (10, 50, 90))
         # Milestone offsets came from the top of the function; the pause is
@@ -17420,40 +17436,27 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                          for p in (10, 50, 90))
         _past = f"past {_yr_end}"
         m1, m2 = st.columns(2)
-        m1.metric((f"China reaches paused US frontier "
-                   f"(pause start {d_pause_v:%b %Y}, ECI ~{lvl50:.0f})")
-                  if _paused else
-                  (f"China catches the paced US (from {d_pause_v:%b %Y} at "
-                   f"{pace:.0%}, ECI ~{lvl50:.0f} then)"),
-                  f"{v50:%b %Y}",
+        m1.metric(_card1, f"{v50:%b %Y}",
                   f"{v10:%b %Y} – {f'{v90:%b %Y}' if v90 else _past} (80%)",
-                  delta_color="off")
+                  delta_color="off", help=_clock)
         m2.metric("Time for China to surpass",
                   f"~{s50:.1f} mo",
                   f"{s10:.1f} – "
                   + (f"{s90:.1f} mo" if np.isfinite(s90) else _past)
                   + " (80%)", delta_color="off")
     else:
-        st.info(f"China does not reach {_bar} by {_yr_end} in most samples "
-                f"({share_x:.0%} do) — pace the US "
-                "harder or widen *Project through*.")
-    _mo = run_days // 30
-    _clock = {
-        "Data center construction":
-            f"**Dates = training runs start** (cluster online); the {_mo}-mo "
-            f"run finishes {_mo} mo later, a release ~1 mo after that.",
-        "Training run finished":
-            "**Dates = training runs finish**; a release follows ~1 mo "
-            "later.",
-        "Model release":
-            f"**Dates = model releases** ({_mo}-mo run + ~1 mo prep).",
-    }[timing_label]
-    _fn_caption(
-        _clock + " Both countries move together, so the gap never changes.",
-        ("Both countries move together", "Pick the milestone with the sidebar's "
-                                         "*Date points at*. No release-queue "
-                                         "wait is added anywhere, since a queue "
-                                         "delays both sides alike."))
+        # Under half the samples cross inside the window: say so in the
+        # cards themselves.
+        m1, m2 = st.columns(2)
+        m1.metric(_card1, f"After {_yr_end}",
+                  f"{share_x:.0%} of samples by {_yr_end}", delta_color="off",
+                  help=f"Fewer than half the samples see China reach {_bar} by "
+                       f"the end of {_yr_end}. " + _clock)
+        _left = max((datetime(_yr_end, 12, 31) - max(pause_d, today)).days
+                    / 30.44, 0.0)
+        m2.metric("Time for China to surpass", f"> {_left:.0f} mo",
+                  "pace the US harder or widen Project through",
+                  delta_color="off")
     if crossed and cn_run_mo != us_run_mo:
         _both = np.isfinite(years) & np.isfinite(years_base)
         _net = float(np.median((years - years_base)[_both])) * 12 \

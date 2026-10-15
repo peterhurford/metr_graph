@@ -1441,8 +1441,9 @@ pacing, 0 = the pause): from the pacing date the US runs its path on `_pc_paced_
 years a year, so the bar China crosses moves (`_cc_cn_crossing_sim(us_path=…)` returns trained
 and released paths; released trails trained by the ship lag, which reproduces the old capped
 climb at 0). Crossing dates are percentiles over every sample, a never-crossed one counting as
-past the window, and the cards need over half to cross, else an info line replaces them and
-the breakdown (`test_pacing_slows_the_us_and_delays_china`). Pause-scenario tests set
+past the window; under half crossing, the cards read *After <year>* with the share that
+does and the breakdown is skipped. Which milestone the dates mean is in the crossing card's
+hover (`test_pacing_slows_the_us_and_delays_china`). Pause-scenario tests set
 `pc_pace` to 0 in `TestPacingTab._app`. The pacing date and `_pc_render_us_pause()` follow. The US path is the Takeoff tab's: `_pc_takeoff_us` reads `_tk_run`
 (seeded, so it neither depends on nor shifts this tab's stream) and each sample follows one
 Takeoff scenario's ECI path (`_pc_tk_interp`), the trained bar a ship lag ahead; the chart
