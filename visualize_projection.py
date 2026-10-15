@@ -17880,17 +17880,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     st.warning("**Assumes ~SL5 secure weights - if not, China could catch up "
                "quickly by stealing US models.**", icon="\u26a0\ufe0f")
     st.table(_ms_rows)
-    _fn_caption(
-        "Each side's automated coder, RSI and ultraintelligence, read off the "
-        "same paths as the chart.",
-        ("automated coder, RSI", "Reached when a side's ECI reaches the level "
-         "the paired Takeoff scenario had at its automated-coding and RSI "
-         "dates: the US on its paced released frontier, China on its own path. "
-         f"Ultraintelligence is ECI {_TK_ULTRA_ECI:g}, as on the Takeoff tab."),
-        ("same paths", "Medians over every sample, one not reaching a "
-         f"milestone by {_yr_end} counting as later. *China after the US* is "
-         "the median per-sample gap where both reach it in more than half the "
-         "samples; negative means China gets there first."))
 
 
     # ── Why that long? The same samples, decomposed by rate term. ──
