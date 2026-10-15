@@ -2216,8 +2216,10 @@ class TestPacingTab:
             out = {}
             for el in at.get("plotly_chart"):
                 for tr in json.loads(el.proto.spec)["data"]:
-                    if tr.get("text") and str(tr["text"][0]).startswith("US "):
-                        out[tr["text"][0]] = datetime.fromisoformat(
+                    m = re.match(r"<b>(US [^<]+)</b>",
+                                 str(tr.get("hovertemplate", "")))
+                    if m:
+                        out[m.group(1)] = datetime.fromisoformat(
                             str(tr["x"][0])[:10])
             return out
 

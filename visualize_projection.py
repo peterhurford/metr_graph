@@ -16511,6 +16511,9 @@ def _pc_takeoff_us(today):
             "coder": coder, "rsi": eci["at_rsi"]}
 
 
+# Chart marks for each side's milestones.
+_PC_MS_SYMBOL = {"automated coder": "star", "RSI": "hexagram"}
+
 # Months either side of a Takeoff path's month its ECI rate is read over.
 _PC_SPEEDUP_SMOOTH_MO = 3
 
@@ -17630,14 +17633,19 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                   else f'US, no pacing (~{_prate:.1f} ECI/yr)'),
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US paced</extra>'))
     if d_pause_v > anchor_d + off_cn and pace < 1:
-        fig.add_annotation(x=d_pause_v, y=lvl50,
-                           text=(f'US pauses ~{d_pause_v:%b %Y}' if _paused
-                                 else f'US paced from ~{d_pause_v:%b %Y}'),
-                           # Below the line, clear of the milestone labels.
-                           showarrow=False, yshift=-12 if us_ms else 12,
+        # A rule with its label at the foot of the plot, clear of the lines
+        # and the milestone marks.
+        fig.add_vline(x=d_pause_v, line=dict(color='#1F77B4', width=1,
+                                             dash='dot'))
+        fig.add_annotation(x=d_pause_v, y=0, yref='paper', yanchor='bottom',
+                           xanchor='left', showarrow=False,
+                           text=(f' US pauses {d_pause_v:%b %Y}' if _paused
+                                 else f' US paced from {d_pause_v:%b %Y}'),
                            font=dict(size=10, color='#1F77B4'))
     # The US's automated coder and RSI, each where the paced released
     # frontier reaches the ECI that sample's Takeoff scenario had at it.
+    # Marks carry no on-chart text, which collided wherever the two sides'
+    # milestones bunch up: the hover and the table under the chart say it.
     for _ms_name, (_ms_t, _ms_e) in us_ms.items():
         _d = _date_of(_ms_t)
         if _d > x_end:
@@ -17645,13 +17653,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         _k = min(int(np.searchsorted(grid_yrs, _ms_t)), len(grid_yrs) - 1)
         _y = float(np.median(us_tr_grid[:, _k]))
         fig.add_trace(go.Scatter(
-            x=[_d], y=[_y], mode='markers+text',
-            marker=dict(symbol='star', size=12, color='#1F77B4',
-                        line=dict(color='white', width=1)),
-            text=[f"US {_ms_name}"], textposition='top left',
-            textfont=dict(size=10, color='#1F77B4'), showlegend=False,
-            hovertemplate=(f"US {_ms_name}<br>%{{x|%b %Y}}<br>at ECI "
-                           f"~{_ms_e:.0f} (Takeoff tab)<extra></extra>")))
+            x=[_d], y=[_y], mode='markers',
+            marker=dict(symbol=_PC_MS_SYMBOL[_ms_name], size=13,
+                        color='#1F77B4', line=dict(color='white', width=1)),
+            showlegend=False,
+            hovertemplate=(f"<b>US {_ms_name}</b><br>%{{x|%b %Y}} (median)"
+                           f"<br>at ECI ~{_ms_e:.0f}, from the Takeoff tab"
+                           "<extra></extra>")))
     # China's own automated coder and RSI: the median month its path first
     # reaches the ECI its paired scenario had at each.
     for _ms_name, (_ms_t, _ms_e) in cn_ms.items():
@@ -17660,13 +17668,19 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             continue
         _k = min(int(np.searchsorted(grid_yrs, _ms_t)), len(grid_yrs) - 1)
         fig.add_trace(go.Scatter(
-            x=[_d], y=[float(np.median(traj[:, _k]))], mode='markers+text',
-            marker=dict(symbol='star', size=12, color='#D62728',
-                        line=dict(color='white', width=1)),
-            text=[f"China {_ms_name}"], textposition='bottom right',
-            textfont=dict(size=10, color='#D62728'), showlegend=False,
-            hovertemplate=(f"China {_ms_name}<br>%{{x|%b %Y}}<br>at ECI "
-                           f"~{_ms_e:.0f}, as the US got it<extra></extra>")))
+            x=[_d], y=[float(np.median(traj[:, _k]))], mode='markers',
+            marker=dict(symbol=_PC_MS_SYMBOL[_ms_name], size=13,
+                        color='#D62728', line=dict(color='white', width=1)),
+            showlegend=False,
+            hovertemplate=(f"<b>China {_ms_name}</b><br>%{{x|%b %Y}} (median)"
+                           f"<br>at ECI ~{_ms_e:.0f}, the level the US got it at"
+                           "<extra></extra>")))
+    # One legend key per mark shape, in grey since colour gives the country.
+    for _ms_name in [k for k in _PC_MS_SYMBOL if k in us_ms or k in cn_ms]:
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None], mode='markers', name=_ms_name,
+            marker=dict(symbol=_PC_MS_SYMBOL[_ms_name], size=11,
+                        color='#888888'), hoverinfo='skip'))
     # China: actual frontier, then the sim's fan.
     fig.add_trace(go.Scatter(
         x=[d + off_cn for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
