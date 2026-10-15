@@ -16539,44 +16539,6 @@ def _pc_render_compute_ratios(ci, span):
     st.plotly_chart(_tf(fig2), width="stretch")
     st.markdown("**How far ahead the US is**")
     st.table(pandas.DataFrame(rows).style.hide(axis="index"))
-    _fn_caption(
-        "China's lines are capacity: the largest run its clusters could "
-        "train, sites abroad included, which it is assumed to use. "
-        + (("The US " + ("trains nothing new after the pause" if paused else
-                         "trains slower than its clusters grow")
-            + ", so its clusters run ahead of its largest trained run: the "
-            "overhang. ") if pace < 1 else "")
-        + "The table compares China's capacity with the US run "
-        "actually trained. Total is installed compute by location; "
-        "the US keeps installing through the pause. "
-        f"Each 10\u00d7 of compute is worth ~{ci['a_partial']:.0f} ECI.",
-        ("sites abroad included", "China's usable run counts two Johor, "
-                                  "Malaysia campuses (DayOne Nusajaya, Bridge "
-                                  "MY06) whole, on press reports that "
-                                  "ByteDance and Alibaba train there. They "
-                                  "have other tenants, so this is an upper "
-                                  "bound; it also sets what the remote-access "
-                                  "lever is worth."),
-        ("the overhang", "Unused cluster capacity: what the US could train "
-                         "the day pacing ends. Pacing is set on ECI growth; "
-                         "this reads it as the largest run's compute growing "
-                         "at that share of the clusters' pace. Capacity is "
-                         "not runs actually done: the China tab's ~50\u00d7 "
-                         "gap counts Epoch's estimates of those."),
-        ("Total is installed compute", "The world-share estimates on the Data "
-                                       "Centers tab (US ~72%, mainland China "
-                                       "~13% today) of a world stock of "
-                                       f"~{_wc_world_h100e(today) / 1e6:.0f}M "
-                                       "H100e today (Epoch's chip-sales data: "
-                                       "31.7M delivered by June 2026, grown at "
-                                       "the regions' central rates), "
-                                       "each side grown at its own central "
-                                       "rate; the DUV and domestic levers slow "
-                                       "China's. Remote access does not move "
-                                       "it: that capacity sits outside "
-                                       "mainland China."),
-        ("Each 10\u00d7", "The frontier-grade exchange rate: a big compute "
-                           "ratio buys a small capability gap."))
 
 
 def _pc_takeoff_us(today):

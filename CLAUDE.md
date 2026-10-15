@@ -1557,9 +1557,10 @@ usable run and its domestic clusters, against a US run frozen at the pause; and 
 installed compute in millions of H100e, the Data Centers tab's world shares of Epoch's chip-sales
 total, 31.7M H100e by June 2026 (`_WC_WORLD_H100E`, grown by `_wc_world_h100e`; ratios `_pc_wc_ratio`), the US still
 installing through the pause and the DUV/domestic levers slowing China's. Dashed lines and a
-last table column give the same date with no compute levers. Capacity is not the China tab's
-~50× *actual-run* gap; both captions say so
-(`test_compute_ratios_show_what_the_compute_levers_cost_china`).
+last table column give the same date with no compute levers. The table (`Compares` column)
+gives one row per comparison, each cell both values then the ratio, columns dated by the
+pacing start and the crossing card's date; no caption sits under it. Capacity is not the China
+tab's ~50× *actual-run* gap (`test_compute_ratios_show_what_the_compute_levers_cost_china`).
 Note for tests: this table renders *after* the race table, so address
 the race table by its columns (`TestPacingTab._entities`), never by position.
 China
