@@ -17627,13 +17627,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
 
     fig = go.Figure()
     _dc_add_projection_band(fig, today + off_cn, x_end)
-    if crossed:
-        fig.add_vrect(x0=v10, x1=v90 or x_end, fillcolor='rgba(214,39,40,0.10)',
-                      line_width=0, layer='below')
-        fig.add_annotation(x=v10, y=1.0, yref='paper', yanchor='bottom',
-                           xanchor='left', text='80% crossing window',
-                           showarrow=False,
-                           font=dict(size=10, color='#7F1010'))
     # US: actual frontier, then the climb to the bar, flat once it pauses.
     fig.add_trace(go.Scatter(
         x=[d + off_cn for d, s, n in us_fr], y=[s for d, s, n in us_fr],
@@ -17676,7 +17669,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         fig.add_trace(go.Scatter(
             x=_bx + _bx[::-1], y=_bhi + _blo[::-1], mode='lines',
             fill='toself', fillcolor='rgba(31,119,180,0.10)',
-            line=dict(width=0), hoverinfo='skip', showlegend=False))
+            line=dict(width=0), hoverinfo='skip', name='US, 80% range'))
     if _paused:
         fig.add_trace(go.Scatter(
             x=[max(d_pause_v, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
@@ -17758,12 +17751,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         hoverinfo='text', name='China (actual)' + _per_yr(_cn_obs)))
     pct = _pctiles(traj, (10, 25, 50, 75, 90))
     xs = [grid_d[i] for i in keep]
-    for lo_p, hi_p, alpha in ((10, 90, 0.16), (25, 75, 0.20)):
-        fig.add_trace(go.Scatter(
-            x=xs + xs[::-1], mode='lines',
-            y=[pct[hi_p][i] for i in keep] + [pct[lo_p][i] for i in keep][::-1],
-            fill='toself', fillcolor=f'rgba(214,39,40,{alpha})',
-            line=dict(width=0), hoverinfo='skip', showlegend=False))
+    # One 80% band, as the US gets: a nested 50% band read as a second cone.
+    fig.add_trace(go.Scatter(
+        x=xs + xs[::-1], mode='lines',
+        y=[pct[90][i] for i in keep] + [pct[10][i] for i in keep][::-1],
+        fill='toself', fillcolor='rgba(214,39,40,0.18)',
+        line=dict(width=0), hoverinfo='skip', name='China, 80% range'))
     fig.add_trace(go.Scatter(
         x=xs, y=[pct[50][i] for i in keep], mode='lines',
         line=dict(color='#7F1010', width=2.5),
@@ -17799,6 +17792,17 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                           '<extra>China, no pause</extra>'))
     if crossed:
+        # The 80% crossing window as a neutral bracket through the diamond;
+        # a red band read as part of China's own fan.
+        _w_end = v90 or x_end
+        fig.add_trace(go.Scatter(
+            x=[v10, _w_end], y=[cross50, cross50], mode='lines+markers',
+            line=dict(color='#444444', width=2),
+            marker=dict(symbol='line-ns-open', size=14, color='#444444',
+                        line=dict(width=2)),
+            name=f"80% crossing window ({v10:%b %Y} \u2013 "
+                 + (f"{v90:%b %Y})" if v90 else f"after {_yr_end})"),
+            hoverinfo='skip'))
         _x_hover = (
             f"<b>China catches the US: {v50:%b %Y}</b> (median)<br>"
             f"80% of samples: {v10:%b %Y} \u2013 "
