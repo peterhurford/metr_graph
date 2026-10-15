@@ -10449,11 +10449,16 @@ _WC_COMMON_LOAD = {
     "Other": 0.70,
     "China domestic": 0.25,
 }
-# The global installed stock behind those shares, in H100e: Epoch's
-# smuggling report puts it at ≈22M at end-2025 (see the anchors above).
-# `_wc_world_h100e` grows it to any date at the regions' share-weighted
-# central growth, so the shares can be read as absolute H100e.
-_WC_WORLD_H100E = (datetime(2025, 12, 31), 22e6)
+# The global stock behind those shares, in H100e: Epoch's AI chip sales data
+# (dense 8-bit, cumulative deliveries from every tracked designer: Nvidia,
+# Google, AMD, Amazon, Huawei, Cambricon) at its last complete quarter,
+# 31.7M (5th-95th 27.8-36.0M) by 2026-06-30; 20.4M at end-2025, near the
+# smuggling report's ≈22M. Deliveries, not retired or online, so an upper
+# read of what is installed. `_wc_world_h100e` grows it to any date at the
+# regions' share-weighted central growth (~2.2x/yr, below the data's own
+# 2.6x over the year to June 2026), so the shares read as absolute H100e.
+_WC_SOURCE_CHIP_SALES = "https://epoch.ai/data/ai-chip-sales"
+_WC_WORLD_H100E = (datetime(2026, 6, 30), 31.7e6)
 
 _WC_GROWTH = (
     ("US domestic", 2.3, 1.8, 3.0),
@@ -16296,8 +16301,8 @@ def _pc_rate_at(cum, grid, t):
 
 
 def _wc_world_h100e(when):
-    """The world's installed AI compute in H100e at `when`: the end-2025
-    anchor `_WC_WORLD_H100E` grown at the share-weighted central growth of
+    """The world's installed AI compute in H100e at `when`: the
+    `_WC_WORLD_H100E` anchor grown at the share-weighted central growth of
     `_WC_GROWTH`."""
     d0, h0 = _WC_WORLD_H100E
     share = {lab: mid for lab, mid, _, _ in _WC_REGIONS}
@@ -16536,8 +16541,9 @@ def _pc_render_compute_ratios(ci, span):
                                        "Centers tab (US ~72%, mainland China "
                                        "~13% today) of a world stock of "
                                        f"~{_wc_world_h100e(today) / 1e6:.0f}M "
-                                       "H100e today (Epoch's ~22M at end-2025, "
-                                       "grown at the regions' central rates), "
+                                       "H100e today (Epoch's chip-sales data: "
+                                       "31.7M delivered by June 2026, grown at "
+                                       "the regions' central rates), "
                                        "each side grown at its own central "
                                        "rate; the DUV and domestic levers slow "
                                        "China's. Remote access does not move "
