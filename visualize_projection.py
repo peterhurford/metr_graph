@@ -17247,6 +17247,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     keep = [i for i, d in enumerate(grid_d) if d <= x_end]
     _hover = (lambda d, s, n: f"{pretty(n)}<br>ECI {s:.0f}"
               + (f"<br>released {d:%b %Y}" if off_cn.days else ""))
+    _us_obs = _cc_frontier_eci_slope(us_fr, _CC_CALIB_SINCE)
+    _cn_obs = ch['obs'] if ch else _cc_frontier_eci_slope(cn_fr, _CC_CALIB_SINCE)
+    _y50 = float(np.nanmedian(years))
+    _cn_avg = (lvl50 - anchor_eci) / _y50 if _y50 > 0 else None
+
+    def _per_yr(r):
+        return "" if r is None else f" ({r:.1f} ECI/yr)"
+
     fig = go.Figure()
     _dc_add_projection_band(fig, today + off_cn, x_end)
     fig.add_vrect(x0=v10, x1=v90, fillcolor='rgba(214,39,40,0.10)',
@@ -17260,19 +17268,28 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
         marker=dict(size=4, color='#1F77B4', line=dict(color='white', width=0.5)),
         text=[_hover(d, s, n) for d, s, n in us_fr],
-        hoverinfo='text', name='US (actual)'))
+        hoverinfo='text', name='US (actual)' + _per_yr(_us_obs)))
     # Two visually distinct segments: the projected climb (dashed, like every
     # projection) and the frozen bar the plan holds (thick translucent level).
     t0_us = max(us_best[0], anchor_d) + off_cn
     if d_pause_v > t0_us:
+        # Monthly points, so the dashed climb answers a hover anywhere on it.
+        _n = max(int((d_pause_v - t0_us).days / 30.44), 1) + 1
+        _cx = [t0_us + (d_pause_v - t0_us) * (k / (_n - 1)) for k in range(_n)]
+        _cy = list(np.linspace(us_best[1], lvl50, _n))
+        _climb = ((lvl50 - us_best[1])
+                  / max((d_pause_v - t0_us).days / 365.25, 1e-6))
         fig.add_trace(go.Scatter(
-            x=[t0_us, d_pause_v], y=[us_best[1], lvl50], mode='lines',
+            x=_cx, y=_cy, mode='lines',
             line=dict(color='#1F77B4', width=2, dash='dash'),
-            name='US climb (projected)', hoverinfo='skip'))
+            name='US climb (projected)' + _per_yr(_climb),
+            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                          '<extra>US climb</extra>'))
     fig.add_trace(go.Scatter(
         x=[max(d_pause_v, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
         line=dict(color='#1F77B4', width=4.5), opacity=0.4,
-        name=f'US paused at {lvl50:.0f}', hoverinfo='skip'))
+        name=f'US paused at {lvl50:.0f} (0 ECI/yr)',
+        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US paused</extra>'))
     if d_pause_v > anchor_d + off_cn:
         fig.add_annotation(x=d_pause_v, y=lvl50,
                            text=f'US pauses ~{d_pause_v:%b %Y}',
@@ -17284,7 +17301,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         mode='lines+markers', line=dict(color='#D62728', width=1.5),
         marker=dict(size=4, color='#D62728', line=dict(color='white', width=0.5)),
         text=[_hover(d, s, n) for d, s, n in cn_fr],
-        hoverinfo='text', name='China (actual)'))
+        hoverinfo='text', name='China (actual)' + _per_yr(_cn_obs)))
     pct = _pctiles(traj, (10, 25, 50, 75, 90))
     xs = [grid_d[i] for i in keep]
     for lo_p, hi_p, alpha in ((10, 90, 0.16), (25, 75, 0.20)):
@@ -17295,8 +17312,21 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             line=dict(width=0), hoverinfo='skip', showlegend=False))
     fig.add_trace(go.Scatter(
         x=xs, y=[pct[50][i] for i in keep], mode='lines',
-        line=dict(color='#7F1010', width=2.5), name='China (projected median)',
+        line=dict(color='#7F1010', width=2.5),
+        name='China (projected median'
+             + ("" if _cn_avg is None else f", avg {_cn_avg:.1f} ECI/yr")
+             + " to crossing)",
         hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>China median</extra>'))
+    # China's own trend if the US kept going and nothing were done: its
+    # observed rate, distillation never fading because the US keeps pulling
+    # ahead of it.
+    if _cn_obs:
+        fig.add_trace(go.Scatter(
+            x=xs, y=[anchor_eci + _cn_obs * grid_yrs[i] for i in keep],
+            mode='lines', line=dict(color='#D62728', width=2, dash='dash'),
+            name='China if the US kept going, no levers' + _per_yr(_cn_obs),
+            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                          '<extra>China, no pause</extra>'))
     fig.add_trace(go.Scatter(
         x=[v50], y=[lvl50], mode='markers',
         marker=dict(symbol='diamond', size=13, color='#D62728',
