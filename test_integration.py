@@ -1937,7 +1937,7 @@ class TestPacingTab:
         _KEYS = {"domestic": "Compute, domestic", "abroad": "Compute, clusters abroad",
                  "innovation": "Innovation", "diffusion": "Diffusion",
                  "distillation": "Distillation", "run": "Longer training",
-                 "total": "Total"}
+                 "speedup": "AI speed-up", "total": "Total"}
 
         def _rows(at):
             t = next(x.value for x in at.table if "Source" in x.value.columns)

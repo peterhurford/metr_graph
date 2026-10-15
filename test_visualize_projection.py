@@ -4440,6 +4440,38 @@ class TestPacing:
         assert list(vp._pc_paced_clock(t, 1.0, 1.0)) == list(t)
         assert list(vp._pc_paced_clock(t, 1.0, 0.5)) == [0.0, 1.0, 1.5, 2.0]
 
+    def test_speedup_is_the_us_rate_at_that_eci_over_todays(self):
+        """China's multiplier at an ECI is the Takeoff path's growth when it
+        stood there, over today's trend: 1 on the trend, 3x once the path
+        climbs three times as fast, and never below 1."""
+        years = np.arange(0, 10, 1 / 12)
+        path = np.where(years < 5, 100 + 10 * years, 150 + 30 * (years - 5))
+        tk = {"years": years, "paths": np.vstack([path, 100 + 5 * years]),
+              "ppy": 10.0}
+        tab = vp._pc_speedup_table(tk, np.array([110.0, 200.0]))
+        assert tab[0] == pytest.approx([1.0, 3.0], abs=0.01)
+        assert tab[1] == pytest.approx([1.0, 1.0])      # floored at 1
+
+    def test_speedup_multiplies_chinas_rate_and_is_its_own_channel(self):
+        """A 2x speed-up on a fixed bar halves the time to cross, and the
+        extra growth lands in the `speedup` channel so the channels still sum
+        to the path."""
+        kw = dict(us_anchor=150.0, us_rate=0.0, a_partial=0.0, g_lo=0.0,
+                  g_hi=0.0, algo_lo=10.0, algo_mid=10.0, algo_hi=10.0,
+                  inno_lo=10.0, inno_hi=10.0, pace_lo=1.0, pace_hi=1.0,
+                  n=50, horizon_yrs=5.0)
+        np.random.seed(0)
+        base, _, _ = vp._cc_cn_crossing_sim(100.0, 120.0, **kw)
+        chan = {}
+        np.random.seed(0)
+        fast, grid, traj = vp._cc_cn_crossing_sim(
+            100.0, 120.0, channels=chan, speedup=lambda e: np.full(50, 2.0),
+            **kw)
+        assert np.nanmedian(fast) == pytest.approx(np.nanmedian(base) / 2, rel=0.1)
+        total = sum(chan[k] for k in vp._CC_CHANNELS) + chan['speedup']
+        assert total == pytest.approx(traj - 100.0)
+        assert chan['speedup'][:, -1].min() > 0
+
     def test_cross_years_reads_a_moving_bar(self):
         """A 2-D target is a per-sample path: the crossing is where the
         gap to it closes, interpolated inside the step."""

@@ -1447,7 +1447,13 @@ the breakdown (`test_pacing_slows_the_us_and_delays_china`). Pause-scenario test
 (seeded, so it neither depends on nor shifts this tab's stream) and each sample follows one
 Takeoff scenario's ECI path (`_pc_tk_interp`), the trained bar a ship lag ahead; the chart
 marks where the paced US reaches each scenario's ECI at automated coding and at RSI
-(`us_ms`). Without a Takeoff run the compute-derived straight climb stands in. `pc_pause_mo` and
+(`us_ms`). Without a Takeoff run the compute-derived straight climb stands in. China gets automated coding and RSI
+at the same ECI: `_pc_speedup_table` reads each scenario's ECI/yr where its path first stands
+at an ECI, over today's trend (floored at 1), and `_cc_cn_crossing_sim(speedup=…)` multiplies
+China's whole rate by it at China's current ECI, the extra kept as its own `speedup` channel
+(a breakdown row) so the channels still sum to the path
+(`test_speedup_multiplies_chinas_rate_and_is_its_own_channel`). It is capability-indexed and
+unpaced: pacing slows the US, not what AI at a given ECI does for research. `pc_pause_mo` and
 the `_pc_capacity_at()` reading it implies are rendered by `render_pacing()`, not
 by the panel, because the race below needs the same bar; the panel takes
 `pause_d` and `caps` as arguments. The US pauses on that date, frozen at whatever

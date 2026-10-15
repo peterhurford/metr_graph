@@ -13387,7 +13387,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS,
                         t_dist_stop=None, comp_dead=None, comp_slow=None,
                         dist_teacher=None, channels=None, comp_shadow=None,
-                        level_sd=0.0, level_ramp_yrs=0.5, us_path=None):
+                        level_sd=0.0, level_ramp_yrs=0.5, us_path=None,
+                        speedup=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -13421,6 +13422,10 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     frontier. China then crosses `trained` wherever it is (`target` is
     ignored), and the distillation gap reads `released` instead of
     `us_anchor + us_rate·t`.
+
+    `speedup(e)` -> (n,) multiplies each sample's whole rate at China's
+    current ECI `e` (AI automating China's own R&D once it reaches the
+    capability that sped the US up); the extra is the `speedup` channel.
 
     Pass a dict as `channels` to have it filled with the four rate terms'
     *cumulative* ECI contributions, each an (n, len(grid)) array summing to
@@ -13480,7 +13485,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     if us_path is not None:
         us_tr, us_rel = us_path(grid)
     if channels is not None:
-        for _k in _CC_CHANNELS + (('compute_domestic',) if shadow else ()):
+        for _k in (_CC_CHANNELS + (('compute_domestic',) if shadow else ())
+                   + (('speedup',) if speedup is not None else ())):
             channels[_k] = np.zeros((n, steps + 1))
     e = np.full(n, float(anchor_eci))
     years = np.full(n, np.nan)
@@ -13513,6 +13519,11 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         if channels is not None:
             for _k, _p in zip(_CC_CHANNELS, parts):
                 channels[_k][:, i] = channels[_k][:, i - 1] + _p * dt
+        if speedup is not None:
+            extra = (speedup(e) - 1.0) * rate
+            rate = rate + extra
+            if channels is not None:
+                channels['speedup'][:, i] = channels['speedup'][:, i - 1] + extra * dt
         if shadow:
             cap, dead = comp_shadow
             d_on_c = (0.0 if dead is not None
@@ -16249,6 +16260,7 @@ _PC_CHANNEL_LABELS = {
     'diffusion': "Diffusion, published US methods (stops ~1 yr after pause)",
     'distillation': "Distillation, learning from US models (stops near the "
                     "teacher)",
+    'speedup': "AI speed-up, China's own automated coder and RSI",
 }
 
 
@@ -16494,6 +16506,27 @@ def _pc_takeoff_us(today):
             "coder": coder, "rsi": eci["at_rsi"]}
 
 
+# Months either side of a Takeoff path's month its ECI rate is read over.
+_PC_SPEEDUP_SMOOTH_MO = 3
+
+
+def _pc_speedup_table(tk, levels):
+    """Per Takeoff scenario, its ECI growth when its path first reaches each
+    of `levels`, over today's trend `ppy`, floored at 1: (draws, levels). The
+    speed-up AI gives research at that capability, which China gets on
+    reaching the same ECI. Read over ±`_PC_SPEEDUP_SMOOTH_MO` months, since
+    a path climbs in model-sized steps."""
+    paths, years = tk["paths"], tk["years"]
+    w = _PC_SPEEDUP_SMOOTH_MO
+    padded = np.pad(paths, ((0, 0), (w, w)), mode="edge")
+    rate = (padded[:, 2 * w:] - padded[:, :-2 * w]) / (2 * w * (years[1] - years[0]))
+    out = np.empty((len(paths), len(levels)))
+    for i, row in enumerate(paths):
+        k = np.minimum(np.searchsorted(row, levels), len(row) - 1)
+        out[i] = rate[i, k]
+    return np.maximum(out / tk["ppy"], 1.0)
+
+
 def _pc_tk_interp(tk, draw, u):
     """Each row's Takeoff path (`draw` picks the scenario per row) at `u`
     years from Takeoff's day, (n, m); linear inside a month, held flat past
@@ -16551,16 +16584,21 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     # domestic clusters alone would have contributed, and the rest. The split
     # is a counterfactual with no rate of its own, so the measured compute
     # rate is shown once, on the first compute row.
-    cum = {k: chan[k] for k in _CC_CHANNELS}
+    keys = _CC_CHANNELS + (('speedup',) if 'speedup' in chan else ())
+    cum = {k: chan[k] for k in keys}
     if 'compute_domestic' in chan:
         cum['compute_domestic'] = chan['compute_domestic']
         cum['compute_abroad'] = chan['compute'] - chan['compute_domestic']
         del cum['compute']
     rates = {k: tuple(float(np.nanmedian(_pc_rate_at(chan[k], grid0, t)))
-                      for t in (t_pause, t_cross)) for k in _CC_CHANNELS}
+                      for t in (t_pause, t_cross)) for k in keys}
     after = {k: float(np.nanmedian(_pc_at_years(arr, grid0, t_cross)
                                    - _pc_at_years(arr, grid0, t_pause)))
              for k, arr in cum.items()}
+    if 'speedup' in after and after['speedup'] < 0.05 \
+            and max(rates['speedup']) < 0.05:
+        # China never reached its automated coder before the crossing.
+        del after['speedup'], rates['speedup']
     if cn_run_mo != us_run_mo:
         after['run'] = cn_gain
     # Years from the pause to the crossing (median over paths): each source's
@@ -17089,6 +17127,22 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             return us_best[1] + us_rate_s[:, None] * (t + _us_dt)
         return _pc_tk_interp(tk, _draw, t - _t_day + _ship)
 
+    # China gets automated coding and RSI at the ECI the US got them: each
+    # sample's rate is multiplied by the speed-up its Takeoff scenario shows
+    # at China's current ECI (`_pc_speedup_table`), so it bites as China
+    # reaches that scenario's coder and RSI levels. Capability-indexed and
+    # unpaced: pacing slows the US, not what AI at a given ECI does for R&D.
+    cn_speedup = None
+    if tk is not None:
+        _lv0, _dlv = 100.0, 1.0
+        _sp_tab = _pc_speedup_table(
+            tk, np.arange(_lv0, 1000.0, _dlv)).astype(np.float32)
+        _sp_rows = np.asarray(_draw)
+
+        def cn_speedup(e):
+            j = np.clip(((e - _lv0) / _dlv).astype(int), 0, _sp_tab.shape[1] - 1)
+            return _sp_tab[_sp_rows, j].astype(float)
+
     level_s = _us_trained_unpaced(t_pause_s[:, None])[:, 0]
     lvl50 = float(np.median(level_s))
     # Best *queryable* model under the release freeze: the released frontier
@@ -17202,7 +17256,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                            if stop_dist else None),
               dist_teacher=teacher_s if withhold else None,
               # Release-step scatter, as on the China tab's catch-up panel.
-              us_path=us_path,
+              us_path=us_path, speedup=cn_speedup,
               level_sd=_cc_frontier_level_sd(cn_fr),
               level_ramp_yrs=(_cc_release_gap_days(
                   cn_fr, since=today - timedelta(days=730)) or 47.5) / 365.25,
@@ -17452,7 +17506,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # When the paced US reaches automated coding and RSI: the median of each
     # sample's first month at the ECI its Takeoff scenario had there (never
     # counts as later), {name: (years from China's anchor, median ECI)}.
-    us_ms = {}
+    us_ms, cn_ms = {}, {}
     if tk is not None:
         for _ms_name, _ms_key in (("automated coder", "coder"), ("RSI", "rsi")):
             _lvl = tk[_ms_key][_draw]
@@ -17462,6 +17516,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             _ym = float(np.percentile(_y, 50))
             if np.isfinite(_ym):
                 us_ms[_ms_name] = (_ym, float(np.nanmedian(_lvl)))
+            _yc = _pc_cross_years(traj, grid_yrs - grid_yrs[0],
+                                  np.nan_to_num(_lvl, nan=np.inf)) + grid_yrs[0]
+            _ycm = float(np.percentile(np.where(np.isfinite(_yc), _yc, np.inf), 50))
+            if np.isfinite(_ycm):
+                cn_ms[_ms_name] = (_ycm, float(np.nanmedian(_lvl)))
     us_cross_s = _pc_at_years(us_tr_grid, grid_yrs - grid_yrs[0],
                               years - grid_yrs[0])
     cross50 = (float(np.nanmedian(us_cross_s)) if crossed else lvl50)
@@ -17551,7 +17610,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         fig.add_annotation(x=d_pause_v, y=lvl50,
                            text=(f'US pauses ~{d_pause_v:%b %Y}' if _paused
                                  else f'US paced from ~{d_pause_v:%b %Y}'),
-                           showarrow=False, yshift=12,
+                           # Below the line, clear of the milestone labels.
+                           showarrow=False, yshift=-12 if us_ms else 12,
                            font=dict(size=10, color='#1F77B4'))
     # The US's automated coder and RSI, each where the paced released
     # frontier reaches the ECI that sample's Takeoff scenario had at it.
@@ -17569,6 +17629,21 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             textfont=dict(size=10, color='#1F77B4'), showlegend=False,
             hovertemplate=(f"US {_ms_name}<br>%{{x|%b %Y}}<br>at ECI "
                            f"~{_ms_e:.0f} (Takeoff tab)<extra></extra>")))
+    # China's own automated coder and RSI: the median month its path first
+    # reaches the ECI its paired scenario had at each.
+    for _ms_name, (_ms_t, _ms_e) in cn_ms.items():
+        _d = anchor_d + off_cn + timedelta(days=_ms_t * 365.25)
+        if _d > x_end:
+            continue
+        _k = min(int(np.searchsorted(grid_yrs, _ms_t)), len(grid_yrs) - 1)
+        fig.add_trace(go.Scatter(
+            x=[_d], y=[float(np.median(traj[:, _k]))], mode='markers+text',
+            marker=dict(symbol='star', size=12, color='#D62728',
+                        line=dict(color='white', width=1)),
+            text=[f"China {_ms_name}"], textposition='bottom right',
+            textfont=dict(size=10, color='#D62728'), showlegend=False,
+            hovertemplate=(f"China {_ms_name}<br>%{{x|%b %Y}}<br>at ECI "
+                           f"~{_ms_e:.0f}, as the US got it<extra></extra>")))
     # China: actual frontier, then the sim's fan.
     fig.add_trace(go.Scatter(
         x=[d + off_cn for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
@@ -17655,7 +17730,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                   "indigenous innovation "
                   + (f"({pure[0]:.0f}\u2013{pure[1]:.0f} ECI/yr)" if pure else
                      f"(floor {inno[0]:.0f}\u2013{inno[1]:.0f} ECI/yr)")
-                  + " plus its compute term."),
+                  + " plus its compute term."
+                  + (" China gets automated coding and RSI at the ECI the US "
+                     "did in each Takeoff scenario, and from there its whole "
+                     "rate is multiplied by the speed-up that scenario shows "
+                     "at the same ECI (its ECI/yr there over today's trend); "
+                     "the stars mark the median month each side reaches them."
+                     if tk else "")),
     ]
     _cf_tail = ""
     if d50_ca is not None:
