@@ -13388,7 +13388,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         t_dist_stop=None, comp_dead=None, comp_slow=None,
                         dist_teacher=None, channels=None, comp_shadow=None,
                         level_sd=0.0, level_ramp_yrs=0.5, us_path=None,
-                        speedup=None):
+                        speedup=None, speedup_follow=(0.0, 0.0)):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -13423,9 +13423,12 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     ignored), and the distillation gap reads `released` instead of
     `us_anchor + us_rate·t`.
 
-    `speedup(e)` -> (n,) multiplies each sample's whole rate at China's
-    current ECI `e` (AI automating China's own R&D once it reaches the
-    capability that sped the US up); the extra is the `speedup` channel.
+    `speedup(e)` -> (n,) is the speed-up s AI gives research at China's
+    current ECI `e` (what sped the US up there). China's extra growth is
+    (s − 1)·[w·base + (1 − w)·rate] for `speedup_follow` = (w, base): w = 0
+    scales China's own rate, w = 1 adds the US's AI-driven ECI/yr at that
+    level (`base` the US trend rate), so takeoffs share their size, not only
+    their timing. The extra is the `speedup` channel.
 
     Pass a dict as `channels` to have it filled with the four rate terms'
     *cumulative* ECI contributions, each an (n, len(grid)) array summing to
@@ -13520,7 +13523,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
             for _k, _p in zip(_CC_CHANNELS, parts):
                 channels[_k][:, i] = channels[_k][:, i - 1] + _p * dt
         if speedup is not None:
-            extra = (speedup(e) - 1.0) * rate
+            fw, fbase = speedup_follow
+            extra = (speedup(e) - 1.0) * (fw * fbase + (1.0 - fw) * rate)
             rate = rate + extra
             if channels is not None:
                 channels['speedup'][:, i] = channels['speedup'][:, i - 1] + extra * dt
@@ -15130,7 +15134,7 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
                   "pc_duv_service", "pc_duv_decay", "pc_duv_growth",
                   "pc_dist_when", "pc_remote_when", "pc_cn_run",
-                  "pc_methods_pause", "pc_pace"] + \
+                  "pc_methods_pause", "pc_pace", "pc_tk_follow"] + \
                  [_PC_RSI_W_KEY + s for s in _PC_RSI_WEIGHTS]
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
 _PC_CN_RUN_MAX = 12           # months: longest Chinese catch-up training run
@@ -15174,6 +15178,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_dist_when": _PC_WHEN_NOW,
                 "pc_remote_when": _PC_WHEN_NOW,
                 "pc_cn_run": 2, "pc_methods_pause": False,
+                "pc_tk_follow": 0.8,
                 **{_PC_RSI_W_KEY + s: w for s, w in _PC_RSI_WEIGHTS.items()}}
 _PC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
@@ -16982,6 +16987,19 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                      "at \u00d71.3\u20132.7/yr for 2026\u201327, with per-chip "
                      "performance rising on top. Needs a DUVi checkbox above.")
             st.divider()
+            st.markdown("**China's takeoff**")
+            tk_follow = st.slider(
+                "How closely China's takeoff tracks the US's", 0.0, 1.0,
+                value=_PC_DEFAULTS["pc_tk_follow"], step=0.1,
+                key="pc_tk_follow",
+                help="Once China reaches the ECI where AI sped US research up, "
+                     "how much of the US's extra growth it gets, in ECI a year. "
+                     "1: the same extra as the US at that ECI, since takeoff "
+                     "runs on how LLMs improve, which both sides share. 0: the "
+                     "same multiple of China's own, slower pace. Either way "
+                     "each sample's China speeds up when its paired US "
+                     "scenario does, and by as much.")
+            st.divider()
             st.markdown("**Length of Chinese training run**")
             us_run_mo = max(int(round(run_days / 30)), 1)
             if not (us_run_mo <= st.session_state.get("pc_cn_run", us_run_mo)
@@ -17258,6 +17276,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               dist_teacher=teacher_s if withhold else None,
               # Release-step scatter, as on the China tab's catch-up panel.
               us_path=us_path, speedup=cn_speedup,
+              speedup_follow=(tk_follow, tk['ppy'] if tk else 0.0),
               level_sd=_cc_frontier_level_sd(cn_fr),
               level_ramp_yrs=(_cc_release_gap_days(
                   cn_fr, since=today - timedelta(days=730)) or 47.5) / 365.25,

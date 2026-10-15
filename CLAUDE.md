@@ -1451,7 +1451,7 @@ marks where the paced US reaches each scenario's ECI at automated coding and at 
 at the same ECI: `_pc_speedup_table` reads each scenario's ECI/yr where its path first stands
 at an ECI, over today's trend (floored at 1), and `_cc_cn_crossing_sim(speedup=…)` multiplies
 China's whole rate by it at China's current ECI, the extra kept as its own `speedup` channel
-(a breakdown row) so the channels still sum to the path
+(a breakdown row) so the channels still sum to the path; `pc_tk_follow` (default 0.8, *Advanced*) sets how much of that extra is the US's own AI-driven ECI/yr at that level rather than a multiple of China's slower rate, `speedup_follow` in the sim (`test_full_tracking_gives_china_the_us_extra_in_eci_a_year`)
 (`test_speedup_multiplies_chinas_rate_and_is_its_own_channel`). It is capability-indexed and
 unpaced: pacing slows the US, not what AI at a given ECI does for research. `pc_pause_mo` and
 the `_pc_capacity_at()` reading it implies are rendered by `render_pacing()`, not

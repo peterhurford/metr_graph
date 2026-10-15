@@ -4472,6 +4472,21 @@ class TestPacing:
         assert total == pytest.approx(traj - 100.0)
         assert chan['speedup'][:, -1].min() > 0
 
+    def test_full_tracking_gives_china_the_us_extra_in_eci_a_year(self):
+        """With `speedup_follow` weight 1, China's extra growth is the US's
+        AI-driven extra at that ECI, (s - 1) x the US trend rate, whatever
+        China's own rate; at 0 it is (s - 1) x China's own rate."""
+        kw = dict(us_anchor=150.0, us_rate=0.0, a_partial=0.0, g_lo=0.0,
+                  g_hi=0.0, algo_lo=5.0, algo_mid=5.0, algo_hi=5.0,
+                  inno_lo=5.0, inno_hi=5.0, pace_lo=1.0, pace_hi=1.0,
+                  n=20, horizon_yrs=1.0, channels=None)
+        for w, want in ((1.0, 5.0 + 20.0), (0.0, 5.0 * 2)):
+            np.random.seed(0)
+            _, grid, traj = vp._cc_cn_crossing_sim(
+                100.0, 1e9, speedup=lambda e: np.full(20, 2.0),
+                speedup_follow=(w, 20.0), **kw)
+            assert ((traj[:, -1] - 100.0) / grid[-1]).mean() == pytest.approx(want, rel=0.02)
+
     def test_cross_years_reads_a_moving_bar(self):
         """A 2-D target is a per-sample path: the crossing is where the
         gap to it closes, interpolated inside the step."""
