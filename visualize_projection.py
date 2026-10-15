@@ -14450,7 +14450,7 @@ def _render_cc_duv_ceiling(today):
                        showarrow=False, xanchor='right', yanchor='bottom',
                        font=dict(size=10, color='#777777'))
     st.plotly_chart(fig, width="stretch")
-    end = datetime(_PC_END_YEARS[-1], 12, 31)
+    end = datetime(_PC_HORIZON.year, 12, 31)
     c_imp = _duv_policy_cut(today, end)
     c_svc = _duv_policy_cut(today, end, ban_imports=True,
                             decay=_DUV_SERVICE_DECAY_PCT / 100.0)
@@ -15201,7 +15201,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                     (f"pc_win{i}_end", min(_pc_pause_default_mo() + 12,
                                            _PC_PAUSE_MO_MAX)))},
                 **{_PC_RSI_W_KEY + s: w for s, w in _PC_RSI_WEIGHTS.items()}}
-_PC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
+_PC_END_YEARS = list(range(2027, 2036))
 
 
 def _pc_when_options(today, end=_PC_HORIZON):
@@ -18140,11 +18140,13 @@ def render_pacing():
                  "Country races countries instead, with China shown both "
                  "as the mainland alone and as China-accessible (mainland "
                  "+ Chinese labs' sites abroad).")
-        with st.expander("Projection range"):
-            pc_end_year = st.radio(
-                "Project through", _PC_END_YEARS, horizontal=True,
-                index=_PC_END_YEARS.index(_PC_DEFAULTS["pc_end_year"]),
-                key="pc_end_year")
+        if st.session_state.get("pc_end_year") not in _PC_END_YEARS:
+            st.session_state.pop("pc_end_year", None)
+        pc_end_year = st.selectbox(
+            "Project through", _PC_END_YEARS,
+            index=_PC_END_YEARS.index(_PC_DEFAULTS["pc_end_year"]),
+            key="pc_end_year",
+            help="The year-end both charts and the crossing search run to.")
         if st.button("Reset", key="pc_reset"):
             for k in _PC_RESET_KEYS:
                 st.session_state.pop(k, None)

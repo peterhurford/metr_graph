@@ -2140,10 +2140,10 @@ class TestPacingTab:
         at = self._app()
         # A range ending before the default pause draws no pause chart; it
         # must still render.
-        at.radio(key="pc_end_year").set_value(2027).run()
+        at.selectbox(key="pc_end_year").set_value(2027).run()
         _assert_no_error(at, "Pacing / through 2027")
-        for yr in (2029, 2031):
-            at.radio(key="pc_end_year").set_value(yr).run()
+        for yr in (2029, 2031, 2035):
+            at.selectbox(key="pc_end_year").set_value(yr).run()
             _assert_no_error(at, f"Pacing / through {yr}")
             ends = _ends(at)
             assert len(ends) == 4, ends
@@ -2157,7 +2157,7 @@ class TestPacingTab:
         the panel says so — but the state of play at the pause doesn't
         depend on the crossing and still renders."""
         at = self._app()
-        at.radio(key="pc_end_year").set_value(2028).run()
+        at.selectbox(key="pc_end_year").set_value(2028).run()
         at.select_slider(key="pc_pause_mo").set_value(48).run()
         _assert_no_error(at, "Pacing / pause past the projection range")
         card = next(m for m in at.metric if "paused US frontier" in str(m.label))
