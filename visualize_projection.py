@@ -19218,6 +19218,117 @@ def _tk_loading(slot, step):
                   + text.format(n=N_SAMPLES // _TK_DRAW_STRIDE, end=_TK_SIM_END_YEAR) + "\u2026")
 
 
+def _tk_run(today, progress=None):
+    """The Takeoff simulation as the Takeoff tab runs it, from its settings in
+    session state (defaults for any not there): {'params', 'result', 'eci',
+    'eci_base', 'experiment_starts', 'pace_today', 'pace_yield'}; when it
+    cannot run, a message string, or {'error': message} for invalid settings. The Pacing tab reads the same run, so the two
+    tabs' US paths agree. `progress(step)` reports the loading bar's steps."""
+    progress = progress or (lambda step: None)
+
+    def ss(key):
+        return st.session_state.get(key, _TK_DEFAULTS[key])
+
+    end_date = datetime(_TK_SIM_END_YEAR, 12, 31)
+    horizon = (end_date - today).total_seconds() / (365.25 * 86400)
+    onset_days, rsi_settings = _pc_rsi_onset(today)
+    if onset_days is None:
+        return ("The automated coder projection has no available draws. Adjust its "
+                "weights below.")
+    onset_years = onset_days[_TK_DRAW_STRIDE // 2::_TK_DRAW_STRIDE] / 365.25
+    # A widget with integer bounds hands back an int where the default is a
+    # float; cast, or the first rerun misses `_tk_simulate`'s cache.
+    params = {k: float(ss("tk_" + k))
+              if isinstance(takeoff.DEFAULTS[k], float) else ss("tk_" + k)
+              for k in takeoff.DEFAULTS if k not in _TK_NOT_WIDGETS}
+    # Difficulty is set through the returns to research, r = lambda / difficulty,
+    # with lambda held at the reference exponent so the parallelization setting
+    # moves returns to inputs alone, not how fast ideas get harder.
+    params["difficulty"] = _TK_R_REF_PARALLEL / float(ss("tk_returns"))
+    # Every path begins today and ends at the selected calendar horizon.
+    # Past coding dates stay intact; we do not invent pre-today research history.
+    params["years"] = horizon
+    params["compute_slow_years"] = max(
+        (datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31) - today).total_seconds() / (365.25 * 86400), 0)
+    try:
+        takeoff.validate(params)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    evidence = load_rsi_experiments()
+    observed_growth = evidence[-1]["mult"] / evidence[0]["mult"]
+    calibration = None
+    if params["transfer"] > 0:
+        calibration = takeoff.calibrate_feedback(
+            observed_growth, ss("tk_cal_compute"),
+            ss("tk_cal_capability"), ss("tk_cal_yield"),
+            ss("tk_cal_validated") or None,
+            transfer=params["transfer"] / 100, coding_slope=params["coding_slope"],
+            parallel=params["parallelization"], substitution=params["substitution"],
+            automation_growth=_tk_automation_growth(
+                load_rsi_automation(), evidence, params["ai_speed"],
+                (ss("tk_cal_capability") / ss("tk_cal_compute"))
+                ** params["ai_copies"], _tk_al_hours_now()))
+        w = ss("tk_cal_weight") / 100
+        calibration["quality_prior"] = params["taste_slope"]
+        calibration["weight"] = w
+        params["taste_slope"] = (1 - w) * params["taste_slope"] + w * calibration["quality_slope"]
+    n = len(onset_years)
+    activity = _tk_rsi_activity(evidence, today, n)
+    if activity is None:
+        return "The RSI experiment series has no positive growth projection to inherit."
+    experiment_starts, experiment_slopes = activity
+    # Today's pace is set directly; scenarios keep the activity draws' spread
+    # around it. Reporting only: the simulated dynamics never see it.
+    pace_today = float(ss("tk_pace_today"))
+    pace_yield = pace_today / float(np.median(np.exp(experiment_starts)))
+    # Seeded here, not by whatever ran before, so every tab that reads
+    # Takeoff gets the same draws.
+    with _seeded_rng(_tk_seed()):
+        dc = _tk_dc_compute(today, n) if ss("tk_dc_compute") else None
+    compute_rates, hist_compute = dc if dc else (None, None)
+    # A model at ultraintelligence has automated coding whatever the RSI projection's
+    # date says, so RSI no longer waits on a late inherited date past it.
+    _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute)
+    eci_rates = _tk_eci_rates(params, hist_compute)
+    coding_level = _TK_ULTRA_ECI - eci_now          # in ECI points, through eci_rates
+    coding_weights = (eci_rates["compute"], eci_rates["software"])
+    # Research hours follow the automation index's own projection, each
+    # scenario with its own AL4->AL5 gap.
+    human_curve = _tk_ladder_curves(_tk_al_hours_now(), len(onset_years), params["seed"])
+    # Research direction also reads the next-step study, an independent
+    # measurement of that stage: a log blend of the two curves.
+    nextstep = _tk_nextstep_curves(len(onset_years), params["seed"], today=today)
+    if human_curve is not None and nextstep is not None:
+        years_, ladder = human_curve
+        human_curve = (years_, ladder, _tk_blend_in_time(
+            years_, ladder, nextstep[1], _TK_NEXTSTEP_WEIGHT))
+    progress(1)
+    rest = (experiment_starts, experiment_slopes, pace_yield, compute_rates,
+            hist_compute, coding_level, coding_weights, human_curve)
+    # Late coding dates go with slow scenarios: rank a first run's capability
+    # growth, reassign the RSI projection's dates along it, and run again.
+    # The pairing reads capability only at `_TK_PAIRING_YEARS` and the
+    # simulation is causal, so that first run stops a month past it
+    # (`test_the_pairing_run_stops_where_the_pairing_reads`).
+    corr = float(ss("tk_coding_pairing"))
+    if corr > 0:
+        capability = _tk_simulate(
+            dict(params, years=min(horizon, _TK_PAIRING_YEARS + 1 / 12)), onset_years,
+            _TK_SOURCE_DIGEST, *rest, capability_at=_TK_PAIRING_YEARS)
+        onset_years = _tk_pair_onset(onset_years, capability, corr, int(params["seed"]))
+        progress(2)
+    result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST, *rest)
+    # The ECI trend reflects the compute growth behind it: the data-center
+    # series' own historical fit when its projection is in use.
+    result["hist_compute"] = hist_compute
+    result["eci_rates"] = eci_rates
+    rsi = result["events"]["RSI"]
+    eci = _tk_eci(result, params)
+    return {"params": params, "result": result, "eci": eci, "eci_base": eci_base,
+            "experiment_starts": experiment_starts, "pace_today": pace_today,
+            "pace_yield": pace_yield}
+
+
 def render_takeoff():
     """The Takeoff tab, behind a loading bar that stays up until its last
     chart is drawn, whichever way the tab returns."""
@@ -19638,99 +19749,14 @@ def _render_takeoff(loading):
         horizon = (end_date - today).total_seconds() / (365.25 * 86400)
         view_end = datetime(int(st.session_state["tk_end_year"]), 12, 31)
         view_years = (view_end - today).total_seconds() / (365.25 * 86400)
-        onset_days, rsi_settings = _pc_rsi_onset(today)
-        if onset_days is None:
-            st.info("The automated coder projection has no available draws. Adjust its weights below.")
+        run = _tk_run(today, progress=lambda step: _tk_loading(bar, step))
+        if isinstance(run, str) or "error" in run:
+            (st.info(run) if isinstance(run, str) else st.error(run["error"]))
             return
-        onset_years = onset_days[_TK_DRAW_STRIDE // 2::_TK_DRAW_STRIDE] / 365.25
-        # A widget with integer bounds hands back an int where the default is a
-        # float; cast, or the first rerun misses `_tk_simulate`'s cache.
-        params = {k: float(st.session_state["tk_" + k])
-                  if isinstance(takeoff.DEFAULTS[k], float) else st.session_state["tk_" + k]
-                  for k in takeoff.DEFAULTS if k not in _TK_NOT_WIDGETS}
-        # Difficulty is set through the returns to research, r = lambda / difficulty,
-        # with lambda held at the reference exponent so the parallelization setting
-        # moves returns to inputs alone, not how fast ideas get harder.
-        params["difficulty"] = _TK_R_REF_PARALLEL / float(st.session_state["tk_returns"])
-        # Every path begins today and ends at the selected calendar horizon.
-        # Past coding dates stay intact; we do not invent pre-today research history.
-        params["years"] = horizon
-        params["compute_slow_years"] = max(
-            (datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31) - today).total_seconds() / (365.25 * 86400), 0)
-        try:
-            takeoff.validate(params)
-        except ValueError as exc:
-            st.error(str(exc))
-            return
-        evidence = load_rsi_experiments()
-        observed_growth = evidence[-1]["mult"] / evidence[0]["mult"]
-        calibration = None
-        if params["transfer"] > 0:
-            calibration = takeoff.calibrate_feedback(
-                observed_growth, st.session_state["tk_cal_compute"],
-                st.session_state["tk_cal_capability"], st.session_state["tk_cal_yield"],
-                st.session_state["tk_cal_validated"] or None,
-                transfer=params["transfer"] / 100, coding_slope=params["coding_slope"],
-                parallel=params["parallelization"], substitution=params["substitution"],
-                automation_growth=_tk_automation_growth(
-                    load_rsi_automation(), evidence, params["ai_speed"],
-                    (st.session_state["tk_cal_capability"] / st.session_state["tk_cal_compute"])
-                    ** params["ai_copies"], _tk_al_hours_now()))
-            w = st.session_state["tk_cal_weight"] / 100
-            calibration["quality_prior"] = params["taste_slope"]
-            calibration["weight"] = w
-            params["taste_slope"] = (1 - w) * params["taste_slope"] + w * calibration["quality_slope"]
-        n = len(onset_years)
-        activity = _tk_rsi_activity(evidence, today, n)
-        if activity is None:
-            st.info("The RSI experiment series has no positive growth projection to inherit.")
-            return
-        experiment_starts, experiment_slopes = activity
-        # Today's pace is set directly; scenarios keep the activity draws' spread
-        # around it. Reporting only: the simulated dynamics never see it.
-        pace_today = float(st.session_state["tk_pace_today"])
-        pace_yield = pace_today / float(np.median(np.exp(experiment_starts)))
-        dc = (_tk_dc_compute(today, n)
-              if st.session_state["tk_dc_compute"] else None)
-        compute_rates, hist_compute = dc if dc else (None, None)
-        # A model at ultraintelligence has automated coding whatever the RSI projection's
-        # date says, so RSI no longer waits on a late inherited date past it.
-        _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute)
-        eci_rates = _tk_eci_rates(params, hist_compute)
-        coding_level = _TK_ULTRA_ECI - eci_now          # in ECI points, through eci_rates
-        coding_weights = (eci_rates["compute"], eci_rates["software"])
-        # Research hours follow the automation index's own projection, each
-        # scenario with its own AL4->AL5 gap.
-        human_curve = _tk_ladder_curves(_tk_al_hours_now(), len(onset_years), params["seed"])
-        # Research direction also reads the next-step study, an independent
-        # measurement of that stage: a log blend of the two curves.
-        nextstep = _tk_nextstep_curves(len(onset_years), params["seed"], today=today)
-        if human_curve is not None and nextstep is not None:
-            years_, ladder = human_curve
-            human_curve = (years_, ladder, _tk_blend_in_time(
-                years_, ladder, nextstep[1], _TK_NEXTSTEP_WEIGHT))
-        _tk_loading(bar, 1)
-        rest = (experiment_starts, experiment_slopes, pace_yield, compute_rates,
-                hist_compute, coding_level, coding_weights, human_curve)
-        # Late coding dates go with slow scenarios: rank a first run's capability
-        # growth, reassign the RSI projection's dates along it, and run again.
-        # The pairing reads capability only at `_TK_PAIRING_YEARS` and the
-        # simulation is causal, so that first run stops a month past it
-        # (`test_the_pairing_run_stops_where_the_pairing_reads`).
-        corr = float(st.session_state["tk_coding_pairing"])
-        if corr > 0:
-            capability = _tk_simulate(
-                dict(params, years=min(horizon, _TK_PAIRING_YEARS + 1 / 12)), onset_years,
-                _TK_SOURCE_DIGEST, *rest, capability_at=_TK_PAIRING_YEARS)
-            onset_years = _tk_pair_onset(onset_years, capability, corr, int(params["seed"]))
-            _tk_loading(bar, 2)
-        result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST, *rest)
-        # The ECI trend reflects the compute growth behind it: the data-center
-        # series' own historical fit when its projection is in use.
-        result["hist_compute"] = hist_compute
-        result["eci_rates"] = eci_rates
-        rsi = result["events"]["RSI"]
-        eci = _tk_eci(result, params)
+        params, result, eci = run["params"], run["result"], run["eci"]
+        rsi, eci_base = result["events"]["RSI"], run["eci_base"]
+        experiment_starts, pace_today, pace_yield = (
+            run["experiment_starts"], run["pace_today"], run["pace_yield"])
         def _card(col, label, samples, help):
             col.metric(label, _tk_date(takeoff.quantile(samples, 0.5, horizon), today),
                        help=help + f" {100 * np.mean(samples <= horizon):.0f}% of scenarios "
