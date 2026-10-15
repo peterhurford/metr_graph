@@ -16419,7 +16419,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    anchor_d, anchor_eci, horizon_year, notes=(),
                    t_pause=None, pause_label=None, surpass_mo=None,
                    withhold=False, dist_stop_t=None, remote_stop_t=None,
-                   comp_dead=None, compute_info=None):
+                   comp_dead=None, compute_info=None, pause_date=None):
     """Bottom-of-panel breakdown: why China's catch-up takes the months it does.
 
     The table gives each source's rate at the pause, its average from the
@@ -16471,7 +16471,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     d0, d1 = rates['distillation']
     if d1 < max(0.05, 0.1 * d0):
         rates['distillation'] = (d0, 0.0)
-    c0, c1, c2 = "ECI/yr at pause", "Average ECI/yr", "ECI/yr at crossing"
+    c0, c1, c2 = ("China ECI/yr at US pause", "Overall China ECI/yr",
+                  "China ECI/yr at US/China cross")
 
     def _fmt(v):
         return "\u2014" if v is None else f"{v:.1f}"
@@ -16547,11 +16548,30 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     rows.append({"Source": "Total", c0: _fmt(r0), c1: _fmt(ravg),
                  c2: _fmt(r1)})
 
+    # Months net of the one-month release lag, as on the card ("Time for
+    # China to surpass"), so the table and the card quote the same crossing.
+    lag_mo = _CC_RUN_COMPLETION_LAG.days / 30.44
+
+    def _months(rate):
+        return gap / rate * 12 - lag_mo if rate and rate > 0 else None
+
     def _mo(rate):
-        return f"{gap / rate * 12:.1f} mo" if rate and rate > 0 else "never"
+        m = _months(rate)
+        return f"{m:.1f} mo" if m is not None else "never"
 
     rows.append({"Source": f"Time to close the {gap:.0f} ECI gap",
                  c0: _mo(r0), c1: _mo(ravg), c2: _mo(r1)})
+
+    def _date(rate):
+        m = _months(rate)
+        if pause_date is None or m is None:
+            return "never" if pause_date is not None else "\u2014"
+        return f"{pause_date + timedelta(days=m * 30.44):%b %Y}"
+
+    # At the crossing's own rate the date is not meaningful (it is the rate
+    # at the end, not one China holds from the pause), so that cell is blank.
+    rows.append({"Source": "Crossover date", c0: _date(r0), c1: _date(ravg),
+                 c2: ""})
     st.markdown("##### Why that long?")
     _fn_line(
         f"At the pause ({pause_label}) China is at ~{cn_at:.0f}, "
@@ -16562,9 +16582,10 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                     "Distillation fades as China nears the best model it can "
                     "learn from, which with models withheld sits below the "
                     "bar."),
-        *([("actual average", f"Before the card nets out the one-month "
-                              f"release lag ({surpass_mo:.1f} mo there).")]
-          if surpass_mo is not None else []))
+        ("actual average", "Net of the one-month lag from a model finishing "
+                           "training to its release, as on the card; the "
+                           "card is a median over paths, so the two can "
+                           "differ by a few weeks."))
 
     def _shade(v):
         return {"Stopped": "background-color: #F4CCCC; color: #7F1010",
@@ -16580,7 +16601,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                             "font-weight: 600", subset=[c1])
              .map(lambda v: "color: rgba(128,128,128,0.95)", subset=[c0, c2])
              .map(_shade)
-             .apply(lambda r: ["font-weight: bold" if r.name >= len(df) - 2
+             .apply(lambda r: ["font-weight: bold" if r.name >= len(df) - 3
                                else ""] * len(r), axis=1)
              .hide(axis="index"))
     tags = {v for row in rows for v in row.values()}
@@ -17457,7 +17478,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         surpass_mo=s50, withhold=bool(withhold),
         dist_stop_t=kw.get('t_dist_stop'),
         remote_stop_t=t_cut_r if stop_remote else None,
-        comp_dead=comp_dead, compute_info=compute_info)
+        comp_dead=comp_dead, compute_info=compute_info,
+        pause_date=d_pause_v)
 
 
 def render_pacing():

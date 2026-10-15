@@ -1696,14 +1696,14 @@ class TestPacingTab:
                 if "At the pause" in str(m.value)]
         assert len(lead) == 1 and "short" in lead[0]
         why = next(t.value for t in at.table if "Source" in t.value.columns)
-        assert {"ECI/yr at pause", "ECI/yr at crossing"} <= set(why.columns)
+        assert {"China ECI/yr at US pause", "China ECI/yr at US/China cross"} <= set(why.columns)
         rate = {}
         for _, r in why.iterrows():
             src = str(r["Source"]).split(",")[0]
-            if r["ECI/yr at pause"] != "\u2014" and src not in ("Total",) \
-                    and not src.startswith("Time"):
-                end = r["ECI/yr at crossing"]
-                rate[src] = (float(r["ECI/yr at pause"]),
+            if r["China ECI/yr at US pause"] != "\u2014" and src not in ("Total",) \
+                    and not src.startswith(("Time", "Crossover")):
+                end = r["China ECI/yr at US/China cross"]
+                rate[src] = (float(r["China ECI/yr at US pause"]),
                              0.0 if end in ("Stopped", "Dried up")
                              else float(end))
         assert rate["Distillation"][1] < rate["Distillation"][0]
@@ -1711,19 +1711,24 @@ class TestPacingTab:
         # At the defaults (models withheld, no stop lever) distillation dries
         # up; the stop lever relabels it as stopped, from the pause on.
         dist = why[why["Source"].str.startswith("Distillation")].iloc[0]
-        assert dist["ECI/yr at crossing"] == "Dried up"
+        assert dist["China ECI/yr at US/China cross"] == "Dried up"
         diff = why[why["Source"].str.startswith("Diffusion")].iloc[0]
-        assert diff["ECI/yr at crossing"] == "Dried up"
+        assert diff["China ECI/yr at US/China cross"] == "Dried up"
         at.checkbox(key="pc_stop_dist").check().run()
         cut = next(t.value for t in at.table if "Source" in t.value.columns)
         cut = cut[cut["Source"].str.startswith("Distillation")].iloc[0]
-        assert (cut["ECI/yr at pause"] == cut["Average ECI/yr"]
-                == cut["ECI/yr at crossing"] == "Stopped")
+        assert (cut["China ECI/yr at US pause"] == cut["Overall China ECI/yr"]
+                == cut["China ECI/yr at US/China cross"] == "Stopped")
         at.checkbox(key="pc_stop_dist").uncheck().run()
         months = why[why["Source"].str.startswith("Time")].iloc[0]
         m = [float(months[c].split()[0]) for c in
-             ("ECI/yr at pause", "Average ECI/yr", "ECI/yr at crossing")]
+             ("China ECI/yr at US pause", "Overall China ECI/yr", "China ECI/yr at US/China cross")]
         assert m[0] < m[1] < m[2]
+        # The crossover row dates each rate from the pause; the crossing
+        # column has no date of its own.
+        cross = why[why["Source"] == "Crossover date"].iloc[0]
+        assert cross["China ECI/yr at US/China cross"] == ""
+        assert re.match(r"[A-Z][a-z]{2} \d{4}$", cross["Overall China ECI/yr"])
         assert rate["Diffusion"][1] < rate["Diffusion"][0]
         assert rate["Innovation"][1] == pytest.approx(rate["Innovation"][0],
                                                       abs=0.2)
@@ -1915,8 +1920,8 @@ class TestPacingTab:
                 key = next((k for k, sub in _KEYS.items()
                             if r["Source"].startswith(sub) or
                             (len(sub) > 6 and sub in r["Source"])), None)
-                if key and r["Average ECI/yr"] != "\u2014":
-                    v = r["Average ECI/yr"]
+                if key and r["Overall China ECI/yr"] != "\u2014":
+                    v = r["Overall China ECI/yr"]
                     out[key] = 0.0 if v == "Stopped" else float(v)
             return out
 
@@ -1950,7 +1955,7 @@ class TestPacingTab:
         assert list(abroad.iloc[0][1:]) == ["Stopped"] * 3
         # The domestic row is rebuilding at the pause, not missing data.
         dom = tbl[tbl["Source"].str.startswith("Compute, domestic")].iloc[0]
-        assert dom["ECI/yr at pause"] == "Regrowing"
+        assert dom["China ECI/yr at US pause"] == "Regrowing"
         # Dating the cut later leaves part of it standing.
         when = at.select_slider(key="pc_remote_when").options
         self._paired(at.select_slider(key="pc_remote_when").set_value(
