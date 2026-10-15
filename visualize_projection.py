@@ -16410,14 +16410,20 @@ def _pc_render_compute_ratios(ci, span):
             xaxis=dict(gridcolor='rgba(0,0,0,0.10)', tickfont=dict(color='#222'),
                        range=[today, today + timedelta(days=t_end * 365.25)]))
 
-    def _line(fig, name, color, ys, dash='solid', ratio=None, unit=""):
+    def _line(fig, name, color, ys, dash='solid', ratio=None, unit="",
+              log_op=False):
         cd = ([f"US {r:.1f}\u00d7 ahead" if r is not None else ""
                for r in ratio] if ratio is not None else None)
+        # Raw operation counts read "472000Y" through Plotly's SI format, so
+        # a run's hover gives its log, as the axis does.
+        txt = ([f"{np.log10(y):.1f} log OP" if y else "" for y in ys]
+               if log_op else None)
         fig.add_trace(go.Scatter(
-            x=dates, y=ys, mode='lines', name=name, customdata=cd,
+            x=dates, y=ys, mode='lines', name=name, customdata=cd, text=txt,
             line=dict(color=color, width=3 if dash == 'solid' else 2,
                       dash=dash),
-            hovertemplate=('%{x|%b %Y}: %{y:.3s}' + unit
+            hovertemplate=('%{x|%b %Y}: '
+                           + ('%{text}' if log_op else '%{y:.3s}' + unit)
                            + (' (%{customdata})' if cd is not None else '')
                            + '<extra>' + name + '</extra>')))
 
@@ -16427,11 +16433,12 @@ def _pc_render_compute_ratios(ci, span):
     if g_us > 0 and pace < 1:
         _line(fig1, "US clusters: largest run they could train", '#9EC5E8',
               [10 ** _us_cap(t) for t in ts], dash='dash',
-              ratio=None)
+              ratio=None, log_op=True)
     us_y = [10 ** _us(t) for t in ts]
     _line(fig1, ("US largest run trained (frozen at the pause)" if paused else
                  f"US largest run trained (paced: {pace:.0%} of cluster growth)"
-                 if pace < 1 else "US largest run trained"), '#1F77B4', us_y)
+                 if pace < 1 else "US largest run trained"), '#1F77B4', us_y,
+          log_op=True)
     short = {series[0][0]: "China, largest run it can use",
              series[1][0]: "China, domestic clusters only"}
     for name, color, cur, base in series[::-1]:
@@ -16439,14 +16446,14 @@ def _pc_render_compute_ratios(ci, span):
         _line(fig1, short[name], color,
               [10 ** v if v is not None else None for v in lv],
               ratio=[10 ** (_us(t) - v) if v is not None else None
-                     for t, v in zip(ts, lv)])
+                     for t, v in zip(ts, lv)], log_op=True)
     if levers:
         name, color, _cur, base = series[0]
         lv = [_path(*base, t) for t in ts]
         _line(fig1, short[name] + ", no compute levers", color,
               [10 ** v if v is not None else None for v in lv], dash='dash',
               ratio=[10 ** (_us(t) - v) if v is not None else None
-                     for t, v in zip(ts, lv)])
+                     for t, v in zip(ts, lv)], log_op=True)
     _marks(fig1)
     _layout(fig1)
     _cc_logop_yaxis(fig1, "Largest run (log\u2081\u2080 OP)")
