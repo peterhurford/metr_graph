@@ -1696,7 +1696,7 @@ class TestPacingTab:
         assert "Total installed compute" in list(tbl[""])
         names = [d.get("name", "") for el in at.get("plotly_chart")
                  for d in json.loads(el.proto.spec)["data"]]
-        assert "US (keeps installing through the pause)" in names
+        assert "US (keeps installing whatever it trains)" in names
         assert "China, no compute levers" in names
 
     def test_methods_toggle_keeps_diffusion_running(self):

@@ -4432,6 +4432,14 @@ class TestPacing:
         assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
         assert "rsi_notyet_ramp" in keys
 
+    def test_world_stock_is_epochs_anchor_grown_at_the_regions_pace(self):
+        """Installed compute is charted in H100e off Epoch's ~22M at end-2025,
+        grown at the share-weighted central growth (~2.2x a year)."""
+        d0, h0 = vp._WC_WORLD_H100E
+        assert vp._wc_world_h100e(d0) == pytest.approx(h0)
+        yr = vp._wc_world_h100e(d0 + timedelta(days=365.25)) / h0
+        assert 2.0 < yr < 2.5
+
     def test_paced_clock_runs_the_us_at_its_pace_from_the_start(self):
         """Before the pacing date the US runs on its own clock; after it,
         `pace` years of progress a year: 0 freezes it, 1 changes nothing."""

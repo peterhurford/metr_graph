@@ -1554,7 +1554,8 @@ Under it, `_pc_render_compute_ratios()` (*largest run, trained and trainable*: U
 (US ÷ China, log axis, to *Project through*): largest trainable run (cluster capacity,
 `_pc_capacity_at`, read for today and the pause off one projection via `also=`) for China's
 usable run and its domestic clusters, against a US run frozen at the pause; and total
-installed compute from the Data Centers tab's world shares (`_pc_wc_ratio`), the US still
+installed compute in millions of H100e, the Data Centers tab's world shares of Epoch's ~22M
+end-2025 stock (`_WC_WORLD_H100E`, grown by `_wc_world_h100e`; ratios `_pc_wc_ratio`), the US still
 installing through the pause and the DUV/domestic levers slowing China's. Dashed lines and a
 last table column give the same date with no compute levers. Capacity is not the China tab's
 ~50× *actual-run* gap; both captions say so

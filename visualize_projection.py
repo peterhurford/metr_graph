@@ -10449,6 +10449,12 @@ _WC_COMMON_LOAD = {
     "Other": 0.70,
     "China domestic": 0.25,
 }
+# The global installed stock behind those shares, in H100e: Epoch's
+# smuggling report puts it at ≈22M at end-2025 (see the anchors above).
+# `_wc_world_h100e` grows it to any date at the regions' share-weighted
+# central growth, so the shares can be read as absolute H100e.
+_WC_WORLD_H100E = (datetime(2025, 12, 31), 22e6)
+
 _WC_GROWTH = (
     ("US domestic", 2.3, 1.8, 3.0),
     ("China domestic", 1.9, 1.4, 2.6),
@@ -16289,6 +16295,17 @@ def _pc_rate_at(cum, grid, t):
     return np.where(np.isnan(np.asarray(t, dtype=float)), np.nan, out)
 
 
+def _wc_world_h100e(when):
+    """The world's installed AI compute in H100e at `when`: the end-2025
+    anchor `_WC_WORLD_H100E` grown at the share-weighted central growth of
+    `_WC_GROWTH`."""
+    d0, h0 = _WC_WORLD_H100E
+    share = {lab: mid for lab, mid, _, _ in _WC_REGIONS}
+    gro = {lab: mid for lab, mid, _, _ in _WC_GROWTH}
+    g = sum(share[k] * gro[k] for k in share) / sum(share.values())
+    return h0 * g ** ((when - d0).days / 365.25)
+
+
 def _pc_wc_ratio(years, dom_keep=1.0):
     """US over mainland China in total installed AI compute, `years` from
     today: the world-share centrals grown at their central rates
@@ -16429,27 +16446,31 @@ def _pc_render_compute_ratios(ci, span):
     _layout(fig1)
     _cc_logop_yaxis(fig1, "Largest run (log\u2081\u2080 OP)")
 
-    # Chart 2: total installed compute, indexed to China today.
+    # Chart 2: total installed compute, millions of H100e: each side's share
+    # of today's world stock, grown at its central rate.
     lev = {lab: mid for lab, mid, _, _ in _WC_REGIONS}
     gro = {lab: mid for lab, mid, _, _ in _WC_GROWTH}
     us_l, cn_l = _WC_LABELS[0], _WC_LABELS[1]
     keep = ci.get('dom_keep', 1.0)
-    us_tot = (lev[us_l] / lev[cn_l]) * gro[us_l] ** ts
-    cn_tot = gro[cn_l] ** (ts * keep)
+    world_m = _wc_world_h100e(today) / 1e6
+    us_tot = world_m * lev[us_l] / 100 * gro[us_l] ** ts
+    cn_tot = world_m * lev[cn_l] / 100 * gro[cn_l] ** (ts * keep)
     fig2 = go.Figure()
-    _line(fig2, "US (keeps installing through the pause)", '#1F77B4',
-          list(us_tot), unit="\u00d7")
-    _line(fig2, "China", '#D62728', list(cn_tot), unit="\u00d7",
+    _unit = "M H100e"
+    _line(fig2, "US (keeps installing whatever it trains)", '#1F77B4',
+          list(us_tot), unit=" " + _unit)
+    _line(fig2, "China", '#D62728', list(cn_tot), unit=" " + _unit,
           ratio=list(us_tot / cn_tot))
     if levers and keep < 1.0:
-        cn_base = gro[cn_l] ** ts
+        cn_base = world_m * lev[cn_l] / 100 * gro[cn_l] ** ts
         _line(fig2, "China, no compute levers", '#D62728', list(cn_base),
-              dash='dash', unit="\u00d7", ratio=list(us_tot / cn_base))
+              dash='dash', unit=" " + _unit, ratio=list(us_tot / cn_base))
     _marks(fig2)
     _layout(fig2, height=320)
-    fig2.update_yaxes(type='log', title_text="Installed compute (China today = 1)",
-                      tickvals=[1, 3, 10, 30, 100, 300, 1000],
-                      ticktext=["1", "3", "10", "30", "100", "300", "1,000"],
+    _ticks = [1, 3, 10, 30, 100, 300, 1000, 3000, 10000]
+    fig2.update_yaxes(type='log',
+                      title_text="Installed compute (millions of H100e)",
+                      tickvals=_ticks, ticktext=[f"{v:,}" for v in _ticks],
                       gridcolor='rgba(0,0,0,0.10)', tickfont=dict(color='#222'),
                       title_font=dict(color='#222'))
 
@@ -16513,7 +16534,11 @@ def _pc_render_compute_ratios(ci, span):
                          "gap counts Epoch's estimates of those."),
         ("Total is installed compute", "The world-share estimates on the Data "
                                        "Centers tab (US ~72%, mainland China "
-                                       "~13% today), each grown at its central "
+                                       "~13% today) of a world stock of "
+                                       f"~{_wc_world_h100e(today) / 1e6:.0f}M "
+                                       "H100e today (Epoch's ~22M at end-2025, "
+                                       "grown at the regions' central rates), "
+                                       "each side grown at its own central "
                                        "rate; the DUV and domestic levers slow "
                                        "China's. Remote access does not move "
                                        "it: that capacity sits outside "
