@@ -2231,6 +2231,24 @@ class TestPacingTab:
         at.select_slider(key="pc_pause_mo").set_value(0).run()
         assert "US RSI" not in marks(at)
 
+    def test_milestone_table_dates_both_sides(self):
+        """Under the chart, one row each for automated coder, RSI and
+        ultraintelligence (at ECI 250), dating both sides. Paced, the US
+        reaches automated coding first."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        at.select_slider(key="pc_pace").set_value(40).run()
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns
+                 and "China after the US" in x.value.columns)
+        assert list(t["Milestone"]) == ["Automated coder", "RSI",
+                                        "Ultraintelligence"]
+        assert t["At ECI"].iloc[2] == "~250"
+        coder = t.iloc[0]
+        assert coder["China after the US"].startswith("+")
+        assert coder["US (median, 80%)"][:3] in (
+            "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split())
+
     def test_renders_with_headline_and_table(self):
         at = self._app()
         _assert_no_error(at, "Pacing")

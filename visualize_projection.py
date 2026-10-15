@@ -17529,21 +17529,33 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # When the paced US reaches automated coding and RSI: the median of each
     # sample's first month at the ECI its Takeoff scenario had there (never
     # counts as later), {name: (years from China's anchor, median ECI)}.
-    us_ms, cn_ms = {}, {}
+    # Per sample, the years (from China's anchor; inf = never in the window)
+    # each side first reaches each milestone's ECI: the US on its paced
+    # released frontier, China on its path. Coder and RSI are the levels the
+    # paired Takeoff scenario had at them; ultraintelligence is the Takeoff
+    # tab's fixed ECI. {name: (level per sample, US years, China years)}.
+    ms_levels = {}
     if tk is not None:
-        for _ms_name, _ms_key in (("automated coder", "coder"), ("RSI", "rsi")):
-            _lvl = tk[_ms_key][_draw]
-            _y = _pc_cross_years(us_rel_grid, grid_yrs - grid_yrs[0],
-                                 np.nan_to_num(_lvl, nan=np.inf)) + grid_yrs[0]
-            _y = np.where(np.isfinite(_y), _y, np.inf)
+        ms_levels["automated coder"] = tk["coder"][_draw]
+        ms_levels["RSI"] = tk["rsi"][_draw]
+    ms_levels["ultraintelligence"] = np.full(n_s, _TK_ULTRA_ECI)
+    ms_years = {}
+    for _ms_name, _lvl in ms_levels.items():
+        _l = np.nan_to_num(_lvl, nan=np.inf)
+        _yu, _yc = (np.nan_to_num(_pc_cross_years(p_, grid_yrs - grid_yrs[0], _l)
+                                  + grid_yrs[0], nan=np.inf)
+                    for p_ in (us_rel_grid, traj))
+        ms_years[_ms_name] = (_lvl, _yu, _yc)
+    # Medians for the chart's marks (coder and RSI only).
+    us_ms, cn_ms = {}, {}
+    for _ms_name in _PC_MS_SYMBOL:
+        if _ms_name not in ms_years:
+            continue
+        _lvl, _yu, _yc = ms_years[_ms_name]
+        for _out, _y in ((us_ms, _yu), (cn_ms, _yc)):
             _ym = float(np.percentile(_y, 50))
             if np.isfinite(_ym):
-                us_ms[_ms_name] = (_ym, float(np.nanmedian(_lvl)))
-            _yc = _pc_cross_years(traj, grid_yrs - grid_yrs[0],
-                                  np.nan_to_num(_lvl, nan=np.inf)) + grid_yrs[0]
-            _ycm = float(np.percentile(np.where(np.isfinite(_yc), _yc, np.inf), 50))
-            if np.isfinite(_ycm):
-                cn_ms[_ms_name] = (_ycm, float(np.nanmedian(_lvl)))
+                _out[_ms_name] = (_ym, float(np.nanmedian(_lvl)))
     us_cross_s = _pc_at_years(us_tr_grid, grid_yrs - grid_yrs[0],
                               years - grid_yrs[0])
     cross50 = (float(np.nanmedian(us_cross_s)) if crossed else lvl50)
@@ -17751,6 +17763,43 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                    range=_y_rng,
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     st.plotly_chart(_tf(fig), width="stretch")
+
+    # Milestone dates for both sides, on the chart's own dating (the US's
+    # marks on the pacing clock, China's on its release-dated grid).
+    def _ms_cell(yrs, to_date):
+        q = [float(np.percentile(yrs, p)) for p in (10, 50, 90)]
+        d = [to_date(t) if np.isfinite(t) and to_date(t) <= x_end else None
+             for t in q]
+        if d[1] is None:
+            return f"after {_yr_end}"
+        return (f"{d[1]:%b %Y} ({d[0]:%b %Y} \u2013 "
+                + (f"{d[2]:%b %Y}" if d[2] else f"after {_yr_end}") + ")")
+
+    _ms_rows = []
+    for _ms_name, (_lvl, _yu, _yc) in ms_years.items():
+        both = np.isfinite(_yu) & np.isfinite(_yc)
+        lag = ((_yc - _yu)[both] * 12 if both.mean() > 0.5 else None)
+        _ms_rows.append({
+            "Milestone": _ms_name[0].upper() + _ms_name[1:],
+            "At ECI": f"~{np.nanmedian(_lvl):.0f}",
+            "US (median, 80%)": _ms_cell(_yu, _date_of),
+            "China (median, 80%)": _ms_cell(
+                _yc, lambda t: anchor_d + off_cn + timedelta(days=t * 365.25)),
+            "China after the US": ("\u2014" if lag is None else
+                                   f"{round(float(np.median(lag))) or 0:+d} mo"),
+        })
+    st.table(_ms_rows)
+    _fn_caption(
+        "Each side's automated coder, RSI and ultraintelligence, read off the "
+        "same paths as the chart.",
+        ("automated coder, RSI", "Reached when a side's ECI reaches the level "
+         "the paired Takeoff scenario had at its automated-coding and RSI "
+         "dates: the US on its paced released frontier, China on its own path. "
+         f"Ultraintelligence is ECI {_TK_ULTRA_ECI:g}, as on the Takeoff tab."),
+        ("same paths", "Medians over every sample, one not reaching a "
+         f"milestone by {_yr_end} counting as later. *China after the US* is "
+         "the median per-sample gap where both reach it in more than half the "
+         "samples; negative means China gets there first."))
 
 
     # ── Why that long? The same samples, decomposed by rate term. ──
