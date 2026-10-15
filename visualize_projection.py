@@ -17700,11 +17700,22 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                           '<extra>China, no pause</extra>'))
     if crossed:
+        _x_hover = (
+            f"<b>China catches the US: {v50:%b %Y}</b> (median)<br>"
+            f"80% of samples: {v10:%b %Y} \u2013 "
+            + (f"{v90:%b %Y}" if v90 else f"after {_yr_end}") + "<br>"
+            f"{share_x:.0%} of samples by the end of {_yr_end}<br>"
+            f"At ECI ~{cross50:.0f}, "
+            + (f"the paused US frontier" if _paused else
+               f"where the {pace:.0%}-paced US stands by then")
+            + f"<br>~{s50:.0f} months after the "
+            + ("pause" if _paused else "pacing starts")
+            + f" ({d_pause_v:%b %Y})<extra></extra>")
         fig.add_trace(go.Scatter(
             x=[v50], y=[cross50], mode='markers',
             marker=dict(symbol='diamond', size=13, color='#D62728',
                         line=dict(color='white', width=1.5)),
-            name=f'median crossing {v50:%b %Y}', hoverinfo='name'))
+            name=f'median crossing {v50:%b %Y}', hovertemplate=_x_hover))
     _xtitle = {"Data center construction": "Training runs start",
                "Training run finished": "Training runs finish",
                "Model release": "Model releases"}[timing_label]
