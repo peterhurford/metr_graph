@@ -17786,13 +17786,30 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              + " to crossing)",
         hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>China median</extra>'))
     # China's own trend if the US kept going and nothing were done: its
-    # observed rate, distillation never fading because the US keeps pulling
-    # ahead of it.
+    # observed rate (distillation never fading, since the US keeps pulling
+    # ahead of it), sped up by its own automated coder and RSI exactly as
+    # its projection is (`cn_speedup`, `tk_follow`), per sample, then the
+    # median. Without a Takeoff run it is the straight trend.
     if _cn_obs:
+        _nl = np.empty((n_s, len(grid_yrs)))
+        _nl[:, 0] = anchor_eci + _cn_obs * grid_yrs[0]
+        _gdt = np.diff(grid_yrs)
+        for _i, _dt in enumerate(_gdt, start=1):
+            _e = _nl[:, _i - 1]
+            _extra = ((cn_speedup(_e) - 1.0)
+                      * (tk_follow * tk['ppy'] + (1.0 - tk_follow) * _cn_obs)
+                      if cn_speedup is not None else 0.0)
+            _nl[:, _i] = _e + (_cn_obs + _extra) * _dt
+        _nl50 = np.median(_nl, axis=0)
+        _nl_rate = ((_nl50[keep[-1]] - _nl50[0])
+                    / max(grid_yrs[keep[-1]] - grid_yrs[0], 1e-6)
+                    if keep else _cn_obs)
         fig.add_trace(go.Scatter(
-            x=xs, y=[anchor_eci + _cn_obs * grid_yrs[i] for i in keep],
+            x=xs, y=[float(_nl50[i]) for i in keep],
             mode='lines', line=dict(color='#D62728', width=2, dash='dash'),
-            name='China if the US kept going, no levers' + _per_yr(_cn_obs),
+            name=('China if the US kept going, no levers'
+                  + (f" ({_cn_obs:.1f} ECI/yr now, avg {_nl_rate:.1f})"
+                     if cn_speedup is not None else _per_yr(_cn_obs))),
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                           '<extra>China, no pause</extra>'))
     if crossed:
