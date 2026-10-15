@@ -80,7 +80,7 @@ returns to research fall linearly to 0 there (penalty −βC·ln(1−S/C); `ceil
 exact step, `reference_software` the same closed form), so with it no draw diverges
 (`test_the_software_ceiling_holds_every_draw_below_its_limit`); a high end of 0 removes it,
 which the runaway tests use. Row 19 draws `scale_dependent` (median 50%, logit spread
-`scale_dependent_spread`; drawn with `compute_bound_corr`, default 0.5, against ρ's draw so a substitutable scenario has fewer scale-dependent gains, `test_elasticity_and_scale_dependence_share_one_factor`; it moves the FOOM share 16% → 17%), row 20 `scale_lag_oom` (median 1, lognormal
+`scale_dependent_spread`; drawn with `compute_bound_corr`, default 0.5, against ρ's draw so a substitutable scenario has fewer scale-dependent gains, `test_elasticity_and_scale_dependence_share_one_factor`; it moved the share of scenarios whose pace doubles within a year of RSI from 16% to 17%, a measure that undercounts takeoffs exhausting their ceiling inside the year, so prefer the first-year progress card's shares), row 20 `scale_lag_oom` (median 1, lognormal
 `scale_lag_spread`): of the gains a model gets through training, that share pays off only
 once models train at that many orders of magnitude more compute than the frontier had when
 the gain was found (Gundlach et al. 2025). Fast gains (tooling, kernels) are exempt, as the
