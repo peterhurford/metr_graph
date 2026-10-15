@@ -16700,7 +16700,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # state-of-play table lands here — between the date the caller drew and
     # the question the rest of the panel answers.
     state_box = st.container()
-    st.subheader("If the US paused: when does China catch up?")
+    st.subheader("When does China catch up?")
     st.markdown("##### Policy levers")
     cb1, cb2, cb3 = st.columns(3)
     withhold = cb1.checkbox(

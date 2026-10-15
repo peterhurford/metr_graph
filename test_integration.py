@@ -1769,7 +1769,7 @@ class TestPacingTab:
         toggle."""
         at = self._app()
         subs = " ".join(str(s.value) for s in at.subheader)
-        assert "If the US paused" in subs
+        assert "When does China catch up?" in subs
         labels = " ".join(str(m.label) for m in at.metric)
         assert "paused US frontier" in labels
         assert "Time for China to surpass" in labels
@@ -2400,7 +2400,7 @@ class TestSectionDeepLinks:
     `st.query_params` write."""
 
     _SLUGS = {"datacenters": "per-company-does-the-buildout-predict-release-timing",
-              "pacing": "if-the-us-paused-when-does-china-catch-up",
+              "pacing": "when-does-china-catch-up",
               "rsi": "cobench"}
 
     def _script(self, at):
