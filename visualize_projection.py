@@ -17368,24 +17368,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     if state_out is not None:
         state_out[:] = state_rows
 
-    # Sensitivity: China's compute term at the catalogued China-accessible
-    # buildout pace (Chinese labs' sites abroad included) instead of the
-    # export-control band — the channel where "remote" compute would bite.
-    # Moot when the remote-access checkbox has cut that channel.
-    chk_ca = chk_pace.get(_DC_CTY_CN_ACCESS)
-    d50_ca = None
-    if chk_ca and not stop_remote:
-        y_ca, _gc, _tc = _cc_cn_crossing_sim(
-            anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
-            **dict(kw, g_lo=max(chk_ca['g'] - chk_ca['sigma_g'], 0.05),
-                   g_hi=chk_ca['g'] + chk_ca['sigma_g']))
-        if cn_run_mo != us_run_mo:
-            y_ca = _pc_cross_years(
-                _tc, _gc, us_path(_gc + cn_extra)[0] - cn_gain) + cn_extra
-        ok_ca = y_ca[np.isfinite(y_ca)]
-        if len(ok_ca) >= 100:
-            d50_ca = anchor_d + timedelta(
-                days=float(np.percentile(ok_ca, 50)) * 365.25)
     yr_ok = years[np.isfinite(years)]
     # Under light pacing China may never catch the US inside the window:
     # the cards and the breakdown then give way to a note, the chart stays.
@@ -17416,6 +17398,21 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             f"Dates are model releases ({_mo}-month run + ~1 month prep).",
     }[timing_label] + (" Both countries' dates move together with the sidebar's "
                        "*Date points at*, so the gap never changes.")
+    # How the two paths are built, on the months card's hover.
+    _method = (
+        ("The US follows the Takeoff tab's scenarios, one ECI path per sample, "
+         "run at the paced share of its speed from the pacing date, so "
+         "automated coding and RSI speed it up as they do there; the bar is "
+         "the trained model, a ship lag ahead of the released frontier. "
+         if tk else
+         f"The US climbs ~{us_rate:.0f} ECI/yr, from its compute growth. ")
+        + "China runs on its own innovation "
+        + (f"({pure[0]:.0f}\u2013{pure[1]:.0f} ECI/yr)" if pure else
+           f"({inno[0]:.0f}\u2013{inno[1]:.0f} ECI/yr)")
+        + " plus compute, with diffusion and distillation fading as set in "
+          "the sidebar"
+        + (", and gets automated coding and RSI at the ECI the US did, sped up "
+           "as the sidebar's *China's takeoff* setting says." if tk else "."))
     _card1 = ((f"China reaches paused US frontier "
                f"(pause start {d_pause_v:%b %Y}, ECI ~{lvl50:.0f})")
               if _paused else
@@ -17446,7 +17443,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                   f"~{s50:.1f} mo",
                   f"{s10:.1f} – "
                   + (f"{s90:.1f} mo" if np.isfinite(s90) else _past)
-                  + " (80%)", delta_color="off")
+                  + " (80%)", delta_color="off", help=_method)
     else:
         # Under half the samples cross inside the window: say so in the
         # cards themselves.
@@ -17459,7 +17456,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                     / 30.44, 0.0)
         m2.metric("Time for China to surpass", f"> {_left:.0f} mo",
                   "pace the US harder or widen Project through",
-                  delta_color="off")
+                  delta_color="off", help=_method)
     if crossed and cn_run_mo != us_run_mo:
         _both = np.isfinite(years) & np.isfinite(years_base)
         _net = float(np.median((years - years_base)[_both])) * 12 \
@@ -17755,55 +17752,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     st.plotly_chart(_tf(fig), width="stretch")
 
-    _rate_src = ((f"({b_algo:.0f} algo + {a_partial:.0f} pts/×10 × the "
-                  f"{'sidebar-pooled' if pooled else 'largest-site'} US "
-                  f"series' ×{10 ** us_fit['g']:.1f}/yr pace, σ-sampled)")
-                 if us_fit else "(observed US frontier slope)")
-    _ms_txt = "; ".join(f"US {k} ~{_date_of(t):%b %Y} (ECI ~{e:.0f})"
-                        for k, (t, e) in us_ms.items())
-    _cf_notes = [
-        ("the US climbs",
-         ("Along the Takeoff tab's scenarios: each sample follows one of its "
-          "ECI paths, run at the paced share of its speed from the pacing "
-          "date, so automated coding and RSI speed it up as they do there"
-          + (f" ({_ms_txt})" if _ms_txt else "") + ". The bar is the trained "
-          "model, a ship lag ahead of the released frontier those paths "
-          "track. Its 10th\u201390th percentile is shaded. "
-          if tk else f"~{us_rate:.0f} ECI/yr {_rate_src}. ")
-         + "Pacing later freezes or slows a better model, so the bar rises "
-           "with the date slider even though China gets the same head "
-           "start."),
-        ("China must cross", "Once distillation and diffusion dry up China "
-                  "runs on "
-                  "indigenous innovation "
-                  + (f"({pure[0]:.0f}\u2013{pure[1]:.0f} ECI/yr)" if pure else
-                     f"(floor {inno[0]:.0f}\u2013{inno[1]:.0f} ECI/yr)")
-                  + " plus its compute term."
-                  + (" China gets automated coding and RSI at the ECI the US "
-                     "did in each Takeoff scenario, and from there its whole "
-                     "rate is multiplied by the speed-up that scenario shows "
-                     "at the same ECI (its ECI/yr there over today's trend); "
-                     "the stars mark the median month each side reaches them."
-                     if tk else "")),
-    ]
-    _cf_tail = ""
-    if d50_ca is not None:
-        _cf_tail = ", and a faster Chinese buildout would move that"
-        _cf_notes.append(
-            ("a faster Chinese buildout",
-             "If Chinese labs sustained the catalogued China-accessible "
-             f"buildout pace (\u00d7{10 ** chk_ca['g']:.1f}/yr, sites abroad "
-             "included \u2014 a from-zero ramp) instead of the "
-             "export-control band, the crossing moves to "
-             f"~{d50_ca + off_cn:%b %Y}."))
-    _fn_caption(
-        ("Counterfactual: the US climbs until the date the slider names, "
-         f"freezing at <b>ECI ~{lvl50:.0f}</b> (median) \u2014 the bar China "
-         "must cross" if _paused else
-         "Counterfactual: the US climbs until the date the slider names, at "
-         f"<b>ECI ~{lvl50:.0f}</b> (median) then, and from there keeps "
-         f"{pace:.0%} of its pace \u2014 the moving bar China must cross")
-        + _cf_tail + ".", *_cf_notes)
 
     # ── Why that long? The same samples, decomposed by rate term. ──
     _notes = []
