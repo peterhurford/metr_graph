@@ -17631,7 +17631,7 @@ _TK_DEFAULTS.update({
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
     "tk_pace_today": 1.7, "tk_returns": 1.0, "tk_dc_compute": True,
     "tk_coding_pairing": 0.7,
-    "tk_wf_humans": 10_000, "tk_wf_hiring": 30.0, "tk_wf_decline": -30.0,
+    "tk_wf_humans": 10_000,
     "tk_wf_copies": 75_000, "tk_wf_power": 10.0,
 })
 _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
@@ -18156,7 +18156,7 @@ def _tk_factors_fig(result, today):
     x = _tk_dates(result, today)
     fig = go.Figure()
     for name, key, color, dash in (
-            ("Human labor (calibrated)", "labor", "#16a085", None),
+            ("Human researchers", "labor", "#16a085", None),
             ("AI capabilities", "ai", "#d68910", None),
             ("Compute", "compute", "#2980b9", None),
             ("Research judgment", "judgment", "#8e44ad", None),
@@ -18574,8 +18574,8 @@ def _tk_workforce_settings():
     today, competence power)."""
     g = st.session_state.get
     return (float(g("tk_wf_humans", _TK_HUMAN_RESEARCHERS)),
-            1 + float(g("tk_wf_hiring", 100 * (_TK_HIRING_GROWTH - 1))) / 100,
-            1 + float(g("tk_wf_decline", 100 * (_TK_POST_RSI_DECLINE - 1))) / 100,
+            1 + float(g("tk_hiring_growth", takeoff.DEFAULTS["hiring_growth"])) / 100,
+            1 + float(g("tk_staff_after_rsi", takeoff.DEFAULTS["staff_after_rsi"])) / 100,
             float(g("tk_wf_copies", _TK_AI_COPIES_TODAY)),
             float(g("tk_wf_power", _TK_AI_COMPETENCE_POWER)))
 
@@ -19100,12 +19100,20 @@ def _render_takeoff(loading):
                    "How much more compute than the frontier had when a gain was found "
                    "models must train at before its scale-dependent share counts. 1 is "
                    "10\u00d7, about 2 years at today's compute growth. Nothing measures it.")
+            number("Human research staff growth until RSI (%/yr)", "hiring_growth",
+                   -50.0, 200.0, 5.0,
+                   "More staff finish the share of research work people still do sooner. "
+                   "Experiment compute's growth is refitted so history still has a "
+                   "steady pace with AI frozen, so faster hiring means slower experiment "
+                   "compute, not a faster past.")
+            number("Human research staff change after RSI (%/yr)", "staff_after_rsi",
+                   -90.0, 50.0, 5.0,
+                   "Negative: staff shrink once autopilot makes them unneeded. On "
+                   "autopilot people do no work after RSI, so this only shows on the "
+                   "workforce chart.")
             st.markdown("**Workforce chart (a readout; moves no date)**")
             number("Human AI researchers today", "wf_humans", 100, 1_000_000, 1000,
                    "Frontier-lab research staff, an order-of-magnitude guess.")
-            number("Human hiring growth until RSI (%/yr)", "wf_hiring", -50.0, 200.0, 5.0)
-            number("Human staff change after RSI (%/yr)", "wf_decline", -90.0, 50.0, 5.0,
-                   "Negative: staff shrink once autopilot makes them unneeded.")
             number("AI research-agent copies today", "wf_copies", 100, 100_000_000, 5000,
                    "Copies running today, an estimate. Their total worth is set by the "
                    "automation index's share of today's work, so this splits it into heads.")
@@ -19526,16 +19534,15 @@ def _render_takeoff(loading):
     _fn_caption(
         "Multiply the five factors and you get the dotted line.",
         ("five factors",
-         "Human labor (calibrated): researchers and the other non-compute inputs, at the rate "
-         "that holds today's pace with AI frozen. It falls because compute alone "
-         "would speed research faster than the trend has, so the calibration has the "
-         "other inputs lag; it is that offset, not a forecast that research staff "
-         "shrink, and the model cannot say whether experiment compute or the "
-         "compute-to-progress link is what lags. AI capabilities: AI coding help "
+         "Compute: training and experiment compute with neither AI help nor more "
+         "staff. Experiment compute grows slower than the frontier run below (about "
+         "1.6\u00d7 a year against 3.1\u00d7), the rate that makes today's pace steady with "
+         "AI frozen, as history had it. Human researchers: what more staff add, as "
+         "headcount grows until RSI; they speed only the share of work people still "
+         "do, so they count for nothing on autopilot. AI capabilities: AI coding help "
          "and AI taking over research hours, worth less when experiment compute is the "
-         "scarcer input. Compute: the compute below. These three are the labor and "
-         "experiment input split exactly, blended with OpenAI's experiment trend in "
-         "year one. Research judgment rises with model capability. Harder ideas: each "
+         "scarcer input. These three split the labor and experiment input exactly, "
+         "blended with OpenAI's experiment trend in year one. Research judgment rises with model capability. Harder ideas: each "
          "improvement makes the next harder to find."))
     st.plotly_chart(_tf(_tk_to(_tk_factors_fig(result, today), view_end)), width="stretch")
     st.markdown("**Compute going in**")

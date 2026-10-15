@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v27-serial-speedup"
+MODEL_VERSION = "takeoff-v28-headcount"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -53,8 +53,13 @@ DEFAULTS = {
     # compute runs more AI researchers. 0 leaves the number of copies fixed.
     "ai_copies": 1.0,
     # Share of the non-AI input growth that would hold today's pace with AI
-    # frozen (researchers, spending); 0 leaves compute the only growing input.
+    # frozen; 0 leaves compute the only growing input (no hiring, experiment
+    # compute growing with the frontier).
     "baseline_inputs": 100.0,
+    # Human research staff growth a year until a draw's RSI, and after it.
+    # More staff speed the human share of the work (Amdahl), so they matter
+    # until autopilot and not after.
+    "hiring_growth": 30.0, "staff_after_rsi": -30.0,
     # Change in the judgment elasticity per 10x gain in capability (%): above 0
     # judgment gains compound as AI gets more capable (b falls), below 0 they
     # fade (b rises). 0 keeps today's measured rate throughout.
@@ -167,6 +172,7 @@ def validate(params):
             or not (p["judgment_cap"] == 0 or p["judgment_cap"] >= 1) \
             or p["serial_speedup"] not in (0, 1) \
             or not 0 <= p["compute_bound_corr"] <= 1 \
+            or not -90 <= p["hiring_growth"] <= 200 or not -90 <= p["staff_after_rsi"] <= 200 \
             or not 0 <= p["scale_dependent"] <= 100 or not 0 <= p["scale_dependent_spread"] <= 400 \
             or not 0 < p["scale_lag_oom"] <= 10 or not 0 <= p["scale_lag_spread"] <= 400:
         raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
@@ -491,6 +497,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     run_compute = np.zeros(n)
     training_used = np.zeros(n)
     run_start = np.zeros(n)
+    # The frozen-AI reference's progress above today's stock, now and when the
+    # current run and fast cycle began (it snapshots on the same clock).
+    reference_gained = np.zeros(n)
+    reference_at_run_start = np.zeros(n)
+    reference_at_fast_start = np.zeros(n)
     # This run's training length and the pending model's validation length;
     # both shrink with the serial speed-up (see `serial_speedup`).
     run_len = train_time.copy()
@@ -602,21 +613,38 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         now[2][rows] = compute_part_now + paid
         return now
 
-    extra_rate = p["baseline_inputs"] / 100 * (
-        beta * software_rate * initial_throughput / parallel - hist_rate)
-    input_rate = np.maximum(compute_rate + extra_rate, 0)
-    extra_rate = input_rate - compute_rate
-    # From `slow_at`, compute keeps `compute_slowdown`% of its log growth; the
-    # other inputs keep their own, so research inputs slow by compute's share.
+    # From `slow_at`, compute keeps `compute_slowdown`% of its log growth.
     slow_at = p["compute_slow_years"]
     compute_late = compute_rate * p["compute_slowdown"] / 100
-    input_late = np.maximum(compute_late + extra_rate, 0)
-    extra_late = input_late - compute_late
     # Amdahl: AI labor on research speeds up as the human share h falls, by
     # (h0 + (1 - h0)/s) / (h + (1 - h)/s), normalized to today's share h0.
     ai_speed = p["ai_speed"]
     human0 = starts @ WORKFLOW_WEIGHTS
     amdahl0 = np.log(human0 + (1 - human0) / ai_speed)
+    # Non-AI inputs. Human staff grow `hiring_growth` a year until RSI and
+    # `staff_after_rsi` after, speeding the human share of the work; their
+    # effect on labor today is that growth times the human share of the time.
+    inputs_on = p["baseline_inputs"] / 100
+    hire_rate = inputs_on * np.log1p(p["hiring_growth"] / 100)
+    after_rate = inputs_on * np.log1p(p["staff_after_rsi"] / 100)
+    hire_effect = hire_rate * human0 / (human0 + (1 - human0) / ai_speed)
+    # Experiment compute grows at a fixed share of the frontier's log growth,
+    # fitted so that research inputs (labor and experiments, half each at
+    # today's normalized shares) grow at the rate that holds today's pace
+    # steady with AI frozen, as history had it while compute grew at
+    # `hist_rate`: the frontier's 3.1x a year buys more than that, so
+    # experiment compute grows slower (about 1.6x a year, a 0.4 share), and
+    # slows in step when the frontier does.
+    steady = beta * software_rate * initial_throughput / parallel
+    exp_growth = np.maximum(
+        hist_rate + inputs_on * (2 * steady - 2 * hist_rate) - hire_effect, 0)
+    # With no historical compute growth to take a share of, experiment
+    # compute grows at the fitted rate itself.
+    has_history = hist_rate > 1e-9
+    exp_share = np.divide(exp_growth, hist_rate, out=np.ones(n), where=has_history)
+    # What research inputs grow by on average, for the trend blend.
+    input_rate = compute_rate + (hire_effect + np.where(
+        has_history, (exp_share - 1) * compute_rate, exp_growth)) / 2
     # Ongoing useful research production is distinct from batched deliveries.
     # Today's production baseline already includes existing AI assistance.
     pace_history = np.repeat(initial_throughput[:, None], len(workflow_grid), axis=1)
@@ -630,7 +658,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                       for k in ("resources", "judgment", "difficulty",
                                 "compute", "labor", "ai")}
     factor_history["resources"][:] = np.log(initial_throughput)[:, None]
-    factor_history["ai"][:] = np.log(initial_throughput)[:, None]
+    factor_history["compute"][:] = np.log(initial_throughput)[:, None]
     last_factors = {k: v[:, 0].copy() for k, v in factor_history.items()}
     observation_index = np.ones(n, dtype=int)
     last_pace = initial_throughput.copy()
@@ -672,7 +700,15 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         boost_step = np.where(boosting, boost * in_force * np.where(t + dt / 2 < slow_at, compute_rate,
                                                          compute_late) * dt, 0.0)
         compute_log = base_compute_log + boost_log + boost_step / 2
-        extra_log = log_level(t + dt / 2, extra_rate, extra_late, slow_at)
+        # Experiment compute's shortfall from the frontier, and staff headcount
+        # (vs today) on the draw's own RSI clock.
+        exp_log = np.where(has_history, (exp_share - 1) * base_compute_log,
+                           exp_growth * (t + dt / 2))
+        mid_t = t + dt / 2
+        # Without AI transfer nothing changes at RSI, as in the reference.
+        staff_rsi = events["RSI"] if transfer else np.inf
+        head_log = (hire_rate * np.minimum(mid_t, staff_rsi)
+                    + after_rate * np.maximum(mid_t - staff_rsi, 0))
         # The deployed model only changes at the end of a step, where `now`
         # is refreshed, so the last step's reading still holds here.
         effective = now[2].copy()
@@ -687,6 +723,14 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         with np.errstate(divide="ignore"):
             amdahl_log = amdahl0 - np.logaddexp(np.log(share_now),
                                                 np.log1p(-share_now) - log_speed)
+            # More staff finish the human share of the work sooner; none of it
+            # once the share is 0. Without AI transfer the share stays today's
+            # for labor, as the frozen-AI reference has it.
+            staff_share = share_now if transfer else human0
+            staff_speed = log_speed if transfer else np.log(ai_speed)
+            headcount_log = (np.logaddexp(np.log(staff_share), np.log1p(-staff_share) - staff_speed)
+                             - np.logaddexp(np.log(staff_share) - head_log,
+                                            np.log1p(-staff_share) - staff_speed))
         # People still directing research keep today's judgment; AI's applies
         # to the rest, so research quality is the direction-weighted mix.
         direction = human_now[:, 0]
@@ -715,13 +759,20 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             coding_log = np.zeros(n)
             quality_log = np.zeros(n)
             automation_log = np.zeros(n)
-        labor_log = parallel * (compute_log + extra_log + np.log(shares[2] / 0.2)
-                                + coding_log + automation_log)
-        experiment_log = parallel * (compute_log + extra_log + np.log(shares[1] / 0.4))
+        labor_log = parallel * (compute_log + np.log(shares[2] / 0.2)
+                                + coding_log + automation_log + headcount_log)
+        experiment_log = parallel * (compute_log + exp_log + np.log(shares[1] / 0.4))
         research_log = _ces_log(labor_log, experiment_log, rho) + quality_log
         judgment_log = quality_log.copy()
-        compute_part = parallel * compute_log
-        labor_part = parallel * extra_log
+        # Factor chart, exact: compute is the inputs with neither AI help nor
+        # more staff, staff what they add to that (nothing once people do no
+        # work), and AI help the rest (zero without transfer).
+        staff_alone = headcount_log
+        exp_in = parallel * (compute_log + exp_log + np.log(shares[1] / 0.4))
+        bare = _ces_log(parallel * (compute_log + np.log(shares[2] / 0.2)), exp_in, rho)
+        compute_part = bare
+        labor_part = _ces_log(parallel * (compute_log + np.log(shares[2] / 0.2) + staff_alone),
+                              exp_in, rho) - bare
         if experiment_slopes is not None and transfer:
             mid = t + dt / 2
             resource_log = np.log(initial_throughput) + parallel * input_rate * mid
@@ -733,8 +784,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             # not multiply the trend into feedback already calibrated from it.
             research_log = (1 - weight) * research_log + weight * proxy_log
             judgment_log = (1 - weight) * quality_log
-            compute_part = (1 - weight) * compute_part + weight * parallel * compute_rate * mid
-            labor_part = (1 - weight) * labor_part + weight * parallel * extra_rate * mid
+            compute_part = ((1 - weight) * compute_part + weight * (
+                np.log(initial_throughput) + parallel * mid * np.where(
+                    has_history, compute_rate * (1 + exp_share) / 2,
+                    compute_rate + exp_growth / 2)))
+            labor_part = (1 - weight) * labor_part + weight * parallel * hire_effect / 2 * mid
         # Difficulty: beta per unit of progress, rising toward the ceiling,
         # where returns to research reach 0 (penalty = -beta C ln(1 - S/C)).
         gained = software - initial_stock
@@ -747,27 +801,38 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                                     beta * progress)
 
         log_x, penalty = difficulty_at(gained)
-        reference_progress = reference_software(t, software_rate, input_rate,
-                                                parallel, initial_throughput, beta,
-                                                input_late, slow_at, ceiling)
-        _, ref_penalty = difficulty_at(reference_progress)
-        reference_pace = np.exp(np.minimum(np.log(initial_throughput)
-            + parallel * (base_compute_log + extra_log) - ref_penalty, 700))
+        # The frozen-AI reference: same compute (no post-RSI boost), same
+        # experiment compute and hiring, today's human share and AI skills;
+        # integrated step by step like the actual path, never reaching RSI.
+        ref_log_x, ref_penalty = difficulty_at(reference_gained)
+        with np.errstate(divide="ignore"):
+            ref_headcount = (amdahl0 - np.logaddexp(np.log(human0) - hire_rate * mid_t,
+                                                    np.log1p(-human0) - np.log(ai_speed)))
+        ref_research = _ces_log(
+            parallel * (base_compute_log + np.log(shares[2] / 0.2) + ref_headcount),
+            parallel * (base_compute_log + exp_log + np.log(shares[1] / 0.4)), rho)
+        reference_pace = np.exp(np.minimum(ref_research - ref_penalty, 700))
+        ref_log_amount = np.log(software_rate) + ref_research + np.log(
+            dt, out=np.full(n, -np.inf), where=dt > 0)
         log_amount = np.log(software_rate) + research_log + np.log(
             dt, out=np.full(n, -np.inf), where=dt > 0)
         # Derivative of the same discovery process being integrated below,
         # in multiples of today's software-progress rate. Snapshot near the
         # end of each monthly integration interval (at most one week long).
         pace = np.exp(np.minimum(research_log - penalty, 700))
-        if p["difficulty"] > 0:
-            plain = initial_stock + np.logaddexp(
-                beta * gained, np.log(beta) + log_amount) / beta
-            with np.errstate(divide="ignore", invalid="ignore"):
-                near = initial_stock - ceiling * np.expm1(
-                    ceiling_step(log_x, log_amount, beta * ceiling, ceiling))
-            updated = np.where(capped, near, plain)
-        else:
-            updated = software + np.exp(np.minimum(log_amount, 100))
+        def advance(progress, progress_log_x, amount_log):
+            """Progress above today's stock after research `amount_log`,
+            integrated exactly for the step's research rate."""
+            if p["difficulty"] > 0:
+                plain = np.logaddexp(beta * progress, np.log(beta) + amount_log) / beta
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    near = -ceiling * np.expm1(
+                        ceiling_step(progress_log_x, amount_log, beta * ceiling, ceiling))
+                return np.where(capped, near, plain)
+            return progress + np.exp(np.minimum(amount_log, 100))
+
+        updated = initial_stock + advance(gained, log_x, log_amount)
+        reference_gained = advance(reference_gained, ref_log_x, ref_log_amount)
         # Stop numerically divergent draws explicitly, rather than silently
         # treating a numerical ceiling as a capability plateau.
         diverged = active & (updated > 1e6)
@@ -794,9 +859,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                               / (starts[:, 2] + (1 - starts[:, 2]) / ai_speed))[done]
         candidate_compute = np.log(np.maximum(run_compute / reference_train_compute, 1e-12))
         candidate = (1 - fast_fraction) * snapshot + candidate_compute
-        reference_snapshot = initial_stock + reference_software(run_start, software_rate, input_rate,
-                                                 parallel, initial_throughput, beta,
-                                                 input_late, slow_at, ceiling)
+        reference_snapshot = initial_stock + reference_at_run_start
         # A successor ships only if it beats the deployed model as both pay off
         # at their own scale (a short run can carry more algorithms on less
         # compute and still be worse).
@@ -834,10 +897,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         deployed_scale[ready] = pending_scale[ready]
         fast_ready = active & (end >= fast_next - 1e-12)
         fast_deployed[fast_ready] = fast_fraction * fast_snapshot[fast_ready]
-        reference_fast[fast_ready] = fast_fraction * (initial_stock[fast_ready] + reference_software(
-            np.maximum(0, fast_next[fast_ready] - fast_time), software_rate[fast_ready],
-            input_rate[fast_ready], parallel, initial_throughput[fast_ready], beta[fast_ready],
-            input_late[fast_ready], slow_at, ceiling[fast_ready]))
+        reference_fast[fast_ready] = fast_fraction * (initial_stock[fast_ready]
+                                                      + reference_at_fast_start[fast_ready])
+        reference_at_fast_start[fast_ready] = reference_gained[fast_ready]
         fast_snapshot[fast_ready] = software[fast_ready]
         fast_next[fast_ready] += fast_time
         # For non-ready slow runs, only their already deployed algorithms count.
@@ -888,6 +950,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         last_experiments[tracking] = experiment_log[tracking]
         snapshot[ready] = software[ready]
         run_start[ready] = end[ready]
+        reference_at_run_start[ready] = reference_gained[ready]
         if p["serial_speedup"]:
             # The next run is shorter when capability is growing faster than
             # today: today's growth rate over the current one, capped at 1.

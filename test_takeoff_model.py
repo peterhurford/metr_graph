@@ -146,17 +146,8 @@ def test_persistent_human_floor_above_the_bar_prevents_rsi():
     assert np.isinf(r["events"]["RSI"]).all()
 
 
-def test_research_difficulty_is_sampled_with_the_other_rates(monkeypatch):
-    seen = []
-    original = tk.reference_software
-
-    def capture(*args):
-        seen.append(np.asarray(args[5]))       # difficulty
-        return original(*args)
-
-    monkeypatch.setattr(tk, "reference_software", capture)
-    tk.simulate(dict(years=0.5), n=500)
-    drawn = np.log(next(d for d in seen if d.shape == (500,)))
+def test_research_difficulty_is_sampled_with_the_other_rates():
+    drawn = np.log(tk.simulate(dict(years=0.5), n=500)["draws"]["difficulty"])
     # Lognormal around the setting, at the returns-to-research spread.
     assert np.median(drawn) == pytest.approx(np.log(0.5), abs=0.1)
     assert drawn.std() == pytest.approx(tk.DEFAULTS["returns_spread"] / 100, abs=0.1)
@@ -410,6 +401,37 @@ def test_elasticity_and_scale_dependence_share_one_factor():
     logit0 = np.log(free["scale_dependent"] / (1 - free["scale_dependent"]))
     assert abs(np.corrcoef(np.log(1 / (1 - free["substitution"])), logit0)[0, 1]) < 0.1
     assert np.std(logit) == pytest.approx(np.std(logit0), rel=0.05)
+
+
+def test_headcount_and_experiment_compute_hold_history_steady():
+    """With AI frozen and compute at its historical rate, staff growth plus
+    experiment compute's fitted share keep today's pace steady, as history
+    had it; experiment compute slows with the frontier after the slowdown
+    rather than stopping; and more hiring speeds research before RSI."""
+    rate = np.full(200, np.log(3.1))
+    frozen = dict(transfer=0, years=3, ceiling_high_oom=0.0, **tk.POINT_ESTIMATE)
+    r = tk.simulate(frozen, n=200, compute_rates=rate, historical_compute_rate=np.log(3.1),
+                    onset_years=np.full(200, np.inf))
+    pace = r["workflow_progress"]["pace"] / r["workflow_progress"]["pace"][:, :1]
+    np.testing.assert_allclose(pace[:, 1:13], 1.0, rtol=0.02)
+    late = tk.simulate(dict(frozen, years=8), n=5, compute_rates=rate[:5],
+                       historical_compute_rate=np.log(3.1), onset_years=np.full(5, np.inf))
+    f = late["workflow_progress"]["pace_factors"]["compute"]
+    years = late["workflow_progress"]["years"]
+    after = (years > 5) & (years < 8)
+    assert np.all(np.diff(f[0, after]) > 0)           # still growing after 2030
+    # Staff add research before RSI and nothing once autopilot leaves people
+    # no work.
+    onset = np.full(50, 0.3)
+    run = tk.simulate(dict(years=6), n=50, onset_years=onset)
+    staff = run["workflow_progress"]["pace_factors"]["labor"]
+    years = run["workflow_progress"]["years"]
+    rsi = run["events"]["RSI"]
+    assert np.isfinite(rsi).all()
+    before = years[None, :] < rsi[:, None] - 0.1
+    after = years[None, :] > rsi[:, None] + 0.1
+    assert (staff[before & (years[None, :] > 0.5)] > 0).mean() > 0.9
+    np.testing.assert_allclose(staff[after], 0.0, atol=1e-9)
 
 
 def test_workflow_halving_time_has_a_measurable_interpretation():

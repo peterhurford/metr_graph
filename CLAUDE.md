@@ -41,7 +41,7 @@ Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v27-serial-speedup`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v28-headcount`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -141,8 +141,15 @@ experiment calibration: a higher exponent lets compute and coding explain more o
 observed experiment growth, leaving a lower fitted judgment elasticity (at `cal_weight` 0
 it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `_TK_FACTOR_VIEW`. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
-`baseline_inputs` is calibrated against `historical_compute_rate` (the data-center
-series' fit), so the frozen-AI pace holds only if compute keeps its historical growth.
+Non-AI inputs (all scaled by `baseline_inputs`): staff headcount (`hiring_growth`,
+`staff_after_rsi`, on each draw's RSI clock when AI transfer is on) speeds the human share
+inside the Amdahl term, and experiment compute grows at `exp_share` of the frontier's log
+growth, fitted against `historical_compute_rate` so the frozen-AI pace stays steady
+(`test_headcount_and_experiment_compute_hold_history_steady`). The frozen-AI reference is
+integrated step by step alongside the actual path (`reference_gained`), not by the
+closed-form `reference_software`, since its labor and experiments now grow differently. The
+pace chart's factors split exactly: compute with neither AI help nor extra staff, staff's
+addition at the share people still do (zero on autopilot), AI the rest.
 The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, today's
 defaults; months to ultraintelligence from Nov 2029): r (0.5/2: +6/−5), the judgment
 elasticity (half/double: +2/−3), parallelization (0.8/0.3: 0/0), ρ (−0.5/0: +2/−1),

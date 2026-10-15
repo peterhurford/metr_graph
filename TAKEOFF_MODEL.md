@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v27-serial-speedup`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v28-headcount`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -80,13 +80,16 @@ Difficulty is set from the returns to research r (the tab's control, default 1.0
 revised Forethought central estimate): difficulty = 0.5 / r, the semi-endogenous relation
 in which each doubling of cumulative effort buys r doublings of efficiency at the default
 input exponent of 0.5. It is held there so the parallelization setting changes only how
-much extra input buys, not how fast ideas get harder. Today's pace has held steady while compute grew at its historical rate (the
-data-center series' own fit, 3.1x/yr), so the other research inputs are set to whatever
-growth or lag reproduces that steady state (`baseline_inputs`% of it): with AI frozen,
-only a projected change in compute growth moves the pace. This settles the tension
-between fast historical compute growth and a steady trend by calibration; it cannot say
-whether the gap is experiment compute growing slower than frontier runs or a weaker
-compute-to-progress link.
+much extra input buys, not how fast ideas get harder. Today's pace has held steady while
+compute grew at its historical rate (the data-center series' own fit, 3.1x/yr). Two other
+inputs are explicit. Human research staff grow 30% a year until a scenario's RSI (and
+change -30% a year after); more staff finish the share of work people still do sooner, so
+they matter until autopilot and not after. Experiment compute grows at a fixed share of the
+frontier's log growth, fitted so labor and experiments together hold today's pace steady
+with AI frozen: about 0.4 of it (1.6x a year against 3.1x), slowing in step after 2030.
+That share is the one unmeasured number this calibration needs; it reads the gap between
+fast frontier growth and a steady trend as experiment compute lagging frontier runs, not
+as weaker returns to research, so r stays at Forethought's 1.0.
 
 Discoveries are measured in log fixed-quality algorithmic efficiency. By default, 25%
 can be delivered through fast improvements (tooling, kernels, and small updates) and 75%

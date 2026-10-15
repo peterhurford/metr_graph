@@ -1063,7 +1063,7 @@ class TestTakeoffTab:
                    for a in pace["layout"]["annotations"])
         factors = json.loads(_tk_charts(at)[2].proto.spec)
         assert [d["name"] for d in factors["data"]] == [
-            "Human labor (calibrated)", "AI capabilities", "Compute", "Research judgment", "Harder ideas (divides)",
+            "Human researchers", "AI capabilities", "Compute", "Research judgment", "Harder ideas (divides)",
             "Net research pace"]
         people = json.loads(_tk_charts(at)[4].proto.spec)
         workforce = json.loads(_tk_charts(at)[5].proto.spec)
