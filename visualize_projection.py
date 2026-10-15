@@ -16381,9 +16381,9 @@ def _pc_render_compute_ratios(ci, span):
     rows.append(trow)
 
     st.markdown("##### Compute: largest trainable run")
-    st.plotly_chart(_tf(fig1), use_container_width=True)
+    st.plotly_chart(_tf(fig1), width="stretch")
     st.markdown("##### Compute: total installed")
-    st.plotly_chart(_tf(fig2), use_container_width=True)
+    st.plotly_chart(_tf(fig2), width="stretch")
     st.markdown("**How far ahead the US is**")
     st.table(pandas.DataFrame(rows).style.hide(axis="index"))
     _fn_caption(
