@@ -4443,6 +4443,12 @@ class TestPacing:
         end25 = vp._wc_world_h100e(datetime(2025, 12, 31))
         assert 19e6 < end25 < 23e6
 
+    def test_spans_past_a_year_read_in_years(self):
+        assert vp._pc_span(11.6) == "11.6 mo"
+        assert vp._pc_span(15.5) == "1.3 yr"
+        assert vp._pc_span(-18, 0, sign=True) == "-1.5 yr"
+        assert vp._pc_span(5, 0, sign=True) == "+5 mo"
+
     def test_paced_clock_runs_the_us_at_its_pace_from_the_start(self):
         """Before the pacing date the US runs on its own clock; after it,
         `pace` years of progress a year: 0 freezes it, 1 changes nothing."""

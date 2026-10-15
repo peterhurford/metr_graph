@@ -16614,6 +16614,14 @@ def _pc_tk_interp(tk, draw, u):
     return np.where(u < 0, paths[rows, 0] + tk["ppy"] * u, v)
 
 
+def _pc_span(months, prec=1, sign=False):
+    """A span on the Pacing tab: months up to a year, years past it
+    ("15.5 mo" reads "1.3 yr")."""
+    v, unit, prec = ((months / 12, "yr", 1) if abs(months) > 12
+                     else (months, "mo", prec))
+    return f"{v:{'+' if sign else ''}.{prec}f} {unit}"
+
+
 def _pc_paced_clock(t, t_start, pace):
     """Years of US progress made by `t` when, from `t_start`, the US runs at
     `pace` of its own speed: `t` before the start, then `pace` years a year.
@@ -16782,7 +16790,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
 
     def _mo(rate):
         m = _months(rate)
-        return f"{m:.1f} mo" if m is not None else "never"
+        return _pc_span(m) if m is not None else "never"
 
     rows.append({"Source": f"Time to close the {gap:.0f} ECI gap",
                  c0: _mo(r0), c1: _mo(ravg), c2: _mo(r1)})
@@ -17391,7 +17399,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             "METR horizon (p80)": _pc_fmt_horizon(
                 _eci_to_metr_p80_min(e50)[0] / 60),
             "Behind the US": ("—" if behind is None
-                              else f"~{behind:.0f} mo" if np.isfinite(behind)
+                              else f"~{_pc_span(behind, 0)}"
+                              if np.isfinite(behind)
                               else "—"),
         }
 
@@ -17504,9 +17513,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                   f"{v10:%b %Y} – {f'{v90:%b %Y}' if v90 else _past} (80%)",
                   delta_color="off", help=_clock)
         m2.metric("Time for China to surpass",
-                  f"~{s50:.1f} mo",
-                  f"{s10:.1f} – "
-                  + (f"{s90:.1f} mo" if np.isfinite(s90) else _past)
+                  f"~{_pc_span(s50)}",
+                  f"{_pc_span(s10)} – "
+                  + (_pc_span(s90) if np.isfinite(s90) else _past)
                   + " (80%)", delta_color="off", help=_method)
     else:
         # Under half the samples cross inside the window: say so in the
@@ -17518,7 +17527,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                        f"the end of {_yr_end}. " + _clock)
         _left = max((datetime(_yr_end, 12, 31) - max(pause_d, today)).days
                     / 30.44, 0.0)
-        m2.metric("Time for China to surpass", f"> {_left:.0f} mo",
+        m2.metric("Time for China to surpass", f"> {_pc_span(_left, 0)}",
                   "pace the US harder or widen Project through",
                   delta_color="off", help=_method)
     if crossed and cn_run_mo != us_run_mo:
@@ -17531,7 +17540,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             f"<b>{cn_run_mo}-month Chinese run</b> (<i>Advanced</i>): "
             f"\u00d7{cn_run_mo / us_run_mo:.1f} the compute in one model against "
             f"{_mos} of extra training, for a net "
-            f"<b>{abs(_net):.1f} mo {'later' if _net > 0 else 'earlier'}</b> than "
+            f"<b>{_pc_span(abs(_net))} {'later' if _net > 0 else 'earlier'}</b> than "
             f"matching the bar's {us_run_mo} months.",
             ("the compute in one model", f"Worth +{cn_gain:.1f} ECI, or "
                                          f"{_xtra - _net:.1f} months of China's "
@@ -17795,7 +17804,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             f"At ECI ~{cross50:.0f}, "
             + (f"the paused US frontier" if _paused else
                f"where the {pace:.0%}-paced US stands by then")
-            + f"<br>~{s50:.0f} months after the "
+            + f"<br>~{_pc_span(s50, 0)} after the "
             + ("pause" if _paused else "pacing starts")
             + f" ({d_pause_v:%b %Y})<extra></extra>")
         fig.add_trace(go.Scatter(
@@ -17850,7 +17859,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             "China (median, 80%)": _ms_cell(
                 _yc, lambda t: anchor_d + off_cn + timedelta(days=t * 365.25)),
             "China after the US": ("\u2014" if lag is None else
-                                   f"{round(float(np.median(lag))) or 0:+d} mo"),
+                                   _pc_span(round(float(np.median(lag))) or 0,
+                                            0, sign=True)),
         })
     st.table(_ms_rows)
     _fn_caption(
@@ -18147,7 +18157,7 @@ def render_pacing():
         d_cn = cn['plan'] if cn['crossed'] else cn['med']
         if d_us is not None and d_cn is not None:
             gap = (d_cn - d_us).days / 30.44
-            head += (f" \u2014 {abs(gap):.0f} months "
+            head += (f" \u2014 {_pc_span(abs(gap), 0)} "
                      f"{'later' if gap >= 0 else 'earlier'}.**")
         else:
             head += ".**"

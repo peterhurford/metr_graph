@@ -62,6 +62,12 @@ def _tk_charts(at):
     return at.get("plotly_chart")[_rsi_cdf_index(at) + 1:]
 
 
+def _span_mo(text):
+    """Months from a Pacing span, which reads "8.3 mo" or "1.3 yr"."""
+    v = float(re.search(r"[\d.]+", str(text)).group(0))
+    return v * 12 if "yr" in str(text) else v
+
+
 def _switch_tab(at, tab_name):
     """Switch to a tab and run."""
     [r for r in at.radio if r.label == "Tab"][0].set_value(tab_name).run()
@@ -1707,7 +1713,7 @@ class TestPacingTab:
         def surpass(at):
             m = next(m for m in at.metric
                      if "Time for China to surpass" in str(m.label))
-            return float(str(m.value).strip("~ mo"))
+            return _span_mo(m.value)
 
         def diffusion(at):
             t = next(x.value for x in at.table if "Source" in x.value.columns)
@@ -1756,7 +1762,7 @@ class TestPacingTab:
                 == cut["China ECI/yr at US/China cross"] == "Stopped")
         at.checkbox(key="pc_stop_dist").uncheck().run()
         months = why[why["Source"].str.startswith("Time")].iloc[0]
-        m = [float(months[c].split()[0]) for c in
+        m = [_span_mo(months[c]) for c in
              ("China ECI/yr at US pause", "Overall China ECI/yr", "China ECI/yr at US/China cross")]
         assert m[0] < m[1] < m[2]
         # The crossover row dates each rate from the pause; the crossing
@@ -1803,7 +1809,7 @@ class TestPacingTab:
         def _surpass_mo(at):
             m = next(m for m in at.metric
                      if "Time for China to surpass" in str(m.label))
-            return float(str(m.value).strip("~ mo"))
+            return _span_mo(m.value)
 
         assert at.checkbox(key="pc_withhold").value is True
         assert at.checkbox(key="pc_stop_dist").value is False
@@ -1843,7 +1849,7 @@ class TestPacingTab:
         def _surpass_mo(at):
             m = next(m for m in at.metric
                      if "Time for China to surpass" in str(m.label))
-            return float(str(m.value).strip("~ mo"))
+            return _span_mo(m.value)
 
         assert at.select_slider(key="pc_dist_when").value == "Now"
         assert at.select_slider(key="pc_remote_when").value == "Now"
@@ -1880,7 +1886,7 @@ class TestPacingTab:
         def _surpass_mo(at):
             m = next(m for m in at.metric
                      if "Time for China to surpass" in str(m.label))
-            return float(str(m.value).strip("~ mo"))
+            return _span_mo(m.value)
 
         sl = at.slider(key="pc_cn_run")
         assert sl.value == 2 and sl.max == 12
@@ -2027,7 +2033,7 @@ class TestPacingTab:
         def _surpass_mo(at):
             m = next(m for m in at.metric
                      if "Time for China to surpass" in str(m.label))
-            return float(str(m.value).strip("~ mo"))
+            return _span_mo(m.value)
 
         self._paired(at.selectbox(key="pc_timing").set_value(
             "Data center construction"))
