@@ -16805,8 +16805,6 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     # at the end, not one China holds from the pause), so that cell is blank.
     rows.append({"Source": "Crossover date", c0: _date(r0), c1: _date(ravg),
                  c2: ""})
-    st.warning("**Assumes ~SL5 secure weights - if not, China could catch up "
-               "quickly by stealing US models.**", icon="\u26a0\ufe0f")
     st.markdown("##### Why that long?")
 
     _fn_line(
@@ -17879,6 +17877,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                                    _pc_span(round(float(np.median(lag))) or 0,
                                             0, sign=True)),
         })
+    st.warning("**Assumes ~SL5 secure weights - if not, China could catch up "
+               "quickly by stealing US models.**", icon="\u26a0\ufe0f")
     st.table(_ms_rows)
     _fn_caption(
         "Each side's automated coder, RSI and ultraintelligence, read off the "

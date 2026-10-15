@@ -1530,7 +1530,7 @@ must not slow the years *before* it: the band stays on the export-control defaul
 until the cut and `comp_slow=(t_cut, a_partial·g_domestic)` takes over after, while
 the setback is sized at the cut date (today's OOM gap widened by `(g_mid − g_dom)`
 per year of lead), so a later cut costs more to regrow but is never worse for China
-overall. Cutting *at* today keeps the old global band cap instead. Above *Why that long?*
+overall. Cutting *at* today keeps the old global band cap instead. Above the milestone table under the chart
 sits an `st.warning` that it assumes ~SL5 secure weights (theft would put China at
 the bar). A policy lever, `pc_methods_pause` (default off; label says "from pacing start"), sets whether diffusion dries up
 over `_CC_DIFF_ABSORB_YRS` after the pause (`t_pause`) or runs at full rate because the US
