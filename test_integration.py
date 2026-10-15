@@ -1681,6 +1681,12 @@ class TestPacingTab:
 
         base = ratios(at)
         assert base["At the crossing"] < base["At the pause"]
+        # Paused, US clusters keep growing past the frozen run: an overhang
+        # that is 1x at the pause and grows by the crossing.
+        tbl = next(x.value for x in at.table if "At the pause" in x.value.columns)
+        over = tbl[tbl[""].str.startswith("US overhang")].iloc[0]
+        assert over["At the pause"] == "1.0\u00d7"
+        assert float(over["At the crossing"].rstrip("\u00d7")) > 1.0
         at.checkbox(key="pc_duv_ban").check().run()
         at.checkbox(key="pc_duv_service").check().run()
         cut = ratios(at)

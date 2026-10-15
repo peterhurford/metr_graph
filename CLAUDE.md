@@ -1550,7 +1550,7 @@ shared by each source's median post-pause ECI, so rows add to the total. Distill
 split (`comp_shadow`, a domestic-only counterfactual) has no rate of its own, so the
 measured compute rate shows once, on the first compute row
 (`test_why_states_the_gap_and_the_slowing_rate`, `test_why_breakdown_tracks_the_sliders`).
-Under it, `_pc_render_compute_ratios()` charts and tabulates how far ahead the US is
+Under it, `_pc_render_compute_ratios()` (*largest run, trained and trainable*: US clusters keep growing at `g_us` while its largest trained run grows at `pace` of that, frozen if paused; the gap is an overhang row) charts and tabulates how far ahead the US is
 (US ÷ China, log axis, to *Project through*): largest trainable run (cluster capacity,
 `_pc_capacity_at`, read for today and the pause off one projection via `also=`) for China's
 usable run and its domestic clusters, against a US run frozen at the pause; and total

@@ -16306,9 +16306,11 @@ def _pc_render_compute_ratios(ci, span):
     """How far ahead the US is in compute, today to the crossing.
 
     Largest trainable run (cluster capacity, `_pc_capacity_at`) for China's
-    usable run and its domestic clusters, against a US run that climbs to
-    the pause and then freezes; and total installed compute from the world
-    shares (`_pc_wc_ratio`). China's runs grow from the pause at the pace the
+    usable run and its domestic clusters, against two US lines: its clusters,
+    which keep growing at their own pace (`g_us`), and the largest run it
+    actually trains, which grows at `pace` of that from the pacing date
+    (frozen under a pause), the gap between them being the overhang; and
+    total installed compute from the world shares (`_pc_wc_ratio`). China's runs grow from the pause at the pace the
     levers leave it over `span` years (pause to crossing). Solid lines are
     these settings, dashed the same with no compute levers. A table gives
     the readings at the pause and at the crossing.
@@ -16337,8 +16339,17 @@ def _pc_render_compute_ratios(ci, span):
             return l0 + (lp - l0) * (t / t_p if t_p > 0 else 1.0)
         return lp + (g or 0.0) * (t - t_p)
 
+    g_us, pace = ci.get('g_us') or 0.0, ci.get('pace', 0.0)
+    paused = pace <= 0
+
     def _us(t):
-        return _path(us_0, us_p, 0.0, t)
+        """The largest run the US trains: capacity to the pacing date, then
+        `pace` of the clusters' growth (none under a pause)."""
+        return _path(us_0, us_p, pace * g_us, t)
+
+    def _us_cap(t):
+        """US cluster capacity, which keeps growing whatever is trained."""
+        return _path(us_0, us_p, g_us, t)
 
     series = [  # label, colour, (l0, lp, g), (l0, lp, g) without levers
         ("Largest run China can use", '#D62728',
@@ -16360,7 +16371,8 @@ def _pc_render_compute_ratios(ci, span):
     levers = bool(ci.get('levers'))
 
     def _marks(fig):
-        for x, txt in ((pause_d, "US pauses"), (t_cross_d, "China crosses")):
+        for x, txt in ((pause_d, "US pauses" if paused else "US pacing starts"),
+                       (t_cross_d, "China crosses")):
             fig.add_vline(x=x, line=dict(color='#999999', width=1, dash='dot'))
             fig.add_annotation(x=x, yref='paper', y=1.0, text=txt,
                                showarrow=False, yanchor='bottom',
@@ -16387,10 +16399,17 @@ def _pc_render_compute_ratios(ci, span):
                            + (' (%{customdata})' if cd is not None else '')
                            + '<extra>' + name + '</extra>')))
 
-    # Chart 1: the largest run each side's clusters could train, in log OP.
+    # Chart 1: the largest run each side's clusters could train, in log OP,
+    # and the largest the US actually trains; the gap is its overhang.
     fig1 = go.Figure()
+    if g_us > 0 and pace < 1:
+        _line(fig1, "US clusters: largest run they could train", '#9EC5E8',
+              [10 ** _us_cap(t) for t in ts], dash='dash',
+              ratio=None)
     us_y = [10 ** _us(t) for t in ts]
-    _line(fig1, "US (frozen at the pause)", '#1F77B4', us_y)
+    _line(fig1, ("US largest run trained (frozen at the pause)" if paused else
+                 f"US largest run trained (paced: {pace:.0%} of cluster growth)"
+                 if pace < 1 else "US largest run trained"), '#1F77B4', us_y)
     short = {series[0][0]: "China, largest run it can use",
              series[1][0]: "China, domestic clusters only"}
     for name, color, cur, base in series[::-1]:
@@ -16408,7 +16427,7 @@ def _pc_render_compute_ratios(ci, span):
                      for t, v in zip(ts, lv)])
     _marks(fig1)
     _layout(fig1)
-    _cc_logop_yaxis(fig1, "Largest trainable run (log\u2081\u2080 OP)")
+    _cc_logop_yaxis(fig1, "Largest run (log\u2081\u2080 OP)")
 
     # Chart 2: total installed compute, indexed to China today.
     lev = {lab: mid for lab, mid, _, _ in _WC_REGIONS}
@@ -16448,6 +16467,13 @@ def _pc_render_compute_ratios(ci, span):
             row["Same date, no compute levers"] = _cell(_us(t_x),
                                                         _path(*base, t_x))
         rows.append(row)
+    if g_us > 0 and pace < 1:
+        rows.append({"": "US overhang: clusters \u00f7 largest run trained",
+                     "At the pause": f"{10 ** (_us_cap(t_p) - _us(t_p)):.1f}\u00d7",
+                     "At the crossing":
+                         f"{10 ** (_us_cap(t_x) - _us(t_x)):.1f}\u00d7",
+                     **({"Same date, no compute levers": "\u2014"}
+                        if ci.get('levers') else {})})
     trow = {"": "Total installed compute",
             "At the pause": f"US {_pc_wc_ratio([t_p], ci.get('dom_keep', 1.0))[0]:.1f}\u00d7",
             "At the crossing": f"US {_pc_wc_ratio([t_x], ci.get('dom_keep', 1.0))[0]:.1f}\u00d7"}
@@ -16455,16 +16481,21 @@ def _pc_render_compute_ratios(ci, span):
         trow["Same date, no compute levers"] = f"US {_pc_wc_ratio([t_x])[0]:.1f}\u00d7"
     rows.append(trow)
 
-    st.markdown("##### Compute: largest trainable run")
+    st.markdown("##### Compute: largest run, trained and trainable")
     st.plotly_chart(_tf(fig1), width="stretch")
     st.markdown("##### Compute: total installed")
     st.plotly_chart(_tf(fig2), width="stretch")
     st.markdown("**How far ahead the US is**")
     st.table(pandas.DataFrame(rows).style.hide(axis="index"))
     _fn_caption(
-        "Largest run is capacity: what each side's clusters could train, "
-        "sites abroad included, not runs actually done (the China tab's "
-        "~50\u00d7 gap counts those). Total is installed compute by location; "
+        "China's lines are capacity: the largest run its clusters could "
+        "train, sites abroad included, which it is assumed to use. "
+        + (("The US " + ("trains nothing new after the pause" if paused else
+                         "trains slower than its clusters grow")
+            + ", so its clusters run ahead of its largest trained run: the "
+            "overhang. ") if pace < 1 else "")
+        + "The table compares China's capacity with the US run "
+        "actually trained. Total is installed compute by location; "
         "the US keeps installing through the pause. "
         f"Each 10\u00d7 of compute is worth ~{ci['a_partial']:.0f} ECI.",
         ("sites abroad included", "China's usable run counts two Johor, "
@@ -16474,10 +16505,12 @@ def _pc_render_compute_ratios(ci, span):
                                   "have other tenants, so this is an upper "
                                   "bound; it also sets what the remote-access "
                                   "lever is worth."),
-        ("not runs actually done", "Those are Epoch's estimates of the "
-                                   "largest runs each country has trained, "
-                                   "a different quantity from what its "
-                                   "clusters could train."),
+        ("the overhang", "Unused cluster capacity: what the US could train "
+                         "the day pacing ends. Pacing is set on ECI growth; "
+                         "this reads it as the largest run's compute growing "
+                         "at that share of the clusters' pace. Capacity is "
+                         "not runs actually done: the China tab's ~50\u00d7 "
+                         "gap counts Epoch's estimates of those."),
         ("Total is installed compute", "The world-share estimates on the Data "
                                        "Centers tab (US ~72%, mainland China "
                                        "~13% today), each grown at its central "
@@ -17870,6 +17903,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         'today': today, 'pause_d': pause_d, 'use_dom': _use_dom,
         'horizon': horizon if horizon is not None else _PC_HORIZON,
         'dom_keep': dom_keep,
+        # The US clusters' own pace (log10/yr) and the pace slider: capacity
+        # keeps growing through a pause; the run actually trained does not.
+        'g_us': us_fit['g'] if us_fit else None, 'pace': pace,
     }
     if not crossed:
         return
