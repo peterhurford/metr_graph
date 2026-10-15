@@ -15140,12 +15140,16 @@ def _pc_blend_parts(components):
 _PC_CARDS_PER_ROW = 4
 
 
+_PC_WIN_MAX = 3   # extra pacing windows the Advanced expander offers
 _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_pause_mo", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
                   "pc_duv_service", "pc_duv_decay", "pc_duv_growth",
                   "pc_dist_when", "pc_remote_when", "pc_cn_run",
-                  "pc_methods_pause", "pc_pace", "pc_tk_follow"] + \
+                  "pc_methods_pause", "pc_pace", "pc_tk_follow",
+                  "pc_win_n"] + \
+                 [f"pc_win{i}_{f}" for i in range(1, _PC_WIN_MAX + 1)
+                  for f in ("pace", "start", "end")] + \
                  [_PC_RSI_W_KEY + s for s in _PC_RSI_WEIGHTS]
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
 _PC_CN_RUN_MAX = 12           # months: longest Chinese catch-up training run
@@ -15190,6 +15194,12 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_remote_when": _PC_WHEN_NOW,
                 "pc_cn_run": 2, "pc_methods_pause": False,
                 "pc_tk_follow": 0.8,
+                "pc_win_n": 0,
+                **{k: v for i in range(1, _PC_WIN_MAX + 1) for k, v in (
+                    (f"pc_win{i}_pace", 50),
+                    (f"pc_win{i}_start", _pc_pause_default_mo()),
+                    (f"pc_win{i}_end", min(_pc_pause_default_mo() + 12,
+                                           _PC_PAUSE_MO_MAX)))},
                 **{_PC_RSI_W_KEY + s: w for s, w in _PC_RSI_WEIGHTS.items()}}
 _PC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
@@ -16363,10 +16373,15 @@ def _pc_render_compute_ratios(ci, span):
 
     g_us, pace = ci.get('g_us') or 0.0, ci.get('pace', 0.0)
     paused = pace <= 0
+    windowed = bool(ci.get('windowed'))
+    paced = pace < 1 or windowed
 
     def _us(t):
         """The largest run the US trains: capacity to the pacing date, then
-        `pace` of the clusters' growth (none under a pause)."""
+        `pace` of the clusters' growth (none under a pause); with pacing
+        windows, the capacity it would have on the paced clock."""
+        if ci.get('clock'):
+            return _us_cap(ci['clock'](t))
         return _path(us_0, us_p, pace * g_us, t)
 
     def _us_cap(t):
@@ -16430,12 +16445,13 @@ def _pc_render_compute_ratios(ci, span):
     # Chart 1: the largest run each side's clusters could train, in log OP,
     # and the largest the US actually trains; the gap is its overhang.
     fig1 = go.Figure()
-    if g_us > 0 and pace < 1:
+    if g_us > 0 and paced:
         _line(fig1, "US clusters: largest run they could train", '#9EC5E8',
               [10 ** _us_cap(t) for t in ts], dash='dash',
               ratio=None, log_op=True)
     us_y = [10 ** _us(t) for t in ts]
     _line(fig1, ("US largest run trained (frozen at the pause)" if paused else
+                 "US largest run trained (paced on a schedule)" if windowed else
                  f"US largest run trained (paced: {pace:.0%} of cluster growth)"
                  if pace < 1 else "US largest run trained"), '#1F77B4', us_y,
           log_op=True)
@@ -16519,7 +16535,7 @@ def _pc_render_compute_ratios(ci, span):
         if ci.get('levers'):
             row[c_b] = _runs(_us(t_x), _path(*base, t_x))
         rows.append(row)
-    if g_us > 0 and pace < 1:
+    if g_us > 0 and paced:
         def _over(t):
             return (f"{_us_cap(t):.1f} vs {_us(t):.1f} log OP \u2192 "
                     f"{10 ** (_us_cap(t) - _us(t)):.1f}\u00d7 unused")
@@ -16613,11 +16629,45 @@ def _pc_span(months, prec=1, sign=False):
     return f"{v:{'+' if sign else ''}.{prec}f} {unit}"
 
 
-def _pc_paced_clock(t, t_start, pace):
+def _pc_paced_clock(t, t_start, pace, windows=()):
     """Years of US progress made by `t` when, from `t_start`, the US runs at
     `pace` of its own speed: `t` before the start, then `pace` years a year.
-    0 freezes the US at `t_start` (a pause); 1 leaves it unpaced."""
-    return np.where(t <= t_start, t, t_start + pace * (t - t_start))
+    0 freezes the US at `t_start` (a pause); 1 leaves it unpaced.
+
+    `windows` adds (start, end, pace) spans in `t`'s units: inside one the US
+    runs at that pace, after it back at the main lever's. Where spans overlap
+    each other or the main lever, the slowest pace applies. With windows,
+    `t_start` must be a scalar."""
+    if not windows:
+        return np.where(t <= t_start, t, t_start + pace * (t - t_start))
+    t_start = float(t_start)
+    br = sorted({t_start, *(x for a, b, _ in windows for x in (a, b))})
+
+    def rate(x):
+        r = pace if x >= t_start else 1.0
+        return min([r] + [p for a, b, p in windows if a <= x < b])
+    clk = [br[0]]
+    for a, b in zip(br, br[1:]):
+        clk.append(clk[-1] + rate(a) * (b - a))
+    t = np.asarray(t, dtype=float)
+    tail = clk[-1] + rate(br[-1]) * (t - br[-1])
+    return np.where(t <= br[0], t, np.where(t >= br[-1], tail,
+                                            np.interp(t, br, clk)))
+
+
+def _pc_pace_windows(today):
+    """The *Pacing windows* the Advanced expander has set, as
+    [(start date, end date, pace 0–1)]; a window ending on or before its
+    start is left out."""
+    out = []
+    for i in range(1, int(st.session_state.get("pc_win_n", 0) or 0) + 1):
+        a = st.session_state.get(f"pc_win{i}_start", _PC_DEFAULTS[f"pc_win{i}_start"])
+        b = st.session_state.get(f"pc_win{i}_end", _PC_DEFAULTS[f"pc_win{i}_end"])
+        p = st.session_state.get(f"pc_win{i}_pace", _PC_DEFAULTS[f"pc_win{i}_pace"])
+        if b > a:
+            out.append((_pc_add_months(today, a), _pc_add_months(today, b),
+                        p / 100.0))
+    return out
 
 
 def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
@@ -17004,6 +17054,40 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "remote-access setback take longer to regrow. 0% = the "
                  "catalogued buildout.")
         with st.expander("Advanced"):
+            st.markdown("**Pacing windows**")
+            _wmo = list(range(_PC_PAUSE_MO_MAX + 1))
+            if st.session_state.get("pc_win_n") not in range(_PC_WIN_MAX + 1):
+                st.session_state.pop("pc_win_n", None)
+            win_n = st.selectbox(
+                "Extra pacing windows", list(range(_PC_WIN_MAX + 1)),
+                index=_PC_DEFAULTS["pc_win_n"], key="pc_win_n",
+                help="Each window runs the US at its own pace from its start "
+                     "date, then returns it to the *Pace the US* lever's pace "
+                     "at its end. Where windows overlap each other or the "
+                     "lever, the slowest pace applies.")
+            for _i in range(1, win_n + 1):
+                for _f, _ok in (("pace", _PC_PACE_OPTIONS), ("start", _wmo),
+                                ("end", _wmo)):
+                    if st.session_state.get(f"pc_win{_i}_{_f}") not in _ok:
+                        st.session_state.pop(f"pc_win{_i}_{_f}", None)
+                st.select_slider(
+                    f"Window {_i}: pace", options=_PC_PACE_OPTIONS,
+                    value=_PC_DEFAULTS[f"pc_win{_i}_pace"],
+                    key=f"pc_win{_i}_pace", format_func=_pc_pace_label)
+                _ws = st.select_slider(
+                    f"Window {_i}: starts", options=_wmo,
+                    value=_PC_DEFAULTS[f"pc_win{_i}_start"],
+                    key=f"pc_win{_i}_start",
+                    format_func=lambda m: f"{_pc_add_months(today, m):%b %Y}")
+                _we = st.select_slider(
+                    f"Window {_i}: back to normal", options=_wmo,
+                    value=_PC_DEFAULTS[f"pc_win{_i}_end"],
+                    key=f"pc_win{_i}_end",
+                    format_func=lambda m: f"{_pc_add_months(today, m):%b %Y}")
+                if _we <= _ws:
+                    st.caption(f"Window {_i} ends before it starts, so it "
+                               "is ignored.")
+            st.divider()
             st.markdown("**When the controls bite**")
             _opts = _pc_when_options(today)
             for _k in ("pc_dist_when", "pc_remote_when"):
@@ -17184,6 +17268,15 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     t_today = max((today - anchor_d).days, 0) / 365.25
     t_pause_s = np.full(n_s, max((pause_d - anchor_d).days, 0) / 365.25)
     t_pause_s = np.maximum(t_pause_s, t_today)
+    # The Advanced expander's pacing windows, in years from China's anchor
+    # and on the pause's clock.
+    pace_wins = [(max((a - anchor_d).days / 365.25, t_today),
+                  max((b - anchor_d).days / 365.25, t_today), p)
+                 for a, b, p in _pc_pace_windows(today)]
+
+    def _us_clock(t):
+        return _pc_paced_clock(t, float(t_pause_s[0]) if pace_wins
+                               else t_pause_s[:, None], pace, pace_wins)
     # The bar is the best model the US has *trained* by the pause — the
     # 1e28 flagship itself. The released frontier trails the trained one by
     # the realized ship lag (_PC_SHIP_LAG_DAYS), and the climb is measured
@@ -17226,22 +17319,20 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             j = np.clip(((e - _lv0) / _dlv).astype(int), 0, _sp_tab.shape[1] - 1)
             return _sp_tab[_sp_rows, j].astype(float)
 
-    level_s = _us_trained_unpaced(t_pause_s[:, None])[:, 0]
+    level_s = _us_trained_unpaced(_us_clock(t_pause_s[:, None]))[:, 0]
     lvl50 = float(np.median(level_s))
     # Best *queryable* model under the release freeze: the released frontier
     # as of the pause run's start — the freeze means nothing new ships while
     # the final run proceeds, so distillation dries at this level, about one
     # run's climb (plus the ship lag) below the bar.
-    teacher_s = _us_trained_unpaced(
-        np.maximum(t_pause_s - run_days / 365.25, 0.0)[:, None] - _ship)[:, 0]
+    teacher_s = _us_trained_unpaced(_us_clock(
+        np.maximum(t_pause_s - run_days / 365.25, 0.0)[:, None] - _ship))[:, 0]
     teach50 = float(np.median(teacher_s))
 
     def us_path(grid):
         t = np.broadcast_to(np.asarray(grid, dtype=float), (n_s, len(grid)))
-        tp = t_pause_s[:, None]
-        trained = _us_trained_unpaced(_pc_paced_clock(t, tp, pace))
-        released = np.minimum(
-            _us_trained_unpaced(_pc_paced_clock(t - _ship, tp, pace)), trained)
+        trained = _us_trained_unpaced(_us_clock(t))
+        released = np.minimum(_us_trained_unpaced(_us_clock(t - _ship)), trained)
         return trained, released
     # Three-channel algorithmic engine: distillation decays with the gap,
     # diffusion over ~a year after the pause (published stock absorbed),
@@ -17480,6 +17571,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               if _paused else
               (f"China catches the paced US (from {d_pause_v:%b %Y} at "
                f"{pace:.0%}, ECI ~{lvl50:.0f} then)"))
+    if pace_wins:
+        _card1 += (f", plus {len(pace_wins)} pacing window"
+                   + ("s" if len(pace_wins) > 1 else ""))
     if crossed:
         d10, d50, d90 = (_pdate(q) for q in (10, 50, 90))
         # Milestone offsets came from the top of the function; the pause is
@@ -17693,7 +17787,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         fig.add_trace(go.Scatter(
             x=_px, y=_py, mode='lines',
             line=dict(color='#1F77B4', width=4.5), opacity=0.4,
-            name=(f'US paced at {pace:.0%} (~{_prate:.1f} ECI/yr)' if pace < 1
+            name=(f'US paced on a schedule (~{_prate:.1f} ECI/yr)'
+                  if pace_wins else
+                  f'US paced at {pace:.0%} (~{_prate:.1f} ECI/yr)' if pace < 1
                   else f'US, no pacing (~{_prate:.1f} ECI/yr)'),
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US paced</extra>'))
     if d_pause_v > anchor_d + off_cn and pace < 1:
@@ -17706,6 +17802,15 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                            text=(f' US pauses {d_pause_v:%b %Y}' if _paused
                                  else f' US paced from {d_pause_v:%b %Y}'),
                            font=dict(size=10, color='#1F77B4'))
+    # Each pacing window as a light band, labelled with its pace.
+    for _a, _b, _p in _pc_pace_windows(today):
+        _a, _b = max(_a + off_us, today + off_cn), min(_b + off_us, x_end)
+        if _b > _a:
+            fig.add_vrect(x0=_a, x1=_b, fillcolor='rgba(31,119,180,0.07)',
+                          line_width=0, layer='below',
+                          annotation_text=f"{_p:.0%}",
+                          annotation_position='top left',
+                          annotation_font=dict(size=10, color='#1F77B4'))
     # The US's automated coder and RSI, each where the paced released
     # frontier reaches the ECI that sample's Takeoff scenario had at it.
     # Marks carry no on-chart text, which collided wherever the two sides'
@@ -17813,6 +17918,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             f"{share_x:.0%} of samples by the end of {_yr_end}<br>"
             f"At ECI ~{cross50:.0f}, "
             + (f"the paused US frontier" if _paused else
+               "where the paced US stands by then" if pace_wins else
                f"where the {pace:.0%}-paced US stands by then")
             + f"<br>~{_pc_span(s50, 0)} after the "
             + ("pause" if _paused else "pacing starts")
@@ -17959,6 +18065,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # The US clusters' own pace (log10/yr) and the pace slider: capacity
         # keeps growing through a pause; the run actually trained does not.
         'g_us': us_fit['g'] if us_fit else None, 'pace': pace,
+        'windowed': bool(pace_wins),
+        # The same schedule in years from today, for the trained run.
+        'clock': (lambda t: float(_pc_paced_clock(
+            t, max((pause_d - today).days / 365.25, 0.0), pace,
+            [((a - today).days / 365.25, (b - today).days / 365.25, p)
+             for a, b, p in _pc_pace_windows(today)]))),
         # The crossing card's date, so the table's column names it alike.
         'cross_label': v50,
     }

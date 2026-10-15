@@ -4457,6 +4457,21 @@ class TestPacing:
         assert list(vp._pc_paced_clock(t, 1.0, 1.0)) == list(t)
         assert list(vp._pc_paced_clock(t, 1.0, 0.5)) == [0.0, 1.0, 1.5, 2.0]
 
+    def test_pacing_windows_slow_the_us_then_return_it_to_normal(self):
+        """A window runs the US at its own pace and hands it back after;
+        where windows overlap each other or the main lever, the slowest wins."""
+        t = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        # A pause from 1 to 2, unpaced around it: one year lost for good.
+        assert list(vp._pc_paced_clock(t, 9.0, 1.0, [(1.0, 2.0, 0.0)])) == \
+            [0.0, 1.0, 1.0, 2.0, 3.0]
+        # Half pace from 1 to 3 under a 0.5 main lever from 2: 0.5 throughout.
+        assert list(vp._pc_paced_clock(t, 2.0, 0.5, [(1.0, 3.0, 0.5)])) == \
+            [0.0, 1.0, 1.5, 2.0, 2.5]
+        # Overlapping windows: the pause wins where the two meet.
+        assert list(vp._pc_paced_clock(
+            t, 9.0, 1.0, [(1.0, 3.0, 0.5), (2.0, 3.0, 0.0)])) == \
+            [0.0, 1.0, 1.5, 1.5, 2.5]
+
     def test_speedup_is_the_us_rate_at_that_eci_over_todays(self):
         """China's multiplier at an ECI is the Takeoff path's growth when it
         stood there, over today's trend: 1 on the trend, 3x once the path

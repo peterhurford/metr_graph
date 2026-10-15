@@ -2222,6 +2222,38 @@ class TestPacingTab:
         assert start_bar == paused_bar      # same US level when pacing starts
         assert any("At pacing start" in t.value.columns for t in at.table)
 
+    def test_a_pacing_window_slows_the_us_until_it_ends(self):
+        """A pause window in the Advanced expander lowers the US frontier at
+        the pacing date and draws its band; a window that ends before it
+        starts is ignored, and dropping the window restores the cards."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+
+        def cards():
+            return [(str(m.label), str(m.value), str(m.delta)) for m in at.metric]
+
+        def bar():
+            m = next(m for m in at.metric if "paced US" in str(m.label))
+            return float(str(m.label).split("ECI")[-1].split()[0].strip(" ~)"))
+
+        before, bar0 = cards(), bar()
+        start = at.select_slider(key="pc_pause_mo").value
+        at.selectbox(key="pc_win_n").set_value(1).run()
+        assert at.select_slider(key="pc_win1_pace").value == 50
+        at.select_slider(key="pc_win1_pace").set_value(0)
+        at.select_slider(key="pc_win1_start").set_value(0)
+        at.select_slider(key="pc_win1_end").set_value(start).run()
+        _assert_no_error(at, "Pacing / pause window")
+        assert bar() < bar0
+        assert "1 pacing window" in next(
+            str(m.label) for m in at.metric if "paced US" in str(m.label))
+        at.select_slider(key="pc_win1_end").set_value(0).run()
+        assert any("is ignored" in c.value for c in at.caption)
+        assert bar() == bar0
+        at.selectbox(key="pc_win_n").set_value(0).run()
+        assert cards() == before
+
     def test_us_path_inherits_takeoffs_coder_and_rsi(self):
         """Unpaced, the US follows the Takeoff tab's scenarios, so its
         automated-coder and RSI marks land within a couple of months of the
