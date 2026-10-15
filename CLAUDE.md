@@ -636,7 +636,7 @@ Three mechanisms, in order of preference:
    an `st.markdown` — the element type is what tells fine print from body text, to
    the reader and to the tests that address one and not the other.
 3. **`_fn_line(...)`** for a body-prominent line that must not read as fine print
-   (the pause panel's *Assumes*, the buildout headline). `st.warning` takes no
+   (the buildout headline). `st.warning` takes no
    HTML, so the efficiency caveats use `_fn_line` with a warning glyph instead of
    a yellow box.
 
@@ -1229,7 +1229,7 @@ things are load-bearing:
 
 On the Pausing tab the cut compounds with `pc_dom_slow`: effective slowdown =
 1 − (1 − slider)(1 − cut), through the existing domestic-growth machinery. The
-*Assumes* line names each active DUVi lever even when its cut rounds to 0%.
+"these settings" hover names each active DUVi lever even when its cut rounds to 0%.
 
 Guarded by `TestDuvProduction` (unit), `TestCcDuvCeilingTab` and
 `test_duvi_levers_compound_with_the_domestic_slider` (integration).
@@ -1510,9 +1510,13 @@ must not slow the years *before* it: the band stays on the export-control defaul
 until the cut and `comp_slow=(t_cut, a_partial·g_domestic)` takes over after, while
 the setback is sized at the cut date (today's OOM gap widened by `(g_mid − g_dom)`
 per year of lead), so a later cut costs more to regrow but is never worse for China
-overall. Cutting *at* today keeps the old global band cap instead. An **Assumes**
-line (not buried in the caption) states weight security (theft would put China at the
-bar), the drying channels, and the compute band. The panel adds **no release-queue
+overall. Cutting *at* today keeps the old global band cap instead. *Why that long?*
+opens with an `st.warning` that it assumes ~SL5 secure weights (theft would put China at
+the bar). A policy lever, `pc_methods_pause` (default on), sets whether diffusion dries up
+over `_CC_DIFF_ABSORB_YRS` after the pause (`t_pause`) or runs at full rate because the US
+keeps publishing (`test_methods_toggle_keeps_diffusion_running`). Each lever's state in
+words (distillation teacher, cut dates, compute band) sits in the "these settings"
+hover under the table. The panel adds **no release-queue
 wait** (unlike the CC 161 section — a queue delays both sides alike); dates follow the
 sidebar's *Date points at* in lockstep (US events run-finished + `shift − run`, ECI
 release dates + `shift − run − 30d`), so the US–China gap is milestone-invariant; the

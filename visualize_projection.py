@@ -15082,7 +15082,8 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_pause_mo", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
                   "pc_duv_service", "pc_duv_decay", "pc_duv_growth",
-                  "pc_dist_when", "pc_remote_when", "pc_cn_run"] + \
+                  "pc_dist_when", "pc_remote_when", "pc_cn_run",
+                  "pc_methods_pause"] + \
                  [_PC_RSI_W_KEY + s for s in _PC_RSI_WEIGHTS]
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
 _PC_CN_RUN_MAX = 12           # months: longest Chinese catch-up training run
@@ -15116,7 +15117,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_duv_growth": _DUV_CN_OUTPUT_GROWTH,
                 "pc_dist_when": _PC_WHEN_NOW,
                 "pc_remote_when": _PC_WHEN_NOW,
-                "pc_cn_run": 2,
+                "pc_cn_run": 2, "pc_methods_pause": True,
                 **{_PC_RSI_W_KEY + s: w for s, w in _PC_RSI_WEIGHTS.items()}}
 _PC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
@@ -16491,6 +16492,9 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                         f"{us_run_mo}"), (None, None)
         else:
             label = _PC_CHANNEL_LABELS[k]
+            if k == 'diffusion' and not st.session_state.get(
+                    "pc_methods_pause", _PC_DEFAULTS["pc_methods_pause"]):
+                label = "Diffusion, published US methods (US keeps publishing)"
             r = rates.get(k, (None, None))
             if split and k in ('compute_domestic', 'compute_abroad'):
                 # The split is a counterfactual with no rate of its own: the
@@ -16573,6 +16577,9 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     rows.append({"Source": "Crossover date", c0: _date(r0), c1: _date(ravg),
                  c2: ""})
     st.markdown("##### Why that long?")
+    st.warning("**Assumes ~SL5 secure weights - if not, China could catch up "
+               "quickly by stealing US models.**", icon="\u26a0\ufe0f")
+
     _fn_line(
         f"At the pause ({pause_label}) China is at ~{cn_at:.0f}, "
         f"**{gap:.0f} ECI** short. At its starting pace that would take "
@@ -16729,7 +16736,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _imp_cut = _duv_policy_cut(
         today, _duv_end, growth=st.session_state.get(
             "pc_duv_growth", _PC_DEFAULTS["pc_duv_growth"])) or 0.0
-    db1, db2 = st.columns(2)
+    db1, db2, db3 = st.columns(3)
     duv_ban = db1.checkbox(
         "Ban DUV immersion lithography exports to China from 2027",
         key="pc_duv_ban",
@@ -16749,6 +16756,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              "rate set under *Advanced*. Unlike the import ban it bites "
              "straight away, because it hits the machines in use rather "
              "than a ceiling China has not reached yet.")
+    methods_pause = db3.checkbox(
+        "US pauses publishing methods too", key="pc_methods_pause",
+        value=_PC_DEFAULTS["pc_methods_pause"],
+        help="On: the pause stops new US methods as well as models, and China "
+             f"absorbs what was already published over ~{_CC_DIFF_ABSORB_YRS:.0f}"
+             " yr, so diffusion dries up. Off: the US keeps publishing and "
+             "diffusion runs at full rate.")
     dom_slow_user = st.slider(
         "Slow China's domestic compute growth by", 0, _PC_DOM_SLOW_MAX,
         value=_PC_DEFAULTS["pc_dom_slow"], step=1, format="%d%%",
@@ -17037,7 +17051,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               a_partial=a_partial, g_lo=g_lo_eff,
               g_hi=g_hi_eff, algo_lo=a_lo, algo_mid=a_mid,
               algo_hi=a_hi, pace_lo=pace_lo, pace_hi=pace_hi,
-              n=n_s, t_pause=t_pause_s, comp_dead=comp_dead,
+              n=n_s, comp_dead=comp_dead,
+              t_pause=t_pause_s if methods_pause else None,
               comp_slow=comp_slow,
               t_dist_stop=(max((d_dist - anchor_d).days, 0) / 365.25
                            if stop_dist else None),
@@ -17203,7 +17218,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             (f"{_mos} of extra training", "On the chart China's fan therefore starts "
                                           "that much after its last actual model, "
                                           "and that much higher."))
-    _when_r = "today" if d_remote <= today else f"**{d_remote:%b %Y}**"
+
+    # Each lever's state in words, for the "these settings" hover.
+    _when_r = "today" if d_remote <= today else f"{d_remote:%b %Y}"
     _dom_hi = g_hi_eff if g_dom_hi is None else g_dom_hi
     _dom_lo = g_lo_eff if g_dom_hi is None else g_dom_lo
     _slow = (f"; domestic buildout slowed {dom_slow_pct}%"
@@ -17212,49 +17229,28 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 if duv_names else "")
              if dom_slow_pct or duv_names else "")
     if comp_dead is not None:
-        _asm_comp = (f"compute — from {_when_r}, falls back "
-                     f"**{dlvl_oom:.1f} OOM** to the largest domestic "
-                     f"cluster, ~{comp_dead[1] - comp_dead[0]:.1f} yr to "
-                     f"regrow at ×{10 ** _dom_hi:.1f}/yr "
-                     f"(checkbox{_slow})")
+        _asm_comp = (f"Compute: from {_when_r}, falls back {dlvl_oom:.1f} OOM "
+                     "to the largest domestic cluster, "
+                     f"~{comp_dead[1] - comp_dead[0]:.1f} yr to regrow at "
+                     f"\u00d7{10 ** _dom_hi:.1f}/yr (checkbox{_slow}).")
     elif stop_remote:
-        _asm_comp = (f"compute — domestic pace only from {_when_r}, "
-                     f"×{10 ** _dom_lo:.1f}–{10 ** _dom_hi:.1f}/yr "
-                     f"(checkbox{_slow})")
+        _asm_comp = (f"Compute: domestic pace only from {_when_r}, "
+                     f"\u00d7{10 ** _dom_lo:.1f}\u2013{10 ** _dom_hi:.1f}/yr "
+                     f"(checkbox{_slow}).")
     else:
-        _asm_comp = (f"compute — keeps growing ×{10 ** g_lo_eff:.1f}–"
-                     f"{10 ** g_hi_eff:.1f}/yr (export-control band{_slow})")
+        _asm_comp = (f"Compute: keeps growing \u00d7{10 ** g_lo_eff:.1f}\u2013"
+                     f"{10 ** g_hi_eff:.1f}/yr (export-control band{_slow}).")
     if stop_dist:
-        _asm_dist = ("distillation — **cut today** (checkbox)"
-                     if d_dist <= today else
-                     f"distillation — **cut {d_dist:%b %Y}** (checkbox); "
-                     "the gap-decay law until then")
+        _asm_dist = ("Distillation: cut today (checkbox)." if d_dist <= today
+                     else f"Distillation: cut {d_dist:%b %Y} (checkbox); the "
+                          "gap-decay law until then.")
     elif withhold:
-        _asm_dist = ("distillation — release freeze from pause-run start "
-                     f"(checkbox): the teacher is the last pre-freeze "
-                     f"release (ECI ~{teach50:.0f}), so it dries up well "
-                     "below the bar")
+        _asm_dist = ("Distillation: release freeze from pause-run start "
+                     "(checkbox): the teacher is the last pre-freeze release "
+                     f"(ECI ~{teach50:.0f}), so it dries up well below the bar.")
     else:
-        _asm_dist = ("distillation — the paused frontier itself stays "
-                     "queryable, fading only as China closes the gap")
-    def _strip(txt):
-        """The channel strings lead with their own name; the marker is that
-        name, so drop the prefix rather than saying it twice."""
-        body = txt.split("\u2014", 1)[-1].strip().replace("**", "")
-        return body[0].upper() + body[1:] + "."
-
-    _fn_line(
-        "**Assumes** secure weights, a pause on methods as well as models, and "
-        "these settings for China's distillation and compute:",
-        ("secure weights", "China can query the paused US models but never "
-                           "steal them \u2014 theft would be instant "
-                           "catch-up."),
-        ("a pause on methods", "The pause stops new US models and methods "
-                               "alike: published know-how is fully absorbed "
-                               f"~{_CC_DIFF_ABSORB_YRS:.0f} yr after the "
-                               "pause."),
-        ("distillation", _strip(_asm_dist)),
-        ("compute", _strip(_asm_comp)))
+        _asm_dist = ("Distillation: the paused frontier itself stays "
+                     "queryable, fading only as China closes the gap.")
 
     # ── The race, in ECI: US climbs to the bar and freezes; China's fan
     # catches up and crosses. The whole chart rides the sidebar milestone:
@@ -17430,6 +17426,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                + ("s)" if duv_ban and duv_service else ")")
                if duv_names else "")
             + ", which lowers both compute rows.")
+    _notes = [_asm_dist, _asm_comp] + _notes
     _notes.append(f"Every row is scaled by the pace band "
                   f"(×{pace_lo:.2f}–{pace_hi:.2f}), the reality check "
                   "against China's own observed frontier slope.")

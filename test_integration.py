@@ -1687,6 +1687,29 @@ class TestPacingTab:
         assert "US (keeps installing through the pause)" in names
         assert "China, no compute levers" in names
 
+    def test_methods_toggle_keeps_diffusion_running(self):
+        """With the US still publishing methods, diffusion never dries up and
+        China crosses sooner."""
+        at = self._app()
+
+        def surpass(at):
+            m = next(m for m in at.metric
+                     if "Time for China to surpass" in str(m.label))
+            return float(str(m.value).strip("~ mo"))
+
+        def diffusion(at):
+            t = next(x.value for x in at.table if "Source" in x.value.columns)
+            return t[t["Source"].str.startswith("Diffusion")].iloc[0]
+
+        base = surpass(self._paired(at))
+        assert diffusion(at)["China ECI/yr at US/China cross"] == "Dried up"
+        self._paired(at.checkbox(key="pc_methods_pause").uncheck())
+        _assert_no_error(at, "Pausing / methods keep publishing")
+        assert surpass(at) < base
+        row = diffusion(at)
+        assert "keeps publishing" in row["Source"]
+        assert float(row["China ECI/yr at US/China cross"]) > 1.0
+
     def test_why_states_the_gap_and_the_slowing_rate(self):
         """The breakdown says how much gap is left at the pause and how fast
         China closes it: each channel's rate at the pause and at the
@@ -1741,8 +1764,9 @@ class TestPacingTab:
         return el.run()
 
     def test_us_pause_panel_states_its_assumptions_in_the_body(self):
-        """The US-pause counterfactual renders its crossing metrics, and its
-        *Assumes* line (weight security first) is body text, not fine print."""
+        """The US-pause counterfactual renders its crossing metrics; Why
+        that long? opens with the weight-security alert and the methods
+        toggle."""
         at = self._app()
         subs = " ".join(str(s.value) for s in at.subheader)
         assert "If the US paused" in subs
@@ -1751,9 +1775,9 @@ class TestPacingTab:
         assert "Time for China to surpass" in labels
         caps = " ".join(str(c.value) for c in at.caption)
         md = " ".join(str(m.value) for m in at.markdown)
-        assert "**Assumes**" in md and "**Assumes**" not in caps
-        # The weight-security assumption is a hover on its phrase.
-        assert "never steal them" in md
+        assert "**Assumes**" not in md
+        assert any("SL5 secure weights" in str(w.value) for w in at.warning)
+        assert at.checkbox(key="pc_methods_pause").value is True
         # The clock line follows the sidebar default (run finished).
         assert "Dates = training runs finish" in caps
 
@@ -1774,10 +1798,10 @@ class TestPacingTab:
         base = _surpass_mo(self._paired(at))
         # Serving the paused frontier publicly restores the full teacher:
         # China can only cross sooner (or the same, within rounding).
-        # Each channel's setting is the body of its hover on the *Assumes*
-        # line; the markers capitalise it, so match case-insensitively.
+        # Each channel's setting sits in the "these settings" hover under
+        # Why that long?; match case-insensitively.
         def _md(at):
-            return " ".join(str(m.value) for m in at.markdown).lower()
+            return " ".join(str(c.value) for c in at.caption).lower()
 
         self._paired(at.checkbox(key="pc_withhold").uncheck())
         _assert_no_error(at, "Pausing / paused models served")
@@ -1819,7 +1843,7 @@ class TestPacingTab:
         self._paired(at.select_slider(key="pc_dist_when").set_value(late))
         _assert_no_error(at, "Pausing / distillation cut late")
         assert base - 1 <= _surpass_mo(at) <= now_d + 1
-        md = " ".join(str(m.value) for m in at.markdown).lower()
+        md = " ".join(str(c.value) for c in at.caption).lower()
         assert f"cut {late}".lower() in md
         at.checkbox(key="pc_stop_dist").uncheck().run()
 
@@ -1829,7 +1853,7 @@ class TestPacingTab:
         self._paired(at.select_slider(key="pc_remote_when").set_value(late))
         _assert_no_error(at, "Pausing / remote cut late")
         assert base - 1 <= _surpass_mo(at) <= now_r + 1
-        md = " ".join(str(m.value) for m in at.markdown)
+        md = " ".join(str(c.value) for c in at.caption)
         assert late in md
 
     def test_chinese_run_length_trades_compute_against_wall_clock(self):
@@ -1865,7 +1889,7 @@ class TestPacingTab:
         assert min(mids.values()) < long_run, (mids, long_run)
 
     def test_duvi_levers_compound_with_the_domestic_slider(self):
-        """Each DUVi lever is named on the Assumes line even when its cut
+        """Each DUVi lever is named in the settings hover even when its cut
         rounds to zero, and the cuts stack multiplicatively with the slider:
         1 - (1 - slider)(1 - duv)."""
         at = self._app()
@@ -1875,10 +1899,10 @@ class TestPacingTab:
         assert at.slider(key="pc_duv_growth").disabled
 
         def _slowed(at, names):
-            md = " ".join(str(m.value) for m in at.markdown)
+            md = " ".join(str(c.value) for c in at.caption)
             m = re.search(r"domestic buildout slowed (\d+)% incl\. the DUVi "
                           + names, md)
-            assert m, f"the Assumes line names the {names}"
+            assert m, f"the settings hover names the {names}"
             return int(m.group(1))
 
         at.checkbox(key="pc_duv_ban").check().run()
