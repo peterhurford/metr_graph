@@ -1436,7 +1436,14 @@ attribution; the threshold reaches the display through the chart title.
    the DC tab does — default is run-finished (capacity-online, or +30d for
    release, one click away); the fine print states which milestone the dates mean.
 
-The tab opens with the pause date and `_pc_render_us_pause()`. `pc_pause_mo` and
+The levers open with *Pace the US* (`pc_pace`, `_PC_PACE_OPTIONS` 100→0, default 100 = no
+pacing, 0 = the pause): from the pacing date the US runs its path on `_pc_paced_clock`, `pace`
+years a year, so the bar China crosses moves (`_cc_cn_crossing_sim(us_path=…)` returns trained
+and released paths; released trails trained by the ship lag, which reproduces the old capped
+climb at 0). Crossing dates are percentiles over every sample, a never-crossed one counting as
+past the window, and the cards need over half to cross, else an info line replaces them and
+the breakdown (`test_pacing_slows_the_us_and_delays_china`). Pause-scenario tests set
+`pc_pace` to 0 in `TestPacingTab._app`. The pacing date and `_pc_render_us_pause()` follow. `pc_pause_mo` and
 the `_pc_capacity_at()` reading it implies are rendered by `render_pacing()`, not
 by the panel, because the race below needs the same bar; the panel takes
 `pause_d` and `caps` as arguments. The US pauses on that date, frozen at whatever

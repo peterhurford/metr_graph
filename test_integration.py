@@ -1622,9 +1622,12 @@ class TestPacingTab:
     resets."""
 
     def _app(self):
+        """The tab with the US paused (pace 0%), the scenario most of these
+        tests read; the default, no pacing, is covered on its own."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
+        at.select_slider(key="pc_pace").set_value(0).run()
         return at
 
     @staticmethod
@@ -2159,6 +2162,35 @@ class TestPacingTab:
         assert _cross(at) > base_d
         at.select_slider(key="pc_pause_mo").set_value(18).run()
 
+    def test_pacing_slows_the_us_and_delays_china(self):
+        """The *Pace the US* slider opens at 100% (no pacing), where China
+        does not catch the US in the window and the panel says so rather
+        than going blank; at 25% the US keeps climbing, so China catches it
+        later than a pause, on a bar that has moved up."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        pace = at.select_slider(key="pc_pace")
+        assert pace.value == 100 and pace.options[0] == "100% \u00b7 no pacing"
+        assert pace.options[-1] == "0% \u00b7 pause"
+        info = " ".join(str(i.value) for i in at.info)
+        assert "does not reach the paced US frontier" in info
+        assert at.get("plotly_chart")      # the race chart still draws
+
+        def _cross(at, word):
+            m = next(m for m in at.metric if word in str(m.label))
+            return datetime.strptime(str(m.value), "%b %Y"), \
+                float(str(m.label).split("ECI")[-1].split()[0].strip(" ~)"))
+
+        at.select_slider(key="pc_pace").set_value(0).run()
+        paused, paused_bar = _cross(at, "paused US frontier")
+        at.select_slider(key="pc_pace").set_value(25).run()
+        _assert_no_error(at, "Pacing / paced at 25%")
+        paced, start_bar = _cross(at, "paced US")
+        assert paced > paused
+        assert start_bar == paused_bar      # same US level when pacing starts
+        assert any("At pacing start" in t.value.columns for t in at.table)
+
     def test_renders_with_headline_and_table(self):
         at = self._app()
         _assert_no_error(at, "Pacing")
@@ -2315,7 +2347,9 @@ class TestTodayForwardMode:
         return out
 
     # Tabs where every chart is a projection, so every chart goes forward.
-    _ALL_FORWARD = {"Pacing": 4}
+    # Pacing at its default (no pacing) has no crossing, so the breakdown's
+    # two compute charts, which need one, are not drawn.
+    _ALL_FORWARD = {"Pacing": 2}
 
     def _starts_today(self, spec):
         rng = spec["layout"].get("xaxis", {}).get("range")

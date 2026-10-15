@@ -13387,7 +13387,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS,
                         t_dist_stop=None, comp_dead=None, comp_slow=None,
                         dist_teacher=None, channels=None, comp_shadow=None,
-                        level_sd=0.0, level_ramp_yrs=0.5):
+                        level_sd=0.0, level_ramp_yrs=0.5, us_path=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -13416,6 +13416,11 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     `dist_teacher` (scalar or per-sample) caps the level the distillation
     gap sees: the best *queryable* model when the true frontier is withheld,
     so distillation dries up at the teacher's level, below the bar.
+
+    `us_path(grid)` -> (trained, released), each (n, len(grid)): a moving US
+    frontier. China then crosses `trained` wherever it is (`target` is
+    ignored), and the distillation gap reads `released` instead of
+    `us_anchor + us_rate·t`.
 
     Pass a dict as `channels` to have it filled with the four rate terms'
     *cumulative* ECI contributions, each an (n, len(grid)) array summing to
@@ -13471,6 +13476,9 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     traj = np.empty((n, steps + 1))
     traj[:, 0] = anchor_eci
     shadow = channels is not None and comp_shadow is not None
+    us_tr = us_rel = None
+    if us_path is not None:
+        us_tr, us_rel = us_path(grid)
     if channels is not None:
         for _k in _CC_CHANNELS + (('compute_domestic',) if shadow else ()):
             channels[_k] = np.zeros((n, steps + 1))
@@ -13482,9 +13490,12 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     if channels is not None and level_sd > 0:
         channels['level'] = np.zeros((n, steps + 1))
     for i in range(1, steps + 1):
-        us_level = us_anchor + us_rate * grid[i - 1]
-        if us_pause_level is not None:
-            us_level = np.minimum(us_level, us_pause_level)
+        if us_rel is not None:
+            us_level = us_rel[:, i - 1]
+        else:
+            us_level = us_anchor + us_rate * grid[i - 1]
+            if us_pause_level is not None:
+                us_level = np.minimum(us_level, us_pause_level)
         t_level = (us_level if dist_teacher is None
                    else np.minimum(us_level, dist_teacher))
         gap = np.maximum(t_level - e, 0.0)
@@ -13514,6 +13525,15 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         traj[:, i] = e + offset * min(grid[i] / level_ramp_yrs, 1.0)
         if channels is not None and level_sd > 0:
             channels['level'][:, i] = traj[:, i] - e
+        if us_tr is not None:
+            hit = np.isnan(years) & (traj[:, i] >= us_tr[:, i])
+            if np.any(hit):
+                # Interpolate where the gap to the moving bar closes.
+                d0 = us_tr[hit, i - 1] - traj[hit, i - 1]
+                d1 = us_tr[hit, i] - traj[hit, i]
+                frac = np.clip(d0 / np.maximum(d0 - d1, 1e-12), 0.0, 1.0)
+                years[hit] = grid[i - 1] + frac * dt
+            continue
         hit = np.isnan(years) & (traj[:, i] >= target)
         if np.any(hit):
             # Interpolate the crossing inside the step: snapping to grid[i]
@@ -15099,7 +15119,7 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
                   "pc_duv_service", "pc_duv_decay", "pc_duv_growth",
                   "pc_dist_when", "pc_remote_when", "pc_cn_run",
-                  "pc_methods_pause"] + \
+                  "pc_methods_pause", "pc_pace"] + \
                  [_PC_RSI_W_KEY + s for s in _PC_RSI_WEIGHTS]
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
 _PC_CN_RUN_MAX = 12           # months: longest Chinese catch-up training run
@@ -15110,6 +15130,14 @@ _PC_DOM_SLOW_MAX = 90         # percent: hardest slowdown of China's own buildou
 # restores that date rather than a month count.
 _PC_PAUSE_MO_MAX = 60
 _PC_PAUSE_DEFAULT_YM = (2027, 7)  # the plan-start date the tab opens on
+# The *Pace the US* slider: the share of its ECI growth the US keeps from the
+# pacing date, 100 (no pacing) down to 0 (a pause).
+_PC_PACE_OPTIONS = list(range(100, -1, -5))
+
+
+def _pc_pace_label(p):
+    return ("100% · no pacing" if p == 100 else "0% · pause" if p == 0
+            else f"{p}%")
 
 
 def _pc_pause_default_mo(today=None):
@@ -15126,6 +15154,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_timing": "Training run finished",
                 "pc_end_year": _PC_HORIZON.year,
                 "pc_pause_mo": _pc_pause_default_mo(),
+                "pc_pace": 100,
                 "pc_stop_dist": False, "pc_stop_remote": False,
                 "pc_withhold": True, "pc_dom_slow": 0, "pc_duv_ban": False,
                 "pc_duv_service": False,
@@ -15159,9 +15188,21 @@ def _pc_cross_years(traj, grid, target):
     The same sub-step interpolation `_cc_cn_crossing_sim` does internally
     (snapping to the monthly grid swallows sub-month differences), pulled
     out so one set of sampled paths can be re-read against a second bar —
-    what the Chinese-run-length comparison needs. `target` may be scalar or
-    per-sample.
+    what the Chinese-run-length comparison needs. `target` may be scalar,
+    per-sample, or a per-sample path (n, len(grid)) — a moving bar.
     """
+    if np.ndim(target) == 2:
+        d = traj - np.asarray(target, dtype=float)
+        hit = d >= 0
+        ok = hit.any(axis=1)
+        idx = np.argmax(hit, axis=1)
+        rows = np.arange(len(traj))
+        d0 = -d[rows, np.maximum(idx - 1, 0)]
+        d1 = -d[rows, idx]
+        frac = np.clip(d0 / np.maximum(d0 - d1, 1e-12), 0.0, 1.0)
+        dt = grid[1] - grid[0] if len(grid) > 1 else 0.0
+        years = grid[np.maximum(idx - 1, 0)] + frac * dt
+        return np.where(ok, np.where(idx == 0, 0.0, years), np.nan)
     tgt = np.broadcast_to(np.asarray(target, dtype=float).ravel()
                           if np.ndim(target) else float(target), len(traj))
     hit = traj >= tgt[:, None]
@@ -16431,12 +16472,20 @@ def _pc_render_compute_ratios(ci, span):
                            "ratio buys a small capability gap."))
 
 
+def _pc_paced_clock(t, t_start, pace):
+    """Years of US progress made by `t` when, from `t_start`, the US runs at
+    `pace` of its own speed: `t` before the start, then `pace` years a year.
+    0 freezes the US at `t_start` (a pause); 1 leaves it unpaced."""
+    return np.where(t <= t_start, t, t_start + pace * (t - t_start))
+
+
 def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    cn_gain, cn_extra, cn_run_mo, us_run_mo, anchor_name,
                    anchor_d, anchor_eci, horizon_year, notes=(),
                    t_pause=None, pause_label=None, surpass_mo=None,
                    withhold=False, dist_stop_t=None, remote_stop_t=None,
-                   comp_dead=None, compute_info=None, pause_date=None):
+                   comp_dead=None, compute_info=None, pause_date=None,
+                   us_gain=None, paced=False):
     """Bottom-of-panel breakdown: why China's catch-up takes the months it does.
 
     The table gives each source's rate at the pause, its average from the
@@ -16452,7 +16501,10 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     the final crossing
     (run-length shift included), `target0`/`traj0`/`grid0` the organic bar
     and paths the channels accumulated against, `t_pause` years from China's
-    anchor per sample, `surpass_mo` the card's months.
+    anchor per sample, `surpass_mo` the card's months. `us_gain` is, per
+    sample, how far a paced US climbs from the pacing date to the crossing
+    (None or 0 when paused): China must close that too, so the months to
+    close the gap at a rate use the rate net of the US's average climb.
     """
     ok = np.isfinite(years)
     if ok.sum() < 100 or t_pause is None:
@@ -16480,6 +16532,9 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     at_pause = _pc_at_years(traj0, grid0, t_pause)
     cn_at = float(np.nanmedian(at_pause))
     gap = float(np.nanmedian(np.asarray(target0) - at_pause))
+    us_up = (float(np.nanmedian(np.asarray(us_gain)[ok]))
+             if us_gain is not None else 0.0)
+    us_avg = us_up / span if span > 0 else 0.0
     split = 'compute_domestic' in cum
     # Distillation scales with China's remaining gap to its teacher, so it
     # reaches zero as China catches it; the monthly sim sets each month's
@@ -16488,7 +16543,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     d0, d1 = rates['distillation']
     if d1 < max(0.05, 0.1 * d0):
         rates['distillation'] = (d0, 0.0)
-    c0, c1, c2 = ("China ECI/yr at US pause", "Overall China ECI/yr",
+    c0, c1, c2 = ("China ECI/yr at US pacing start" if paced
+                  else "China ECI/yr at US pause", "Overall China ECI/yr",
                   "China ECI/yr at US/China cross")
 
     def _fmt(v):
@@ -16497,7 +16553,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     # Average rates: the gap over the span, shared out by each source's
     # median post-pause ECI, so the rows add to the total exactly (medians of
     # the parts don't add to the median of the whole).
-    ravg = gap / span if span > 0 else None
+    ravg = (gap + us_up) / span if span > 0 else None
     pos = sum(max(v, 0.0) for v in after.values())
     share = {k: (max(v, 0.0) / pos if pos > 0 else 0.0) for k, v in after.items()}
     rows, shown = [], False
@@ -16573,7 +16629,9 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     lag_mo = _CC_RUN_COMPLETION_LAG.days / 30.44
 
     def _months(rate):
-        return gap / rate * 12 - lag_mo if rate and rate > 0 else None
+        # Net of the US's own average climb when it is paced.
+        net = (rate or 0.0) - us_avg
+        return gap / net * 12 - lag_mo if net > 1e-9 else None
 
     def _mo(rate):
         m = _months(rate)
@@ -16597,8 +16655,11 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                "quickly by stealing US models.**", icon="\u26a0\ufe0f")
 
     _fn_line(
-        f"At the pause ({pause_label}) China is at ~{cn_at:.0f}, "
-        f"**{gap:.0f} ECI** short. At its starting pace that would take "
+        f"At the {'pacing start' if paced else 'pause'} ({pause_label}) "
+        f"China is at ~{cn_at:.0f}, **{gap:.0f} ECI** short"
+        + (f", and the paced US keeps climbing ~{us_avg:.1f} ECI/yr"
+           if paced else "")
+        + ". At its starting pace that would take "
         f"{_mo(r0)}; as distillation and diffusion run out it slows, so the "
         f"actual average gives **{_mo(ravg)}**.",
         ("run out", "Diffusion fades over the year after the pause. "
@@ -16662,8 +16723,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                         us_steps=None, timing_label=_DC_TIMING_OPTIONS[0],
                         horizon=None, caps_now=None, state_out=None,
-                        levers_box=None):
-    """If the US paused: China's catch-up to the paused frontier, in ECI.
+                        levers_box=None, pace=0.0):
+    """If the US paused or paced: China's catch-up to the US frontier, in ECI.
 
     The pause is a **date the user names** (`pc_pause_mo`, rendered by
     `render_pacing` so the bar it implies is available to both halves of
@@ -16711,6 +16772,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     The state-of-play table's rows go into `state_out` (a list) for the
     caller to draw above *Compute Thresholds*. The policy levers draw into
     `levers_box`, the caller's slot at the top of the sidebar.
+
+    `pace` (0–1, the *Pace the US* slider) is the share of its ECI growth the
+    US keeps from `pause_d`: its path runs on a clock that ticks `pace` years
+    a year from then (`_pc_paced_clock`), so 0 is the pause and 1 no pacing.
+    The bar China must cross then keeps moving, and the released frontier
+    the distillation gap reads trails it by the ship lag.
     """
     # Lockstep milestone offsets (see docstring).
     shift = _dc_timing_shift(timing_label, run_days)
@@ -16721,7 +16788,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     if levers_box is None:
         levers_box = st.sidebar.container()
     with levers_box:
-        st.markdown("##### Policy levers")
         withhold = st.checkbox(
             "US does not give access to strongest models at pause start",
             key="pc_withhold",
@@ -16979,6 +17045,20 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         np.maximum(t_pause_s - run_days / 365.25, 0.0)
         + (anchor_d - us_best[0]).days / 365.25)
     teach50 = float(np.median(teacher_s))
+    # The trained US frontier on the sim's grid (years from China's anchor),
+    # run on the paced clock; the released one trails it by the ship lag.
+    _ship = _PC_SHIP_LAG_DAYS / 365.25
+
+    def _us_trained_unpaced(t):
+        return us_best[1] + us_rate_s[:, None] * (t + _us_dt)
+
+    def us_path(grid):
+        t = np.broadcast_to(np.asarray(grid, dtype=float), (n_s, len(grid)))
+        tp = t_pause_s[:, None]
+        trained = _us_trained_unpaced(_pc_paced_clock(t, tp, pace))
+        released = np.minimum(
+            _us_trained_unpaced(_pc_paced_clock(t - _ship, tp, pace)), trained)
+        return trained, released
     # Three-channel algorithmic engine: distillation decays with the gap,
     # diffusion over ~a year after the pause (published stock absorbed),
     # innovation never. The checkboxes tighten two channels: distillation
@@ -17075,6 +17155,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                            if stop_dist else None),
               dist_teacher=teacher_s if withhold else None,
               # Release-step scatter, as on the China tab's catch-up panel.
+              us_path=us_path,
               level_sd=_cc_frontier_level_sd(cn_fr),
               level_ramp_yrs=(_cc_release_gap_days(
                   cn_fr, since=today - timedelta(days=730)) or 47.5) / 365.25,
@@ -17093,8 +17174,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # paths are kept for the breakdown, whose channels accumulated on them.
     years_base, traj0, grid0, target0 = years, traj, grid_yrs, level_s
     if cn_run_mo != us_run_mo:
+        # China's model lands cn_extra later and cn_gain higher, so its path
+        # at s meets the US bar at s + cn_extra.
         target0 = level_s - cn_gain
-        years = _pc_cross_years(traj, grid_yrs, target0) + cn_extra
+        years = _pc_cross_years(
+            traj, grid_yrs, us_path(grid_yrs + cn_extra)[0] - cn_gain) + cn_extra
         traj = traj + cn_gain
         grid_yrs = grid_yrs + cn_extra
     # ── State of play at pause start: what each side has when the music
@@ -17109,7 +17193,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                          for q in (10, 50, 90))
         c = caps.get(label)
         return {
-            "At pause start": label,
+            ("At pause start" if pace <= 0 else "At pacing start"): label,
             "Largest trainable run (capacity)": (
                 f"{_log_op(c[1])} log OP ({_log_op(c[0])}–{_log_op(c[2])})"
                 if c else "—"),
@@ -17166,40 +17250,66 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             **dict(kw, g_lo=max(chk_ca['g'] - chk_ca['sigma_g'], 0.05),
                    g_hi=chk_ca['g'] + chk_ca['sigma_g']))
         if cn_run_mo != us_run_mo:
-            y_ca = _pc_cross_years(_tc, _gc, level_s - cn_gain) + cn_extra
+            y_ca = _pc_cross_years(
+                _tc, _gc, us_path(_gc + cn_extra)[0] - cn_gain) + cn_extra
         ok_ca = y_ca[np.isfinite(y_ca)]
         if len(ok_ca) >= 100:
             d50_ca = anchor_d + timedelta(
                 days=float(np.percentile(ok_ca, 50)) * 365.25)
     yr_ok = years[np.isfinite(years)]
-    if len(yr_ok) < 100:
-        st.info(f"China does not reach the paused US frontier by "
-                f"{horizon.year} in most samples — widen *Project through*."
-                if horizon is not None else
-                "Sampled rates were too weak to give a crossing date.")
-        return
-    d10, d50, d90 = (anchor_d + timedelta(days=float(np.percentile(yr_ok, p))
-                                          * 365.25) for p in (10, 50, 90))
-    # Milestone offsets came from the top of the function (the slider's
-    # caption needs them); the pause is naturally a run-finished date and
-    # China's ECI data are release dates, so both display at the sidebar's
-    # milestone and their gap never depends on the setting.
-    v10, v50, v90 = d10 + off_cn, d50 + off_cn, d90 + off_cn
-    # Months from the pause to the crossing on a common milestone, matched
-    # per sample so both uncertainties propagate. The release-prep lag nets
-    # out of the gap (rung-invariant: both offsets move together).
-    _floor = np.maximum(t_pause_s * 365.25, (today - anchor_d).days)
-    _delta_mo = ((years * 365.25 - _floor)[np.isfinite(years)]
-                 - _CC_RUN_COMPLETION_LAG.days) / 30.44
-    s10, s50, s90 = (float(np.percentile(_delta_mo, p)) for p in (10, 50, 90))
-    m1, m2 = st.columns(2)
-    m1.metric(f"China reaches paused US frontier "
-              f"(pause start {d_pause_v:%b %Y}, ECI ~{lvl50:.0f})",
-              f"{v50:%b %Y}", f"{v10:%b %Y} – {v90:%b %Y} (80%)",
-              delta_color="off")
-    m2.metric("Time for China to surpass",
-              f"~{s50:.1f} mo", f"{s10:.1f} – {s90:.1f} mo (80%)",
-              delta_color="off")
+    # Under light pacing China may never catch the US inside the window:
+    # the cards and the breakdown then give way to a note, the chart stays.
+    # Percentiles over every sample, a never-crossed one counting as past
+    # the window, so a moving bar that some samples never catch does not
+    # bias the dates early; the cards need half the samples to cross.
+    share_x = len(yr_ok) / len(years)
+    crossed = share_x > 0.5 and len(yr_ok) >= 100
+    yr_all = np.where(np.isfinite(years), years, np.inf)
+
+    def _pdate(q):
+        y = float(np.percentile(yr_all, q))
+        return anchor_d + timedelta(days=y * 365.25) if np.isfinite(y) else None
+    _paused = pace <= 0
+    _bar = "the paused US frontier" if _paused else "the paced US frontier"
+    _start = "pause" if _paused else "pacing"
+    _yr_end = horizon.year if horizon is not None else _PC_HORIZON.year
+    v10 = v50 = v90 = None
+    s50 = None
+    if crossed:
+        d10, d50, d90 = (_pdate(q) for q in (10, 50, 90))
+        # Milestone offsets came from the top of the function; the pause is
+        # naturally a run-finished date and China's ECI data are release
+        # dates, so both display at the sidebar's milestone and their gap
+        # never depends on the setting.
+        v10, v50 = d10 + off_cn, d50 + off_cn
+        v90 = d90 + off_cn if d90 is not None else None
+        # Months from the pause to the crossing on a common milestone,
+        # matched per sample so both uncertainties propagate. The
+        # release-prep lag nets out of the gap.
+        _floor = np.maximum(t_pause_s * 365.25, (today - anchor_d).days)
+        _delta_mo = ((yr_all * 365.25 - _floor)
+                     - _CC_RUN_COMPLETION_LAG.days) / 30.44
+        s10, s50, s90 = (float(np.percentile(_delta_mo, p))
+                         for p in (10, 50, 90))
+        _past = f"past {_yr_end}"
+        m1, m2 = st.columns(2)
+        m1.metric((f"China reaches paused US frontier "
+                   f"(pause start {d_pause_v:%b %Y}, ECI ~{lvl50:.0f})")
+                  if _paused else
+                  (f"China catches the paced US (from {d_pause_v:%b %Y} at "
+                   f"{pace:.0%}, ECI ~{lvl50:.0f} then)"),
+                  f"{v50:%b %Y}",
+                  f"{v10:%b %Y} – {f'{v90:%b %Y}' if v90 else _past} (80%)",
+                  delta_color="off")
+        m2.metric("Time for China to surpass",
+                  f"~{s50:.1f} mo",
+                  f"{s10:.1f} – "
+                  + (f"{s90:.1f} mo" if np.isfinite(s90) else _past)
+                  + " (80%)", delta_color="off")
+    else:
+        st.info(f"China does not reach {_bar} by {_yr_end} in most samples "
+                f"({share_x:.0%} do) — pace the US "
+                "harder or widen *Project through*.")
     _mo = run_days // 30
     _clock = {
         "Data center construction":
@@ -17217,7 +17327,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                                          "*Date points at*. No release-queue "
                                          "wait is added anywhere, since a queue "
                                          "delays both sides alike."))
-    if cn_run_mo != us_run_mo:
+    if crossed and cn_run_mo != us_run_mo:
         _both = np.isfinite(years) & np.isfinite(years_base)
         _net = float(np.median((years - years_base)[_both])) * 12 \
             if _both.any() else 0.0
@@ -17275,7 +17385,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # offset, so the diamond, the window and the metric cards agree. ──
     # The x-axis ends at the sidebar's projection range (as on every other
     # tab), falling back to just past the 90th-percentile crossing.
-    x_end = horizon if horizon is not None else v90 + timedelta(days=150)
+    x_end = (horizon if horizon is not None
+             else (v90 or today + timedelta(days=5 * 365)) + timedelta(days=150))
     grid_d = [anchor_d + off_cn + timedelta(days=y * 365.25)
               for y in grid_yrs]
     keep = [i for i, d in enumerate(grid_d) if d <= x_end]
@@ -17283,19 +17394,27 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               + (f"<br>released {d:%b %Y}" if off_cn.days else ""))
     _us_obs = _cc_frontier_eci_slope(us_fr, _CC_CALIB_SINCE)
     _cn_obs = ch['obs'] if ch else _cc_frontier_eci_slope(cn_fr, _CC_CALIB_SINCE)
-    _y50 = float(np.nanmedian(years))
-    _cn_avg = (lvl50 - anchor_eci) / _y50 if _y50 > 0 else None
+    # The US bar at each sample's crossing (it moves unless paused).
+    us_tr_grid = us_path(grid_yrs)[0]
+    us_cross_s = _pc_at_years(us_tr_grid, grid_yrs - grid_yrs[0],
+                              years - grid_yrs[0])
+    cross50 = (float(np.nanmedian(us_cross_s)) if crossed else lvl50)
+    _y50 = float(np.nanmedian(years)) if crossed else float('nan')
+    _cn_avg = ((cross50 - anchor_eci) / _y50
+               if crossed and _y50 > 0 else None)
 
     def _per_yr(r):
         return "" if r is None else f" ({r:.1f} ECI/yr)"
 
     fig = go.Figure()
     _dc_add_projection_band(fig, today + off_cn, x_end)
-    fig.add_vrect(x0=v10, x1=v90, fillcolor='rgba(214,39,40,0.10)',
-                  line_width=0, layer='below')
-    fig.add_annotation(x=v50, y=1.0, yref='paper', yanchor='bottom',
-                       text='80% crossing window', showarrow=False,
-                       font=dict(size=10, color='#7F1010'))
+    if crossed:
+        fig.add_vrect(x0=v10, x1=v90 or x_end, fillcolor='rgba(214,39,40,0.10)',
+                      line_width=0, layer='below')
+        fig.add_annotation(x=v10, y=1.0, yref='paper', yanchor='bottom',
+                           xanchor='left', text='80% crossing window',
+                           showarrow=False,
+                           font=dict(size=10, color='#7F1010'))
     # US: actual frontier, then the climb to the bar, flat once it pauses.
     fig.add_trace(go.Scatter(
         x=[d + off_cn for d, s, n in us_fr], y=[s for d, s, n in us_fr],
@@ -17319,14 +17438,33 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             name='US climb (projected)' + _per_yr(_climb),
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                           '<extra>US climb</extra>'))
-    fig.add_trace(go.Scatter(
-        x=[max(d_pause_v, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
-        line=dict(color='#1F77B4', width=4.5), opacity=0.4,
-        name=f'US paused at {lvl50:.0f} (0 ECI/yr)',
-        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US paused</extra>'))
+    if _paused:
+        fig.add_trace(go.Scatter(
+            x=[max(d_pause_v, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
+            line=dict(color='#1F77B4', width=4.5), opacity=0.4,
+            name=f'US paused at {lvl50:.0f} (0 ECI/yr)',
+            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US paused</extra>'))
+    else:
+        # The paced bar, monthly from the pacing date: the median of the
+        # same per-sample paths China is crossed against.
+        _tp50 = float(np.median(t_pause_s))
+        _pk = [i for i, t in enumerate(grid_yrs)
+               if t >= _tp50 and d_pause_v + timedelta(
+                   days=(t - _tp50) * 365.25) <= x_end]
+        _px = [d_pause_v + timedelta(days=(grid_yrs[i] - _tp50) * 365.25)
+               for i in _pk]
+        _py = [float(np.median(us_tr_grid[:, i])) for i in _pk]
+        _prate = ((_py[-1] - _py[0]) / max((_px[-1] - _px[0]).days / 365.25,
+                                           1e-6) if len(_py) > 1 else 0.0)
+        fig.add_trace(go.Scatter(
+            x=_px, y=_py, mode='lines',
+            line=dict(color='#1F77B4', width=4.5), opacity=0.4,
+            name=f'US paced at {pace:.0%} (~{_prate:.1f} ECI/yr)',
+            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US paced</extra>'))
     if d_pause_v > anchor_d + off_cn:
         fig.add_annotation(x=d_pause_v, y=lvl50,
-                           text=f'US pauses ~{d_pause_v:%b %Y}',
+                           text=(f'US pauses ~{d_pause_v:%b %Y}' if _paused
+                                 else f'US paced from ~{d_pause_v:%b %Y}'),
                            showarrow=False, yshift=12,
                            font=dict(size=10, color='#1F77B4'))
     # China: actual frontier, then the sim's fan.
@@ -17361,11 +17499,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             name='China if the US kept going, no levers' + _per_yr(_cn_obs),
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                           '<extra>China, no pause</extra>'))
-    fig.add_trace(go.Scatter(
-        x=[v50], y=[lvl50], mode='markers',
-        marker=dict(symbol='diamond', size=13, color='#D62728',
-                    line=dict(color='white', width=1.5)),
-        name=f'median crossing {v50:%b %Y}', hoverinfo='name'))
+    if crossed:
+        fig.add_trace(go.Scatter(
+            x=[v50], y=[cross50], mode='markers',
+            marker=dict(symbol='diamond', size=13, color='#D62728',
+                        line=dict(color='white', width=1.5)),
+            name=f'median crossing {v50:%b %Y}', hoverinfo='name'))
     _xtitle = {"Data center construction": "Training runs start",
                "Training run finished": "Training runs finish",
                "Model release": "Model releases"}[timing_label]
@@ -17409,9 +17548,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              "export-control band, the crossing moves to "
              f"~{d50_ca + off_cn:%b %Y}."))
     _fn_caption(
-        "Counterfactual: the US climbs until the date the slider names, "
-        f"freezing at <b>ECI ~{lvl50:.0f}</b> (median) \u2014 the bar China "
-        "must cross" + _cf_tail + ".", *_cf_notes)
+        ("Counterfactual: the US climbs until the date the slider names, "
+         f"freezing at <b>ECI ~{lvl50:.0f}</b> (median) \u2014 the bar China "
+         "must cross" if _paused else
+         "Counterfactual: the US climbs until the date the slider names, at "
+         f"<b>ECI ~{lvl50:.0f}</b> (median) then, and from there keeps "
+         f"{pace:.0%} of its pace \u2014 the moving bar China must cross")
+        + _cf_tail + ".", *_cf_notes)
 
     # ── Why that long? The same samples, decomposed by rate term. ──
     _notes = []
@@ -17482,6 +17625,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         'horizon': horizon if horizon is not None else _PC_HORIZON,
         'dom_keep': dom_keep,
     }
+    if not crossed:
+        return
     _pc_render_why(
         chan, grid0, traj0, target0, years, years_base,
         cn_gain=cn_gain, cn_extra=cn_extra, cn_run_mo=cn_run_mo,
@@ -17489,6 +17634,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         anchor_eci=anchor_eci,
         horizon_year=(horizon.year if horizon is not None else _PC_HORIZON.year),
         notes=_notes, t_pause=t_pause_s, pause_label=f"{d_pause_v:%b %Y}",
+        us_gain=us_cross_s - level_s, paced=not _paused,
         surpass_mo=s50, withhold=bool(withhold),
         dist_stop_t=kw.get('t_dist_stop'),
         remote_stop_t=t_cut_r if stop_remote else None,
@@ -17593,15 +17739,30 @@ def render_pacing():
     _months = list(range(_PC_PAUSE_MO_MAX + 1))
     if st.session_state.get("pc_pause_mo") not in _months:
         st.session_state.pop("pc_pause_mo", None)
-    pause_mo = st.select_slider(
-        "US pauses on", options=_months,
-        value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
-        format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
-        help="The US stops training new frontier models on this date and "
-             "never restarts. Everything below follows from it — the "
-             "compute and capability each side has when the music stops, "
-             "how long China then needs, and the bar the *Compute "
-             "Thresholds* race runs to.")
+    if st.session_state.get("pc_pace") not in _PC_PACE_OPTIONS:
+        st.session_state.pop("pc_pace", None)
+    with levers_box:
+        st.markdown("##### Policy levers")
+        pace_pct = st.select_slider(
+            "Pace the US", options=_PC_PACE_OPTIONS,
+            value=_PC_DEFAULTS["pc_pace"], key="pc_pace",
+            format_func=_pc_pace_label,
+            help="The share of its ECI growth the US keeps from the date "
+                 "below: 100% is no pacing (the Takeoff tab's path), 0% is a "
+                 "pause (frozen there for good), and 50% runs the US along "
+                 "that same path at half speed, so automated coding and RSI "
+                 "arrive later too.")
+        st.caption("100% = no pacing \u00b7 0% = pause \u00b7 in between, "
+                   "the share of its ECI growth the US keeps")
+        pause_mo = st.select_slider(
+            "Pacing starts on" if pace_pct else "US pauses on",
+            options=_months,
+            value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
+            format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
+            help="From this date the US grows at the pace above. It also "
+                 "sets the compute and capability each side has then, the "
+                 "date the model-access and methods levers bite, and the bar "
+                 "the *Compute Thresholds* race runs to.")
     pause_d = _pc_add_months(_today, pause_mo)
     caps = _pc_capacity_at(
         [(_DC_CTY_US, 'country', _us_steps_raw, tuple(_us_names)),
@@ -17618,7 +17779,8 @@ def render_pacing():
     _pc_render_us_pause(_today, pause_d, caps, run_days,
                         us_steps=_us_steps_raw, timing_label=timing_label,
                         horizon=pc_horizon, caps_now=caps_now,
-                        state_out=state_rows, levers_box=levers_box)
+                        state_out=state_rows, levers_box=levers_box,
+                        pace=pace_pct / 100.0)
 
     # ── Entities and projections ──
     series_all = series_unshifted

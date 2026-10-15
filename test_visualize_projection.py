@@ -4432,6 +4432,23 @@ class TestPacing:
         assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
         assert "rsi_notyet_ramp" in keys
 
+    def test_paced_clock_runs_the_us_at_its_pace_from_the_start(self):
+        """Before the pacing date the US runs on its own clock; after it,
+        `pace` years of progress a year: 0 freezes it, 1 changes nothing."""
+        t = np.array([0.0, 1.0, 2.0, 3.0])
+        assert list(vp._pc_paced_clock(t, 1.0, 0.0)) == [0.0, 1.0, 1.0, 1.0]
+        assert list(vp._pc_paced_clock(t, 1.0, 1.0)) == list(t)
+        assert list(vp._pc_paced_clock(t, 1.0, 0.5)) == [0.0, 1.0, 1.5, 2.0]
+
+    def test_cross_years_reads_a_moving_bar(self):
+        """A 2-D target is a per-sample path: the crossing is where the
+        gap to it closes, interpolated inside the step."""
+        grid = np.arange(5.0)
+        traj = np.array([[0.0, 2.0, 4.0, 6.0, 8.0]])
+        bar = np.array([[3.0, 4.0, 5.0, 6.0, 7.0]])   # gap closes at 3.0
+        assert vp._pc_cross_years(traj, grid, bar)[0] == pytest.approx(3.0)
+        assert np.isnan(vp._pc_cross_years(traj, grid, bar + 10)[0])
+
     def test_add_months_gives_one_distinct_label_per_step(self):
         """The pause slider labels each position with its date, so the steps
         must be whole calendar months — distinct, ordered, and clamped into
