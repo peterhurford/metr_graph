@@ -2265,12 +2265,16 @@ class TestPacingTab:
         _switch_tab(at, "Pacing")
         at.select_slider(key="pc_pace").set_value(40).run()
         t = next(x.value for x in at.table if "Milestone" in x.value.columns
-                 and "China after the US" in x.value.columns)
+                 and "Gap" in x.value.columns)
         assert list(t["Milestone"]) == ["Automated coder", "RSI",
                                         "Ultraintelligence"]
         assert t["At ECI"].iloc[2] == "~250"
         coder = t.iloc[0]
-        assert coder["China after the US"].startswith("+")
+        # The gap is the two median dates' difference, in words.
+        us_d = datetime.strptime(coder["US (median, 80%)"][:8], "%b %Y")
+        cn_d = datetime.strptime(coder["China (median, 80%)"][:8], "%b %Y")
+        mo = (cn_d.year - us_d.year) * 12 + cn_d.month - us_d.month
+        assert mo > 0 and coder["Gap"] == f"China {mo} mo later"
         assert coder["US (median, 80%)"][:3] in (
             "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split())
 

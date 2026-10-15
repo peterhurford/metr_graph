@@ -17845,28 +17845,43 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
 
     # Milestone dates for both sides, on the chart's own dating (the US's
     # marks on the pacing clock, China's on its release-dated grid).
-    def _ms_cell(yrs, to_date):
+    def _ms_dates(yrs, to_date):
+        """10th, 50th, 90th percentile dates; None past the chart's end."""
         q = [float(np.percentile(yrs, p)) for p in (10, 50, 90)]
-        d = [to_date(t) if np.isfinite(t) and to_date(t) <= x_end else None
-             for t in q]
+        return [to_date(t) if np.isfinite(t) and to_date(t) <= x_end else None
+                for t in q]
+
+    def _ms_cell(d):
         if d[1] is None:
             return f"after {_yr_end}"
         return (f"{d[1]:%b %Y} ({d[0]:%b %Y} \u2013 "
                 + (f"{d[2]:%b %Y}" if d[2] else f"after {_yr_end}") + ")")
 
+    def _ms_gap(du, dc):
+        """Which side gets there first, read off the two median dates the
+        row shows, so the gap always matches them."""
+        if du is None and dc is None:
+            return f"Neither by {_yr_end}"
+        if dc is None:
+            return f"US only, by {_yr_end}"
+        if du is None:
+            return f"China only, by {_yr_end}"
+        mo = round(((dc.year - du.year) * 12 + dc.month - du.month))
+        if mo == 0:
+            return "Same month"
+        return f"China {_pc_span(abs(mo), 0)} {'later' if mo > 0 else 'earlier'}"
+
     _ms_rows = []
     for _ms_name, (_lvl, _yu, _yc) in ms_years.items():
-        both = np.isfinite(_yu) & np.isfinite(_yc)
-        lag = ((_yc - _yu)[both] * 12 if both.mean() > 0.5 else None)
+        du = _ms_dates(_yu, _date_of)
+        dc = _ms_dates(
+            _yc, lambda t: anchor_d + off_cn + timedelta(days=t * 365.25))
         _ms_rows.append({
             "Milestone": _ms_name[0].upper() + _ms_name[1:],
             "At ECI": f"~{np.nanmedian(_lvl):.0f}",
-            "US (median, 80%)": _ms_cell(_yu, _date_of),
-            "China (median, 80%)": _ms_cell(
-                _yc, lambda t: anchor_d + off_cn + timedelta(days=t * 365.25)),
-            "China after the US": ("\u2014" if lag is None else
-                                   _pc_span(round(float(np.median(lag))) or 0,
-                                            0, sign=True)),
+            "US (median, 80%)": _ms_cell(du),
+            "China (median, 80%)": _ms_cell(dc),
+            "Gap": _ms_gap(du[1], dc[1]),
         })
     st.warning("**Assumes ~SL5 secure weights - if not, China could catch up "
                "quickly by stealing US models.**", icon="\u26a0\ufe0f")
