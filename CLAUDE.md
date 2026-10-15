@@ -1486,7 +1486,7 @@ The bar is the best model the US has *trained* by the pause: the released-fronti
 climb (measured from us_best's release date, not the China-anchored grid) plus
 `_PC_SHIP_LAG_DAYS` (the realized trained→shipped lag, GPT-5.5 Pro / Mythos card)
 of extra climb. The policy levers below (and their *Advanced* expander) draw in the sidebar, under *Policy levers* above *Compute settings*, through the `levers_box` slot `render_pacing` makes. The US level the distillation gap starts from is the US trend at China's
-anchor date (`us_anchor_cn`), not the US's later best. Three scenario checkboxes plus a slowdown slider: `pc_withhold` (default **on**) — a US
+anchor date (`us_anchor_cn`), not the US's later best. Three scenario checkboxes plus a slowdown slider: `pc_withhold` (default off; label says "from pacing start") — a US
 *release freeze from pause-run start*: nothing ships once the final run begins, so
 distillation's teacher is the released frontier as of run start (`dist_teacher`, ~one
 run's climb + ship lag below the bar); labs do ship during big runs, so this is a
@@ -1529,7 +1529,7 @@ the setback is sized at the cut date (today's OOM gap widened by `(g_mid − g_d
 per year of lead), so a later cut costs more to regrow but is never worse for China
 overall. Cutting *at* today keeps the old global band cap instead. *Why that long?*
 opens with an `st.warning` that it assumes ~SL5 secure weights (theft would put China at
-the bar). A policy lever, `pc_methods_pause` (default on), sets whether diffusion dries up
+the bar). A policy lever, `pc_methods_pause` (default off; label says "from pacing start"), sets whether diffusion dries up
 over `_CC_DIFF_ABSORB_YRS` after the pause (`t_pause`) or runs at full rate because the US
 keeps publishing (`test_methods_toggle_keeps_diffusion_running`). Each lever's state in
 words (distillation teacher, cut dates, compute band) sits in the "these settings"

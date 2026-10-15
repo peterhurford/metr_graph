@@ -1622,12 +1622,15 @@ class TestPacingTab:
     resets."""
 
     def _app(self):
-        """The tab with the US paused (pace 0%), the scenario most of these
-        tests read; the default, no pacing, is covered on its own."""
+        """The pause scenario most of these tests read: pace 0%, models
+        withheld and methods unpublished from the pause. The defaults (no
+        pacing, both levers off) are covered on their own."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
-        at.select_slider(key="pc_pace").set_value(0).run()
+        at.select_slider(key="pc_pace").set_value(0)
+        at.checkbox(key="pc_withhold").check()
+        at.checkbox(key="pc_methods_pause").check().run()
         return at
 
     @staticmethod
@@ -2169,6 +2172,8 @@ class TestPacingTab:
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
+        assert at.checkbox(key="pc_withhold").value is False
+        assert at.checkbox(key="pc_methods_pause").value is False
         pace = at.select_slider(key="pc_pace")
         assert pace.value == 100 and pace.options[0] == "100% \u00b7 no pacing"
         assert pace.options[-1] == "0% \u00b7 pause"

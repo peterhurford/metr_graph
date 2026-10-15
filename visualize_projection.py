@@ -15167,13 +15167,13 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_pause_mo": _pc_pause_default_mo(),
                 "pc_pace": 100,
                 "pc_stop_dist": False, "pc_stop_remote": False,
-                "pc_withhold": True, "pc_dom_slow": 0, "pc_duv_ban": False,
+                "pc_withhold": False, "pc_dom_slow": 0, "pc_duv_ban": False,
                 "pc_duv_service": False,
                 "pc_duv_decay": _DUV_SERVICE_DECAY_PCT,
                 "pc_duv_growth": _DUV_CN_OUTPUT_GROWTH,
                 "pc_dist_when": _PC_WHEN_NOW,
                 "pc_remote_when": _PC_WHEN_NOW,
-                "pc_cn_run": 2, "pc_methods_pause": True,
+                "pc_cn_run": 2, "pc_methods_pause": False,
                 **{_PC_RSI_W_KEY + s: w for s, w in _PC_RSI_WEIGHTS.items()}}
 _PC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
@@ -16864,14 +16864,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         levers_box = st.sidebar.container()
     with levers_box:
         withhold = st.checkbox(
-            "US does not give access to strongest models at pause start",
+            "US does not give access to strongest models from pacing start",
             key="pc_withhold",
-            value=True,
-            help="A release freeze: once the final threshold run starts, the US "
-                 "ships nothing new, so the best queryable teacher is the last "
-                 "generation released before run start — one run's climb (plus "
-                 "the ship lag) below the bar. Uncheck to let the US keep "
-                 "serving right up to (and including) the paused frontier.")
+            value=_PC_DEFAULTS["pc_withhold"],
+            help="A release freeze: once the run that ends at the pacing date "
+                 "starts, the US ships nothing new to the public, so the best "
+                 "queryable teacher is the last generation released before "
+                 "then: one run's climb (plus the ship lag) below the bar. Off: "
+                 "the US keeps serving its frontier, paced or paused.")
         _lvl = _cc_cn_level_offset(load_eci_compute(_mtime=_eci_mtime()))
         stop_dist = st.checkbox(
             "Stop Chinese distillation as of today", key="pc_stop_dist",
@@ -16916,12 +16916,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "straight away, because it hits the machines in use rather "
                  "than a ceiling China has not reached yet.")
         methods_pause = st.checkbox(
-            "US pauses publishing methods too", key="pc_methods_pause",
+            "US stops publishing methods from pacing start",
+            key="pc_methods_pause",
             value=_PC_DEFAULTS["pc_methods_pause"],
-            help="On: the pause stops new US methods as well as models, and China "
-                 f"absorbs what was already published over ~{_CC_DIFF_ABSORB_YRS:.0f}"
-                 " yr, so diffusion dries up. Off: the US keeps publishing and "
-                 "diffusion runs at full rate.")
+            help="On: from the pacing date the US publishes no new methods, and "
+                 "China absorbs what was already published over "
+                 f"~{_CC_DIFF_ABSORB_YRS:.0f} yr, so diffusion dries up. Off: "
+                 "the US keeps publishing and diffusion runs at full rate.")
         dom_slow_user = st.slider(
             "Slow China's domestic compute growth by", 0, _PC_DOM_SLOW_MAX,
             value=_PC_DEFAULTS["pc_dom_slow"], step=1, format="%d%%",
