@@ -17636,6 +17636,7 @@ _TK_DEFAULTS.update({
 })
 _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
 _TK_DEFAULTS["tk_serial_speedup"] = bool(takeoff.DEFAULTS["serial_speedup"])
+_TK_DEFAULTS["tk_reallocate_compute"] = bool(takeoff.DEFAULTS["reallocate_compute"])
 
 # Human hours a task at each automation level still takes, as a share of
 # doing it unassisted (AL0..AL5). The index rates who leads, not how long
@@ -19237,6 +19238,13 @@ def _render_takeoff(loading):
             
             number("Training duration (months)", "training_months", 0.5, 12.0, 0.5)
             number("Validation and deployment delay (months)", "validation_months", 0.0, 12.0, 0.5)
+            st.checkbox("Labs re-split compute as AI changes", key="tk_reallocate_compute",
+                        help="On: the compute not used for training is re-split between "
+                             "running AI researchers and running experiments as AI changes "
+                             "what each is worth (the labor-compute mean's first-order "
+                             "condition, anchored at today's 20/40 split). When AI labor is "
+                             "abundant and the two are complements, compute moves to "
+                             "experiments. Off: the split stays fixed.")
             st.checkbox("Cycles speed up with AI", key="tk_serial_speedup",
                         help="On: a model's validation shrinks as AI takes over verification "
                              "(to about a day on autopilot), and each new training run is "

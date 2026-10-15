@@ -434,6 +434,23 @@ def test_headcount_and_experiment_compute_hold_history_steady():
     np.testing.assert_allclose(staff[after], 0.0, atol=1e-9)
 
 
+def test_reallocation_follows_what_ai_changes():
+    """Without AI transfer the split never moves, so the run matches a fixed
+    split exactly; with AI labor abundant, compute shifts toward experiments
+    when they complement labor and toward AI researchers when they substitute."""
+    onset = np.full(50, 0.5)
+    frozen = dict(years=4, transfer=0, **tk.POINT_ESTIMATE)
+    a = tk.simulate(dict(frozen, reallocate_compute=1.0), n=50, onset_years=onset)
+    b = tk.simulate(frozen, n=50, onset_years=onset)
+    np.testing.assert_allclose(a["software_log"], b["software_log"])
+    np.testing.assert_allclose(a["workflow_progress"]["agent_share"], 0.2)
+    base = dict(years=4, reallocate_compute=1.0, **tk.POINT_ESTIMATE)
+    comp = tk.simulate(dict(base, substitution=-0.5), n=50, onset_years=onset)
+    subs = tk.simulate(dict(base, substitution=0.5), n=50, onset_years=onset)
+    assert np.median(comp["workflow_progress"]["agent_share"][:, -1]) < 0.2
+    assert np.median(subs["workflow_progress"]["agent_share"][:, -1]) > 0.2
+
+
 def test_workflow_halving_time_has_a_measurable_interpretation():
     """One halving time of capability progress halves human work above the floor."""
     starts = np.array([[.4, .3, .5]])

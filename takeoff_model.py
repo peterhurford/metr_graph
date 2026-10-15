@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v28-headcount"
+MODEL_VERSION = "takeoff-v29-reallocation-option"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -72,6 +72,11 @@ DEFAULTS = {
     # should not outlast the time better methods take to beat it). 0 holds
     # both at their settings.
     "serial_speedup": 1.0,
+    # Reallocation: labs re-split the non-training compute between running AI
+    # researchers and experiments as AI changes what each is worth, by the
+    # labor-compute mean's first-order condition, anchored at today's split.
+    # 0 keeps the split fixed.
+    "reallocate_compute": 0.0,
     # Per-draw spread on the four settings that decide whether takeoff runs
     # away (TAKEOFF_MODEL.md, *Parameter uncertainty*): 1-sigma of ln r,
     # 1-sigma of ln(judgment elasticity), 1-sigma of the drift in percentage
@@ -170,7 +175,7 @@ def validate(params):
             or not (p["ceiling_high_oom"] == 0 or 0 < p["ceiling_low_oom"] <= p["ceiling_high_oom"]) \
             or p["rsi_autopilot"] not in (0, 1) or not 0 <= p["ai_copies"] <= 2 \
             or not (p["judgment_cap"] == 0 or p["judgment_cap"] >= 1) \
-            or p["serial_speedup"] not in (0, 1) \
+            or p["serial_speedup"] not in (0, 1) or p["reallocate_compute"] not in (0, 1) \
             or not 0 <= p["compute_bound_corr"] <= 1 \
             or not -90 <= p["hiring_growth"] <= 200 or not -90 <= p["staff_after_rsi"] <= 200 \
             or not 0 <= p["scale_dependent"] <= 100 or not 0 <= p["scale_dependent_spread"] <= 400 \
@@ -476,6 +481,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     validated_history = np.zeros_like(capability_history)
     # The deployed model's algorithmic efficiency as it pays off at its scale.
     realized_history = np.zeros_like(capability_history)
+    # Share of compute running AI researchers (training's share is fixed).
+    agent_share_history = np.full_like(
+        capability_history, (100 - p["training_share"] - p["experiment_share"]) / 100)
     # Monthly frontier compute (log, vs today) and the research stock found by
     # then, for the scale-dependent lag; months not yet reached read +inf.
     compute_seen = np.full_like(capability_history, np.inf)
@@ -762,6 +770,26 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         labor_log = parallel * (compute_log + np.log(shares[2] / 0.2)
                                 + coding_log + automation_log + headcount_log)
         experiment_log = parallel * (compute_log + exp_log + np.log(shares[1] / 0.4))
+        with np.errstate(divide="ignore"):
+            ref_headcount = (amdahl0 - np.logaddexp(np.log(human0) - hire_rate * mid_t,
+                                                    np.log1p(-human0) - np.log(ai_speed)))
+        agent_share = np.full(n, shares[2])
+        if p["reallocate_compute"]:
+            # How far AI has moved labor against experiments, beyond the
+            # frozen-AI reference (compute and its boost cancel; zero without
+            # transfer). The split then follows the CES first-order condition,
+            # agents/experiments = today's ratio x exp(rho / (1 - parallel rho) x gap):
+            # toward experiments when AI labor is abundant and they are
+            # complements, toward more AI researchers when they substitute.
+            gap = (labor_log - experiment_log) - parallel * (
+                np.log(shares[2] / 0.2) + ref_headcount - exp_log - np.log(shares[1] / 0.4))
+            log_ratio = (np.log(shares[2] / shares[1])
+                         + rho / (1 - parallel * rho) * gap)
+            pool = shares[1] + shares[2]
+            agent_share = pool / (1 + np.exp(-np.clip(log_ratio, -700, 700)))
+            agent_share = np.clip(agent_share, 1e-9 * pool, pool * (1 - 1e-9))
+            labor_log = labor_log + parallel * np.log(agent_share / shares[2])
+            experiment_log = experiment_log + parallel * np.log((pool - agent_share) / shares[1])
         research_log = _ces_log(labor_log, experiment_log, rho) + quality_log
         judgment_log = quality_log.copy()
         # Factor chart, exact: compute is the inputs with neither AI help nor
@@ -769,6 +797,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # work), and AI help the rest (zero without transfer).
         staff_alone = headcount_log
         exp_in = parallel * (compute_log + exp_log + np.log(shares[1] / 0.4))
+        # At today's split: any gain from re-splitting is AI's doing.
         bare = _ces_log(parallel * (compute_log + np.log(shares[2] / 0.2)), exp_in, rho)
         compute_part = bare
         labor_part = _ces_log(parallel * (compute_log + np.log(shares[2] / 0.2) + staff_alone),
@@ -805,9 +834,6 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # experiment compute and hiring, today's human share and AI skills;
         # integrated step by step like the actual path, never reaching RSI.
         ref_log_x, ref_penalty = difficulty_at(reference_gained)
-        with np.errstate(divide="ignore"):
-            ref_headcount = (amdahl0 - np.logaddexp(np.log(human0) - hire_rate * mid_t,
-                                                    np.log1p(-human0) - np.log(ai_speed)))
         ref_research = _ces_log(
             parallel * (base_compute_log + np.log(shares[2] / 0.2) + ref_headcount),
             parallel * (base_compute_log + exp_log + np.log(shares[1] / 0.4)), rho)
@@ -964,6 +990,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         observed = active & (end >= next_observation - 1e-12)
         rows = np.flatnonzero(observed)
         pace_history[rows, observation_index[rows]] = pace[rows]
+        agent_share_history[rows, observation_index[rows]] = agent_share[rows]
         seen_now = (log_level(end, compute_rate, compute_late, slow_at) + boost_log)[rows]
         compute_seen[rows, observation_index[rows]] = seen_now
         if seen_flat[0] is not None:     # fill the same cells of the sorted copy
@@ -1055,6 +1082,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             "software_realized_log": realized_history,
             "validated_baseline_months": validated_history / software_rate[:, None] * 12,
             "pace": pace_history,
+            # Share of compute running AI researchers, by month.
+            "agent_share": agent_share_history,
             # Log compute relative to today, post-RSI boost included.
             "compute_log": compute_history,
             "pace_factors": factor_history,

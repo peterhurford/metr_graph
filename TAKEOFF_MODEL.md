@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v28-headcount`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v29-reallocation-option`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -103,6 +103,12 @@ capability grows faster than today, by today's growth rate over the current one,
 run should not outlast the time better methods take to beat it. Shorter runs train on less
 compute, which the adoption rule weighs. It moves ultraintelligence 3 months sooner (Nov
 against Feb 2030) and doubles the share making 10 years of progress in RSI's first year.
+Optionally, labs re-split the compute not used for training between running AI researchers
+and experiments as AI changes what each is worth, following the labor-compute mean's
+first-order condition from today's split. With AI labor abundant and the two complements,
+the agents' share falls from 20% toward 1% within five years. It is off by default: it
+raises the share making 10 years of progress in RSI's first year from 11% to 12%, because
+experiments can gain at most half again on their 40% share while training keeps its own.
 The fast path validates its start-of-cycle discoveries over an assumed one month. The
 slow path freezes discoveries at training start, accumulates physical training compute,
 and deploys only after training plus validation (three plus one month by default).
