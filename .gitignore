@@ -7,3 +7,7 @@ __pycache__/
 
 # Local handoff notes; carries private conversation links, repo is public
 TODO.md
+
+# Streamlit agent skills: symlinks into the local Streamlit install
+.agents/skills/developing-with-streamlit
+.claude/skills/developing-with-streamlit
