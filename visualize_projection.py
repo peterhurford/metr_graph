@@ -53,6 +53,22 @@ N_SAMPLES = int(os.environ.get("_VP_SAMPLES", "5000"))
 # Streamlit variable that tracks the user's theme reliably.
 st.markdown("""<style>
     .block-container { padding-top: 2rem !important; }
+    /* The sidebar's tab list (`_active_tab`): small chips with no radio dots,
+       packed tight, so twelve tabs take a few short rows. */
+    .st-key-_active_tab [role="radiogroup"] { gap: 0.2rem 0.25rem !important; }
+    [data-testid="stSidebarHeader"] { height: 2rem; min-height: 0; }
+    [data-testid="stSidebarUserContent"] { padding-top: 0.25rem; }
+    .st-key-_active_tab [data-testid="stRadioOption"] { margin: 0 !important;
+        padding: 0 0.4rem; border-radius: 0.6rem;
+        border: 1px solid rgba(128,128,128,0.35); }
+    .st-key-_active_tab [data-testid="stRadioOption"] > div > div:first-child {
+        display: none; }
+    .st-key-_active_tab [data-testid="stRadioOption"] p {
+        font-size: 0.74rem !important; line-height: 1.35; }
+    .st-key-_active_tab [data-testid="stRadioOption"][data-selected="true"] {
+        background: rgba(255,75,75,0.12); border-color: rgba(255,75,75,0.7); }
+    .st-key-_active_tab [data-testid="stRadioOption"][data-selected="true"] p {
+        font-weight: 600; }
     /* The Takeoff tab's loading bar (`_tk_loading`), the app's only progress
        bar: boxed, tall and in large type so a multi-second wait reads as one. */
     /* Takeoff's headline cards (the `tk_headline` slot): big dates, labels and CIs. */
@@ -3195,8 +3211,8 @@ _url_tab = st.query_params.get("tab", "").lower()
 _default_tab_idx = _TAB_SLUG.get(_url_tab, 0)
 
 with st.sidebar:
-    active_tab = st.radio("Tab", _TAB_OPTIONS, index=_default_tab_idx, horizontal=True, key="_active_tab")
-    st.markdown("---")
+    active_tab = st.radio("Tab", _TAB_OPTIONS, index=_default_tab_idx, horizontal=True,
+                          key="_active_tab", label_visibility="collapsed")
 
 # Keep URL in sync with selected tab (omit when at default)
 _DEFAULT_TAB = _TAB_OPTIONS[0]
