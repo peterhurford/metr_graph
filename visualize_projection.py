@@ -15158,7 +15158,9 @@ _PC_DOM_SLOW_MAX = 90         # percent: hardest slowdown of China's own buildou
 # bookmarked URL can never carry a label that has gone stale (as the scenario
 # cut-off sliders can); the default is the offset to a fixed *date*, so a reset
 # restores that date rather than a month count.
-_PC_PAUSE_MO_MAX = 60
+_PC_PAUSE_LAST_YM = (2035, 12)    # the latest date the pacing sliders offer
+_PC_PAUSE_MO_MAX = ((_PC_PAUSE_LAST_YM[0] - datetime.now().year) * 12
+                    + _PC_PAUSE_LAST_YM[1] - datetime.now().month)
 _PC_PAUSE_DEFAULT_YM = (2027, 7)  # the plan-start date the tab opens on
 # The *Pace the US* slider: the share of its ECI growth the US keeps from the
 # pacing date, 100 (no pacing) down to 0 (a pause).
@@ -16655,6 +16657,36 @@ def _pc_paced_clock(t, t_start, pace, windows=()):
                                             np.interp(t, br, clk)))
 
 
+_PC_PACE_COLOR = '#7B3FA0'   # the pacing rules on the catch-up chart
+
+
+def _pc_pace_rule_label(p):
+    """A pacing rule's label: "pause", "no pacing", or how many times slower
+    the US runs ("2× slower", "1.8× slower")."""
+    if p <= 0:
+        return "pause"
+    if p >= 1:
+        return "no pacing"
+    return f"{round(1 / p, 1):g}\u00d7 slower"
+
+
+def _pc_pace_changes(start, pace, windows):
+    """[(date, pace from then on)] for every date the US pace changes: the
+    main lever's `pace` from `start`, and each (start, end, pace) window,
+    the slowest winning where they overlap (as `_pc_paced_clock`)."""
+    dates = sorted({start, *(x for a, b, _ in windows for x in (a, b))})
+
+    def rate(d):
+        r = pace if d >= start else 1.0
+        return min([r] + [p for a, b, p in windows if a <= d < b])
+    out, last = [], 1.0
+    for d in dates:
+        if rate(d) != last:
+            last = rate(d)
+            out.append((d, last))
+    return out
+
+
 def _pc_pace_windows(today):
     """The *Pacing windows* the Advanced expander has set, as
     [(start date, end date, pace 0–1)]; a window ending on or before its
@@ -16978,7 +17010,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     off_us = timedelta(days=shift - run_days)
     off_cn = timedelta(days=shift - run_days - _CC_RUN_COMPLETION_LAG.days)
     d_pause_v = pause_d + off_us
-    st.subheader("When does China catch up?")
     if levers_box is None:
         levers_box = st.sidebar.container()
     with levers_box:
@@ -17792,25 +17823,36 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                   f'US paced at {pace:.0%} (~{_prate:.1f} ECI/yr)' if pace < 1
                   else f'US, no pacing (~{_prate:.1f} ECI/yr)'),
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US paced</extra>'))
-    if d_pause_v > anchor_d + off_cn and pace < 1:
-        # A rule with its label at the foot of the plot, clear of the lines
-        # and the milestone marks.
-        fig.add_vline(x=d_pause_v, line=dict(color='#1F77B4', width=1,
-                                             dash='dot'))
-        fig.add_annotation(x=d_pause_v, y=0, yref='paper', yanchor='bottom',
+    # Where the US would be with no pacing, dashed like China's no-levers
+    # line, from the first change in its pace.
+    _chg = _pc_pace_changes(pause_d, pace, _pc_pace_windows(today))
+    if _chg:
+        _d0 = _chg[0][0] + off_us
+        _uk = [i for i, t in enumerate(grid_yrs)
+               if _d0 <= _date_of(t) <= x_end]
+        if len(_uk) > 1:
+            _un = np.median(_us_trained_unpaced(np.broadcast_to(
+                grid_yrs[_uk], (n_s, len(_uk)))), axis=0)
+            _ux = [_date_of(grid_yrs[i]) for i in _uk]
+            _urate = (_un[-1] - _un[0]) / max(
+                (_ux[-1] - _ux[0]).days / 365.25, 1e-6)
+            fig.add_trace(go.Scatter(
+                x=_ux, y=[float(v) for v in _un], mode='lines',
+                line=dict(color='#1F77B4', width=2, dash='dash'),
+                name=f'US with no pacing (avg {_urate:.1f} ECI/yr)',
+                hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                              '<extra>US, no pacing</extra>'))
+    # Every change in the US pace, a thin purple rule labelled with the
+    # pace from there on, along the top of the plot.
+    for _d, _p in _chg:
+        _d = _d + off_us
+        if not today + off_cn <= _d <= x_end:
+            continue
+        fig.add_vline(x=_d, line=dict(color=_PC_PACE_COLOR, width=1))
+        fig.add_annotation(x=_d, y=1, yref='paper', yanchor='top',
                            xanchor='left', showarrow=False,
-                           text=(f' US pauses {d_pause_v:%b %Y}' if _paused
-                                 else f' US paced from {d_pause_v:%b %Y}'),
-                           font=dict(size=10, color='#1F77B4'))
-    # Each pacing window as a light band, labelled with its pace.
-    for _a, _b, _p in _pc_pace_windows(today):
-        _a, _b = max(_a + off_us, today + off_cn), min(_b + off_us, x_end)
-        if _b > _a:
-            fig.add_vrect(x0=_a, x1=_b, fillcolor='rgba(31,119,180,0.07)',
-                          line_width=0, layer='below',
-                          annotation_text=f"{_p:.0%}",
-                          annotation_position='top left',
-                          annotation_font=dict(size=10, color='#1F77B4'))
+                           text=" " + _pc_pace_rule_label(_p),
+                           font=dict(size=11, color=_PC_PACE_COLOR))
     # The US's automated coder and RSI, each where the paced released
     # frontier reaches the ECI that sample's Takeoff scenario had at it.
     # Marks carry no on-chart text, which collided wherever the two sides'

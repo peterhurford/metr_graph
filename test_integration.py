@@ -1799,8 +1799,6 @@ class TestPacingTab:
         weight-security alert sits above the milestone table and the methods
         toggle."""
         at = self._app()
-        subs = " ".join(str(s.value) for s in at.subheader)
-        assert "When does China catch up?" in subs
         labels = " ".join(str(m.label) for m in at.metric)
         assert "paused US frontier" in labels
         assert "Time for China to surpass" in labels
@@ -2553,7 +2551,7 @@ class TestSectionDeepLinks:
     `st.query_params` write."""
 
     _SLUGS = {"datacenters": "per-company-does-the-buildout-predict-release-timing",
-              "pacing": "when-does-china-catch-up",
+              "pacing": "compute-thresholds",
               "rsi": "cobench"}
 
     def _script(self, at):

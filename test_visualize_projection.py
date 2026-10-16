@@ -4457,6 +4457,23 @@ class TestPacing:
         assert list(vp._pc_paced_clock(t, 1.0, 1.0)) == list(t)
         assert list(vp._pc_paced_clock(t, 1.0, 0.5)) == [0.0, 1.0, 1.5, 2.0]
 
+    def test_pace_changes_list_each_new_pace_once(self):
+        """The chart's rules: one per change in the effective pace, none
+        where a window leaves the pace as it was."""
+        d = [datetime(2027, m, 1) for m in range(1, 7)]
+        assert vp._pc_pace_changes(d[0], 1.0, []) == []
+        assert vp._pc_pace_changes(d[0], 0.5, [(d[1], d[3], 0.0)]) == [
+            (d[0], 0.5), (d[1], 0.0), (d[3], 0.5)]
+        assert vp._pc_pace_changes(d[5], 1.0, [(d[1], d[2], 0.55),
+                                               (d[2], d[3], 0.55)]) == [
+            (d[1], 0.55), (d[3], 1.0)]
+
+    def test_pace_rules_say_pause_or_how_many_times_slower(self):
+        assert vp._pc_pace_rule_label(0.0) == "pause"
+        assert vp._pc_pace_rule_label(1.0) == "no pacing"
+        assert vp._pc_pace_rule_label(0.5) == "2\u00d7 slower"
+        assert vp._pc_pace_rule_label(0.55) == "1.8\u00d7 slower"
+
     def test_pacing_windows_slow_the_us_then_return_it_to_normal(self):
         """A window runs the US at its own pace and hands it back after;
         where windows overlap each other or the main lever, the slowest wins."""
