@@ -4464,6 +4464,8 @@ class TestPacing:
         assert vp._pc_pace_changes(d[0], 1.0, []) == []
         assert vp._pc_pace_changes(d[0], 0.5, [(d[1], d[3], 0.0)]) == [
             (d[0], 0.5), (d[1], 0.0), (d[3], 0.5)]
+        assert vp._pc_pace_changes(d[0], 0.0, [(d[2], d[4], 0.5)]) == [
+            (d[0], 0.0), (d[2], 0.5), (d[4], 0.0)]
         assert vp._pc_pace_changes(d[5], 1.0, [(d[1], d[2], 0.55),
                                                (d[2], d[3], 0.55)]) == [
             (d[1], 0.55), (d[3], 1.0)]
@@ -4475,8 +4477,8 @@ class TestPacing:
         assert vp._pc_pace_rule_label(0.55) == "1.8\u00d7 slower"
 
     def test_pacing_windows_slow_the_us_then_return_it_to_normal(self):
-        """A window runs the US at its own pace and hands it back after;
-        where windows overlap each other or the main lever, the slowest wins."""
+        """A window runs the US at its own pace whatever the main lever says
+        and hands it back after; where windows overlap, the slowest wins."""
         t = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
         # A pause from 1 to 2, unpaced around it: one year lost for good.
         assert list(vp._pc_paced_clock(t, 9.0, 1.0, [(1.0, 2.0, 0.0)])) == \
@@ -4484,6 +4486,9 @@ class TestPacing:
         # Half pace from 1 to 3 under a 0.5 main lever from 2: 0.5 throughout.
         assert list(vp._pc_paced_clock(t, 2.0, 0.5, [(1.0, 3.0, 0.5)])) == \
             [0.0, 1.0, 1.5, 2.0, 2.5]
+        # A window restarts a paused US at half speed, then it pauses again.
+        assert list(vp._pc_paced_clock(t, 1.0, 0.0, [(2.0, 3.0, 0.5)])) == \
+            [0.0, 1.0, 1.0, 1.5, 1.5]
         # Overlapping windows: the pause wins where the two meet.
         assert list(vp._pc_paced_clock(
             t, 9.0, 1.0, [(1.0, 3.0, 0.5), (2.0, 3.0, 0.0)])) == \

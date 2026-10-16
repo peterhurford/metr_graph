@@ -2002,7 +2002,8 @@ class TestPacingTab:
         # All compute is then domestic: the abroad row reads Stopped and the
         # domestic row carries the compute rate.
         assert rem.get("abroad", 0.0) == pytest.approx(0.0, abs=0.05)
-        assert rem["domestic"] > 0
+        # Unrounded: the domestic row can display as 0.0 while it regrows.
+        assert at.session_state["_pc_why_after"]["compute_domestic"] > 0
         tbl = next(x.value for x in at.table if "Source" in x.value.columns)
         abroad = tbl[tbl["Source"].str.startswith("Compute, clusters abroad")]
         assert list(abroad.iloc[0][1:]) == ["Stopped"] * 3
@@ -2219,6 +2220,32 @@ class TestPacingTab:
         assert paced > paused
         assert start_bar == paused_bar      # same US level when pacing starts
         assert any("At pacing start" in t.value.columns for t in at.table)
+
+    def test_a_window_restarts_a_paused_us(self):
+        """Windows override the main lever, so a pause can resume: the card
+        stops calling the US paused and China catches it no sooner."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        at.select_slider(key="pc_pace").set_value(0).run()
+
+        def card():
+            m = next(m for m in at.metric if "US" in str(m.label)
+                     and ("paced" in str(m.label) or "paused" in str(m.label)))
+            return str(m.label), str(m.value)
+
+        label, paused = card()
+        assert "paused US frontier" in label
+        start = at.select_slider(key="pc_pause_mo").value
+        at.selectbox(key="pc_win_n").set_value(1).run()
+        at.select_slider(key="pc_win1_start").set_value(start + 3)
+        at.select_slider(key="pc_win1_end").set_value(start + 40).run()
+        _assert_no_error(at, "Pacing / pause resumed by a window")
+        label, resumed = card()
+        assert "paced US" in label and "1 pacing window" in label
+        if not resumed.startswith("After"):
+            assert datetime.strptime(resumed, "%b %Y") >= \
+                datetime.strptime(paused, "%b %Y")
 
     def test_a_pacing_window_slows_the_us_until_it_ends(self):
         """A pause window in the Advanced expander lowers the US frontier at

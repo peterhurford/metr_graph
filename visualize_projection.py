@@ -16374,8 +16374,8 @@ def _pc_render_compute_ratios(ci, span):
         return lp + (g or 0.0) * (t - t_p)
 
     g_us, pace = ci.get('g_us') or 0.0, ci.get('pace', 0.0)
-    paused = pace <= 0
     windowed = bool(ci.get('windowed'))
+    paused = pace <= 0 and not windowed
     paced = pace < 1 or windowed
 
     def _us(t):
@@ -16637,8 +16637,8 @@ def _pc_paced_clock(t, t_start, pace, windows=()):
     0 freezes the US at `t_start` (a pause); 1 leaves it unpaced.
 
     `windows` adds (start, end, pace) spans in `t`'s units: inside one the US
-    runs at that pace, after it back at the main lever's. Where spans overlap
-    each other or the main lever, the slowest pace applies. With windows,
+    runs at that pace whatever the main lever says, after it back at the main
+    lever's. Where windows overlap, the slowest applies. With windows,
     `t_start` must be a scalar."""
     if not windows:
         return np.where(t <= t_start, t, t_start + pace * (t - t_start))
@@ -16646,8 +16646,8 @@ def _pc_paced_clock(t, t_start, pace, windows=()):
     br = sorted({t_start, *(x for a, b, _ in windows for x in (a, b))})
 
     def rate(x):
-        r = pace if x >= t_start else 1.0
-        return min([r] + [p for a, b, p in windows if a <= x < b])
+        w = [p for a, b, p in windows if a <= x < b]
+        return min(w) if w else pace if x >= t_start else 1.0
     clk = [br[0]]
     for a, b in zip(br, br[1:]):
         clk.append(clk[-1] + rate(a) * (b - a))
@@ -16672,13 +16672,14 @@ def _pc_pace_rule_label(p):
 
 def _pc_pace_changes(start, pace, windows):
     """[(date, pace from then on)] for every date the US pace changes: the
-    main lever's `pace` from `start`, and each (start, end, pace) window,
-    the slowest winning where they overlap (as `_pc_paced_clock`)."""
+    main lever's `pace` from `start`, and each (start, end, pace) window
+    overriding it, the slowest winning where windows overlap (as
+    `_pc_paced_clock`)."""
     dates = sorted({start, *(x for a, b, _ in windows for x in (a, b))})
 
     def rate(d):
-        r = pace if d >= start else 1.0
-        return min([r] + [p for a, b, p in windows if a <= d < b])
+        w = [p for a, b, p in windows if a <= d < b]
+        return min(w) if w else pace if d >= start else 1.0
     out, last = [], 1.0
     for d in dates:
         if rate(d) != last:
@@ -16754,6 +16755,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         del after['speedup'], rates['speedup']
     if cn_run_mo != us_run_mo:
         after['run'] = cn_gain
+    # Unrounded, for tests: a small row can display as 0.0.
+    st.session_state["_pc_why_after"] = dict(after)
     # Years from the pause to the crossing (median over paths): each source's
     # average rate is what it closes over that span.
     span = float(np.nanmedian((t_cross - t_pause)[ok]))
@@ -17093,9 +17096,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 "Extra pacing windows", list(range(_PC_WIN_MAX + 1)),
                 index=_PC_DEFAULTS["pc_win_n"], key="pc_win_n",
                 help="Each window runs the US at its own pace from its start "
-                     "date, then returns it to the *Pace the US* lever's pace "
-                     "at its end. Where windows overlap each other or the "
-                     "lever, the slowest pace applies.")
+                     "date, whatever the *Pace the US* lever says, then hands "
+                     "it back to the lever at its end, so a pause can resume "
+                     "at a slower pace. Where windows overlap, the slowest "
+                     "applies.")
             for _i in range(1, win_n + 1):
                 for _f, _ok in (("pace", _PC_PACE_OPTIONS), ("start", _wmo),
                                 ("end", _wmo)):
@@ -17500,7 +17504,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                          for q in (10, 50, 90))
         c = caps.get(label)
         return {
-            ("At pause start" if pace <= 0 else "At pacing start"): label,
+            ("At pause start" if pace <= 0 and not pace_wins
+             else "At pacing start"): label,
             "Largest trainable run (capacity)": (
                 f"{_log_op(c[1])} log OP ({_log_op(c[0])}–{_log_op(c[2])})"
                 if c else "—"),
@@ -17565,7 +17570,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     def _pdate(q):
         y = float(np.percentile(yr_all, q))
         return anchor_d + timedelta(days=y * 365.25) if np.isfinite(y) else None
-    _paused = pace <= 0
+    # A pause is for good only when no window restarts the US.
+    _paused = pace <= 0 and not pace_wins
     _bar = "the paused US frontier" if _paused else "the paced US frontier"
     _start = "pause" if _paused else "pacing"
     _yr_end = horizon.year if horizon is not None else _PC_HORIZON.year
