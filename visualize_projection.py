@@ -7970,6 +7970,8 @@ _OPENAI_REVENUE = [
     # ">70 per cent since July". Not added: the September figure confirms the 50.44 above, and the July one sits
     # ~30% *below* this series' 42.6 at 07-29, so the tracker's Jul-Sep growth (+18%) disagrees with OpenAI's
     # own (+70%) even though the endpoints agree. TickerTrends' 10-08 post restates the 50.44 and adds no point.
+    # Rechecked 2026-10-16: TickerTrends' two posts since (10-13 Meta spend tracker, 10-14 Anthropic Q3) carry
+    # no OpenAI total.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -8069,6 +8071,10 @@ _ANTHROPIC_REVENUE = [
     # Rechecked 2026-10-08: still nothing newer. Per the FT (10-08), this series counts sales through cloud partners
     # (AWS, Google Cloud) and OpenAI's does not, so the two lines' levels are not like-for-like; no source states
     # Anthropic's run rate net of them.
+    # Rechecked 2026-10-16: still no run rate. Excluded: Q3 2026 revenue of $16.8B (Q2 ~$11.6B), told to
+    # prospective investors at an investor day (Bloomberg/Reuters/CNBC, 10-14) -- quarterly revenue, and
+    # outlets' ~$67B is their own x4; the $110B "annualized revenue by year-end" in the same coverage is a
+    # forecast. EDGAR still has no public S-1.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -8172,6 +8178,8 @@ _CN_REVENUE = {
             ("2026-08-31", 1.0, "press",
              "Bloomberg (2026-09-11): a $2B year-end target is “double the "
              "company's reported revenue run rate for August”."),
+            # Not added (checked 2026-10-16): Bloomberg (2026-10-06) calls $1B the "current"
+            # ARR, people familiar -- no new level or as-of, likely the August figure restated.
         ],
     },
     "DeepSeek": {
