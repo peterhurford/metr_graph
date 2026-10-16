@@ -1829,7 +1829,7 @@ class TestPacingTab:
         # Serving the paused frontier publicly restores the full teacher:
         # China can only cross sooner (or the same, within rounding).
         # Each channel's setting sits in the "these settings" hover under
-        # Why that long?; match case-insensitively.
+        # Why this US-China gap?; match case-insensitively.
         def _md(at):
             return " ".join(str(c.value) for c in at.caption).lower()
 

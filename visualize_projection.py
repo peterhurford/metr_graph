@@ -16881,7 +16881,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     # at the end, not one China holds from the pause), so that cell is blank.
     rows.append({"Source": "Crossover date", c0: _date(r0), c1: _date(ravg),
                  c2: ""})
-    st.markdown("##### Why that long?")
+    st.markdown("##### Why this US-China gap?")
 
     _fn_line(
         f"At the {'pacing start' if paced else 'pause'} ({pause_label}) "
@@ -17628,35 +17628,33 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         s10, s50, s90 = (float(np.percentile(_delta_mo, p))
                          for p in (10, 50, 90))
         _past = f"past {_yr_end}"
-        m1, m2 = st.columns(2)
-        m1.metric(_card1, f"{v50:%b %Y}",
-                  f"{v10:%b %Y} – {f'{v90:%b %Y}' if v90 else _past} (80%)",
-                  delta_color="off", help=_clock)
-        m2.metric("Time for China to surpass",
-                  f"~{_pc_span(s50)}",
-                  f"{_pc_span(s10)} – "
-                  + (_pc_span(s90) if np.isfinite(s90) else _past)
-                  + " (80%)", delta_color="off", help=_method)
+        # Drawn under the milestone table, above *Why this US-China gap?*.
+        _cards = [
+            (_card1, f"{v50:%b %Y}",
+             f"{v10:%b %Y} – {f'{v90:%b %Y}' if v90 else _past} (80%)", _clock),
+            ("Time for China to surpass", f"~{_pc_span(s50)}",
+             f"{_pc_span(s10)} – "
+             + (_pc_span(s90) if np.isfinite(s90) else _past) + " (80%)",
+             _method)]
     else:
         # Under half the samples cross inside the window: say so in the
         # cards themselves.
-        m1, m2 = st.columns(2)
-        m1.metric(_card1, f"After {_yr_end}",
-                  f"{share_x:.0%} of samples by {_yr_end}", delta_color="off",
-                  help=f"Fewer than half the samples see China reach {_bar} by "
-                       f"the end of {_yr_end}. " + _clock)
         _left = max((datetime(_yr_end, 12, 31) - max(pause_d, today)).days
                     / 30.44, 0.0)
-        m2.metric("Time for China to surpass", f"> {_pc_span(_left, 0)}",
-                  "pace the US harder or widen Project through",
-                  delta_color="off", help=_method)
+        _cards = [
+            (_card1, f"After {_yr_end}", f"{share_x:.0%} of samples by {_yr_end}",
+             f"Fewer than half the samples see China reach {_bar} by the end "
+             f"of {_yr_end}. " + _clock),
+            ("Time for China to surpass", f"> {_pc_span(_left, 0)}",
+             "pace the US harder or widen Project through", _method)]
+    _run_note = None
     if crossed and cn_run_mo != us_run_mo:
         _both = np.isfinite(years) & np.isfinite(years_base)
         _net = float(np.median((years - years_base)[_both])) * 12 \
             if _both.any() else 0.0
         _xtra = cn_run_mo - us_run_mo
         _mos = f"{_xtra} month" + ("s" if _xtra != 1 else "")
-        _fn_caption(
+        _run_note = (
             f"<b>{cn_run_mo}-month Chinese run</b> (<i>Advanced</i>): "
             f"\u00d7{cn_run_mo / us_run_mo:.1f} the compute in one model against "
             f"{_mos} of extra training, for a net "
@@ -17772,8 +17770,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         text=[_hover(d, s, n) + _trend_note(_us_obs) for d, s, n in us_fr],
         hoverinfo='text', name='US (actual)'))
     # Two visually distinct segments: the projected climb (dashed, like every
-    # projection) and the bar the plan holds from the pacing date (thick
-    # translucent). Both are medians of the per-sample bar China is crossed
+    # projection) and the bar the plan holds from the pacing date (solid dark
+    # blue, as China's projection is dark red). Both are medians of the per-sample bar China is crossed
     # against, dated as the pause is, monthly so a hover answers anywhere.
     t0_us = max(us_best[0], anchor_d) + off_cn
     _tp50 = float(np.median(t_pause_s))
@@ -17811,8 +17809,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     if _paused:
         fig.add_trace(go.Scatter(
             x=[max(d_pause_v, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
-            line=dict(color='#1F77B4', width=4.5), opacity=0.4,
-            name='US, paused',
+            line=dict(color='#1450A3', width=2.5),
+            name='US, projected',
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                           f'<extra>US paused at {lvl50:.0f}</extra>'))
     else:
@@ -17828,10 +17826,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                                            1e-6) if len(_py) > 1 else 0.0)
         fig.add_trace(go.Scatter(
             x=_px, y=_py, mode='lines',
-            line=dict(color='#1F77B4', width=4.5), opacity=0.4,
-            name='US, paced' if pace_wins or pace < 1 else 'US, no pacing',
-            legendgroup=(None if pace_wins or pace < 1 else 'us_nopace'),
-            showlegend=bool(pace_wins or pace < 1),
+            line=dict(color='#1450A3', width=2.5),
+            name='US, projected',
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                           + ('<extra>US paced on a schedule' if pace_wins else
                              f'<extra>US paced at {pace:.0%}' if pace < 1
@@ -18017,8 +18013,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    range=_y_rng,
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
-    _rank = {'US (actual)': 1, 'US, no pacing': 2, 'US, paced': 3,
-             'US, paused': 3, 'US, 80% range': 4, 'China (actual)': 5,
+    _rank = {'US (actual)': 1, 'US, no pacing': 2, 'US, projected': 3,
+             'US, 80% range': 4, 'China (actual)': 5,
              'China if the US kept going': 6, 'China, projected': 7,
              'China, 80% range': 8, 'automated coder': 9, 'RSI': 10,
              '80% crossing window': 11, 'Median crossing': 12}
@@ -18069,9 +18065,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     st.warning("**Assumes ~SL5 secure weights - if not, China could catch up "
                "quickly by stealing US models.**", icon="\u26a0\ufe0f")
     st.table(_ms_rows)
+    m1, m2 = st.columns(2)
+    for _col, (_lab, _val, _dlt, _hlp) in zip((m1, m2), _cards):
+        _col.metric(_lab, _val, _dlt, delta_color="off", help=_hlp)
+    if _run_note:
+        _fn_caption(*_run_note)
 
-
-    # ── Why that long? The same samples, decomposed by rate term. ──
+    # ── Why this US-China gap? The same samples, decomposed by rate term. ──
     _notes = []
     if comp_shadow is not None:
         _notes.append(
