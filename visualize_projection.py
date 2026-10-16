@@ -17753,6 +17753,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     def _per_yr(r):
         return "" if r is None else f" ({r:.1f} ECI/yr)"
 
+    def _trend_note(r):
+        return "" if r is None else f"<br>frontier trend {r:.1f} ECI/yr"
+
     fig = go.Figure()
     _dc_add_projection_band(fig, today + off_cn, x_end)
     # US: actual frontier, then the climb to the bar, flat once it pauses.
@@ -17760,8 +17763,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         x=[d + off_cn for d, s, n in us_fr], y=[s for d, s, n in us_fr],
         mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
         marker=dict(size=4, color='#1F77B4', line=dict(color='white', width=0.5)),
-        text=[_hover(d, s, n) for d, s, n in us_fr],
-        hoverinfo='text', name='US (actual)' + _per_yr(_us_obs)))
+        text=[_hover(d, s, n) + _trend_note(_us_obs) for d, s, n in us_fr],
+        hoverinfo='text', name='US (actual)'))
     # Two visually distinct segments: the projected climb (dashed, like every
     # projection) and the bar the plan holds from the pacing date (thick
     # translucent). Both are medians of the per-sample bar China is crossed
@@ -17783,10 +17786,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         fig.add_trace(go.Scatter(
             x=_cx, y=_cy, mode='lines',
             line=dict(color='#1F77B4', width=2, dash='dash'),
-            name=('US climb (Takeoff tab)' if tk else 'US climb (projected)')
-                 + _per_yr(_climb),
+            name='US, no pacing', legendgroup='us_nopace',
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                          '<extra>US climb</extra>'))
+                          + ('<extra>US climb, Takeoff tab' if tk
+                             else '<extra>US climb, projected')
+                          + _per_yr(_climb) + '</extra>'))
     # The US's own spread, 10th-90th percentile, from today on.
     _bk = [i for i, t in enumerate(grid_yrs)
            if _date_of(t) >= today + off_cn and _date_of(t) <= x_end]
@@ -17802,8 +17806,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         fig.add_trace(go.Scatter(
             x=[max(d_pause_v, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
             line=dict(color='#1F77B4', width=4.5), opacity=0.4,
-            name=f'US paused at {lvl50:.0f} (0 ECI/yr)',
-            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US paused</extra>'))
+            name='US, paused',
+            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                          f'<extra>US paused at {lvl50:.0f}</extra>'))
     else:
         # The paced bar, monthly from the pacing date: the median of the
         # same per-sample paths China is crossed against.
@@ -17818,11 +17823,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         fig.add_trace(go.Scatter(
             x=_px, y=_py, mode='lines',
             line=dict(color='#1F77B4', width=4.5), opacity=0.4,
-            name=(f'US paced on a schedule (~{_prate:.1f} ECI/yr)'
-                  if pace_wins else
-                  f'US paced at {pace:.0%} (~{_prate:.1f} ECI/yr)' if pace < 1
-                  else f'US, no pacing (~{_prate:.1f} ECI/yr)'),
-            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>US paced</extra>'))
+            name='US, paced' if pace_wins or pace < 1 else 'US, no pacing',
+            legendgroup=(None if pace_wins or pace < 1 else 'us_nopace'),
+            showlegend=bool(pace_wins or pace < 1),
+            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                          + ('<extra>US paced on a schedule' if pace_wins else
+                             f'<extra>US paced at {pace:.0%}' if pace < 1
+                             else '<extra>US, no pacing')
+                          + f', avg {_prate:.1f} ECI/yr</extra>'))
     # Where the US would be with no pacing, dashed like China's no-levers
     # line, from the first change in its pace.
     _chg = _pc_pace_changes(pause_d, pace, _pc_pace_windows(today))
@@ -17839,19 +17847,30 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             fig.add_trace(go.Scatter(
                 x=_ux, y=[float(v) for v in _un], mode='lines',
                 line=dict(color='#1F77B4', width=2, dash='dash'),
-                name=f'US with no pacing (avg {_urate:.1f} ECI/yr)',
+                name='US, no pacing', legendgroup='us_nopace',
+                showlegend=False,
                 hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                              '<extra>US, no pacing</extra>'))
+                              f'<extra>US, no pacing, avg {_urate:.1f} '
+                              'ECI/yr</extra>'))
     # Every change in the US pace, a thin purple rule labelled with the
-    # pace from there on, along the top of the plot.
+    # pace from there on at the foot of the plot; a label steps up a row
+    # when it would run into an earlier one.
+    _span = max((x_end - datetime(2024, 1, 1)).days, 1)
+    _row_end = []
     for _d, _p in _chg:
         _d = _d + off_us
         if not today + off_cn <= _d <= x_end:
             continue
+        _txt = " " + _pc_pace_rule_label(_p)
+        _row = next((r for r, e in enumerate(_row_end) if e < _d),
+                    len(_row_end))
+        _end = _d + timedelta(days=_span * (len(_txt) + 1) / 150)
+        _row_end[_row:_row + 1] = [_end]
         fig.add_vline(x=_d, line=dict(color=_PC_PACE_COLOR, width=1))
-        fig.add_annotation(x=_d, y=1, yref='paper', yanchor='top',
-                           xanchor='left', showarrow=False,
-                           text=" " + _pc_pace_rule_label(_p),
+        fig.add_annotation(x=_d, y=0.01 + 0.06 * _row, yref='paper',
+                           yanchor='bottom', xanchor='left', showarrow=False,
+                           bgcolor='rgba(255,255,255,0.8)',
+                           text=_txt,
                            font=dict(size=11, color=_PC_PACE_COLOR))
     # The US's automated coder and RSI, each where the paced released
     # frontier reaches the ECI that sample's Takeoff scenario had at it.
@@ -17897,8 +17916,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         x=[d + off_cn for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
         mode='lines+markers', line=dict(color='#D62728', width=1.5),
         marker=dict(size=4, color='#D62728', line=dict(color='white', width=0.5)),
-        text=[_hover(d, s, n) for d, s, n in cn_fr],
-        hoverinfo='text', name='China (actual)' + _per_yr(_cn_obs)))
+        text=[_hover(d, s, n) + _trend_note(_cn_obs) for d, s, n in cn_fr],
+        hoverinfo='text', name='China (actual)'))
     pct = _pctiles(traj, (10, 25, 50, 75, 90))
     xs = [grid_d[i] for i in keep]
     # One 80% band, as the US gets: a nested 50% band read as a second cone.
@@ -17910,10 +17929,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     fig.add_trace(go.Scatter(
         x=xs, y=[pct[50][i] for i in keep], mode='lines',
         line=dict(color='#7F1010', width=2.5),
-        name='China (projected median'
-             + ("" if _cn_avg is None else f", avg {_cn_avg:.1f} ECI/yr")
-             + " to crossing)",
-        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>China median</extra>'))
+        name='China, projected',
+        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>China median'
+                      + ("" if _cn_avg is None
+                         else f", avg {_cn_avg:.1f} ECI/yr to crossing")
+                      + '</extra>'))
     # China's own trend if the US kept going and nothing were done: its
     # observed rate (distillation never fading, since the US keeps pulling
     # ahead of it), sped up by its own automated coder and RSI exactly as
@@ -17936,11 +17956,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         fig.add_trace(go.Scatter(
             x=xs, y=[float(_nl50[i]) for i in keep],
             mode='lines', line=dict(color='#D62728', width=2, dash='dash'),
-            name=('China if the US kept going, no levers'
-                  + (f" ({_cn_obs:.1f} ECI/yr now, avg {_nl_rate:.1f})"
-                     if cn_speedup is not None else _per_yr(_cn_obs))),
+            name='China if the US kept going',
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                          '<extra>China, no pause</extra>'))
+                          '<extra>China, no levers'
+                          + (f", {_cn_obs:.1f} ECI/yr now, avg "
+                             f"{_nl_rate:.1f}" if cn_speedup is not None
+                             else _per_yr(_cn_obs)) + '</extra>'))
     if crossed:
         # The 80% crossing window as a neutral bracket through the diamond;
         # a red band read as part of China's own fan.
@@ -17950,8 +17971,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             line=dict(color='#444444', width=2),
             marker=dict(symbol='line-ns-open', size=14, color='#444444',
                         line=dict(width=2)),
-            name=f"80% crossing window ({v10:%b %Y} \u2013 "
-                 + (f"{v90:%b %Y})" if v90 else f"after {_yr_end})"),
+            name="80% crossing window",
             hoverinfo='skip'))
         _x_hover = (
             f"<b>China catches the US: {v50:%b %Y}</b> (median)<br>"
@@ -17969,7 +17989,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             x=[v50], y=[cross50], mode='markers',
             marker=dict(symbol='diamond', size=13, color='#D62728',
                         line=dict(color='white', width=1.5)),
-            name=f'median crossing {v50:%b %Y}', hovertemplate=_x_hover))
+            name='Median crossing', hovertemplate=_x_hover))
     _xtitle = {"Data center construction": "Training runs start",
                "Training run finished": "Training runs finish",
                "Model release": "Model releases"}[timing_label]
@@ -17978,17 +17998,26 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _lows = [sc for d, sc, _n in us_fr + cn_fr if d >= datetime(2024, 1, 1)]
     _y_rng = [min(_lows or [anchor_eci]) - 5, _PC_ECI_VIEW_MAX]
     fig.update_layout(
-        height=440, plot_bgcolor='white', paper_bgcolor='white',
+        height=540, plot_bgcolor='white', paper_bgcolor='white',
         margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
-        legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
-                    bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
-                    borderwidth=1),
+        # Below the plot, four to a row: US, China, then the marks.
+        legend=dict(font=dict(size=12, color='#222'), orientation='h',
+                    x=0, y=-0.14, xanchor='left', yanchor='top',
+                    entrywidth=0.25, entrywidthmode='fraction',
+                    traceorder='normal'),
         xaxis=dict(gridcolor='rgba(0,0,0,0.12)', title_text=_xtitle,
                    range=[datetime(2024, 1, 1) + off_cn, x_end],
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    range=_y_rng,
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
+    _rank = {'US (actual)': 1, 'US, no pacing': 2, 'US, paced': 3,
+             'US, paused': 3, 'US, 80% range': 4, 'China (actual)': 5,
+             'China if the US kept going': 6, 'China, projected': 7,
+             'China, 80% range': 8, 'automated coder': 9, 'RSI': 10,
+             '80% crossing window': 11, 'Median crossing': 12}
+    for _tr in fig.data:
+        _tr.legendrank = _rank.get(_tr.name, 99) * 10
     st.plotly_chart(_tf(fig), width="stretch")
 
     # Milestone dates for both sides, on the chart's own dating (the US's
