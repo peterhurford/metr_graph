@@ -4283,6 +4283,22 @@ class TestChinaComputeSources:
             assert lo["flow"]["2030"][k] == hi["flow"]["2030"][k]
 
 
+class TestDcCnUsable:
+    def test_china_accessible_reads_the_usable_share_of_johor(self):
+        """The China-accessible group counts DayOne Nusajaya at the share
+        Chinese labs could use as one run; a share of 1 gives the site."""
+        series = vp._dc_series_for_metric(vp.dc_all, 'train_flop')
+        name = "DayOne Nusajaya"
+        full = vp._dc_country_steps(series, [name], 'site', {}, 1.0)
+        med = vp._dc_country_steps(series, [name], 'site', {})
+        assert full and med
+        assert med[-1][1] == pytest.approx(
+            vp._DC_CN_USABLE[name] * full[-1][1])
+        other = "Bridge Data Centres MY06"
+        assert (vp._dc_country_steps(series, [other], 'site', {})[-1][1]
+                == vp._dc_country_steps(series, [other], 'site', {}, 1.0)[-1][1])
+
+
 class TestDuvProduction:
     """The CTS lithography table and the ban ratio the Pacing lever reads."""
 

@@ -1721,8 +1721,10 @@ class TestPacingTab:
         assert float(re.search(r"([\d.]+)\u00d7", over.iloc[2]).group(1)) > 1.0
         # Each cell gives both sides' values, not a bare ratio.
         assert " vs " in over.iloc[1] and "log OP" in over.iloc[1]
-        at.checkbox(key="pc_duv_ban").check().run()
-        at.checkbox(key="pc_duv_service").check().run()
+        # The DUVi bans bind only from ~2030, past this crossing, so cut legal
+        # sales and smuggling instead, which bite from today.
+        at.checkbox(key="pc_stop_legal").check().run()
+        at.slider(key="pc_cut_smuggling").set_value(100).run()
         cut = ratios(at)
         assert cut["cross"] > cut["base"]
         # Installed compute is in the table, in H100e, and in the chart too.
@@ -2047,8 +2049,12 @@ class TestPacingTab:
             return out
 
         base = _rows(self._paired(at))
-        assert {"abroad", "innovation", "diffusion", "distillation",
-                "total"} <= set(base)
+        assert {"innovation", "diffusion", "distillation", "total"} <= set(base)
+        # The compute rate shows once, on whichever compute row is larger;
+        # the unrounded gains carry both.
+        assert {"domestic", "abroad"} & set(base)
+        base_after = dict(at.session_state["_pc_why_after"])
+        assert base_after["compute_abroad"] > 0
         parts = sum(v for k, v in base.items() if k != "total")
         assert parts == pytest.approx(base["total"], abs=0.15)  # rounding
         # Each source reads its own average, so none sits above both its
@@ -2078,9 +2084,10 @@ class TestPacingTab:
         self._paired(at.checkbox(key="pc_stop_remote").check())
         _assert_no_error(at, "Pacing / why with remote access cut")
         rem = _rows(at)
+        rem_after = dict(at.session_state["_pc_why_after"])
         # All compute is then domestic: the abroad row reads Stopped and the
         # domestic row carries the compute rate.
-        assert rem.get("abroad", 0.0) == pytest.approx(0.0, abs=0.05)
+        assert rem_after["compute_abroad"] == pytest.approx(0.0, abs=0.05)
         # Zero when China crosses before the setback is regrown, which live
         # data decides; the "Regrowing" check below is the structural one.
         assert at.session_state["_pc_why_after"]["compute_domestic"] >= 0
@@ -2095,11 +2102,9 @@ class TestPacingTab:
         self._paired(at.select_slider(key="pc_remote_when").set_value(
             when[len(when) // 2]))
         _assert_no_error(at, "Pacing / why with remote access cut later")
-        later = _rows(at)
-        # Between the two: more than a cut today leaves, no more than never
-        # cutting. The upper bound carries a tolerance because the dated cut
-        # re-reads each sample at its own crossing.
-        assert later.get("abroad", 0.0) > rem.get("abroad", 0.0)
+        later_after = dict(at.session_state["_pc_why_after"])
+        # More than a cut today leaves.
+        assert later_after["compute_abroad"] > rem_after["compute_abroad"]
         at.select_slider(key="pc_remote_when").set_value("Now").run()
         at.checkbox(key="pc_stop_remote").uncheck().run()
 

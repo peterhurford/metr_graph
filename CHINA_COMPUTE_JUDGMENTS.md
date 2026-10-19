@@ -99,6 +99,13 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 - **The projection hinges on the domestic rate.** At 2.4×/yr, domestic chips are 70% of the 2030 stock (~45M H100e). IFP's own 2026→27 domestic growth is ~1.3×, because HBM binds.
 - **Revisit when:** Epoch publishes 2026 smuggling, IFP or SemiAnalysis revise their channel estimates, or US policy changes on H200 or RTX sales, remote access or HBM.
 
+### 7. Share of the Johor campus usable for one Chinese run (`_DC_CN_USABLE`)
+
+- **Value:** DayOne Nusajaya counts at a median 30% of its capacity in every China-accessible series; the Pacing tab draws each run's share logit-normally (`_DC_CN_USABLE_LOGIT_SD` 1.2, 80% range ~8–67%). Bridge MY06 counts in full.
+- **Why:** the campus is multi-tenant, and the evidence is company-level (SemiAnalysis names DayOne among ByteDance's offshore landlords; the FT reports Alibaba and ByteDance training in Southeast Asia), not a lease of the whole site. One coherent run also needs one tenant's contiguous halls and networking. At the median, MY06 (~221k H100e) is China's largest offshore cluster.
+- **Effect:** the remote-access setback falls from 0.66 OOM at the full campus to ~0.24 at the median.
+- **Revisit when:** a source documents a Chinese tenant's share of Nusajaya, or a cluster built for one Chinese run.
+
 ## Checked and deliberately left alone
 
 - **Catalogue coverage.** It holds ~0.94 GW of IT power in China at end-2026, against SemiAnalysis's 24 GW national fleet (~4%; the US is ~25%). That is irrelevant to largest-site views as long as the largest sites are present.

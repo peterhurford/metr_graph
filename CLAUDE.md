@@ -945,7 +945,9 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    country is capacity in that country whoever trains in it. `test_country_fallback_only_
    names_sites_epoch_left_blank` retires a fallback the moment Epoch fills the cell.
 2. **"China-accessible" = China + `_DC_CN_ACCESS_ABROAD`** (DayOne Nusajaya and Bridge MY06,
-   both in Johor). Epoch's own source notes on Nusajaya cite the FT on Alibaba and ByteDance
+   both in Johor), each at the share Chinese labs could use as one run (`_DC_CN_USABLE`:
+   Nusajaya at a median 30%, drawn per run on the Pacing tab; `_dc_country_steps` applies it,
+   `TestDcCnUsable`; `CHINA_COMPUTE_JUDGMENTS.md` §7). Epoch's own source notes on Nusajaya cite the FT on Alibaba and ByteDance
    training in Southeast Asia; Epoch lists ByteDance (#likely) as MY06's owner and user.
    Both lines are always drawn and projected — mainland alone and accessible — with no
    selector (one was tried and removed as redundant); the sites are *moved* out of Malaysia

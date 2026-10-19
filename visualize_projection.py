@@ -2376,6 +2376,13 @@ _DC_CTY_CN = "China"
 # other tenants — so its label says what it assumes. Bridge Data Centres MY06
 # (Sedenak, Johor) is the one Epoch itself attributes, to ByteDance (#likely).
 _DC_CN_ACCESS_ABROAD = ("DayOne Nusajaya", "Bridge Data Centres MY06")
+# Share of each site abroad Chinese labs could drive as one training run:
+# DayOne Nusajaya is a multi-tenant campus with no documented Chinese lease
+# of the whole, so a judgment (CHINA_COMPUTE_JUDGMENTS.md §7); MY06 is
+# ByteDance's own. Every China-accessible series reads the median; the
+# Pacing tab draws each run's share from the logit-normal range.
+_DC_CN_USABLE = {"DayOne Nusajaya": 0.30}
+_DC_CN_USABLE_LOGIT_SD = 1.2     # 80% range ~8-67% around the 30% median
 # In mode 'company', the China-accessible group pools its sites abroad as one
 # tenant: the premise of the group is that Chinese labs can use all of them.
 _DC_CN_ABROAD_PARTY = "Chinese labs abroad"
@@ -2898,7 +2905,23 @@ def _dc_region_totals(series, country_of, grid):
 
 
 
-def _dc_country_steps(series, names, mode, cluster_of):
+def _dc_cn_usable_series(series, names, share=None):
+    """`series` restricted to `names`, each site abroad in _DC_CN_USABLE
+    scaled to the share Chinese labs could use as one run (`share`
+    overrides the median for every such site; 1.0 gives the raw site)."""
+    out = {}
+    for n in names:
+        if n not in series:
+            continue
+        f = (share if share is not None else _DC_CN_USABLE.get(n, 1.0)
+             ) if n in _DC_CN_USABLE else 1.0
+        v = series[n]
+        out[n] = v if f == 1.0 else dict(
+            v, pts=[(d, x * f) for d, x in v['pts']])
+    return out
+
+
+def _dc_country_steps(series, names, mode, cluster_of, usable_share=None):
     """One country's capacity over time as [(date, value, detail), …].
 
     mode 'site'    — its largest single site (detail = site name)
@@ -2909,7 +2932,7 @@ def _dc_country_steps(series, names, mode, cluster_of):
                      the state-direction claim the Pacing tab makes for China,
                      an upper bound for anyone else
     """
-    sub = {n: series[n] for n in names if n in series}
+    sub = _dc_cn_usable_series(series, names, usable_share)
     if not sub:
         return []
     if mode == 'site':
@@ -13815,8 +13838,9 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                   else comp_slow[1])
         cut_t = comp_cut(grid[i - 1]) if comp_cut is not None else 0.0
         comp_t = np.maximum(comp_t - cut_t, 0.0)
-        c_on = (0.0 if comp_dead is not None
-                and comp_dead[0] <= grid[i - 1] < comp_dead[1] else 1.0)
+        c_on = (1.0 if comp_dead is None else
+                np.where((comp_dead[0] <= grid[i - 1])
+                         & (grid[i - 1] < np.asarray(comp_dead[1])), 0.0, 1.0))
         parts = (pace * comp_t * c_on, pace * pure, pace * diffu * d_avail,
                  pace * dist * d_on * np.minimum(1.0, gap / gap0))
         rate = parts[0] + parts[1] + parts[2] + parts[3]
@@ -13834,8 +13858,10 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         if shadow:
             cap, dead = comp_shadow
             cap = np.maximum(cap - cut_t, 0.0)
-            d_on_c = (0.0 if dead is not None
-                      and dead[0] <= grid[i - 1] < dead[1] else 1.0)
+            d_on_c = (1.0 if dead is None else
+                      np.where((dead[0] <= grid[i - 1])
+                               & (grid[i - 1] < np.asarray(dead[1])),
+                               0.0, 1.0))
             dom = np.minimum(pace * np.minimum(comp_t, cap) * d_on_c,
                              parts[0])
             channels['compute_domestic'][:, i] = \
@@ -18077,12 +18103,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
 
     def _regrow_end(t0, oom, g):
         """When a domestic buildout growing g x (1 - supply cut) OOM/yr has
-        regrown `oom` from year `t0`."""
-        t, lvl = t0, 0.0
-        while lvl < oom and t < t0 + 60.0:
-            lvl += g * (1.0 - _sup(t)) / 52.0
-            t += 1.0 / 52.0
-        return t
+        regrown `oom` (scalar or per run) from year `t0`."""
+        ts = t0 + np.arange(1, 60 * 52 + 1) / 52.0
+        lvl = np.cumsum([g * (1.0 - _sup(t)) / 52.0 for t in ts])
+        return ts[np.minimum(np.searchsorted(lvl, np.asarray(oom)),
+                             len(ts) - 1)]
 
     # The further-slowdown slider is constant; the supply levers enter the
     # sim as `_sup`, year by year.
@@ -18101,13 +18126,25 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         _cty = {dc['name']: _dc_site_country(dc) for dc in dc_all}
         _grp = _dc_country_groups(_ser, _cty, 'abroad')
 
-        def _cur_level(names):
+        def _cur_level(names, share=None):
             vals = [v for d, v, *_ in
-                    _dc_country_steps(_ser, names, 'site', {})
+                    _dc_country_steps(_ser, names, 'site', {}, share)
                     if d <= today and v > 0]
             return vals[-1] if vals else None
 
-        acc = _cur_level(_grp.get(_DC_CTY_CN_ACCESS, []))
+        # Each run draws how much of the Johor campus Chinese labs could use
+        # as one run (_DC_CN_USABLE), so the remote-access setback carries
+        # that uncertainty; the rest of the group is read as catalogued.
+        _acc_names = _grp.get(_DC_CTY_CN_ACCESS, [])
+        _rest = _cur_level([n for n in _acc_names if n not in _DC_CN_USABLE])
+        acc = np.full(n_s, _rest or 0.0)
+        for _site, _med in _DC_CN_USABLE.items():
+            _raw = _cur_level([_site], share=1.0) if _site in _acc_names else None
+            if _raw:
+                _f = 1.0 / (1.0 + np.exp(-(np.log(_med / (1.0 - _med))
+                                           + _DC_CN_USABLE_LOGIT_SD
+                                           * np.random.normal(size=n_s))))
+                acc = np.maximum(acc, _f * _raw)
         dom = _cur_level([n for n in _ser if _cty.get(n) == _DC_CTY_CN])
         g_dom = max(chk_dom['g'], 0.05)
         g_dom_hi = min(g_hi_eff, g_dom)
@@ -18127,11 +18164,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             g_dom_lo *= dom_keep
             # Floored so the regrowth window below stays finite.
             g_dom = max(g_dom * dom_keep, 0.01)
-        dlvl_today = (max(float(np.log10(acc / dom)), 0.0)
-                      if acc and dom and acc > dom else 0.0)
+        dlvl_today = (np.maximum(np.log10(np.maximum(acc, dom) / dom), 0.0)
+                      if dom else np.zeros(n_s))
         comp_shadow = (a_partial * g_dom_hi,
                        (t_today, _regrow_end(t_today, dlvl_today, g_dom))
-                       if dlvl_today else None)
+                       if dlvl_today.any() else None)
         if stop_remote:
             if t_cut_r <= t_today:
                 # Bites now: the whole sim runs on the domestic band.
@@ -18140,11 +18177,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 # Export-control band until the cut, domestic band after.
                 comp_slow = (t_cut_r,
                              a_partial * _pc_tri(g_dom_lo, g_dom_hi, n_s))
-            if dlvl_today:
+            if dlvl_today.any():
                 # The setback is the gap at the cut date: today's gap,
                 # widened by how far the two paces diverge before it bites.
-                dlvl_oom = max(dlvl_today + (g_mid - g_dom)
-                               * max(t_cut_r - t_today, 0.0), 0.0)
+                dlvl_oom = np.maximum(dlvl_today + (g_mid - g_dom)
+                                      * max(t_cut_r - t_today, 0.0), 0.0)
                 comp_dead = (max(t_cut_r, t_today),
                              _regrow_end(max(t_cut_r, t_today), dlvl_oom,
                                          g_dom))
@@ -18387,10 +18424,15 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _slow = (f"; domestic buildout slowed {dom_slow_pct}%"
              + (f" ({_supply_txt})" if _supply else "")
              if dom_slow_pct or _supply else "")
+    # Median setback, for the words: each run draws its own.
+    _cd_med = (None if comp_dead is None else
+               (comp_dead[0], float(np.median(comp_dead[1]))))
+    _dl_med = float(np.median(dlvl_oom))
     if comp_dead is not None:
-        _asm_comp = (f"Compute: from {_when_r}, falls back {dlvl_oom:.1f} OOM "
-                     "to the largest domestic cluster, "
-                     f"~{comp_dead[1] - comp_dead[0]:.1f} yr to regrow at "
+        _asm_comp = (f"Compute: from {_when_r}, falls back ~{_dl_med:.1f} OOM "
+                     "(median; it depends on how much of the Johor campus "
+                     "China could use) to the largest domestic cluster, "
+                     f"~{_cd_med[1] - _cd_med[0]:.1f} yr to regrow at "
                      f"\u00d7{10 ** _dom_hi:.1f}/yr (checkbox{_slow}).")
     elif stop_remote:
         _asm_comp = (f"Compute: domestic pace only from {_when_r}, "
@@ -18804,9 +18846,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     if comp_dead is not None:
         _notes.append(
             f"Compute contributes nothing between "
-            f"{anchor_d + timedelta(days=comp_dead[0] * 365.25):%b %Y} and "
-            f"{anchor_d + timedelta(days=comp_dead[1] * 365.25):%b %Y} "
-            f"while the {dlvl_oom:.1f} OOM setback is regrown.")
+            f"{anchor_d + timedelta(days=_cd_med[0] * 365.25):%b %Y} and "
+            f"{anchor_d + timedelta(days=_cd_med[1] * 365.25):%b %Y} "
+            f"(median) while the ~{_dl_med:.1f} OOM setback is regrown.")
     elif stop_remote:
         _notes.append("Compute runs at the domestic pace only.")
     if dom_slow_pct or _supply:
@@ -18887,7 +18929,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         surpass_mo=s50, withhold=bool(withhold),
         dist_stop_t=kw.get('t_dist_stop') if dist_keep == 0 else None,
         remote_stop_t=t_cut_r if stop_remote else None,
-        comp_dead=comp_dead, compute_info=compute_info,
+        comp_dead=_cd_med, compute_info=compute_info,
         pause_date=d_pause_v)
 
 
