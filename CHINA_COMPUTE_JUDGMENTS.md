@@ -109,7 +109,7 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 ### 8. China's compute growth over the calibration window (`_CC_CN_HIST_COMPUTE`)
 
 - **Value:** ×2.12/yr since 2024, the compute share of China's observed ECI slope in the channel split (`_cc_cn_channels`). The forward band (`_CC_CN_COMPUTE_LO/HI`, ×1.4–2.0, mid ×1.68) is unchanged, so China's forward pace sits below its observed one by the slowdown.
-- **Evidence (since 2024):** catalogue China-accessible largest site at the Johor usable share ×2.12; domestic-only ×2.08; full Johor campus ×2.64; largest actual runs ×3.05 (6 records), ×1.41 since 2025 (2 records). The two catalogue fits agree and do not depend on the Johor share.
+- **Evidence (since 2024):** catalogue China-accessible largest site at the Johor usable share ×2.12; domestic-only ×2.08; full Johor campus ×2.64; largest actual runs ×3.05 (6 records), ×1.41 since 2025 (2 records). The two catalogue fits agree and do not depend on the Johor share. These fits run to the plan horizon, so they include planned sites; fitted to today on built sites only they are faster (×2.30 domestic, ×3.12 accessible at the Johor share), because the planned stretch is flat until a 2027 domestic step. ×2.12 is therefore the low end of the evidence, and the deceleration it implies a lower bound.
 - **Effect (Pacing, no pacing, default payoff):** China's lag rises from 5.0 / 4.9 / 7.5 months (coder / RSI / ultraintelligence) at ×1.68 to ~6.5 / 6.8 / 10.2. At ×2.64: 8.1 / 9.0 / 13.4.
 - **Revisit when:** new Chinese frontier runs are disclosed, a catalogue refresh moves the China fits, or late disclosure of 2025–26 runs changes the record.
 
