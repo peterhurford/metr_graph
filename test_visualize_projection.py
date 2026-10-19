@@ -4259,6 +4259,22 @@ class TestChinaComputeSources:
         for k in ("legal", "smuggled", "remote"):
             assert hbm["flow"]["2029"][k] == base["flow"]["2029"][k]
 
+    def test_supply_cut_goes_year_by_year(self):
+        """No levers, no cut; the DUVi bans' cut is small while China's
+        HBM-limited output sits under the ceiling and grows after."""
+        today = datetime(2026, 10, 19)
+        none = vp._cn_src_supply_cut(today, today, {})
+        assert none(0.5) == 0.0 and none(3.0) == 0.0
+        path = vp._duv_cut_path(range(2027, 2031), True, 0.15,
+                                vp._DUV_CN_OUTPUT_GROWTH)
+        assert path["2027"] < 0.02 < path["2030"]
+        cut = vp._cn_src_supply_cut(today, today, dict(dom_cut_path=path))
+        assert cut(0.5) < cut(3.5)
+        # Smuggling from 2027: nothing removed in 2026.
+        smug = vp._cn_src_supply_cut(
+            today, today, dict(smug_cut=0.5, smug_start=datetime(2027, 1, 1)))
+        assert smug(0.1) == 0.0 < smug(1.0)
+
     def test_slower_domestic_growth_shrinks_only_domestic(self):
         d = self._data()
         hi, lo = vp._cn_src_projection(d), vp._cn_src_projection(d, growth=1.3)
@@ -4724,6 +4740,24 @@ class TestPacing:
             0.5 * full['speedup'][:, -1], rel=0.1)
         for k in vp._CC_CHANNELS:
             assert half[k][:, -1] == pytest.approx(full[k][:, -1], rel=0.1)
+
+    def test_comp_cut_comes_off_the_compute_term_only(self):
+        kw = dict(us_anchor=150.0, us_rate=0.0, a_partial=10.0, g_lo=0.2,
+                  g_hi=0.2, algo_lo=5.0, algo_mid=5.0, algo_hi=5.0,
+                  inno_lo=5.0, inno_hi=5.0, pace_lo=1.0, pace_hi=1.0,
+                  n=20, horizon_yrs=1.0)
+        out = []
+        for cut in (None, lambda t: 1.0):
+            chan = {}
+            np.random.seed(0)
+            vp._cc_cn_crossing_sim(100.0, 200.0, channels=chan, comp_cut=cut,
+                                   **kw)
+            out.append(chan)
+        full, less = out
+        assert less['compute'][:, -1] == pytest.approx(
+            full['compute'][:, -1] - 1.0, abs=0.05)
+        assert less['innovation'][:, -1] == pytest.approx(
+            full['innovation'][:, -1])
 
     def test_full_tracking_gives_china_the_us_extra_in_eci_a_year(self):
         """With `speedup_follow` weight 1, China's extra growth is the US's

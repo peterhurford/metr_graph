@@ -1232,9 +1232,14 @@ things are load-bearing:
    `pc_duv_growth`, and
    `CHINA_COMPUTE_JUDGMENTS.md` §5 records it.
 
-On the Pacing tab the cut compounds with `pc_dom_slow`: effective slowdown =
-1 − (1 − slider)(1 − cut), through the existing domestic-growth machinery. The
-"these settings" hover names each active DUVi lever even when its cut rounds to 0%.
+On the Pacing tab the chip-supply levers (DUVi, HBM, smuggling, legal sales) act year by
+year: `_duv_cut_path` gives each calendar year's DUVi cut, the compute mix
+(`_cn_src_with_policy(dom_cut_path=…)`) turns all of them into the share of China's in-China
+compute growth removed that year (`_cn_src_supply_cut`), and the sim subtracts it from the
+compute term (`comp_cut`; `test_supply_cut_goes_year_by_year`), as does the remote-access
+setback's regrowth. Only `pc_dom_slow` stays a constant cut. The "these settings" hover
+quotes each lever's average cut to the horizon, naming each active DUVi lever even when
+its cut rounds to 0%.
 
 Guarded by `TestDuvProduction` (unit), `TestCcDuvCeilingTab` and
 `test_duvi_levers_compound_with_the_domestic_slider` (integration).

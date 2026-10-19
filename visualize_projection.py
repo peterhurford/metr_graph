@@ -10676,7 +10676,8 @@ def _cn_src_channel_cut(start, end, cuts, data=None):
 
 def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
                         stop_legal=False, legal_start=None, remote_cut=None,
-                        dom_cut=0.0, hbm_cut=0.0, hbm_start=None, data=None):
+                        dom_cut=0.0, dom_cut_path=None, hbm_cut=0.0,
+                        hbm_start=None, data=None):
     """China's compute mix by year under the Pacing tab's chip levers.
 
     Smuggling falls by `smug_cut` (0-1) from `smug_start` and legal sales
@@ -10685,17 +10686,15 @@ def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
     domestic output from `hbm_start` (None is today). From `remote_cut`
     (a date, or None): no new remote access, and the remote stock is lost.
     Domestic output's growth since today's year is slowed by `dom_cut`
-    (0-1, the slider and DUVi cuts compounded): a year's flow becomes
-    flow x (flow / today's-year flow)^-dom_cut. Stocks are the baseline's
+    (0-1, the further-slowdown slider) and, year by year, by `dom_cut_path`
+    ({year: 0-1}, the DUVi cuts): each year's flow growth g becomes
+    g^(1 - cut), compounding. Stocks are the baseline's
     less the flows removed. Same format as `load_china_compute_sources`.
     """
     data = data or load_china_compute_sources(_cn_src_mtime())
     proj = _cn_src_projection(data)
     flow = {**data["flow"], **proj["flow"]}
     stock = {**data["stock"], **proj["stock"]}
-    y_now = str(today.year)
-    d0 = flow.get(y_now, {}).get("domestic", (0.0,))[0]
-
     def _after(d, p):
         if d is None:
             return 0.0
@@ -10703,6 +10702,7 @@ def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
         return min(max((y1 - d) / (y1 - y0), 0.0), 1.0)
 
     out_f, out_s, removed = {}, {}, {k: 0.0 for k, *_ in _CN_SOURCES}
+    dom_ratio, v_prev = 1.0, None
     for p, rows in flow.items():
         mult = {"legal": 1.0 - (_after(legal_start or today, p)
                                 if stop_legal else 0.0),
@@ -10710,8 +10710,11 @@ def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
                 "remote": 1.0 - _after(remote_cut, p),
                 "domestic": 1.0}
         v = rows["domestic"][0]
-        if dom_cut and int(p) > today.year and d0 > 0 and v > 0:
-            mult["domestic"] = (v / d0) ** -dom_cut
+        if int(p) > today.year and v_prev and v > 0:
+            cut = 1.0 - (1.0 - dom_cut) * (1.0 - (dom_cut_path or {}).get(p, 0.0))
+            dom_ratio *= (v / v_prev) ** -cut
+        mult["domestic"] = dom_ratio
+        v_prev = v if v > 0 else v_prev
         mult["domestic"] *= 1.0 - hbm_cut * _after(hbm_start or today, p)
         out_f[p] = {k: (r[0] * mult[k], r[1] * mult[k], r[2] * mult[k], r[3])
                     for k, r in rows.items()}
@@ -10725,6 +10728,47 @@ def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
                               max(r[2] - removed[k], 0.0), r[3]))
                     for k, r in stock[p].items()}
     return {"flow": out_f, "stock": out_s}
+
+
+def _duv_cut_path(years, ban_imports, decay, growth):
+    """{year: share of that year's chip-output growth the DUVi policies
+    remove} (`_duv_policy_cut` over each calendar year), so a cut that only
+    binds in the 2030s costs China nothing earlier."""
+    if not ban_imports and decay <= 0:
+        return {}
+    return {str(y): _duv_policy_cut(datetime(y, 1, 1), datetime(y + 1, 1, 1),
+                                    ban_imports=ban_imports, decay=decay,
+                                    growth=growth) or 0.0
+            for y in years}
+
+
+def _cn_src_supply_cut(today, origin, mix):
+    """t (years from `origin`) -> share of China's in-China compute growth
+    the chip-supply levers in `mix` remove in that calendar year: 1 -
+    ln-growth of the in-China stock with them over without. Remote access is
+    left out (the Pacing sim handles it as a setback); held at the last
+    year's value after it, 0 before the first."""
+    keep = {k: v for k, v in mix.items() if k != "remote_cut"}
+    base = _cn_src_with_policy(today)
+    pol = _cn_src_with_policy(today, **keep)
+
+    def _in(rows):
+        return sum(rows[k][0] for k in _CN_SRC_IN_CHINA)
+
+    years = list(base["stock"])
+    cuts = {}
+    for a, b in zip(years, years[1:]):
+        g0 = np.log(_in(base["stock"][b]) / _in(base["stock"][a]))
+        g1 = np.log(_in(pol["stock"][b]) / _in(pol["stock"][a]))
+        cuts[int(b)] = (min(max(1.0 - g1 / g0, 0.0), 1.0) if g0 > 0 else 0.0)
+    if not cuts:
+        return lambda t: 0.0
+    first, last = min(cuts), max(cuts)
+
+    def _cut(t):
+        y = (origin + timedelta(days=float(t) * 365.25)).year
+        return 0.0 if y < first else cuts[min(y, last)]
+    return _cut
 
 
 def _cn_src_compute_ratio(today, origin, mix, power):
@@ -13637,7 +13681,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         dist_teacher=None, channels=None, comp_shadow=None,
                         level_sd=0.0, level_ramp_yrs=0.5, us_path=None,
                         speedup=None, speedup_follow=(0.0, 0.0),
-                        speedup_scale=None):
+                        speedup_scale=None, comp_cut=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -13678,7 +13722,9 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     (s − 1)·[w·base + (1 − w)·rate] for `speedup_follow` = (w, base): w = 0
     scales China's own rate, w = 1 adds the US's AI-driven ECI/yr at that
     level (`base` the US trend rate), so takeoffs share their size, not only
-    their timing. The extra is the `speedup` channel. `speedup_scale(t)`, if
+    their timing. The extra is the `speedup` channel. `comp_cut(t)`, if
+    given, is ECI/yr taken off the compute term (and its domestic shadow)
+    at year `t`: the chip-supply levers, year by year. `speedup_scale(t)`, if
     given, multiplies that extra at year `t` (the compute China has to run
     its AI researchers on, against the no-lever path).
 
@@ -13767,6 +13813,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                 else dist_keep)
         comp_t = (comp if comp_slow is None or grid[i - 1] < comp_slow[0]
                   else comp_slow[1])
+        cut_t = comp_cut(grid[i - 1]) if comp_cut is not None else 0.0
+        comp_t = np.maximum(comp_t - cut_t, 0.0)
         c_on = (0.0 if comp_dead is not None
                 and comp_dead[0] <= grid[i - 1] < comp_dead[1] else 1.0)
         parts = (pace * comp_t * c_on, pace * pure, pace * diffu * d_avail,
@@ -13785,6 +13833,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                 channels['speedup'][:, i] = channels['speedup'][:, i - 1] + extra * dt
         if shadow:
             cap, dead = comp_shadow
+            cap = np.maximum(cap - cut_t, 0.0)
             d_on_c = (0.0 if dead is not None
                       and dead[0] <= grid[i - 1] < dead[1] else 1.0)
             dom = np.minimum(pace * np.minimum(comp_t, cap) * d_on_c,
@@ -18009,7 +18058,35 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # crossing, and a scenario toggle must not re-tune the reality-check
     # factor.
     g_lo_eff, g_hi_eff = _CC_CN_COMPUTE_LO, _CC_CN_COMPUTE_HI
-    dom_keep = 1.0 - dom_slow_pct / 100.0
+    # The chip levers, as the compute-mix chart reads them; China's AI
+    # speed-up runs on that compute, so it shrinks with it. The DUVi cuts go
+    # year by year, so a cut that binds in the 2030s costs nothing sooner.
+    _duv_path = _duv_cut_path(
+        range(today.year, 2031), duv_ban,
+        duv_decay / 100.0 if duv_service else 0.0, duv_growth)
+    _mix = dict(smug_cut=cut_smuggling / 100.0, smug_start=d_smug,
+                stop_legal=bool(stop_legal), legal_start=d_legal,
+                remote_cut=d_remote if stop_remote else None,
+                dom_cut=dom_slow_user / 100.0, dom_cut_path=_duv_path,
+                hbm_cut=_PC_HBM_CUT if hbm_ctl else 0.0, hbm_start=d_hbm)
+    # Share of China's domestic compute growth the chip-supply levers remove,
+    # year by year (t in years from China's anchor); the slider is constant.
+    _sup = _cn_src_supply_cut(
+        today, anchor_d,
+        {k: v for k, v in _mix.items() if k not in ("remote_cut", "dom_cut")})
+
+    def _regrow_end(t0, oom, g):
+        """When a domestic buildout growing g x (1 - supply cut) OOM/yr has
+        regrown `oom` from year `t0`."""
+        t, lvl = t0, 0.0
+        while lvl < oom and t < t0 + 60.0:
+            lvl += g * (1.0 - _sup(t)) / 52.0
+            t += 1.0 / 52.0
+        return t
+
+    # The further-slowdown slider is constant; the supply levers enter the
+    # sim as `_sup`, year by year.
+    dom_keep = 1.0 - dom_slow_user / 100.0
     comp_dead, comp_slow, dlvl_oom = None, None, 0.0
     g_dom_lo = g_dom_hi = None       # domestic band, for the Assumes line
     comp_shadow = None               # domestic-only compute, for the breakdown
@@ -18053,7 +18130,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         dlvl_today = (max(float(np.log10(acc / dom)), 0.0)
                       if acc and dom and acc > dom else 0.0)
         comp_shadow = (a_partial * g_dom_hi,
-                       (t_today, t_today + dlvl_today / g_dom)
+                       (t_today, _regrow_end(t_today, dlvl_today, g_dom))
                        if dlvl_today else None)
         if stop_remote:
             if t_cut_r <= t_today:
@@ -18069,7 +18146,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 dlvl_oom = max(dlvl_today + (g_mid - g_dom)
                                * max(t_cut_r - t_today, 0.0), 0.0)
                 comp_dead = (max(t_cut_r, t_today),
-                             max(t_cut_r, t_today) + dlvl_oom / g_dom)
+                             _regrow_end(max(t_cut_r, t_today), dlvl_oom,
+                                         g_dom))
     elif dom_keep < 1.0:
         # No catalogued domestic pace to decompose the band against, so the
         # whole band takes the cut — the conservative reading of the lever.
@@ -18079,13 +18157,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # anchor date, not the US's later best (the bar's climb already counts
     # from us_best's own date via _us_dt).
     us_anchor_cn = us_best[1] - us_rate * (us_best[0] - anchor_d).days / 365.25
-    # The chip levers, as the compute-mix chart reads them; China's AI
-    # speed-up runs on that compute, so it shrinks with it.
-    _mix = dict(smug_cut=cut_smuggling / 100.0, smug_start=d_smug,
-                stop_legal=bool(stop_legal), legal_start=d_legal,
-                remote_cut=d_remote if stop_remote else None,
-                dom_cut=1.0 - (1.0 - dom_slow_user / 100.0) * (1.0 - duv_cut),
-                hbm_cut=_PC_HBM_CUT if hbm_ctl else 0.0, hbm_start=d_hbm)
+    # ECI/yr of domestic compute growth the supply cut applies to.
+    _g_dom_ref = (0.5 * (g_dom_lo + g_dom_hi) if g_dom_hi is not None
+                  else 0.5 * (g_lo_eff + g_hi_eff))
     _sp_power = float(st.session_state.get("tk_parallelization",
                                            _TK_R_REF_PARALLEL))
     _cn_sp_scale = (_cn_src_compute_ratio(today, anchor_d, _mix, _sp_power)
@@ -18105,6 +18179,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               us_path=us_path, speedup=cn_speedup,
               speedup_follow=(tk_follow, tk['ppy'] if tk else 0.0),
               speedup_scale=_cn_sp_scale,
+              comp_cut=(lambda t: a_partial * _g_dom_ref * _sup(t)),
               level_sd=_cc_frontier_level_sd(cn_fr),
               level_ramp_yrs=(_cc_release_gap_days(
                   cn_fr, since=today - timedelta(days=730)) or 47.5) / 365.25,
@@ -18760,14 +18835,21 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     if chk_dom is not None:
         _hi = min(_CC_CN_COMPUTE_HI, max(chk_dom['g'], 0.05))
         _g_dom_base = 0.5 * (min(_CC_CN_COMPUTE_LO, _hi) + _hi)
+    # The ratios chart grows China's runs at one pace from the pause, so it
+    # takes the supply cut's average over the pause to the horizon.
+    _h = horizon if horizon is not None else _PC_HORIZON
+    _ts = np.linspace((pause_d - anchor_d).days / 365.25,
+                      max((_h - anchor_d).days / 365.25,
+                          (pause_d - anchor_d).days / 365.25 + 0.1), 24)
+    _sup_avg = float(np.mean([_sup(t) for t in _ts]))
     compute_info = {
         'us': caps.get(_DC_CTY_US),
         'cn_use': caps.get(_DC_CTY_CN_DOMESTIC if _use_dom
                            else _DC_CTY_CN_ACCESS),
         'cn_dom': caps.get(_DC_CTY_CN_DOMESTIC),
-        'g_use': 0.5 * (g_lo_eff + g_hi_eff),
-        'g_dom': (0.5 * (g_dom_lo + g_dom_hi) if g_dom_hi is not None
-                  else None),
+        'g_use': 0.5 * (g_lo_eff + g_hi_eff) - _g_dom_ref * _sup_avg,
+        'g_dom': (0.5 * (g_dom_lo + g_dom_hi) * (1.0 - _sup_avg)
+                  if g_dom_hi is not None else None),
         'g_use_base': g_mid,
         'g_dom_base': _g_dom_base,
         'base_cn_use': caps.get(_DC_CTY_CN_ACCESS),
@@ -18779,7 +18861,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         'now': caps_now or {},
         'today': today, 'pause_d': pause_d, 'use_dom': _use_dom,
         'horizon': horizon if horizon is not None else _PC_HORIZON,
-        'dom_keep': dom_keep,
+        'dom_keep': dom_keep * (1.0 - _sup_avg),
         # The US clusters' own pace (log10/yr) and the pace slider: capacity
         # keeps growing through a pause; the run actually trained does not.
         'g_us': us_fit['g'] if us_fit else None, 'pace': pace,
