@@ -1142,8 +1142,9 @@ not a reading of the CSVs. Six things are load-bearing:
    sources are in the block comment above it — Epoch's leading-cluster share by
    country (US ~75% / China ~15%), Epoch's chip-smuggling report (660k H100e
    ≈ ⅓ of China's compute and ≈3% of the global stock, i.e. China ≈9%), the
-   AI-2027 tracker (~12%) and RAND (~15%). China's 9–18% spans them; no single
-   source is that wide. Retarget the constants when the estimates move rather
+   AI-2027 tracker (~12%), RAND (~15%) and IFP's chip count (~7% inside China).
+   China's 6–15% spans them, centred at 9% on the chip counts; the US central is
+   76% (IFP ~77%). Retarget the constants when the estimates move rather
    than nudging them to taste. Every region's provenance is one line in
    `_WC_NOTES`, shown on its bar's hover rather than written out as prose.
 2. **The regions' growth rates are correlated, and unequally.**
@@ -1155,8 +1156,8 @@ not a reading of the CSVs. Six things are load-bearing:
    capacity is US firms building abroad on US-supplied chips. China's loading
    is the low one (domestic silicon, controls already binding), so it is the
    region whose share rises when the US stalls: conditional on the US in its
-   bottom decile at the horizon, China absorbs 35% of the shortfall against
-   14% under independence. Guarded by
+   bottom decile at the horizon, China absorbs 26% of the shortfall against
+   11% under independence. Guarded by
    `test_a_low_us_world_is_a_slow_world_not_a_handover`. Note what the
    published-estimate spread does *not* get: a common factor on the levels
    would cancel exactly under renormalization, and the disagreement there is
@@ -1181,7 +1182,7 @@ not a reading of the CSVs. Six things are load-bearing:
    (Jan 2025) like the rest of the tab, so the stretch left of the "Today"
    divider is the same rates run *backwards* — there is no measured history of
    these shares. It doubles as a check the caption quotes: back-cast to
-   mid-2025 China lands near Epoch's ~15% reading for May 2025. That half is
+   May 2025 China lands at ~12%, under Epoch's ~15% cluster-share reading. That half is
    washed out by a white `vrect` at `layer='above'` (a shaded band would sit
    *under* the filled areas and never show), and the divider is heavier than
    the other tabs' dotted one on purpose: it is the only thing separating two
@@ -1212,13 +1213,13 @@ things are load-bearing:
    numbers unrealistic near term. They also count chips made per year, not the largest
    single run every other chart here tracks.
 2. **China's path is its own trend, capped by the ceiling.** `_duv_policy_cut()` grows
-   IFP's 2026 output (`_DUV_CN_2026_B300E` × `_DUV_H100E_PER_B300E`) at
+   IFP's 2026 domestic output (`_DUV_CN_2026_H100E`, ~1M H100e) at
    `_DUV_CN_OUTPUT_GROWTH` over a deterministic quantile grid (`_duv_realized_grid()`),
    takes min(trend, ceiling), and returns 1 − (growth under the policy ÷ growth with
-   neither ban) over today → the Pacing horizon. That path starts ~16× under even the
-   banned ceiling, so an import ban binds only once output grows into it: ~4% to 2031
-   at the default. **That number is set almost entirely by the output growth rate**
-   (0.5% at 1.5×/yr, ~11% at 4×), which is chip output, not installed compute, so it is
+   neither ban) over today → the Pacing horizon. That path starts ~4× under the banned
+   ceiling, so an import ban binds only once output grows into it: ~3% to 2031 at the
+   default 1.6×/yr. **That number is set mostly by the output growth rate**
+   (1% at 1.2×/yr, ~10% at 2.4×, ~17% at 4×), which is chip output, not installed compute, so it is
    its own constant rather than `_WC_GROWTH`, and Pacing exposes it as `pc_duv_growth`
    (`test_faster_output_growth_reaches_the_ceiling_sooner`). Don't revert to the
    ceiling-to-ceiling ratio; it charged the ban ~24% for a limit China hasn't reached.
@@ -1497,14 +1498,21 @@ distillation's teacher is the released frontier as of run start (`dist_teacher`,
 run's climb + ship lag below the bar); labs do ship during big runs, so this is a
 policy assumption, not a pipeline fact — hence the label says freeze;
 `pc_stop_dist` and `pc_stop_remote` (default off) — cut the
-distillation channel at today (`t_dist_stop` in `_cc_cn_crossing_sim`), and cut remote
+distillation channel at today (`t_dist_stop` in `_cc_cn_crossing_sim`) to `dist_keep` of
+its rate, set by `pc_dist_cut` (share of harvested data stopped, default 95%) through
+`_pc_dist_keep`: ~25% less per 10× less data (IFP), so only 100% stops it
+(`test_distillation_keeps_a_quarter_less_per_tenfold_data_cut`); and cut remote
 compute as a *level setback* (`comp_dead`): China's largest run falls back to its
 biggest domestic cluster, the compute term is dead until the domestic buildout regrows
 the lost OOMs at its catalogued pace, domestic band thereafter (also suppresses the
 China-accessible sensitivity, whose premise it removes). The pace band deliberately
 stays on the default compute band — it is shared with the CC crossing.
 Beside them, `pc_duv_ban` and `pc_duv_service` (default off) compound the CTS-derived
-DUVi import and servicing cuts into it (see *lithography ceiling* above). Alongside them, `pc_dom_slow` (0–90%, default 0) slows China's *own* buildout —
+DUVi import and servicing cuts into it (see *lithography ceiling* above), as do
+`pc_cut_smuggling` (0–100%) and `pc_stop_legal`, from the pacing date: `_cn_src_channel_cut`
+reads the China tab's compute mix (`_cn_src_projection`) for the share of China's in-China
+compute growth that channel supplies to the horizon
+(`test_smuggling_and_legal_sales_levers_stack_on_the_slowdown`). Alongside them, `pc_dom_slow` (0–90%, default 0) slows China's *own* buildout —
 equipment/fab controls rather than access controls. The cut comes off the **domestic
 component** of each band, not the band itself: `g_hi_eff -= g_dom_hi·p`, likewise for
 `lo`, so the export-control band keeps whatever access abroad adds on top while a run

@@ -4158,6 +4158,31 @@ class TestChinaComputeSources:
         # Offshore leasing flattens after 2027, so remote additions fall.
         assert p["flow"]["2029"]["remote"][0] < f27["remote"][0]
 
+    def test_distillation_keeps_a_quarter_less_per_tenfold_data_cut(self):
+        """IFP: ~25% of distilled capability per 10x less harvested data,
+        so 90% keeps 75%, 99% keeps 50%, and only a total cut stops it."""
+        k = vp._pc_dist_keep
+        assert k(90) == pytest.approx(0.75)
+        assert k(99) == pytest.approx(0.50)
+        assert k(100) == 0.0
+        opts = vp._PC_DIST_CUT_OPTIONS
+        assert [k(c) for c in opts] == sorted((k(c) for c in opts),
+                                              reverse=True)
+
+    def test_channel_cut_grows_with_the_cut_and_vanishes_without_one(self):
+        """Stopping a channel removes a share of China's in-China compute
+        growth: none for no cut or an empty window, more for a deeper cut,
+        and stopping two channels removes more than either."""
+        s, e = datetime(2027, 7, 1), datetime(2031, 12, 31)
+        cut = vp._cn_src_channel_cut
+        assert cut(s, e, {"smuggled": 0.0}) == 0.0
+        assert cut(e, s, {"smuggled": 1.0}) == 0.0
+        half, full = cut(s, e, {"smuggled": 0.5}), cut(s, e, {"smuggled": 1.0})
+        assert 0 < half < full < 1
+        legal = cut(s, e, {"legal": 1.0})
+        both = cut(s, e, {"smuggled": 0.5, "legal": 1.0})
+        assert both > max(half, legal)
+
     def test_slower_domestic_growth_shrinks_only_domestic(self):
         d = self._data()
         hi, lo = vp._cn_src_projection(d), vp._cn_src_projection(d, growth=1.3)
@@ -4231,10 +4256,13 @@ class TestDuvProduction:
         assert both >= svc
 
     def test_realized_start_is_the_reports_ifp_range(self):
-        """The 2026 grid spans IFP's 62k-160k B300e at 2.5 H100e each."""
+        """The 2026 grid centres on IFP's domestic output, the same 2026
+        flow the compute-by-source chart draws."""
         lv = sorted({a for a, _b in vp._duv_realized_grid()})
         mid = 10 ** lv[len(lv) // 2]
-        assert 0.2 < mid < 0.3
+        dom = vp.load_china_compute_sources(vp._cn_src_mtime())
+        assert mid * 1e6 == pytest.approx(
+            dom["flow"]["2026"]["domestic"][0], rel=0.05)
 
 
 class TestCcWorldShares:

@@ -14,8 +14,10 @@
 # remote (2022-2025): OURS. 2022-2024 = the catalogue's two Johor sites the
 #   app counts as China-accessible (DayOne Nusajaya, Bridge MY06; tenancy
 #   assumed). 2025 = SemiAnalysis's leased power of Chinese hyperscalers in
-#   APAC ex-China (0.85 GW) x 790 H100e/MW, those sites' facility density
-#   (700-880); range = power +/-25% x that density range.
+#   APAC ex-China (0.85 GW) x IFP's own end-2026 ratio, 1.054M H100e per
+#   1.45 GW (727/MW): its AI share of leased power (~43-50%) and the clusters
+#   outside SemiAnalysis's scope both included. Range = IFP's 2026 relative
+#   range.
 # 2026-2027, all sources: IFP, Fist, Adamson & Pilz, "How to Increase
 #   America's AI Lead Over China" (Oct 19 2026), end-of-year stocks and
 #   ranges by channel. Flows = IFP stock minus the prior year's stock here;
@@ -38,11 +40,11 @@ period,end,source,kind,h100e,p5,p95,basis
 2025,2025-12-31,legal,flow,90000,70000,116000,measured
 2025,2025-12-31,domestic,flow,556000,462000,678000,measured
 2025,2025-12-31,smuggled,flow,480000,189000,1289000,modelled
-2025,2025-12-31,remote,flow,572000,380000,796000,estimate
+2025,2025-12-31,remote,flow,518000,335000,715000,estimate
 2026,2026-12-31,legal,flow,436000,347000,526000,ifp
 2026,2026-12-31,domestic,flow,986000,798000,1255000,ifp
 2026,2026-12-31,smuggled,flow,341000,129000,985000,ifp
-2026,2026-12-31,remote,flow,382000,247000,527000,ifp
+2026,2026-12-31,remote,flow,436000,282000,602000,ifp
 2027,2027-12-31,legal,flow,504000,368000,762000,ifp
 2027,2027-12-31,domestic,flow,1300000,987000,1803000,ifp
 2027,2027-12-31,smuggled,flow,568000,169000,2421000,ifp
@@ -62,7 +64,7 @@ period,end,source,kind,h100e,p5,p95,basis
 2025,2025-12-31,legal,stock,410000,318000,531000,measured
 2025,2025-12-31,domestic,stock,743000,597000,945000,measured
 2025,2025-12-31,smuggled,stock,663000,294000,1593000,modelled
-2025,2025-12-31,remote,stock,672000,446000,935000,estimate
+2025,2025-12-31,remote,stock,618000,399000,853000,estimate
 2026,2026-12-31,legal,stock,846000,674000,1020000,ifp
 2026,2026-12-31,domestic,stock,1729000,1400000,2200000,ifp
 2026,2026-12-31,smuggled,stock,1004000,381000,2900000,ifp

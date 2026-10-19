@@ -10365,8 +10365,11 @@ _DC_NETWORK_OPTIONS = {
 #     China ≈ 2M H100e of a ≈22M global stock at end-2025, nearer 9%.
 #   • AI-2027 tracker: ~12% of AI-relevant compute in China, mid-2026.
 #     RAND, as re-quoted: ~15%.
-# China's 9–18% band is that disagreement, and it is wider than any single
-# source states. SEA and UAE are the weakest numbers here: both regions are
+#   • IFP (Oct 2026): China ~4.6M H100e at end-2026 by every channel, ~3.6M
+#     of it in China, against ~41.5M for the US at ~77% of the world: China
+#     ~7% by location.
+# China's 6–15% band is that disagreement, centred on the chip-counting
+# estimates (Epoch's smuggling report, IFP) over the cluster share. SEA and UAE are the weakest numbers here: both regions are
 # mostly *pipeline* (Johor ~3 GW approved, Stargate UAE's first 200 MW of a
 # planned 1 GW), so today's installed share is small and poorly measured.
 _WC_SOURCE_SUPERCOMPUTERS = "https://epoch.ai/data-insights/ai-supercomputers-performance-share-by-country"
@@ -10375,8 +10378,8 @@ _WC_SOURCE_COVERAGE = "https://epoch.ai/data/ai-chip-owners"
 # (label, central share %, 10th pct, 90th pct). Centrals sum to 100; each
 # sample is renormalized anyway, so an edited set need not.
 _WC_REGIONS = (
-    ("US domestic", 72.0, 63.0, 79.0),
-    ("China domestic", 13.0, 9.0, 18.0),
+    ("US domestic", 76.0, 68.0, 82.0),
+    ("China domestic", 9.0, 6.0, 15.0),
     ("SEA", 3.0, 1.5, 6.0),
     ("UAE", 2.0, 0.8, 4.0),
     ("Europe/UK", 6.0, 3.5, 9.0),
@@ -10386,14 +10389,14 @@ _WC_LABELS = tuple(lab for lab, *_ in _WC_REGIONS)
 _WC_NOTES = {
     "US domestic":
         "Epoch's leading-cluster share is about 75% (May 2025, ~74.5% "
-        "re-quoted for 2026). Set slightly below it, since that series "
-        "measures the biggest clusters, where US firms are most "
-        "over-represented.",
+        "re-quoted for 2026), and IFP puts the US at ~77% of the world's "
+        "AI compute at end-2026.",
     "China domestic":
         "The widest band, because the sources disagree most here: Epoch's "
-        "cluster share says 14\u201315%, the AI-2027 tracker 12%, and "
-        "Epoch's own smuggling estimate implies about 9%. Domestic Ascend "
-        "and Cambricon output is the part nobody measures well.",
+        "cluster share says 14\u201315%, the AI-2027 tracker 12%, Epoch's "
+        "own smuggling estimate about 9%, and IFP's chip count about 7% "
+        "for chips inside China. Set at the chip counts, with the cluster "
+        "share kept inside the band.",
     "SEA":
         "Johor has roughly 3 GW approved or building, but most of that is "
         "still pipeline, and its tenants are a mix of US hyperscalers and "
@@ -10496,19 +10499,19 @@ _DUV_ALLOCS = (("trend", "today's allocation"),
                ("push", "AI push"),
                ("ceiling", "every DUVi on AI"))
 _DUV_BAN_ALLOC = "push"   # the allocation the Pacing lever reads
-# China's realized 2026 AI chip output, the report's Figure 9 (IFP): 62k–160k
-# B300e, read as a 10th–90th range. To H100e at the report's own conversion,
-# TrendForce's 13.9M GB300e ≈ 35M H100e (dense FP16).
-_DUV_CN_2026_B300E = (0.062, 0.160)   # millions
-_DUV_H100E_PER_B300E = 35.0 / 13.9
+# China's realized 2026 AI chip output, M H100e as a 10th–90th range: IFP's
+# Oct 2026 domestic channel (~0.99M; Huawei, Cambricon and smaller designers),
+# which Epoch's +0.43M in H1 alone supports and CTS's own "current trend"
+# (~1M) matches. Same as the 2026 domestic flow in china_compute_sources.csv.
+_DUV_CN_2026_H100E = (0.80, 1.26)
 _DUV_POLICY_YEAR = 2027.0             # the ban and the servicing cut both bite
 # Growth of that output in H100e, ×/yr: median, with the 10th–90th spread at
 # ÷/× _DUV_CN_OUTPUT_SPREAD. Chip output, not installed compute (`_WC_GROWTH`):
-# Epoch has Ascend units ~0.8M (2025) → ~1.5M (2026, ×1.9); SemiAnalysis's 2027
-# median is 2M Ascend 950s (×1.3), its high case 4M (×2.7); per-chip
-# performance rises on top. The import-ban cut is most sensitive to this, so
-# Pacing exposes it (`pc_duv_growth`).
-_DUV_CN_OUTPUT_GROWTH = 2.4
+# IFP has ×1.3 for 2026→27 (HBM binds); Epoch's domestic H100e went ×1.8 over
+# 2025→26; SemiAnalysis's 2027 Ascend units run ×1.3 (median) to ×2.7 (high).
+# The import-ban cut is most sensitive to this, so Pacing exposes it
+# (`pc_duv_growth`).
+_DUV_CN_OUTPUT_GROWTH = 1.6
 _DUV_CN_OUTPUT_SPREAD = 1.6
 _DUV_CN_OUTPUT_GROWTH_RANGE = (1.2, 5.0)
 # Advanced-fab DUVi capacity lost per year once foreign servicing stops. The
@@ -10631,6 +10634,46 @@ def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH):
     return {"flow": flow, "stock": stock}
 
 
+def _cn_src_channel_cut(start, end, cuts, data=None):
+    """Share of China's in-China compute growth (log) that cutting channels
+    from `start` to `end` removes.
+
+    `cuts` maps a source to the fraction of its additions stopped. Each
+    year's flow is spread evenly across it, from the stored data and
+    `_cn_src_projection`; past the last projected year nothing more is
+    removed. 1 − ln(S_end'/S_start) / ln(S_end/S_start) over the in-China
+    stock, so the Pacing tab can compound it with its other cuts to China's
+    domestic compute growth. 0.0 for an empty window or no cuts.
+    """
+    data = data or load_china_compute_sources(_cn_src_mtime())
+    proj = _cn_src_projection(data)
+    flow = {**data["flow"], **proj["flow"]}
+    if end <= start or not any(cuts.values()):
+        return 0.0
+
+    def _in_china(rows):
+        return sum(rows[k][0] for k in _CN_SRC_IN_CHINA)
+
+    def _stock_at(t):
+        run = 0.0
+        for p, rows in flow.items():
+            y0 = datetime(int(p), 1, 1)
+            y1 = datetime(int(p) + 1, 1, 1)
+            run += _in_china(rows) * min(max((t - y0) / (y1 - y0), 0.0), 1.0)
+        return run
+
+    removed = 0.0
+    for p, rows in flow.items():
+        y0, y1 = datetime(int(p), 1, 1), datetime(int(p) + 1, 1, 1)
+        lap = (min(end, y1) - max(start, y0)) / (y1 - y0)
+        if lap > 0:
+            removed += lap * sum(rows[k][0] * f for k, f in cuts.items())
+    s0, s1 = _stock_at(start), _stock_at(end)
+    if s0 <= 0 or s1 <= s0:
+        return 0.0
+    return float(1.0 - np.log((s1 - removed) / s0) / np.log(s1 / s0))
+
+
 def _cn_smuggled_share(rows, in_china_only=True):
     """Smuggled share of a period's total, over the in-China sources or all."""
     keys = _CN_SRC_IN_CHINA if in_china_only else tuple(rows)
@@ -10666,8 +10709,7 @@ def _duv_realized_grid(n=15, growth=_DUV_CN_OUTPUT_GROWTH):
         mu, sd = (np.log10(lo) + np.log10(hi)) / 2, (np.log10(hi / lo)) / 2.5631
         return [mu + sd * q for q in z]
 
-    lo, hi = _DUV_CN_2026_B300E
-    lv = _ln(lo * _DUV_H100E_PER_B300E, hi * _DUV_H100E_PER_B300E)
+    lv = _ln(*_DUV_CN_2026_H100E)
     return [(a, b) for a in lv
             for b in _ln(growth / _DUV_CN_OUTPUT_SPREAD,
                          growth * _DUV_CN_OUTPUT_SPREAD)]
@@ -13512,7 +13554,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         release_gap_days=None, n=None, horizon_yrs=12.0,
                         us_pause_level=None, pure_lo=None, pure_hi=None,
                         t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS,
-                        t_dist_stop=None, comp_dead=None, comp_slow=None,
+                        t_dist_stop=None, dist_keep=0.0, comp_dead=None,
+                        comp_slow=None,
                         dist_teacher=None, channels=None, comp_shadow=None,
                         level_sd=0.0, level_ramp_yrs=0.5, us_path=None,
                         speedup=None, speedup_follow=(0.0, 0.0)):
@@ -13533,7 +13576,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     two-channel model. `t_dist_stop` (years, scalar) cuts the distillation
     channel abruptly at that time — an enforcement action (API-level
     controls), unlike absorption, so no ramp — leaving the other channels
-    untouched; None keeps the gap-decay law alone. `comp_dead` (start, end)
+    untouched; None keeps the gap-decay law alone. `dist_keep` is the
+    share of the channel left after the cut (0, the default, stops it). `comp_dead` (start, end)
     in years zeroes the compute term inside that window — a level setback:
     capacity lost at `start` must be regrown (the window's length = lost
     OOM / regrowth pace) before further growth adds capability again.
@@ -13638,7 +13682,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         d_avail = (1.0 if tp is None else
                    np.clip(1.0 - (grid[i - 1] - tp) / diff_absorb_yrs,
                            0.0, 1.0))
-        d_on = 1.0 if (t_dist_stop is None or grid[i - 1] < t_dist_stop) else 0.0
+        d_on = (1.0 if (t_dist_stop is None or grid[i - 1] < t_dist_stop)
+                else dist_keep)
         comp_t = (comp if comp_slow is None or grid[i - 1] < comp_slow[0]
                   else comp_slow[1])
         c_on = (0.0 if comp_dead is not None
@@ -14579,8 +14624,10 @@ def _render_cc_compute_sources():
         ("hatched ones are ours",
          "Remote access through 2025: the catalogue's two Johor sites "
          "through 2024, then SemiAnalysis's leased power of Chinese "
-         "hyperscalers outside China (0.85 GW at end-2025) at those sites' "
-         "~790 H100e per MW. And every year after 2027."))
+         "hyperscalers outside China (0.85 GW at end-2025) at IFP's own "
+         "end-2026 ratio, ~730 H100e per leased MW, which counts only the "
+         "AI share of that power plus clusters SemiAnalysis misses. And "
+         "every year after 2027."))
 
 
 def _cn_src_total_label(h100e):
@@ -14683,16 +14730,14 @@ def _render_cc_duv_ceiling(today):
                       "%{customdata})<br>if output kept its own pace with "
                       "no lithography cap<extra>" + trend_name
                       + "</extra>"))
-    lo, hi = (v * _DUV_H100E_PER_B300E for v in _DUV_CN_2026_B300E)
+    lo, hi = _DUV_CN_2026_H100E
     mid = float(np.sqrt(lo * hi))
     fig.add_trace(go.Scatter(
         x=[_x(yrs[0])], y=[mid], name="China actual, 2026 (IFP)",
         mode='markers', marker=dict(color='#222222', size=8, symbol='diamond'),
         error_y=dict(type='data', symmetric=False, array=[hi - mid],
                      arrayminus=[mid - lo], color='#222222', width=5),
-        hovertemplate=f"2026: {lo:.2f}\u2013{hi:.2f}M H100e "
-                      f"({_DUV_CN_2026_B300E[0] * 1000:.0f}k\u2013"
-                      f"{_DUV_CN_2026_B300E[1] * 1000:.0f}k B300e)"
+        hovertemplate=f"2026: {lo:.2f}\u2013{hi:.2f}M H100e (10th\u201390th)"
                       "<extra>China actual (IFP)</extra>"))
     layout = _dc_layout(True, "AI chips made per year (M H100e)",
                         datetime(us[0][0], 1, 1),
@@ -14719,20 +14764,22 @@ def _render_cc_duv_ceiling(today):
         f"~{c_imp:.0%} less growth to {end.year}, or ~{c_svc:.0%} with "
         "servicing banned too. Source: Brown & Khan, Center for Technology "
         f"& Statecraft, [*DUV Immersion Lithography*]({_DUV_SOURCE_URL}) "
-        "(Sep 2026), Table 45 and Figure 9.",
+        "(Sep 2026), Table 45; China's 2026 output from "
+        f"[IFP]({_CN_SRC_SOURCE_IFP}) (Oct 2026).",
         ("AI-push allocation", "China moves its DUVi fleet to AI chips in "
                                "the same share the US ecosystem does, "
                                "evading controls where it must. Today's "
                                "allocation is far lower; the physical ceiling "
                                "puts every machine on AI."),
         ("its own trend",
-         "IFP's 2026 estimate of Huawei's output (62k\u2013160k B300e, at the "
-         "report's 2.5 H100e per B300e), growing "
+         "IFP's Oct 2026 estimate of China's domestic AI chip output "
+         f"({_DUV_CN_2026_H100E[0]:.1f}\u2013{_DUV_CN_2026_H100E[1]:.1f}M "
+         "H100e in 2026), growing "
          f"\u00d7{_DUV_CN_OUTPUT_GROWTH:g}/yr (10th\u201390th "
          f"\u00d7{_DUV_CN_OUTPUT_GROWTH / _DUV_CN_OUTPUT_SPREAD:.1f}\u2013"
-         f"{_DUV_CN_OUTPUT_GROWTH * _DUV_CN_OUTPUT_SPREAD:.1f}): Epoch and "
-         "SemiAnalysis put Ascend unit growth at \u00d71.3\u20132.7/yr, with "
-         "faster chips on top. The lever caps this trend at each ceiling "
+         f"{_DUV_CN_OUTPUT_GROWTH * _DUV_CN_OUTPUT_SPREAD:.1f}): IFP has "
+         "\u00d71.3 for 2027 as HBM binds, Epoch measured \u00d71.8 over "
+         "2025\u201326. The lever caps this trend at each ceiling "
          "and compares growth with and without the policy. The import-ban "
          "cut is sensitive to this rate; Pacing exposes it."),
         ("with servicing banned too",
@@ -15404,6 +15451,7 @@ _PC_WIN_MAX = 3   # extra pacing windows the Advanced expander offers
 _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_pause_mo", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
+                  "pc_cut_smuggling", "pc_stop_legal", "pc_dist_cut",
                   "pc_duv_service", "pc_duv_decay", "pc_duv_growth",
                   "pc_dist_when", "pc_remote_when", "pc_cn_run",
                   "pc_methods_pause", "pc_pace", "pc_tk_follow",
@@ -15414,6 +15462,20 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
 _PC_CN_RUN_MAX = 12           # months: longest Chinese catch-up training run
 _PC_DOM_SLOW_MAX = 90         # percent: hardest slowdown of China's own buildout
+# Share of the harvested data a distillation cut stops. The capability
+# distilled falls ~_PC_DIST_PER_OOM per 10x less data (IFP, 20-35%), so a
+# 90% cut keeps ~75% of the channel and only a total cut stops it.
+_PC_DIST_CUT_OPTIONS = [50, 90, 95, 99, 100]
+_PC_DIST_PER_OOM = 0.25
+
+
+def _pc_dist_keep(cut_pct):
+    """Share of the distillation channel left when `cut_pct`% of the
+    harvested data is stopped."""
+    if cut_pct >= 100:
+        return 0.0
+    return max(0.0, 1.0 - _PC_DIST_PER_OOM * float(np.log10(100.0 / (100.0 - cut_pct))))
+
 # The pause is a date the user names, in months from today — an integer, so a
 # bookmarked URL can never carry a label that has gone stale (as the scenario
 # cut-off sliders can); the default is the offset to a fixed *date*, so a reset
@@ -15449,6 +15511,8 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_pace": 100,
                 "pc_stop_dist": False, "pc_stop_remote": False,
                 "pc_withhold": False, "pc_dom_slow": 0, "pc_duv_ban": False,
+                "pc_cut_smuggling": 0, "pc_stop_legal": False,
+                "pc_dist_cut": 95,
                 "pc_duv_service": False,
                 "pc_duv_decay": _DUV_SERVICE_DECAY_PCT,
                 "pc_duv_growth": _DUV_CN_OUTPUT_GROWTH,
@@ -17287,15 +17351,31 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "the US keeps serving its frontier, paced or paused.")
         _lvl = _cc_cn_level_offset(load_eci_compute(_mtime=_eci_mtime()))
         stop_dist = st.checkbox(
-            "Stop Chinese distillation as of today", key="pc_stop_dist",
-            help="API-level controls that block training against US model "
-                 "outputs: the distillation channel is cut from today onward, "
-                 "instead of decaying only as the gap closes. The cut stops the "
-                 "forward rate only — measured distillation is mostly a level "
+            "Cut Chinese distillation as of today", key="pc_stop_dist",
+            help="API-level controls and labs coordinating against "
+                 "harvesting US model outputs: the distillation channel is cut "
+                 "from today onward, by the share set below, instead of "
+                 "decaying only as the gap closes. The cut slows the forward "
+                 "rate only — measured distillation is mostly a level "
                  + (f"(~{_lvl[0]:+.0f} ECI at matched compute and date vs US "
                     "models, iso-compute rates indistinguishable), "
                     if _lvl else "advantage, ")
                  + "and points already banked stay banked.")
+        if st.session_state.get("pc_dist_cut") not in _PC_DIST_CUT_OPTIONS:
+            st.session_state.pop("pc_dist_cut", None)
+        dist_cut = st.select_slider(
+            "Share of harvested data stopped", options=_PC_DIST_CUT_OPTIONS,
+            value=_PC_DEFAULTS["pc_dist_cut"], key="pc_dist_cut",
+            disabled=not stop_dist,
+            format_func=lambda c: f"{c}% \u00b7 keeps {_pc_dist_keep(c):.0%}",
+            help="Distilled capability falls about "
+                 f"{_PC_DIST_PER_OOM:.0%} per 10\u00d7 less harvested data "
+                 f"([IFP]({_CN_SRC_SOURCE_IFP}), 20\u201335%), so a 90% cut "
+                 "keeps ~75% of the channel and only a total cut stops it. "
+                 "Anthropic reports its defences cut harvested data 90\u201399%; "
+                 "IFP's antitrust safe harbour aims at 95%. Needs the checkbox "
+                 "above.")
+        dist_keep = _pc_dist_keep(dist_cut) if stop_dist else 1.0
         stop_remote = st.checkbox(
             "Cut Chinese remote access to compute abroad", key="pc_stop_remote",
             help="Chinese labs lose the Johor sites and rented "
@@ -17328,6 +17408,26 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "rate set under *Advanced*. Unlike the import ban it bites "
                  "straight away, because it hits the machines in use rather "
                  "than a ceiling China has not reached yet.")
+        _cut_end = horizon if horizon is not None else _PC_HORIZON
+        _legal_cut = _cn_src_channel_cut(pause_d, _cut_end, {"legal": 1.0})
+        stop_legal = st.checkbox(
+            "Stop legal US chip sales to China from pacing start",
+            key="pc_stop_legal",
+            help="No more H200 licences or RTX gaming and workstation cards, "
+                 "IFP's [package]"
+                 f"({_CN_SRC_SOURCE_IFP}): legal sales are ~25% of what China "
+                 "adds at home in 2026 (China tab, *Where China's compute "
+                 f"comes from*). **{_legal_cut:.0%}** less domestic compute "
+                 f"growth to {_cut_end.year}, on top of the slider below.")
+        cut_smuggling = st.slider(
+            "Cut smuggling to China from pacing start by", 0, 100,
+            value=_PC_DEFAULTS["pc_cut_smuggling"], step=5, format="%d%%",
+            key="pc_cut_smuggling",
+            help="Due diligence and enforcement against diversion; IFP models "
+                 "its package as halving smuggling. Smuggled chips are ~20% "
+                 "of what China adds at home in 2026\u201327. The cut comes "
+                 "off China's domestic compute growth with the other supply "
+                 "levers.")
         methods_pause = st.checkbox(
             "US stops publishing methods from pacing start",
             key="pc_methods_pause",
@@ -17341,7 +17441,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             value=_PC_DEFAULTS["pc_dom_slow"], step=1, format="%d%%",
             key="pc_dom_slow",
             help="Equipment, HBM and fab controls that bite on the buildout "
-                 "itself: China's own clusters grow this much slower than the "
+                 "itself (IFP sizes its HBM controls at ~9% of China's chip "
+                 "output): China's own clusters grow this much slower than the "
                  "catalogued domestic pace. The cut comes off the domestic "
                  "share of the compute term, so it bites whether or not remote "
                  "access is cut \u2014 and a slower domestic pace also makes the "
@@ -17468,10 +17569,23 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     duv_cut = (_duv_policy_cut(today, _duv_end, ban_imports=duv_ban,
                                decay=(duv_decay / 100.0 if duv_service
                                       else 0.0), growth=duv_growth) or 0.0)
+    smug_cut = _cn_src_channel_cut(pause_d, _cut_end,
+                                   {"smuggled": cut_smuggling / 100.0})
+    legal_cut = _legal_cut if stop_legal else 0.0
     dom_slow_pct = int(round(100 * (1 - (1 - dom_slow_user / 100.0)
-                                    * (1 - duv_cut))))
+                                    * (1 - duv_cut) * (1 - smug_cut)
+                                    * (1 - legal_cut))))
     duv_names = " and ".join(n for n, on in (("import", duv_ban),
                                              ("servicing", duv_service)) if on)
+    # Each chip-supply lever that is on, with its share of the cut.
+    _supply = ([(f"the DUVi {duv_names} ban"
+                 + ("s" if duv_ban and duv_service else ""), duv_cut)]
+               if duv_names else [])
+    if cut_smuggling:
+        _supply.append((f"a {cut_smuggling}% smuggling cut", smug_cut))
+    if stop_legal:
+        _supply.append(("stopping legal sales", legal_cut))
+    _supply_txt = ", ".join(f"{c:.0%} from {n}" for n, c in _supply)
     d_dist = _pc_when_date(dist_when, today)
     d_remote = _pc_when_date(remote_when, today)
     cc_rows = load_eci_compute(_mtime=_eci_mtime())
@@ -17723,6 +17837,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               comp_slow=comp_slow,
               t_dist_stop=(max((d_dist - anchor_d).days, 0) / 365.25
                            if stop_dist else None),
+              dist_keep=dist_keep if stop_dist else 0.0,
               dist_teacher=teacher_s if withhold else None,
               # Release-step scatter, as on the China tab's catch-up panel.
               us_path=us_path, speedup=cn_speedup,
@@ -17932,10 +18047,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _dom_hi = g_hi_eff if g_dom_hi is None else g_dom_hi
     _dom_lo = g_lo_eff if g_dom_hi is None else g_dom_lo
     _slow = (f"; domestic buildout slowed {dom_slow_pct}%"
-             + (f" incl. the DUVi {duv_names} ban"
-                + ("s" if duv_ban and duv_service else "")
-                if duv_names else "")
-             if dom_slow_pct or duv_names else "")
+             + (f" ({_supply_txt})" if _supply else "")
+             if dom_slow_pct or _supply else "")
     if comp_dead is not None:
         _asm_comp = (f"Compute: from {_when_r}, falls back {dlvl_oom:.1f} OOM "
                      "to the largest domestic cluster, "
@@ -17949,9 +18062,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         _asm_comp = (f"Compute: keeps growing \u00d7{10 ** g_lo_eff:.1f}\u2013"
                      f"{10 ** g_hi_eff:.1f}/yr (export-control band{_slow}).")
     if stop_dist:
-        _asm_dist = ("Distillation: cut today (checkbox)." if d_dist <= today
-                     else f"Distillation: cut {d_dist:%b %Y} (checkbox); the "
-                          "gap-decay law until then.")
+        _dcut = (f" by {dist_cut}% of harvested data, keeping "
+                 f"{dist_keep:.0%} of the channel" if dist_keep else "")
+        _asm_dist = (f"Distillation: cut today{_dcut} (checkbox)."
+                     if d_dist <= today
+                     else f"Distillation: cut {d_dist:%b %Y}{_dcut} (checkbox); "
+                          "the gap-decay law until then.")
     elif withhold:
         _asm_dist = ("Distillation: release freeze from pause-run start "
                      "(checkbox): the teacher is the last pre-freeze release "
@@ -18344,7 +18460,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         _notes.append(
             "Distillation is cut "
             + ("today" if d_dist <= today else f"{d_dist:%b %Y}")
-            + ", so its row counts only what it closed before then.")
+            + (", so its row counts only what it closed before then."
+               if dist_keep == 0 else
+               f" to {dist_keep:.0%} of its rate, so its row shrinks."))
     if comp_dead is not None:
         _notes.append(
             f"Compute contributes nothing between "
@@ -18353,13 +18471,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             f"while the {dlvl_oom:.1f} OOM setback is regrown.")
     elif stop_remote:
         _notes.append("Compute runs at the domestic pace only.")
-    if dom_slow_pct or duv_names:
+    if dom_slow_pct or _supply:
         _notes.append(
             f"China's own clusters grow {dom_slow_pct}% slower than the "
             "catalogued domestic pace"
-            + (f" ({duv_cut:.0%} of it the DUVi {duv_names} ban"
-               + ("s)" if duv_ban and duv_service else ")")
-               if duv_names else "")
+            + (f" ({_supply_txt})" if _supply else "")
             + ", which lowers both compute rows.")
     _notes = [_asm_dist, _asm_comp] + _notes
     _notes.append(f"Every row is scaled by the pace band "
@@ -18422,7 +18538,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         notes=_notes, t_pause=t_pause_s, pause_label=f"{d_pause_v:%b %Y}",
         us_gain=us_cross_s - level_s, paced=not _paused,
         surpass_mo=s50, withhold=bool(withhold),
-        dist_stop_t=kw.get('t_dist_stop'),
+        dist_stop_t=kw.get('t_dist_stop') if dist_keep == 0 else None,
         remote_stop_t=t_cut_r if stop_remote else None,
         comp_dead=comp_dead, compute_info=compute_info,
         pause_date=d_pause_v)

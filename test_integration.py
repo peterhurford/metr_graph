@@ -1785,6 +1785,7 @@ class TestPacingTab:
         diff = why[why["Source"].str.startswith("Diffusion")].iloc[0]
         assert diff["China ECI/yr at US/China cross"] == "Dried up"
         at.checkbox(key="pc_stop_dist").check().run()
+        at.select_slider(key="pc_dist_cut").set_value(100).run()
         cut = next(t.value for t in at.table if "Source" in t.value.columns)
         cut = cut[cut["Source"].str.startswith("Distillation")].iloc[0]
         assert (cut["China ECI/yr at US pause"] == cut["Overall China ECI/yr"]
@@ -1945,8 +1946,8 @@ class TestPacingTab:
 
         def _slowed(at, names):
             md = " ".join(str(c.value) for c in at.caption)
-            m = re.search(r"domestic buildout slowed (\d+)% incl\. the DUVi "
-                          + names, md)
+            m = re.search(r"domestic buildout slowed (\d+)% \(\d+% from the "
+                          r"DUVi " + names, md)
             assert m, f"the settings hover names the {names}"
             return int(m.group(1))
 
@@ -1971,6 +1972,30 @@ class TestPacingTab:
         at.slider(key="pc_dom_slow").set_value(50).run()
         stacked = _slowed(at, "import and servicing bans")
         assert abs(stacked - round(100 * (1 - 0.5 * (1 - both / 100)))) <= 1
+
+    def test_smuggling_and_legal_sales_levers_stack_on_the_slowdown(self):
+        """Cutting smuggling or stopping legal sales slows China's domestic
+        compute growth, each named in the settings hover, and the two
+        stack."""
+        at = self._app()
+
+        def _slowed(at):
+            md = " ".join(str(c.value) for c in at.caption)
+            m = re.search(r"domestic buildout slowed (\d+)%", md)
+            return int(m.group(1)) if m else 0
+
+        assert _slowed(at) == 0
+        at.slider(key="pc_cut_smuggling").set_value(50).run()
+        _assert_no_error(at, "Pacing / smuggling cut")
+        smug = _slowed(at)
+        assert smug > 0
+        assert "50% smuggling cut" in " ".join(str(c.value)
+                                               for c in at.caption)
+        at.checkbox(key="pc_stop_legal").check().run()
+        _assert_no_error(at, "Pacing / legal sales stopped")
+        assert _slowed(at) > smug
+        assert "stopping legal sales" in " ".join(str(c.value)
+                                                  for c in at.caption)
 
     def test_why_breakdown_tracks_the_sliders(self):
         """The bottom breakdown splits the card's months across sources:
@@ -2004,10 +2029,18 @@ class TestPacingTab:
         assert base["innovation"] > 0 and base["diffusion"] > 0
         assert all(v >= 0 for v in base.values())
 
-        self._paired(at.checkbox(key="pc_stop_dist").check())
+        # A realistic data cut only shrinks the channel (~25% per 10x less
+        # data); a total one stops it.
+        at.checkbox(key="pc_stop_dist").check().run()
+        self._paired(at.select_slider(key="pc_dist_cut").set_value(90))
+        _assert_no_error(at, "Pacing / why with distillation cut 90%")
+        part = _rows(at)
+        assert part["distillation"] < base["distillation"]
+        self._paired(at.select_slider(key="pc_dist_cut").set_value(100))
         _assert_no_error(at, "Pacing / why with distillation cut")
         cut = _rows(at)
         assert cut["distillation"] < base["distillation"] / 2
+        assert cut["distillation"] < part["distillation"]
         at.checkbox(key="pc_stop_dist").uncheck().run()
 
         # Cutting remote access collapses exactly the row that prices it:
