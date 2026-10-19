@@ -16811,9 +16811,9 @@ def _pc_render_compute_mix(ci):
          "Chips China can use, from the China tab's compute mix "
          "(Epoch to 2025, IFP for 2026\u201327, our projection after). "
          "Legal sales stop, smuggling falls and remote access stops (its "
-         "stock lost) from their cut-off dates; the "
-         "domestic-slowdown slider and DUVi bans slow domestic output's "
-         "growth. Installed chips, not the largest single run the catch-up "
+         "stock lost) from their cut-off dates; HBM controls remove "
+         f"{_PC_HBM_CUT:.0%} of domestic output, and the DUVi bans and any "
+         "further slowdown under Advanced slow its growth. Installed chips, not the largest single run the catch-up "
          "above reads; China's AI speed-up scales with this total, to the "
          "Takeoff model's parallelization exponent."))
 
@@ -17560,7 +17560,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "far below even the banned ceiling, so the ban bites only once "
                  f"output grows into it: **{_imp_cut:.0%}** less growth to "
                  f"{_duv_end.year}. That cut comes off China's domestic compute "
-                 "growth, on top of the slider below. See the "
+                 "growth, compounding with the other chip levers. See the "
                  "China tab's lithography chart.")
         duv_service = st.checkbox(
             "Ban servicing of DUVi at China's advanced fabs from 2027",
@@ -17583,7 +17583,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  f"({_CN_SRC_SOURCE_IFP}): legal sales are ~25% of what China "
                  "adds at home in 2026 (China tab, *Where China's compute "
                  f"comes from*). **{_legal_cut:.0%}** less domestic compute "
-                 f"growth to {_cut_end.year}, on top of the slider below. "
+                 f"growth to {_cut_end.year}, compounding with the other chip "
+                 "levers. "
                  "From today unless dated later under *Advanced*.")
         _hbm_g = _cn_src_channel_cut(
             _pc_when_date(st.session_state.get("pc_hbm_when"), today),
@@ -17615,18 +17616,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "China absorbs what was already published over "
                  f"~{_CC_DIFF_ABSORB_YRS:.0f} yr, so diffusion dries up. Off: "
                  "the US keeps publishing and diffusion runs at full rate.")
-        dom_slow_user = st.slider(
-            "Slow China's domestic compute growth by", 0, _PC_DOM_SLOW_MAX,
-            value=_PC_DEFAULTS["pc_dom_slow"], step=1, format="%d%%",
-            key="pc_dom_slow",
-            help="Equipment and fab controls that bite on the buildout "
-                 "itself (HBM has its own checkbox above): China's own "
-                 "clusters grow this much slower than the "
-                 "catalogued domestic pace. The cut comes off the domestic "
-                 "share of the compute term, so it bites whether or not remote "
-                 "access is cut \u2014 and a slower domestic pace also makes the "
-                 "remote-access setback take longer to regrow. 0% = the "
-                 "catalogued buildout.")
         with (advanced_box if advanced_box is not None
               else st.expander("Advanced")):
             st.markdown("**Pacing windows**")
@@ -17705,6 +17694,21 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             st.caption("All default to *Now*, which is what the levers on "
                        "their own mean. Moving a slider right buys China more "
                        "time on that channel before it closes.")
+            st.divider()
+            st.markdown("**Any other slowdown of China's buildout**")
+            dom_slow_user = st.slider(
+                "Slow China's domestic compute growth by a further", 0,
+                _PC_DOM_SLOW_MAX, value=_PC_DEFAULTS["pc_dom_slow"], step=1,
+                format="%d%%", key="pc_dom_slow",
+                help="For anything the chip levers above don't cover: other "
+                     "equipment or fab controls, or a weaker buildout than "
+                     "the catalogue shows. China's own clusters grow this "
+                     "much slower than the catalogued domestic pace, "
+                     "compounding with the DUVi, HBM, smuggling and "
+                     "legal-sales cuts. It bites whether or not remote access "
+                     "is cut, and a slower domestic pace also makes the "
+                     "remote-access setback take longer to regrow. 0% = the "
+                     "catalogued buildout.")
             st.divider()
             st.markdown("**DUVi fleet without servicing**")
             duv_decay = st.slider(

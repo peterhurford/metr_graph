@@ -1517,7 +1517,7 @@ DUVi import and servicing cuts into it (see *lithography ceiling* above), as do
 (`pc_smug_when` / `pc_legal_when` / `pc_hbm_when`, default *Now*): `_cn_src_channel_cut`
 reads the China tab's compute mix (`_cn_src_projection`) for the share of China's in-China
 compute growth that channel supplies to the horizon
-(`test_smuggling_and_legal_sales_levers_stack_on_the_slowdown`). Alongside them, `pc_dom_slow` (0–90%, default 0) slows China's *own* buildout —
+(`test_smuggling_and_legal_sales_levers_stack_on_the_slowdown`). Under *Advanced* (*Any other slowdown*), `pc_dom_slow` (0–90%, default 0) slows China's *own* buildout further, for whatever the chip levers don't cover —
 equipment/fab controls rather than access controls. The cut comes off the **domestic
 component** of each band, not the band itself: `g_hi_eff -= g_dom_hi·p`, likewise for
 `lo`, so the export-control band keeps whatever access abroad adds on top while a run
