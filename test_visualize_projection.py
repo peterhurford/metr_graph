@@ -5454,6 +5454,16 @@ class TestTakeoffHumanSpeedup:
         slow, fast = vp._tk_human_calibration(1.4), vp._tk_human_calibration(2.5)
         assert fast["tk_human_direction"] < slow["tk_human_direction"]
 
+    def test_staff_survey_note_reads_the_ladder_at_the_surveys_month(self):
+        # August is the ladder's latest month; the curve starts from fitted rungs,
+        # so it lands within a couple of points of that month's reading.
+        row = vp.load_rsi_automation()[-1]
+        note = vp._tk_staff_survey_note(vp._TK_AL_HUMAN_HOURS)
+        reading = 100 * (1 - vp._tk_ladder_human_share(row))
+        m = re.search(r"51% vs (\d+)% in August 2026", note)
+        assert m and abs(int(m.group(1)) - reading) <= 2
+        assert "80% vs" in note and "95% vs" in note
+
 
 class TestTakeoffDirectionCurve:
     """Research direction's human-hours curve averages the dates two sources

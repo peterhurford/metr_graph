@@ -18827,6 +18827,34 @@ def _tk_ladder_curve(hours=None, years=40.0, lag_days=None):
     return t, np.minimum.accumulate(share, axis=-1)
 
 
+# Anthropic's August 2026 survey of 1,093 staff: the median estimate of AI's
+# share of the work of building a frontier model, by date. A cross-check on the
+# ladder curve only, quoted on hover: it is self-reported, and a share of work
+# is not the share of human hours the model runs on.
+_TK_STAFF_SURVEY_URL = "https://www.anthropic.com/research/ai-expectations-gap"
+_TK_STAFF_SURVEY_AI_SHARE = (("in August 2026", "2026-08-15", 51), ("end-2027", "2027-12-31", 80),
+                             ("end-2030", "2030-12-31", 95))
+
+
+def _tk_staff_survey_note(hours):
+    """Hover text setting the staff survey's AI-share medians beside the ladder
+    curve's (at `hours` per level) on the same dates."""
+    curve = _tk_ladder_curve(hours)
+    if curve is None:
+        return None
+    t, share = curve
+    start = load_rsi_automation()[-1]['date']
+    pairs = []
+    for label, d, staff in _TK_STAFF_SURVEY_AI_SHARE:
+        when = datetime.strptime(d, '%Y-%m-%d')
+        model = 100 * (1 - float(np.interp((when - start).days / 365.25, t, share)))
+        pairs.append(f"{staff}% vs {model:.0f}% {label}")
+    return ("Cross-check: Anthropic's staff (August 2026 survey, n=1,093, median) put AI's "
+            "share of the work of building a frontier model at " + ", ".join(pairs) +
+            ", against this ladder's AI share of hours carried forward. Self-reported, and "
+            "a share of work, not of hours.")
+
+
 # Weight of the next-step study, against the automation index's ladder, in
 # research direction's human-hours curve (an average of the dates each gives).
 _TK_NEXTSTEP_WEIGHT = 0.5
@@ -20651,7 +20679,8 @@ def _render_takeoff(loading):
         ("human time each level still takes",
          "The index rates who leads a task, not how long people spend on it, so the time "
          "per level is a judgment: the prior below, raised to one common power so the "
-         f"mix gives the sidebar's {accel:g}\u00d7 speed-up. AL0 and AL5 stay at 100% and 0%."))
+         f"mix gives the sidebar's {accel:g}\u00d7 speed-up. AL0 and AL5 stay at 100% and 0%."),
+        *([("mix of tasks", note)] if (note := _tk_staff_survey_note(hours)) else []))
     bands = _tk_al_bands(latest) + [0.0]
     names = ["AL0", "AL1", "AL2", "AL3", "AL4 (AI leads, person supervises)", "AL5 (no human)"]
     st.dataframe(pandas.DataFrame({
