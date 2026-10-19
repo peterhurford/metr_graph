@@ -17429,7 +17429,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                         us_steps=None, timing_label=_DC_TIMING_OPTIONS[0],
                         horizon=None, caps_now=None, state_out=None,
-                        levers_box=None, pace=0.0):
+                        levers_box=None, pace=0.0, advanced_box=None):
     """If the US paused or paced: China's catch-up to the US frontier, in ECI.
 
     The pause is a **date the user names** (`pc_pause_mo`, rendered by
@@ -17477,7 +17477,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
 
     The state-of-play table's rows go into `state_out` (a list) for the
     caller to draw above *Compute Thresholds*. The policy levers draw into
-    `levers_box`, the caller's slot at the top of the sidebar.
+    `levers_box`, the caller's slot at the top of the sidebar, and their
+    finer settings into `advanced_box`, a slot at the top of the caller's
+    *Advanced* expander (its own expander when None).
 
     `pace` (0–1, the *Pace the US* slider) is the share of its ECI growth the
     US keeps from `pause_d`: its path runs on a clock that ticks `pace` years
@@ -17606,7 +17608,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "access is cut \u2014 and a slower domestic pace also makes the "
                  "remote-access setback take longer to regrow. 0% = the "
                  "catalogued buildout.")
-        with st.expander("Advanced"):
+        with (advanced_box if advanced_box is not None
+              else st.expander("Advanced")):
             st.markdown("**Pacing windows**")
             _wmo = list(range(_PC_PAUSE_MO_MAX + 1))
             if st.session_state.get("pc_win_n") not in range(_PC_WIN_MAX + 1):
@@ -17714,28 +17717,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                      "same multiple of China's own, slower pace. Either way "
                      "each sample's China speeds up when its paired US "
                      "scenario does, and by as much.")
-            st.divider()
-            st.markdown("**Length of Chinese training run**")
-            us_run_mo = max(int(round(run_days / 30)), 1)
-            if not (us_run_mo <= st.session_state.get("pc_cn_run", us_run_mo)
-                    <= _PC_CN_RUN_MAX):
-                st.session_state.pop("pc_cn_run", None)   # stale for this bar
-            cn_run_mo = st.slider(
-                "Months China trains its catch-up model for", us_run_mo,
-                _PC_CN_RUN_MAX, value=us_run_mo, step=1, key="pc_cn_run",
-                help=f"The bar is a {us_run_mo}-month US run, but China need "
-                     "not match its length. Running longer puts more total "
-                     "compute into one model and needs proportionally less "
-                     "cluster to do it — so the hardware is there sooner — "
-                     "while the run itself finishes later. It can go either "
-                     "way; the catch-up cards show which.")
-            _fn_caption(
-                f"Defaults to {us_run_mo} \u2014 matching the bar, so no change to "
-                "the catch-up. A longer run trades compute against wall clock.",
-                ("A longer run trades compute against wall clock",
-                 f"An L-month run carries \u00d7L/{us_run_mo} the compute of the "
-                 f"{us_run_mo}-month bar: China's whole path lifts by what that buys "
-                 f"and shifts right by L\u2212{us_run_mo} months."))
+    # China's catch-up run is drawn beside the US run length, under the
+    # caller's compute settings.
+    us_run_mo = max(int(round(run_days / 30)), 1)
+    cn_run_mo = int(st.session_state.get("pc_cn_run", us_run_mo))
+    if not us_run_mo <= cn_run_mo <= _PC_CN_RUN_MAX:
+        cn_run_mo = us_run_mo
     # The DUVi policies and the slider are independent levers: they compound.
     duv_cut = (_duv_policy_cut(today, _duv_end, ban_imports=duv_ban,
                                decay=(duv_decay / 100.0 if duv_service
@@ -18736,49 +18723,73 @@ def render_pacing():
     # ── Sidebar ──
     with st.sidebar:
         st.header("Pacing")
-        # The pause panel fills this slot, so its policy levers lead the
-        # sidebar above the compute settings.
+        # The pause panel fills these slots: its policy levers lead the
+        # sidebar, and its finer settings open the Advanced expander, above
+        # the compute settings drawn here.
         levers_box = st.container()
-        st.markdown("##### Compute settings")
-        # A bookmarked URL can carry a stale label; drop it rather than raise.
-        if st.session_state.get("pc_run") not in _PC_RUN_OPTIONS:
-            st.session_state.pop("pc_run", None)
-        run_label = st.radio(
-            "Run length", list(_PC_RUN_OPTIONS),
-            index=list(_PC_RUN_OPTIONS).index(_PC_DEFAULTS["pc_run"]),
-            key="pc_run",
-            help="How long the job occupies the cluster; a longer run clears "
-                 "the bar on less hardware.")
-        if st.session_state.get("pc_timing") not in _DC_TIMING_OPTIONS:
-            st.session_state.pop("pc_timing", None)
-        timing_label = st.selectbox(
-            "Date points at", list(_DC_TIMING_OPTIONS),
-            index=list(_DC_TIMING_OPTIONS).index(_PC_DEFAULTS["pc_timing"]),
-            key="pc_timing",
-            help="Same milestones as the Data Centers tab: capacity online, "
-                 "+ one run (the chosen length) for training finished, "
-                 "+ 30 days more for a release.")
-        if st.session_state.get("pc_pool") not in _DC_NETWORK_OPTIONS:
-            st.session_state.pop("pc_pool", None)
-        net_label = st.selectbox(
-            "Data centers networked together", list(_DC_NETWORK_OPTIONS),
-            index=list(_DC_NETWORK_OPTIONS).index(_PC_DEFAULTS["pc_pool"]),
-            key="pc_pool",
-            help="Same levels as the Data Centers tab: how many sites one "
-                 "entity can drive as a single training job.")
-        if st.session_state.get("pc_party") not in _PC_PARTY_OPTIONS:
-            st.session_state.pop("pc_party", None)
-        party_label = st.radio(
-            "Attribute each site to", list(_PC_PARTY_OPTIONS),
-            index=list(_PC_PARTY_OPTIONS).index(_PC_DEFAULTS["pc_party"]),
-            key="pc_party",
-            help="Tenant credits a site to every user Epoch lists — "
-                 "Colossus 2 counts for Anthropic, Cursor and SpaceXAI "
-                 "alike — falling back to the owner; operator credits the "
-                 "owner alone (Colossus → SpaceXAI, Stargate → Oracle). "
-                 "Country races countries instead, with China shown both "
-                 "as the mainland alone and as China-accessible (mainland "
-                 "+ Chinese labs' sites abroad).")
+        with levers_box:
+            levers_top = st.container()
+            with st.expander("Advanced"):
+                advanced_box = st.container()
+                st.divider()
+                st.markdown("**Compute settings**")
+                # A bookmarked URL can carry a stale label; drop it rather than raise.
+                if st.session_state.get("pc_run") not in _PC_RUN_OPTIONS:
+                    st.session_state.pop("pc_run", None)
+                run_label = st.radio(
+                    "US training run length (sets the bar)",
+                    list(_PC_RUN_OPTIONS),
+                    index=list(_PC_RUN_OPTIONS).index(_PC_DEFAULTS["pc_run"]),
+                    key="pc_run",
+                    help="How long the US run that defines the bar occupies "
+                         "its cluster; a longer run clears the bar on less "
+                         "hardware. China's own catch-up run is set just "
+                         "below.")
+                _us_mo = max(int(round((_DAYS_6MO if _PC_RUN_OPTIONS[
+                    run_label] == 'train_flop_6mo' else _DAYS_2MO) / 30)), 1)
+                if not (_us_mo <= st.session_state.get("pc_cn_run", _us_mo)
+                        <= _PC_CN_RUN_MAX):
+                    st.session_state.pop("pc_cn_run", None)  # stale for this bar
+                st.slider(
+                    "China's catch-up training run (months)", _us_mo,
+                    _PC_CN_RUN_MAX, value=_us_mo, step=1, key="pc_cn_run",
+                    help=f"China need not match the {_us_mo}-month US run. "
+                         "Running longer puts more total compute into one "
+                         "model and needs proportionally less cluster to do "
+                         "it, so the hardware is there sooner, while the run "
+                         "itself finishes later. It can go either way; the "
+                         "catch-up cards show which. The default matches the "
+                         "US run, so no change.")
+                if st.session_state.get("pc_timing") not in _DC_TIMING_OPTIONS:
+                    st.session_state.pop("pc_timing", None)
+                timing_label = st.selectbox(
+                    "Date points at", list(_DC_TIMING_OPTIONS),
+                    index=list(_DC_TIMING_OPTIONS).index(_PC_DEFAULTS["pc_timing"]),
+                    key="pc_timing",
+                    help="Same milestones as the Data Centers tab: capacity online, "
+                         "+ one run (the chosen length) for training finished, "
+                         "+ 30 days more for a release.")
+                if st.session_state.get("pc_pool") not in _DC_NETWORK_OPTIONS:
+                    st.session_state.pop("pc_pool", None)
+                net_label = st.selectbox(
+                    "Data centers networked together", list(_DC_NETWORK_OPTIONS),
+                    index=list(_DC_NETWORK_OPTIONS).index(_PC_DEFAULTS["pc_pool"]),
+                    key="pc_pool",
+                    help="Same levels as the Data Centers tab: how many sites one "
+                         "entity can drive as a single training job.")
+                if st.session_state.get("pc_party") not in _PC_PARTY_OPTIONS:
+                    st.session_state.pop("pc_party", None)
+                party_label = st.radio(
+                    "Attribute each site to", list(_PC_PARTY_OPTIONS),
+                    index=list(_PC_PARTY_OPTIONS).index(_PC_DEFAULTS["pc_party"]),
+                    key="pc_party",
+                    help="Tenant credits a site to every user Epoch lists — "
+                         "Colossus 2 counts for Anthropic, Cursor and SpaceXAI "
+                         "alike — falling back to the owner; operator credits the "
+                         "owner alone (Colossus → SpaceXAI, Stargate → Oracle). "
+                         "Country races countries instead, with China shown both "
+                         "as the mainland alone and as China-accessible (mainland "
+                         "+ Chinese labs' sites abroad).")
         if st.session_state.get("pc_end_year") not in _PC_END_YEARS:
             st.session_state.pop("pc_end_year", None)
         pc_end_year = st.selectbox(
@@ -18831,7 +18842,7 @@ def render_pacing():
         st.session_state.pop("pc_pause_mo", None)
     if st.session_state.get("pc_pace") not in _PC_PACE_OPTIONS:
         st.session_state.pop("pc_pace", None)
-    with levers_box:
+    with levers_top:
         st.markdown("##### Policy levers")
         pace_pct = st.select_slider(
             "Pace the US", options=_PC_PACE_OPTIONS,
@@ -18869,7 +18880,8 @@ def render_pacing():
     _pc_render_us_pause(_today, pause_d, caps, run_days,
                         us_steps=_us_steps_raw, timing_label=timing_label,
                         horizon=pc_horizon, caps_now=caps_now,
-                        state_out=state_rows, levers_box=levers_box,
+                        state_out=state_rows, levers_box=levers_top,
+                        advanced_box=advanced_box,
                         pace=pace_pct / 100.0)
 
     # ── Entities and projections ──
