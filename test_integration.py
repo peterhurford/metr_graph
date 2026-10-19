@@ -794,7 +794,7 @@ class TestCcComputeSourcesTab:
                               TestCcDuvCeilingTab._HEAD]
         caps = " ".join(str(c.value) for c in at.caption)
         assert "epoch.ai/publications/chip-smuggling" in caps
-        assert "Hatched bars are" in caps
+        assert "Faded bars are projections" in caps
 
 
 class TestRsiTab:

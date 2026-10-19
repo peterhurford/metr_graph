@@ -90,12 +90,13 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 - **Why AI push:** the Pausing panel's China is a state-directed catch-up. With the ceiling rarely binding before 2031, the allocation matters little to the import-ban cut.
 - **Revisit when:** CTS re-versions the table; better estimates of China's realized output or its growth (IFP, Epoch, SemiAnalysis 2027 numbers) arrive; any evidence on scanner attrition without servicing; or a ban or servicing control is enacted.
 
-### 6. China's compute by source (`china_compute_sources.csv`, `_render_cc_compute_sources`)
+### 6. China's compute by source (`china_compute_sources.csv`, `_cn_src_projection`)
 
-- **Measured:** domestic (Ascend, Cambricon) and legal US sales are Epoch's chip data for China-market chips. Smuggling for 2024–25 is Epoch's model (159k, 480k H100e; 663k cumulative). Display only: nothing downstream reads these rows.
-- **H1 2026 smuggling, a judgment:** 240k H100e, 2025's pace held. The low end, 43k, is 10% of other acquisition, the Substrate's 2026 forecast ratio (Grunewald, Feb 2026). The high end, 645k, is half Epoch's 2025 95th. Epoch's 2025 ratio was ~74% of non-smuggled acquisition, so the two sources disagree about sevenfold on the ratio.
-- **Remote access, a judgment throughout:** through 2024, the two Johor sites in `_DC_CN_ACCESS_ABROAD`. From 2025, SemiAnalysis's leased offshore power (0.85 GW end-2025, 1.45 GW end-2026, 1.11 GW geometric midpoint at mid-2026) at 790 H100e per facility MW, the two sites' own density (700–880). The range is power ±25% times that density range. The 2025 jump, 572k, partly reflects the switch of method: the catalogue undercounts what SemiAnalysis covers.
-- **Revisit when:** Epoch publishes 2026 smuggling, its owners file adds 2026 China rows, H200 deliveries are counted, or SemiAnalysis revises offshore leasing.
+- **Sourced:** to 2025, Epoch's chip data (domestic, legal) and smuggling model (159k and 480k H100e in 2024 and 2025). For 2026–27, IFP's end-of-year stocks by channel (Fist, Adamson & Pilz, Oct 2026). Display only: nothing downstream reads these rows.
+- **Remote access to 2025, a judgment:** through 2024, the two Johor sites in `_DC_CN_ACCESS_ABROAD`. In 2025, SemiAnalysis's leased offshore power (0.85 GW) at 790 H100e per facility MW, the two sites' own density (700–880). The 2025 jump partly reflects the change of method. IFP's end-2026 figure (1.05M) sits on that path.
+- **2028–2030, a judgment:** domestic output grows at `_DUV_CN_OUTPUT_GROWTH`, capped at CTS's ceiling on today's allocation. Legal sales hold at 2027's level (a policy variable). Smuggling scales with CTS's US chip output, so its share of US output holds at IFP's 2027 level (~0.8%). Remote access adds SemiAnalysis's new offshore leasing (2.45 GW in 2027, 2.8, 2.9, then ~3.0 in 2030) at `_CN_SRC_DENSITY_GROWTH` (1.4×/yr) more H100e per MW.
+- **The projection hinges on the domestic rate.** At 2.4×/yr, domestic chips are 70% of the 2030 stock (~45M H100e). IFP's own 2026→27 domestic growth is ~1.3×, because HBM binds.
+- **Revisit when:** Epoch publishes 2026 smuggling, IFP or SemiAnalysis revise their channel estimates, or US policy changes on H200 or RTX sales, remote access or HBM.
 
 ## Checked and deliberately left alone
 

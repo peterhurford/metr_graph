@@ -4127,20 +4127,43 @@ class TestChinaComputeSources:
                 run += d["flow"][p][s][0]
                 assert run == pytest.approx(d["stock"][p][s][0], rel=1e-3)
 
-    def test_only_unpublished_numbers_are_hatched(self):
+    def test_only_our_own_history_is_hatched(self):
+        """Before the projection, only remote access is ours."""
         d = self._data()
         est = {(p, s) for p, rows in d["flow"].items()
                for s, r in rows.items() if r[3] == "estimate"}
-        assert est == {(p, "remote") for p in d["flow"]} | {("2026H1",
-                                                             "smuggled")}
+        assert est == {(p, "remote") for p in ("2022", "2023", "2024", "2025")}
+        assert {r[3] for p in ("2026", "2027")
+                for r in d["flow"][p].values()} == {"ifp"}
 
-    def test_epochs_smuggling_flows_and_the_2025_share(self):
+    def test_projection_follows_its_stated_rules(self):
         d = self._data()
-        assert d["flow"]["2024"]["smuggled"][:3] == (159000, 64000, 419000)
-        assert d["flow"]["2025"]["smuggled"][:3] == (480000, 189000, 1289000)
-        assert d["stock"]["2025"]["smuggled"][:3] == (663000, 294000, 1593000)
-        assert vp._cn_smuggled_share(d["flow"]["2025"]) == pytest.approx(
-            0.43, abs=0.01)
+        p = vp._cn_src_projection(d)
+        assert list(p["flow"]) == [str(y) for y in vp._CN_SRC_PROJ_YEARS]
+        duv = vp.load_duv_production(vp._duv_mtime())
+        us = {y: m for y, _l, m, _h in duv["us"]}
+        cap = {y: m * 1e6 for y, _l, m, _h in duv["continue_trend"]}
+        f27 = d["flow"]["2027"]
+        run = {k: d["stock"]["2027"][k][0] for k in f27}
+        for y in vp._CN_SRC_PROJ_YEARS:
+            f = p["flow"][str(y)]
+            assert f["legal"][0] == f27["legal"][0]
+            assert f["smuggled"][0] == pytest.approx(
+                f27["smuggled"][0] * us[y] / us[2027])
+            assert f["domestic"][0] <= cap[y]
+            assert f["domestic"][1] <= f["domestic"][0] <= f["domestic"][2]
+            for k in f:
+                run[k] += f[k][0]
+                assert p["stock"][str(y)][k][0] == pytest.approx(run[k])
+        # Offshore leasing flattens after 2027, so remote additions fall.
+        assert p["flow"]["2029"]["remote"][0] < f27["remote"][0]
+
+    def test_slower_domestic_growth_shrinks_only_domestic(self):
+        d = self._data()
+        hi, lo = vp._cn_src_projection(d), vp._cn_src_projection(d, growth=1.3)
+        assert lo["flow"]["2030"]["domestic"][0] < hi["flow"]["2030"]["domestic"][0]
+        for k in ("legal", "smuggled", "remote"):
+            assert lo["flow"]["2030"][k] == hi["flow"]["2030"][k]
 
 
 class TestDuvProduction:

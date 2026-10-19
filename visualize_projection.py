@@ -10538,27 +10538,41 @@ def load_duv_production(_mtime=None):
     return out
 
 
-# China's compute by source: Epoch chip data for domestic and legal, Epoch's
-# smuggling model, and our own estimates for remote access and H1-2026
-# smuggling. Derivations in the file's `#` header.
+# China's compute by source: Epoch chip data and smuggling model to 2025, IFP's
+# channel estimates for 2026-27 (derivations in the file's `#` header), and
+# `_cn_src_projection` past them.
 _CN_SRC_FILE = 'china_compute_sources.csv'
 _CN_SRC_SOURCE_SMUGGLING = _WC_SOURCE_SMUGGLING
 _CN_SRC_SOURCE_OWNERS = "https://epoch.ai/data/ai-chip-owners"
-_CN_SRC_SOURCE_SALES = "https://epoch.ai/data/ai-chip-sales"
-# (key, label, colour), bottom of the stack first.
+_CN_SRC_SOURCE_IFP = "https://ifp.org/how-to-increase-americas-ai-lead-over-china/"
+# (key, label, colour), bottom of the stack first. Validated as adjacent
+# pairs for colour-vision deficiency; amber is under 3:1 on white, so the
+# legend and hovers carry it.
 _CN_SOURCES = (
-    ("domestic", "Domestic chips (Huawei, Cambricon)", "#D62728"),
-    ("legal", "Legal US sales (H800, H20, …)", "#8C564B"),
-    ("smuggled", "Smuggled", "#FF7F0E"),
-    ("remote", "Remote access abroad", _DC_REGION_COLORS[_DC_REGION_SEA]),
+    ("domestic", "Domestic chips (Huawei, Cambricon)", "#E34948"),
+    ("legal", "Legal US sales", "#2A78D6"),
+    ("smuggled", "Smuggled", "#EDA100"),
+    ("remote", "Remote access abroad", "#6250D6"),
 )
 _CN_SRC_IN_CHINA = ("domestic", "legal", "smuggled")
+# basis -> (hover wording, bar opacity, hatched): hatched is ours, faded is
+# projected.
 _CN_SRC_BASIS = {
-    "measured": "Epoch chip data",
-    "modelled": "Epoch smuggling model",
-    "estimate": "our estimate (hatched)",
-    "none": "not estimated",
+    "measured": ("Epoch chip data", 1.0, False),
+    "modelled": ("Epoch smuggling model", 1.0, False),
+    "estimate": ("our estimate", 1.0, True),
+    "ifp": ("IFP projection (Oct 2026)", 0.55, False),
+    "projected": ("our projection", 0.55, True),
+    "none": ("not estimated", 1.0, False),
 }
+_CN_SRC_PROJ_YEARS = (2028, 2029, 2030)
+# SemiAnalysis's leased power of Chinese hyperscalers in APAC ex-China, GW at
+# year end; 2030 extends 2029's growth.
+_CN_SRC_OFFSHORE_GW = {2026: 1.45, 2027: 2.45, 2028: 2.8, 2029: 2.9,
+                       2030: 3.0}
+# H100e per MW of newly leased capacity grows with compute per watt (~1.3-1.6
+# x/yr on the catalogue's US sites).
+_CN_SRC_DENSITY_GROWTH = 1.4
 
 
 def _cn_src_mtime():
@@ -10580,8 +10594,41 @@ def load_china_compute_sources(_mtime=None):
     return out
 
 
-def _cn_src_period_label(period):
-    return "H1 " + period[:4] if period.endswith("H1") else period
+def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH):
+    """Flows and stocks for `_CN_SRC_PROJ_YEARS`, in `data`'s format.
+
+    From the last stored year: domestic output grows at `growth` (its range
+    at ÷/× `_DUV_CN_OUTPUT_SPREAD`), capped at the CTS lithography ceiling on
+    today's allocation; legal sales hold flat; smuggling scales with US chip
+    output (CTS); remote access adds SemiAnalysis's new offshore power at a
+    density rising `_CN_SRC_DENSITY_GROWTH` a year. Only domestic carries a
+    range; the rest are central.
+    """
+    duv = load_duv_production(_duv_mtime())
+    us = {y: p50 for y, _lo, p50, _hi in duv["us"]}
+    cap = {y: p50 * 1e6 for y, _lo, p50, _hi in duv["continue_trend"]}
+    base = int(list(data["flow"])[-1])
+    f0 = {k: v[0] for k, v in data["flow"][str(base)].items()}
+    s0 = {k: v[:3] for k, v in data["stock"][str(base)].items()}
+    gw = _CN_SRC_OFFSHORE_GW
+    dom = [f0["domestic"]] * 3
+    rates = (growth, growth / _DUV_CN_OUTPUT_SPREAD,
+             growth * _DUV_CN_OUTPUT_SPREAD)
+    flow, stock = {}, {}
+    run = {k: list(v) for k, v in s0.items()}
+    for y in _CN_SRC_PROJ_YEARS:
+        dom = [min(d * g, cap[y]) for d, g in zip(dom, rates)]
+        f = {"domestic": tuple(dom),
+             "legal": (f0["legal"],) * 3,
+             "smuggled": (f0["smuggled"] * us[y] / us[base],) * 3,
+             "remote": (f0["remote"] * (gw[y] - gw[y - 1])
+                        / (gw[base] - gw[base - 1])
+                        * _CN_SRC_DENSITY_GROWTH ** (y - base),) * 3}
+        flow[str(y)] = {k: (*v, "projected") for k, v in f.items()}
+        for k, v in f.items():
+            run[k] = [r + x for r, x in zip(run[k], v)]
+        stock[str(y)] = {k: (*v, "projected") for k, v in run.items()}
+    return {"flow": flow, "stock": stock}
 
 
 def _cn_smuggled_share(rows, in_china_only=True):
@@ -14417,99 +14464,142 @@ def _render_world_shares(today, horizon):
 
 
 def _render_cc_compute_sources():
-    """China's AI compute by source, added each period and installed.
+    """China's AI compute by source, added each year and installed, 2022-2030.
 
-    Stacked bars from `load_china_compute_sources`; our own estimates are
-    hatched, every bar's hover carries its 90% interval and basis.
+    Stacked bars from `load_china_compute_sources` plus `_cn_src_projection`;
+    projected years are faded, our own numbers hatched, and every hover
+    carries its range and basis.
     """
     st.subheader("Where China's compute comes from")
     data = load_china_compute_sources(_cn_src_mtime())
-    flow, stock = data["flow"], data["stock"]
-    periods = list(flow)
-    last_full = [p for p in periods if not p.endswith("H1")][-1]
-    latest = periods[-1]
-    f_full, f_last = flow[last_full], flow[latest]
-    in_cn = sum(f_full[k][0] for k in _CN_SRC_IN_CHINA)
+    proj = _cn_src_projection(data)
+    flow = {**data["flow"], **proj["flow"]}
+    stock = {**data["stock"], **proj["stock"]}
+    years = list(flow)
+    last_actual = max(p for p in years
+                      if flow[p]["domestic"][3] == "measured")
+    end = years[-1]
+    sh = {y: _cn_smuggled_share(flow[y]) for y in years}
+    in_cn = sum(flow[last_actual][k][0] for k in _CN_SRC_IN_CHINA)
     _fn_line(
-        f"In {last_full}, smuggled chips were **~"
-        f"{_cn_smuggled_share(f_full):.0%}** of the compute China added at "
-        f"home ({f_full['smuggled'][0] / 1e3:,.0f}k of "
-        f"{in_cn / 1e6:.2f}M H100e), and ~"
-        f"{_cn_smuggled_share(f_full, False):.0%} counting remote access "
-        f"abroad. For {_cn_src_period_label(latest)} we estimate ~"
-        f"{_cn_smuggled_share(f_last):.0%}, as domestic chips grew and legal "
-        "sales stopped.",
+        f"In {last_actual}, smuggled chips were **~{sh[last_actual]:.0%}** "
+        "of the compute China added at home "
+        f"({flow[last_actual]['smuggled'][0] / 1e3:,.0f}k of "
+        f"{in_cn / 1e6:.2f}M H100e). IFP has that falling to "
+        f"~{sh['2026']:.0%} in 2026 as Huawei's output and legal sales "
+        f"grow, and on our projection it is ~{sh[end]:.0%} by {end}.",
         ("smuggled chips", "Epoch's median, with a 90% interval of "
-                           f"{f_full['smuggled'][1] / 1e3:,.0f}k–"
-                           f"{f_full['smuggled'][2] / 1e6:.1f}M H100e: the "
-                           "share could be about half or about twice this."),
-        ("we estimate", "Nobody publishes 2026 smuggling. This holds "
-                        "2025's pace; the low end is 10% of other "
-                        "acquisition (the Substrate's 2026 forecast ratio)."))
+                           f"{flow[last_actual]['smuggled'][1] / 1e3:,.0f}k"
+                           f"\u2013{flow[last_actual]['smuggled'][2] / 1e6:.1f}"
+                           "M H100e: the share could be about half or about "
+                           "twice this."),
+        ("IFP", "Fist, Adamson & Pilz (Oct 2026), stocks by channel for "
+                "end-2026 and end-2027. Legal sales there include ~100k "
+                "H200s and ~344k H100e of RTX gaming and workstation cards "
+                "in 2026."),
+        ("our projection", _cn_src_proj_note()))
+    xs = years
+    split = years.index(last_actual) + 0.5
 
-    def _fig(rows_by_period, title):
+    def _fig(rows_by_year, title):
         fig = go.Figure()
-        xs = [_cn_src_period_label(p) for p in rows_by_period]
         for key, label, color in _CN_SOURCES:
-            vals, cd, pat = [], [], []
-            for p, rows in rows_by_period.items():
+            vals, cd, pat, op = [], [], [], []
+            for y, rows in rows_by_year.items():
                 v, lo, hi, basis = rows[key]
+                words, alpha, hatch = _CN_SRC_BASIS[basis]
                 tot = sum(r[0] for r in rows.values())
                 vals.append(v / 1e6)
-                pat.append('/' if basis == "estimate" else '')
-                cd.append(
-                    f"{v / 1e3:,.0f}k H100e ({v / tot:.0%} of the bar)<br>"
-                    f"90%: {lo / 1e3:,.0f}k–{hi / 1e3:,.0f}k<br>"
-                    f"{_CN_SRC_BASIS[basis]}" if basis != "none"
-                    else "No estimate before 2024")
+                pat.append('/' if hatch else '')
+                op.append(alpha)
+                if basis == "none":
+                    cd.append("No estimate before 2024")
+                    continue
+                rng = (f"<br>range {lo / 1e6:,.2f}\u2013{hi / 1e6:,.2f}M"
+                       if hi > lo else "")
+                cd.append(f"{v / 1e6:,.2f}M H100e ({v / tot:.0%} of the bar)"
+                          f"{rng}<br>{words}")
             fig.add_trace(go.Bar(
                 x=xs, y=vals, name=label,
-                marker=dict(color=color,
+                marker=dict(color=color, opacity=op,
+                            line=dict(color='white', width=1),
                             pattern=dict(shape=pat, fillmode='overlay',
                                          fgcolor='white', size=6)),
                 customdata=cd,
                 hovertemplate="%{x}: %{customdata}<extra>" + label
                               + "</extra>"))
+        # Shares, with each year's total printed over its bar: the totals
+        # span three orders of magnitude, which a linear axis flattens.
+        for i, rows in enumerate(rows_by_year.values()):
+            tot = sum(r[0] for r in rows.values())
+            fig.add_annotation(x=i, y=100, text=_cn_src_total_label(tot),
+                               showarrow=False, yanchor='bottom',
+                               font=dict(size=10, color='#555555'))
+        fig.add_vline(x=split, line=dict(color='#999999', width=1.5,
+                                         dash='dot'))
+        fig.add_annotation(x=split, yref='paper', y=1.08,
+                           text='Projected \u2192', showarrow=False,
+                           xanchor='left', yanchor='bottom',
+                           font=dict(size=10, color='#777777'))
         fig.update_layout(
-            barmode='stack', height=360, plot_bgcolor='white',
+            barmode='stack', barnorm='percent', height=380,
+            plot_bgcolor='white',
             paper_bgcolor='white', font=dict(color='#222222'),
-            margin=dict(l=60, r=20, t=36, b=40),
+            margin=dict(l=50, r=20, t=56, b=40),
             title=dict(text=title, font=dict(size=14), x=0.01),
-            legend=dict(orientation='h', y=-0.15, font=dict(size=11)),
-            yaxis=dict(title_text="M H100e", gridcolor='rgba(0,0,0,0.12)'),
-            xaxis=dict(type='category'))
+            legend=dict(orientation='h', y=-0.15, font=dict(size=11),
+                        traceorder='normal'),
+            yaxis=dict(title_text="Share of H100e", ticksuffix='%',
+                       range=[0, 100], gridcolor='rgba(0,0,0,0.12)'),
+            xaxis=dict(type='category', range=[-0.5, len(xs) - 0.5]))
         return fig
 
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(_fig(flow, "Added each year"), width="stretch")
+        st.plotly_chart(_fig(flow, "Added each year (total over each bar)"),
+                        width="stretch")
     with c2:
         st.plotly_chart(_fig(stock, "Installed, cumulative from 2022"),
                         width="stretch")
-    s = stock[latest]
+    s = stock[end]
     tot = sum(r[0] for r in s.values())
     _fn_caption(
-        f"By mid-2026 China could use ~{tot / 1e6:.1f}M H100e: "
+        f"By end-{end} China could use ~{tot / 1e6:.0f}M H100e on our "
+        "projection: "
         + ", ".join(f"{lab[0].lower()}{lab[1:].split(' (')[0]} "
-                    f"{s[k][0] / tot:.0%}"
-                    for k, lab, _c in _CN_SOURCES)
-        + ". Hatched bars are our estimates; the rest are Epoch's. "
-        f"Sources: Epoch [chip owners]({_CN_SRC_SOURCE_OWNERS}) and "
-        f"[chip sales]({_CN_SRC_SOURCE_SALES}) data, Epoch's "
-        f"[smuggling estimate]({_CN_SRC_SOURCE_SMUGGLING}).",
+                    f"{s[k][0] / tot:.0%}" for k, lab, _c in _CN_SOURCES)
+        + ". Faded bars are projections; hatched ones are ours. "
+        f"Sources: Epoch [chip owners]({_CN_SRC_SOURCE_OWNERS}) data and "
+        f"[smuggling estimate]({_CN_SRC_SOURCE_SMUGGLING}) to 2025, "
+        f"[IFP]({_CN_SRC_SOURCE_IFP}) for 2026\u201327.",
         ("could use", "Deliveries since 2022, nothing retired, so an upper "
                       "read of what is running. Remote access is capacity "
-                      "Chinese firms rent abroad, not chips they own."),
-        ("our estimates",
-         "Remote access: the catalogue's two Johor sites through 2024, then "
-         "SemiAnalysis's leased power of Chinese hyperscalers outside China "
-         "(0.85 GW end-2025, 1.45 GW end-2026) at those sites' ~790 H100e "
-         "per MW. H1 2026 smuggling: 2025's pace held. H200 deliveries "
-         "(~10k each to ByteDance and Tencent, Aug 2026) fall after June."),
-        ("Epoch's", "Domestic and legal are Epoch's chip-sales estimates "
-                    "for China-market chips; their hover intervals sum each "
-                    "chip's, so they read wider than the truth. Smuggling "
-                    "before 2024 is not estimated."))
+                      "Chinese firms rent abroad, not chips they own. No "
+                      "new US policy is assumed."),
+        ("hatched ones are ours",
+         "Remote access through 2025: the catalogue's two Johor sites "
+         "through 2024, then SemiAnalysis's leased power of Chinese "
+         "hyperscalers outside China (0.85 GW at end-2025) at those sites' "
+         "~790 H100e per MW. And every year after 2027."))
+
+
+def _cn_src_total_label(h100e):
+    """A bar's total, as 40k or 1.2M or 45M."""
+    if h100e < 1e6:
+        return f"{h100e / 1e3:,.0f}k"
+    return f"{h100e / 1e6:.1f}M" if h100e < 1e7 else f"{h100e / 1e6:.0f}M"
+
+
+def _cn_src_proj_note():
+    """The projection's rules, in words, for its hover."""
+    g, sp = _DUV_CN_OUTPUT_GROWTH, _DUV_CN_OUTPUT_SPREAD
+    return (f"Past 2027: Huawei and Cambricon output grows \u00d7{g:g}/yr "
+            f"(\u00d7{g / sp:.1f}\u2013{g * sp:.1f}, the lithography "
+            "section's rate), capped at CTS's lithography ceiling on today's "
+            "allocation; legal sales hold at 2027's; smuggling grows with US "
+            "chip output (CTS); remote access adds SemiAnalysis's new "
+            "offshore leasing (2.45 GW in 2027 to ~3 GW in 2030) at "
+            f"\u00d7{_CN_SRC_DENSITY_GROWTH:g}/yr more H100e per MW.")
 
 
 def _render_cc_duv_ceiling(today):

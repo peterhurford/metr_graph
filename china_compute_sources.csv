@@ -1,28 +1,27 @@
-# Where China's AI compute comes from, by source, in H100e (dense FP16).
-# flow = added in the period; stock = cumulative at its end, from 2022 (no
-# retirements netted). p5/p95 are a 90% interval.
+# Where China's AI compute comes from, by source, in H100e (dense 8-bit).
+# flow = added in the year; stock = cumulative at its end, from 2022 (no
+# retirements netted). p5/p95 are a 90% interval (IFP rows: 10th-90th).
+# 2028 onward is projected in code (`_cn_src_projection`), not stored here.
 #
-# domestic, legal: Epoch AI chip data, China owner rows. Owners file
-#   (epoch.ai/data/ai-chip-owners, May 2026) quarters summed per year for
-#   2022-2025; the sales file (epoch.ai/data/ai-chip-sales, Oct 14 2026)
-#   cumulative timelines differenced for H1 2026, chips flagged "Primarily for
-#   Chinese market". domestic = Ascend 910B/910C/950PR + Cambricon Siyuan 590;
-#   legal = A100, A800, H800, H20, MI308X. Per-chip 5th/95th are summed, which
-#   is wider than the true interval; H1 2026's are differences of cumulative
-#   percentiles, rougher still. H200 deliveries (~10k each to ByteDance and
-#   Tencent, FT, Aug 2026) land after June, so H1 2026 legal is 0.
-# smuggled: Epoch, "Diversion and resale: estimating compute smuggling to
-#   China" (Apr 2026), yearly flows and the cumulative row (which is not the
-#   sum of the yearly medians). No estimate before 2024. H1 2026 is OURS:
-#   2025's pace held (480k/yr), 5th = 10% of non-smuggled acquisition (the
-#   Substrate's 2026 ratio), 95th = half Epoch's 2025 95th.
-# remote: OURS throughout. 2022-2024 = the catalogue's two Johor sites the app
-#   already counts as China-accessible (DayOne Nusajaya, Bridge MY06; tenancy
-#   assumed, data_center_timelines.csv). From 2025, SemiAnalysis's leased power
-#   of Chinese hyperscalers in APAC ex-China (0.85 GW end-2025, 1.45 GW end-2026,
-#   geometric midpoint 1.11 GW at mid-2026) x 790 H100e/MW, the two Johor
-#   sites' own facility density (700-880); range = power +/-25% x that density
-#   range. Flows carry their stock's relative range.
+# domestic, legal (2022-2025): Epoch AI chip data, China owner rows
+#   (epoch.ai/data/ai-chip-owners, May 2026), quarters summed per year.
+#   domestic = Ascend 910B/910C + Cambricon Siyuan 590; legal = A100, A800,
+#   H800, H20, MI308X. Per-chip 5th/95th are summed, wider than the truth.
+#   Epoch's sales file (Oct 2026) measures +432k domestic in H1 2026.
+# smuggled (2024-2025): Epoch, "Diversion and resale: estimating compute
+#   smuggling to China" (Apr 2026), yearly flows and its cumulative row (not
+#   the sum of the yearly medians). No estimate before 2024.
+# remote (2022-2025): OURS. 2022-2024 = the catalogue's two Johor sites the
+#   app counts as China-accessible (DayOne Nusajaya, Bridge MY06; tenancy
+#   assumed). 2025 = SemiAnalysis's leased power of Chinese hyperscalers in
+#   APAC ex-China (0.85 GW) x 790 H100e/MW, those sites' facility density
+#   (700-880); range = power +/-25% x that density range.
+# 2026-2027, all sources: IFP, Fist, Adamson & Pilz, "How to Increase
+#   America's AI Lead Over China" (Oct 19 2026), end-of-year stocks and
+#   ranges by channel. Flows = IFP stock minus the prior year's stock here;
+#   flow ranges carry the stock's relative range. IFP's legal includes H200s
+#   (~100k in 2026) and RTX gaming/workstation cards (~344k in 2026, ~300k in
+#   2027); remote = SemiAnalysis leasing plus clusters outside its scope.
 period,end,source,kind,h100e,p5,p95,basis
 2022,2022-12-31,legal,flow,32000,22000,47000,measured
 2022,2022-12-31,domestic,flow,0,0,0,measured
@@ -40,10 +39,14 @@ period,end,source,kind,h100e,p5,p95,basis
 2025,2025-12-31,domestic,flow,556000,462000,678000,measured
 2025,2025-12-31,smuggled,flow,480000,189000,1289000,modelled
 2025,2025-12-31,remote,flow,572000,380000,796000,estimate
-2026H1,2026-06-30,legal,flow,0,0,0,measured
-2026H1,2026-06-30,domestic,flow,432000,186000,725000,measured
-2026H1,2026-06-30,smuggled,flow,240000,43000,645000,estimate
-2026H1,2026-06-30,remote,flow,205000,136000,285000,estimate
+2026,2026-12-31,legal,flow,436000,347000,526000,ifp
+2026,2026-12-31,domestic,flow,986000,798000,1255000,ifp
+2026,2026-12-31,smuggled,flow,341000,129000,985000,ifp
+2026,2026-12-31,remote,flow,382000,247000,527000,ifp
+2027,2027-12-31,legal,flow,504000,368000,762000,ifp
+2027,2027-12-31,domestic,flow,1300000,987000,1803000,ifp
+2027,2027-12-31,smuggled,flow,568000,169000,2421000,ifp
+2027,2027-12-31,remote,flow,1780000,1235000,2453000,ifp
 2022,2022-12-31,legal,stock,32000,22000,47000,measured
 2022,2022-12-31,domestic,stock,0,0,0,measured
 2022,2022-12-31,smuggled,stock,0,0,0,none
@@ -60,7 +63,11 @@ period,end,source,kind,h100e,p5,p95,basis
 2025,2025-12-31,domestic,stock,743000,597000,945000,measured
 2025,2025-12-31,smuggled,stock,663000,294000,1593000,modelled
 2025,2025-12-31,remote,stock,672000,446000,935000,estimate
-2026H1,2026-06-30,legal,stock,410000,318000,531000,measured
-2026H1,2026-06-30,domestic,stock,1175000,783000,1670000,measured
-2026H1,2026-06-30,smuggled,stock,903000,337000,2238000,estimate
-2026H1,2026-06-30,remote,stock,877000,583000,1221000,estimate
+2026,2026-12-31,legal,stock,846000,674000,1020000,ifp
+2026,2026-12-31,domestic,stock,1729000,1400000,2200000,ifp
+2026,2026-12-31,smuggled,stock,1004000,381000,2900000,ifp
+2026,2026-12-31,remote,stock,1054000,681000,1455000,ifp
+2027,2027-12-31,legal,stock,1350000,986000,2040000,ifp
+2027,2027-12-31,domestic,stock,3029000,2300000,4200000,ifp
+2027,2027-12-31,smuggled,stock,1572000,468000,6700000,ifp
+2027,2027-12-31,remote,stock,2834000,1967000,3905000,ifp
