@@ -758,7 +758,7 @@ def _yaml_mtime():
 
 
 @st.cache_data
-def load_metr_all(_mtime=None):
+def load_metr_all(mtime=None):
     yaml_path = os.path.join(os.path.dirname(__file__), 'benchmark_results_1_1.yaml')
     with open(yaml_path, 'r') as f:
         raw = yaml.safe_load(f)
@@ -791,8 +791,8 @@ def load_metr_all(_mtime=None):
 
 
 @st.cache_data
-def load_frontier(_mtime=None):
-    return [m for m in load_metr_all(_mtime=_mtime) if m['is_sota']]
+def load_frontier(mtime=None):
+    return [m for m in load_metr_all(mtime=mtime) if m['is_sota']]
 
 
 def _eci_mtime():
@@ -832,7 +832,7 @@ def _mark_eci_frontier(models, score_key, flag='is_frontier'):
 
 
 @st.cache_data
-def load_eci_frontier(_mtime=None, country=None, orgs=None, full_window=False):
+def load_eci_frontier(mtime=None, country=None, orgs=None, full_window=False):
     csv_path = os.path.join(os.path.dirname(__file__), 'epoch_capabilities_index.csv')
     with open(csv_path, 'r') as f:
         reader = csv.DictReader(f)
@@ -894,7 +894,7 @@ def load_eci_frontier(_mtime=None, country=None, orgs=None, full_window=False):
 
 
 @st.cache_data
-def load_eci_compute(_mtime=None):
+def load_eci_compute(mtime=None):
     """Models that have BOTH an ECI score and a training-compute (FLOP) figure.
 
     Used by the Data Centers tab's Compute ⟷ ECI section and the China tab to
@@ -1695,7 +1695,7 @@ def _ukc_mtime():
 
 
 @st.cache_data
-def load_ukcyber(_mtime=None):
+def load_ukcyber(mtime=None):
     """Load digitized AISI narrow-cyber-task success rates.
 
     Returns models sorted by date, each flagged `is_frontier` if it set a new
@@ -1750,7 +1750,7 @@ def _ukc_tlo_mtime():
 
 
 @st.cache_data
-def load_ukcyber_tlo(_mtime=None):
+def load_ukcyber_tlo(mtime=None):
     """Load AISI/CAISI cyber-range ("The Last Ones") average steps completed.
 
     The long-horizon counterpart to `load_ukcyber()`: same institution and eval
@@ -2054,7 +2054,7 @@ _DC_COMPANY_ALIASES = {
 
 
 @st.cache_data
-def load_data_centers(_mtime=None):
+def load_data_centers(mtime=None):
     """Load Epoch's per-data-center capacity timelines plus an owner→company map.
 
     Returns a list of dicts: {name, company, attributed, country, points:[{date,
@@ -3173,12 +3173,12 @@ def _dc_cty_lag_months(follower, leader, grid):
 
 # ── Load data (before sidebar, so model names are available) ─────────────
 
-metr_all = load_metr_all(_mtime=_yaml_mtime())
+metr_all = load_metr_all(mtime=_yaml_mtime())
 frontier_all = [m for m in metr_all if m['is_sota']]
 gpt4o_idx = next(i for i, m in enumerate(frontier_all) if m['name'] == 'gpt_4o_inspect')
 frontier_names = [pretty(m['name']) for m in frontier_all]
 
-eci_all = load_eci_frontier(_mtime=_eci_mtime())
+eci_all = load_eci_frontier(mtime=_eci_mtime())
 eci_frontier_all = [m for m in eci_all if m['is_frontier']]
 
 rli_all = load_rli_data()
@@ -3190,9 +3190,9 @@ rsi_frontier_all = [m for m in rsi_all if m['is_frontier']]
 rsi_dir_all = load_rsi_direction()
 rsi_dir_frontier_all = [r for r in rsi_dir_all if r['is_frontier']]
 
-dc_all = load_data_centers(_mtime=_dc_mtime())
+dc_all = load_data_centers(mtime=_dc_mtime())
 
-ukc_all = load_ukcyber(_mtime=_ukc_mtime())
+ukc_all = load_ukcyber(mtime=_ukc_mtime())
 ukc_frontier_all = [m for m in ukc_all if m['is_frontier']]
 ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
@@ -5070,7 +5070,7 @@ def _eci_entity_data(label):
     """Return (all, frontier_all, frontier_names) for a comparison entity."""
     spec = _ECI_ENTITY_SPECS[label]
     all_ = load_eci_frontier(
-        _mtime=_eci_mtime(), country=spec.get("country"),
+        mtime=_eci_mtime(), country=spec.get("country"),
         orgs=tuple(spec["orgs"]) if spec.get("orgs") else None)
     fr = [m for m in all_ if m['is_frontier']]
     return all_, fr, [m['display_name'] for m in fr]
@@ -10526,7 +10526,7 @@ def _duv_mtime():
 
 
 @st.cache_data
-def load_duv_production(_mtime=None):
+def load_duv_production(mtime=None):
     """{'us': rows, 'continue_push': rows, …}, rows = [(year, p10, p50, p90)]."""
     path = os.path.join(os.path.dirname(__file__), _DUV_FILE)
     with open(path) as f:
@@ -10584,7 +10584,7 @@ def _cn_src_mtime():
 
 
 @st.cache_data
-def load_china_compute_sources(_mtime=None):
+def load_china_compute_sources(mtime=None):
     """{'flow'|'stock': {period: {source: (h100e, p5, p95, basis)}}}, periods
     in file order."""
     path = os.path.join(os.path.dirname(__file__), _CN_SRC_FILE)
@@ -12293,7 +12293,7 @@ def _cc_innovation_algo_band(cc_rows, eci_all=None):
     top = max(isoc['bands'], key=lambda b: b['center'])
     hi = float(top['slope'])
     if eci_all is None:
-        eci_all = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
+        eci_all = load_eci_frontier(mtime=_eci_mtime(), full_window=True)
     # Margin 3 when it has the rows to fit, else the default margin.
     fg = (_cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
           or _cc_frontier_grade_algo(cc_rows, eci_all))
@@ -12315,7 +12315,7 @@ def _cc_pure_innovation_band(cc_rows, eci_all=None):
     if band is None or dec is None:
         return None
     if eci_all is None:
-        eci_all = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
+        eci_all = load_eci_frontier(mtime=_eci_mtime(), full_window=True)
     # Margin 3 when it has the rows to fit, else the default margin.
     fg = (_cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
           or _cc_frontier_grade_algo(cc_rows, eci_all))
@@ -12422,7 +12422,7 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     # Current frontier anchor: the true running-max ECI across *all* models, not
     # just the compute-having subset (the newest frontier models rarely disclose
     # training FLOP, so cc_rows would anchor on a stale model like GPT-5).
-    eci_all = load_eci_frontier(_mtime=_eci_mtime())
+    eci_all = load_eci_frontier(mtime=_eci_mtime())
     anchor = max(eci_all, key=lambda m: m['eci_score']) if eci_all \
         else max(cc_rows, key=lambda m: m['eci'])
     eci_now = anchor.get('eci_score', anchor.get('eci'))
@@ -12873,7 +12873,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     """
     st.subheader("US vs. China")
 
-    eci_all = load_eci_frontier(_mtime=_eci_mtime())
+    eci_all = load_eci_frontier(mtime=_eci_mtime())
     us_fr = _cc_country_frontier(eci_all, 'United States of America')
     cn_fr = _cc_country_frontier(eci_all, 'China')
     us_cf, g_us = _cc_country_compute_frontier(cc_rows, 'United States of America')
@@ -12929,7 +12929,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     # thin.
     a_partial, b_algo = _cc_pooled_decomp(cc_rows)
     fgm = _cc_frontier_grade_algo(
-        cc_rows, load_eci_frontier(_mtime=_eci_mtime(), full_window=True))
+        cc_rows, load_eci_frontier(mtime=_eci_mtime(), full_window=True))
     if fgm:
         a_partial, b_algo = fgm['a_partial'], fgm['b_time']
     inno_band = _cc_innovation_algo_band(cc_rows)
@@ -13936,7 +13936,7 @@ def _dc_meta_mtime():
 
 
 @st.cache_data
-def _cc_lab_attribution(_mtime=None):
+def _cc_lab_attribution(mtime=None):
     """site name → one of the 5 labs (or None), via _cc_lab_for_site.
 
     Derived from load_data_centers()'s own attribution fields (`operator`,
@@ -13987,7 +13987,7 @@ _CC_LAB_ORG_MATCH = {
 
 
 @st.cache_data
-def _cc_company_frontier_models(_mtime=None):
+def _cc_company_frontier_models(mtime=None):
     """Per-lab frontier models (running-max ECI) from the ECI CSV.
 
     Returns {lab: [(date, eci, name), …]} keeping only releases that set a new
@@ -14024,7 +14024,7 @@ def _cc_company_frontier_models(_mtime=None):
 
 
 @st.cache_data
-def _cc_company_all_releases(_mtime=None):
+def _cc_company_all_releases(mtime=None):
     """Every release per lab, record-setting or not — the fallback pool.
 
     A cluster step whose window contains no running-max release still gets a
@@ -14151,10 +14151,10 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
                              "any kind, rather than showing nothing."))
 
     lab = st.selectbox("Company", _CC_PANEL_LABS, key="cc_company")
-    attribution = _cc_lab_attribution(_mtime=_dc_meta_mtime())
+    attribution = _cc_lab_attribution(mtime=_dc_meta_mtime())
     milestones = _cc_lab_dc_milestones(lab, attribution, key=metric_key)
-    fmodels = _cc_company_frontier_models(_mtime=_eci_mtime()).get(lab, [])
-    all_rel = _cc_company_all_releases(_mtime=_eci_mtime()).get(lab, [])
+    fmodels = _cc_company_frontier_models(mtime=_eci_mtime()).get(lab, [])
+    all_rel = _cc_company_all_releases(mtime=_eci_mtime()).get(lab, [])
 
     lag = timedelta(days=_CC_RELEASE_LAG_DAYS)
     ms_vis = [m for m in milestones if m[0] >= _CC_PANEL_START]
@@ -14818,7 +14818,7 @@ def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
     # that exchange rate improves (algorithmic efficiency / iso-ECI)
     # ══════════════════════════════════════════════════════════════════════
     st.subheader("Compute ⟷ ECI")
-    cc_rows = load_eci_compute(_mtime=_eci_mtime())
+    cc_rows = load_eci_compute(mtime=_eci_mtime())
     dec = _cc_decomp(cc_rows)
     eff = _cc_efficiency(cc_rows)
     if dec is None or eff is None:
@@ -15059,7 +15059,7 @@ def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
     # near-frontier ECI at frontier-scale compute, the subset that could not
     # lean on a stronger teacher.
     fg = _cc_frontier_grade_algo(
-        cc_rows, load_eci_frontier(_mtime=_eci_mtime(), full_window=True))
+        cc_rows, load_eci_frontier(mtime=_eci_mtime(), full_window=True))
     share_fg = None
     if fg is not None:
         xr_fg = ((fg['a_partial'] * eci_per_oom) ** 0.5
@@ -15214,7 +15214,7 @@ def render_compute_capabilities():
     horizon = datetime(cc_end_year, 12, 31)
     run_key = _PC_RUN_OPTIONS[run_label]
     run_days = _DAYS_6MO if run_key == 'train_flop_6mo' else _DAYS_2MO
-    cc_rows = load_eci_compute(_mtime=_eci_mtime())
+    cc_rows = load_eci_compute(mtime=_eci_mtime())
 
     # ══════════════════════════════════════════════════════════════════════
     # Section 1: US vs. China — the exchange-rate decomposition read by country
@@ -17349,7 +17349,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "queryable teacher is the last generation released before "
                  "then: one run's climb (plus the ship lag) below the bar. Off: "
                  "the US keeps serving its frontier, paced or paused.")
-        _lvl = _cc_cn_level_offset(load_eci_compute(_mtime=_eci_mtime()))
+        _lvl = _cc_cn_level_offset(load_eci_compute(mtime=_eci_mtime()))
         stop_dist = st.checkbox(
             "Cut Chinese distillation as of today", key="pc_stop_dist",
             help="API-level controls and labs coordinating against "
@@ -17588,8 +17588,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _supply_txt = ", ".join(f"{c:.0%} from {n}" for n, c in _supply)
     d_dist = _pc_when_date(dist_when, today)
     d_remote = _pc_when_date(remote_when, today)
-    cc_rows = load_eci_compute(_mtime=_eci_mtime())
-    eci_all = load_eci_frontier(_mtime=_eci_mtime())
+    cc_rows = load_eci_compute(mtime=_eci_mtime())
+    eci_all = load_eci_frontier(mtime=_eci_mtime())
     us_fr = _cc_country_frontier(eci_all, 'United States of America')
     cn_fr = _cc_country_frontier(eci_all, 'China')
     dec = _cc_decomp(cc_rows)
@@ -17607,7 +17607,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # Frontier-grade coefficient pair, as in _cc_us_vs_china (pooled fallback).
     a_partial, b_algo = _cc_pooled_decomp(cc_rows)
     fgm = _cc_frontier_grade_algo(
-        cc_rows, load_eci_frontier(_mtime=_eci_mtime(), full_window=True))
+        cc_rows, load_eci_frontier(mtime=_eci_mtime(), full_window=True))
     if fgm:
         a_partial, b_algo = fgm['a_partial'], fgm['b_time']
     # A longer Chinese run is a one-off *level* move, not a faster rate: it
@@ -19720,8 +19720,8 @@ def _tk_eci_rates(params, hist=None):
     _, _, ppy, base_rate = _tk_eci_scale(params, hist)
     compute_rate = hist if hist is not None else np.log(params["compute_growth"])
     software_rate = np.log(2) * 12 / params["software_months"]
-    rows = load_eci_compute(_mtime=_eci_mtime())
-    full = load_eci_frontier(_mtime=_eci_mtime(), full_window=True)
+    rows = load_eci_compute(mtime=_eci_mtime())
+    full = load_eci_frontier(mtime=_eci_mtime(), full_window=True)
     pooled = _cc_decomp(rows)
     fg = (_cc_frontier_grade_algo(rows, full, margin=3.0)
           or _cc_frontier_grade_algo(rows, full))

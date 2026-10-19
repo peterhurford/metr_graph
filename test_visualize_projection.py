@@ -148,6 +148,26 @@ os.environ.pop("_VP_TESTING", None)
 # pretty()
 # ===========================================================================
 
+class TestCacheKeys:
+    def test_cached_functions_hash_their_file_mtime(self):
+        """Streamlit skips arguments named with a leading underscore when it
+        hashes a cache key, so an `_mtime` argument never invalidates the
+        cache and an edited data file is ignored until restart."""
+        import ast
+        tree = ast.parse(open(vp.__file__).read())
+        bad = []
+        for fn in ast.walk(tree):
+            if not isinstance(fn, ast.FunctionDef):
+                continue
+            cached = any("cache_data" in ast.unparse(d)
+                         for d in fn.decorator_list)
+            args = fn.args.args + fn.args.kwonlyargs
+            if cached and any(a.arg.startswith("_") and "mtime" in a.arg
+                              for a in args):
+                bad.append(fn.name)
+        assert not bad
+
+
 class TestPretty:
     @pytest.mark.parametrize("name", ["some_unknown_model", ""])
     def test_unknown_name_passthrough(self, name):
@@ -963,11 +983,11 @@ class TestEcgOrgMatching:
                          "epoch_capabilities_index.csv"))))
 
     def test_both_tabs_resolve_identical_model_sets(self):
-        eci_all = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        eci_all = vp.load_eci_frontier(mtime=vp._eci_mtime())
         for label, spec in vp._ECI_ENTITY_SPECS.items():
             if not spec.get("orgs"):
                 continue  # country entities, not org entities
-            tab = vp.load_eci_frontier(_mtime=vp._eci_mtime(),
+            tab = vp.load_eci_frontier(mtime=vp._eci_mtime(),
                                        orgs=tuple(spec["orgs"]))
             gap = [m for m in eci_all
                    if vp._ecg_org_display(m["organization"]) == label]
@@ -1312,8 +1332,8 @@ class TestCcResponsibleCluster:
     def test_every_pin_names_a_live_model_and_site(self):
         # A pin naming a model Epoch no longer lists, or a site outside the
         # lab's own milestone series, is dead weight — surface it on refresh.
-        attr = vp._cc_lab_attribution(_mtime=vp._dc_meta_mtime())
-        rel = vp._cc_company_all_releases(_mtime=vp._eci_mtime())
+        attr = vp._cc_lab_attribution(mtime=vp._dc_meta_mtime())
+        rel = vp._cc_company_all_releases(mtime=vp._eci_mtime())
         assert vp._CC_TRAINED_ON, "the pin table exists to hold pins"
         for (lab, model), site in vp._CC_TRAINED_ON.items():
             assert lab in vp._CC_PANEL_LABS
@@ -1860,11 +1880,11 @@ class TestCcRateCalibration:
     def test_live_us_build_up_under_runs_its_frontier(self):
         """The case the calibration exists for: on live data the US build-up
         rate falls short of the observed slope. Retarget if a refresh flips it."""
-        eci_all = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        eci_all = vp.load_eci_frontier(mtime=vp._eci_mtime())
         us_fr = vp._cc_country_frontier(eci_all, 'United States of America')
-        rows = vp.load_eci_compute(_mtime=vp._eci_mtime())
+        rows = vp.load_eci_compute(mtime=vp._eci_mtime())
         fgm = vp._cc_frontier_grade_algo(
-            rows, vp.load_eci_frontier(_mtime=vp._eci_mtime(), full_window=True))
+            rows, vp.load_eci_frontier(mtime=vp._eci_mtime(), full_window=True))
         _, lo, hi = vp._cc_us_compute_band(datetime.now(), datetime(2029, 12, 31))
         k = vp._cc_rate_calibration(
             us_fr, fgm['b_time'] + fgm['a_partial'] * 0.5 * (lo + hi))
@@ -1875,7 +1895,7 @@ class TestCcGapEndRange:
     def test_range_spans_the_window_choices(self):
         """The end-year gap's hover range covers every alternative fit start,
         and on live data the since-2024 central sits inside it."""
-        eci_all = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        eci_all = vp.load_eci_frontier(mtime=vp._eci_mtime())
         us_fr = vp._cc_country_frontier(eci_all, 'United States of America')
         cn_fr = vp._cc_country_frontier(eci_all, 'China')
         horizon = datetime(2029, 12, 31)
@@ -1897,11 +1917,11 @@ class TestCcCnChannels:
         """The China tab and the Pacing sim share one split of China's
         growth: the channels add to its observed slope, and the sim's
         bands, re-centred on them, start China at that slope."""
-        rows = vp.load_eci_compute(_mtime=vp._eci_mtime())
-        eci_all = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        rows = vp.load_eci_compute(mtime=vp._eci_mtime())
+        eci_all = vp.load_eci_frontier(mtime=vp._eci_mtime())
         cn_fr = vp._cc_country_frontier(eci_all, 'China')
         fgm = vp._cc_frontier_grade_algo(
-            rows, vp.load_eci_frontier(_mtime=vp._eci_mtime(), full_window=True))
+            rows, vp.load_eci_frontier(mtime=vp._eci_mtime(), full_window=True))
         ch = vp._cc_cn_channels(rows, cn_fr, fgm['a_partial'])
         parts = (ch['compute'] + ch['innovation'] + ch['diffusion']
                  + ch['distillation'])
@@ -1924,12 +1944,12 @@ class TestCcCrossingBacktest:
         """Rolling origins over China's 2025-26 releases: the crossing sim's
         paths cover about 80% of later releases inside their 80% band with
         `_cc_frontier_level_sd`, and far fewer from the rate spread alone."""
-        rows = vp.load_eci_compute(_mtime=vp._eci_mtime())
-        eci_all = vp.load_eci_frontier(_mtime=vp._eci_mtime())
+        rows = vp.load_eci_compute(mtime=vp._eci_mtime())
+        eci_all = vp.load_eci_frontier(mtime=vp._eci_mtime())
         cn_fr = vp._cc_country_frontier(eci_all, 'China')
         us_fr = vp._cc_country_frontier(eci_all, 'United States of America')
         fgm = vp._cc_frontier_grade_algo(
-            rows, vp.load_eci_frontier(_mtime=vp._eci_mtime(), full_window=True))
+            rows, vp.load_eci_frontier(mtime=vp._eci_mtime(), full_window=True))
         us_algo, _, _ = vp._cc_iso_compute_rate(rows, 'United States of America')
         cn_algo, _, _ = vp._cc_iso_compute_rate(rows, 'China')
         inno = vp._cc_innovation_algo_band(rows)
@@ -5518,8 +5538,8 @@ class TestTakeoffEciRates:
 
     def test_compute_rate_is_the_frontier_grade_exchange_rate(self):
         import takeoff_model as tk
-        rows = vp.load_eci_compute(_mtime=vp._eci_mtime())
-        full = vp.load_eci_frontier(_mtime=vp._eci_mtime(), full_window=True)
+        rows = vp.load_eci_compute(mtime=vp._eci_mtime())
+        full = vp.load_eci_frontier(mtime=vp._eci_mtime(), full_window=True)
         fit = (vp._cc_frontier_grade_algo(rows, full, margin=3.0)
                or vp._cc_frontier_grade_algo(rows, full))
         r = vp._tk_eci_rates(tk.DEFAULTS, vp._tk_hist_compute_rate())
