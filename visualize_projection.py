@@ -1015,6 +1015,9 @@ _RLI_RAW = [
     # is still the 2026-09-17 Fable 5.1 / GPT-6 Astra pair, and safe.ai/blog is still 2026-07-01.
     # Rechecked 2026-10-04: Gemini 3.8 Flash above is the only change; Opus 5.5 and Sonnet 5.5 have no
     # score on either surface.
+    # Rechecked 2026-10-18: no new model or changed score. The CAIS API now also carries Opus 5.5 (21.25)
+    # and Gemini 3.8 Flash (5.83), matching Scale; Sonnet 5.5, Haiku 5.5, Gemini 4 Argon, Mythos 5.1 and
+    # Opus 5 still have no score on either surface.
 ]
 
 
@@ -7972,6 +7975,8 @@ _OPENAI_REVENUE = [
     # own (+70%) even though the endpoints agree. TickerTrends' 10-08 post restates the 50.44 and adds no point.
     # Rechecked 2026-10-16: TickerTrends' two posts since (10-13 Meta spend tracker, 10-14 Anthropic Q3) carry
     # no OpenAI total.
+    # Rechecked 2026-10-18: no TickerTrends post since. Epoch has replaced its $70B row with the FT's $50B
+    # (as of 09-30) and a $30B July row; press line only, so this series is unchanged.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -8075,6 +8080,9 @@ _ANTHROPIC_REVENUE = [
     # prospective investors at an investor day (Bloomberg/Reuters/CNBC, 10-14) -- quarterly revenue, and
     # outlets' ~$67B is their own x4; the $110B "annualized revenue by year-end" in the same coverage is a
     # forecast. EDGAR still has no public S-1.
+    # Rechecked 2026-10-18: still no run rate; anthropic.com/news since 10-16 (10-15 independent evaluators,
+    # 10-18 public benefit fund) states none. Excluded: SemiAnalysis's ~$74B Q3 run rate (via the FT), a
+    # third-party estimate.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
