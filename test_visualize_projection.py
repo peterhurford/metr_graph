@@ -4225,6 +4225,19 @@ class TestChinaComputeSources:
         assert (pol["flow"]["2030"]["legal"][0] == 0.0
                 < base["flow"]["2030"]["legal"][0])
 
+    def test_compute_ratio_is_one_without_levers_and_scales_with_power(self):
+        today = datetime(2026, 10, 19)
+        start = datetime(2029, 1, 1)
+        none = vp._cn_src_compute_ratio(today, today, dict(start=start), 0.5)
+        assert none(0.0) == pytest.approx(1.0)
+        assert none(3.0) == pytest.approx(1.0)
+        mix = dict(start=start, remote_cut=today, dom_cut=0.4)
+        half = vp._cn_src_compute_ratio(today, today, mix, 0.5)
+        full = vp._cn_src_compute_ratio(today, today, mix, 1.0)
+        assert half(0.0) == pytest.approx(1.0)
+        assert 0 < full(3.0) < half(3.0) < 1
+        assert half(3.0) == pytest.approx(full(3.0) ** 0.5)
+
     def test_slower_domestic_growth_shrinks_only_domestic(self):
         d = self._data()
         hi, lo = vp._cn_src_projection(d), vp._cn_src_projection(d, growth=1.3)
@@ -4661,6 +4674,28 @@ class TestPacing:
         total = sum(chan[k] for k in vp._CC_CHANNELS) + chan['speedup']
         assert total == pytest.approx(traj - 100.0)
         assert chan['speedup'][:, -1].min() > 0
+
+    def test_less_compute_shrinks_only_the_speedup_channel(self):
+        """`speedup_scale` multiplies the AI speed-up's extra growth and
+        nothing else: at half, that channel halves."""
+        kw = dict(us_anchor=150.0, us_rate=0.0, a_partial=0.0, g_lo=0.0,
+                  g_hi=0.0, algo_lo=10.0, algo_mid=10.0, algo_hi=10.0,
+                  inno_lo=10.0, inno_hi=10.0, pace_lo=1.0, pace_hi=1.0,
+                  n=20, horizon_yrs=1.0)
+        out = {}
+        for scale in (None, lambda t: 0.5):
+            chan = {}
+            np.random.seed(0)
+            vp._cc_cn_crossing_sim(100.0, 200.0, channels=chan,
+                                   speedup=lambda e: np.full(20, 2.0),
+                                   speedup_scale=scale, **kw)
+            out[scale is None] = chan
+        full, half = out[True], out[False]
+        # Within 10%: a slower path shifts the gap-driven channels a little.
+        assert half['speedup'][:, -1] == pytest.approx(
+            0.5 * full['speedup'][:, -1], rel=0.1)
+        for k in vp._CC_CHANNELS:
+            assert half[k][:, -1] == pytest.approx(full[k][:, -1], rel=0.1)
 
     def test_full_tracking_gives_china_the_us_extra_in_eci_a_year(self):
         """With `speedup_follow` weight 1, China's extra growth is the US's

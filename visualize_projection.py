@@ -10722,6 +10722,29 @@ def _cn_src_with_policy(today, *, start, smug_cut=0.0, stop_legal=False,
     return {"flow": out_f, "stock": out_s}
 
 
+def _cn_src_compute_ratio(today, origin, mix, power):
+    """t (years from `origin`) -> (China's installed compute under `mix` /
+    with no levers) ** `power`, log-interpolated between year ends, 1 before
+    the first and held after the last. `mix` is `_cn_src_with_policy`'s
+    keywords. The Pacing tab scales China's AI speed-up by it, with `power`
+    the Takeoff model's parallelization exponent: AI research labour grows
+    with compute to that power there."""
+    base = _cn_src_with_policy(today, start=mix["start"])
+    pol = _cn_src_with_policy(today, **mix)
+    xs, ys = [0.0], [0.0]
+    for p in base["stock"]:
+        b = sum(r[0] for r in base["stock"][p].values())
+        c = sum(r[0] for r in pol["stock"][p].values())
+        t = (datetime(int(p) + 1, 1, 1) - origin).days / 365.25
+        if t > xs[-1] and b > 0 and c > 0:
+            xs.append(t)
+            ys.append(power * float(np.log(c / b)))
+    if len(xs) == 1:
+        return lambda t: 1.0
+    xs, ys = np.array(xs), np.array(ys)
+    return lambda t: float(np.exp(np.interp(t, xs, ys)))
+
+
 def _cn_smuggled_share(rows, in_china_only=True):
     """Smuggled share of a period's total, over the in-China sources or all."""
     keys = _CN_SRC_IN_CHINA if in_china_only else tuple(rows)
@@ -13606,7 +13629,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         comp_slow=None,
                         dist_teacher=None, channels=None, comp_shadow=None,
                         level_sd=0.0, level_ramp_yrs=0.5, us_path=None,
-                        speedup=None, speedup_follow=(0.0, 0.0)):
+                        speedup=None, speedup_follow=(0.0, 0.0),
+                        speedup_scale=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -13647,7 +13671,9 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     (s − 1)·[w·base + (1 − w)·rate] for `speedup_follow` = (w, base): w = 0
     scales China's own rate, w = 1 adds the US's AI-driven ECI/yr at that
     level (`base` the US trend rate), so takeoffs share their size, not only
-    their timing. The extra is the `speedup` channel.
+    their timing. The extra is the `speedup` channel. `speedup_scale(t)`, if
+    given, multiplies that extra at year `t` (the compute China has to run
+    its AI researchers on, against the no-lever path).
 
     Pass a dict as `channels` to have it filled with the four rate terms'
     *cumulative* ECI contributions, each an (n, len(grid)) array summing to
@@ -13745,6 +13771,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         if speedup is not None:
             fw, fbase = speedup_follow
             extra = (speedup(e) - 1.0) * (fw * fbase + (1.0 - fw) * rate)
+            if speedup_scale is not None:
+                extra = extra * speedup_scale(grid[i - 1])
             rate = rate + extra
             if channels is not None:
                 channels['speedup'][:, i] = channels['speedup'][:, i - 1] + extra * dt
@@ -16775,7 +16803,8 @@ def _pc_render_compute_mix(ci):
          "access stops, and its stock is lost, from its cut date; the "
          "domestic-slowdown slider and DUVi bans slow domestic output's "
          "growth. Installed chips, not the largest single run the catch-up "
-         "above reads."))
+         "above reads; China's AI speed-up scales with this total, to the "
+         "Takeoff model's parallelization exponent."))
 
 
 def _pc_render_compute_ratios(ci, span):
@@ -17948,6 +17977,16 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # anchor date, not the US's later best (the bar's climb already counts
     # from us_best's own date via _us_dt).
     us_anchor_cn = us_best[1] - us_rate * (us_best[0] - anchor_d).days / 365.25
+    # The chip levers, as the compute-mix chart reads them; China's AI
+    # speed-up runs on that compute, so it shrinks with it.
+    _mix = dict(start=pause_d, smug_cut=cut_smuggling / 100.0,
+                stop_legal=bool(stop_legal),
+                remote_cut=d_remote if stop_remote else None,
+                dom_cut=1.0 - (1.0 - dom_slow_user / 100.0) * (1.0 - duv_cut))
+    _sp_power = float(st.session_state.get("tk_parallelization",
+                                           _TK_R_REF_PARALLEL))
+    _cn_sp_scale = (_cn_src_compute_ratio(today, anchor_d, _mix, _sp_power)
+                    if cn_speedup is not None else None)
     kw = dict(us_anchor=us_anchor_cn, us_rate=us_rate_s, us_pause_level=level_s,
               a_partial=a_partial, g_lo=g_lo_eff,
               g_hi=g_hi_eff, algo_lo=a_lo, algo_mid=a_mid,
@@ -17962,6 +18001,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               # Release-step scatter, as on the China tab's catch-up panel.
               us_path=us_path, speedup=cn_speedup,
               speedup_follow=(tk_follow, tk['ppy'] if tk else 0.0),
+              speedup_scale=_cn_sp_scale,
               level_sd=_cc_frontier_level_sd(cn_fr),
               level_ramp_yrs=(_cc_release_gap_days(
                   cn_fr, since=today - timedelta(days=730)) or 47.5) / 365.25,
@@ -18631,11 +18671,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         'a_partial': a_partial,
         'levers': bool(stop_remote or duv_ban or duv_service
                        or dom_slow_user or cut_smuggling or stop_legal),
-        'mix': dict(start=pause_d, smug_cut=cut_smuggling / 100.0,
-                    stop_legal=bool(stop_legal),
-                    remote_cut=d_remote if stop_remote else None,
-                    dom_cut=1.0 - (1.0 - dom_slow_user / 100.0)
-                    * (1.0 - duv_cut)),
+        'mix': _mix,
         'now': caps_now or {},
         'today': today, 'pause_d': pause_d, 'use_dom': _use_dom,
         'horizon': horizon if horizon is not None else _PC_HORIZON,

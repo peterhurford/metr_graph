@@ -1455,7 +1455,10 @@ marks where the paced US reaches each scenario's ECI at automated coding and at 
 at the same ECI: `_pc_speedup_table` reads each scenario's ECI/yr where its path first stands
 at an ECI, over today's trend (floored at 1), and `_cc_cn_crossing_sim(speedup=…)` multiplies
 China's whole rate by it at China's current ECI, the extra kept as its own `speedup` channel
-(a breakdown row) so the channels still sum to the path; `pc_tk_follow` (default 0.8, *Advanced*) sets how much of that extra is the US's own AI-driven ECI/yr at that level rather than a multiple of China's slower rate, `speedup_follow` in the sim (`test_full_tracking_gives_china_the_us_extra_in_eci_a_year`). Under the chart a table dates automated coder, RSI and
+(a breakdown row) so the channels still sum to the path; `pc_tk_follow` (default 0.8, *Advanced*) sets how much of that extra is the US's own AI-driven ECI/yr at that level rather than a multiple of China's slower rate, `speedup_follow` in the sim (`test_full_tracking_gives_china_the_us_extra_in_eci_a_year`). The extra then scales by China's installed compute under the chip levers over the
+no-lever path, to the Takeoff parallelization exponent (`tk_parallelization`, 0.5), since
+AI researchers run on compute (`_cn_src_compute_ratio`, `speedup_scale`;
+`test_less_compute_shrinks_only_the_speedup_channel`). Under the chart a table dates automated coder, RSI and
 ultraintelligence (`_TK_ULTRA_ECI`) for both sides from `ms_years`, the same per-sample first
 crossings the chart's marks take medians of (`test_milestone_table_dates_both_sides`)
 (`test_speedup_multiplies_chinas_rate_and_is_its_own_channel`). It is capability-indexed and
