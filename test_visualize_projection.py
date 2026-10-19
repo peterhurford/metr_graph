@@ -4100,6 +4100,49 @@ class TestNoDuplicateDefinitions:
         assert not dupes, dupes
 
 
+class TestChinaComputeSources:
+    """China's compute by source: flows add up to stocks, and the
+    hatched-estimate rows are exactly the ones with no published number."""
+
+    def _data(self):
+        return vp.load_china_compute_sources(vp._cn_src_mtime())
+
+    def test_every_period_has_every_source_and_a_valid_interval(self):
+        d = self._data()
+        keys = {k for k, *_ in vp._CN_SOURCES}
+        assert list(d["flow"]) == list(d["stock"])
+        for kind in ("flow", "stock"):
+            for p, rows in d[kind].items():
+                assert set(rows) == keys, (kind, p)
+                for s, (v, lo, hi, basis) in rows.items():
+                    assert lo <= v <= hi, (kind, p, s)
+                    assert basis in vp._CN_SRC_BASIS
+
+    def test_stocks_are_the_running_sum_of_flows(self):
+        """Except smuggling, whose stock is Epoch's own cumulative row."""
+        d = self._data()
+        for s in ("legal", "domestic", "remote"):
+            run = 0.0
+            for p in d["flow"]:
+                run += d["flow"][p][s][0]
+                assert run == pytest.approx(d["stock"][p][s][0], rel=1e-3)
+
+    def test_only_unpublished_numbers_are_hatched(self):
+        d = self._data()
+        est = {(p, s) for p, rows in d["flow"].items()
+               for s, r in rows.items() if r[3] == "estimate"}
+        assert est == {(p, "remote") for p in d["flow"]} | {("2026H1",
+                                                             "smuggled")}
+
+    def test_epochs_smuggling_flows_and_the_2025_share(self):
+        d = self._data()
+        assert d["flow"]["2024"]["smuggled"][:3] == (159000, 64000, 419000)
+        assert d["flow"]["2025"]["smuggled"][:3] == (480000, 189000, 1289000)
+        assert d["stock"]["2025"]["smuggled"][:3] == (663000, 294000, 1593000)
+        assert vp._cn_smuggled_share(d["flow"]["2025"]) == pytest.approx(
+            0.43, abs=0.01)
+
+
 class TestDuvProduction:
     """The CTS lithography table and the ban ratio the Pacing lever reads."""
 

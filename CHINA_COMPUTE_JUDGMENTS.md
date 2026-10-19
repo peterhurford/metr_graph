@@ -90,6 +90,13 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 - **Why AI push:** the Pausing panel's China is a state-directed catch-up. With the ceiling rarely binding before 2031, the allocation matters little to the import-ban cut.
 - **Revisit when:** CTS re-versions the table; better estimates of China's realized output or its growth (IFP, Epoch, SemiAnalysis 2027 numbers) arrive; any evidence on scanner attrition without servicing; or a ban or servicing control is enacted.
 
+### 6. China's compute by source (`china_compute_sources.csv`, `_render_cc_compute_sources`)
+
+- **Measured:** domestic (Ascend, Cambricon) and legal US sales are Epoch's chip data for China-market chips. Smuggling for 2024–25 is Epoch's model (159k, 480k H100e; 663k cumulative). Display only: nothing downstream reads these rows.
+- **H1 2026 smuggling, a judgment:** 240k H100e, 2025's pace held. The low end, 43k, is 10% of other acquisition, the Substrate's 2026 forecast ratio (Grunewald, Feb 2026). The high end, 645k, is half Epoch's 2025 95th. Epoch's 2025 ratio was ~74% of non-smuggled acquisition, so the two sources disagree about sevenfold on the ratio.
+- **Remote access, a judgment throughout:** through 2024, the two Johor sites in `_DC_CN_ACCESS_ABROAD`. From 2025, SemiAnalysis's leased offshore power (0.85 GW end-2025, 1.45 GW end-2026, 1.11 GW geometric midpoint at mid-2026) at 790 H100e per facility MW, the two sites' own density (700–880). The range is power ±25% times that density range. The 2025 jump, 572k, partly reflects the switch of method: the catalogue undercounts what SemiAnalysis covers.
+- **Revisit when:** Epoch publishes 2026 smuggling, its owners file adds 2026 China rows, H200 deliveries are counted, or SemiAnalysis revises offshore leasing.
+
 ## Checked and deliberately left alone
 
 - **Catalogue coverage.** It holds ~0.94 GW of IT power in China at end-2026, against SemiAnalysis's 24 GW national fleet (~4%; the US is ~25%). That is irrelevant to largest-site views as long as the largest sites are present.

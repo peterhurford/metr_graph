@@ -10538,6 +10538,59 @@ def load_duv_production(_mtime=None):
     return out
 
 
+# China's compute by source: Epoch chip data for domestic and legal, Epoch's
+# smuggling model, and our own estimates for remote access and H1-2026
+# smuggling. Derivations in the file's `#` header.
+_CN_SRC_FILE = 'china_compute_sources.csv'
+_CN_SRC_SOURCE_SMUGGLING = _WC_SOURCE_SMUGGLING
+_CN_SRC_SOURCE_OWNERS = "https://epoch.ai/data/ai-chip-owners"
+_CN_SRC_SOURCE_SALES = "https://epoch.ai/data/ai-chip-sales"
+# (key, label, colour), bottom of the stack first.
+_CN_SOURCES = (
+    ("domestic", "Domestic chips (Huawei, Cambricon)", "#D62728"),
+    ("legal", "Legal US sales (H800, H20, …)", "#8C564B"),
+    ("smuggled", "Smuggled", "#FF7F0E"),
+    ("remote", "Remote access abroad", _DC_REGION_COLORS[_DC_REGION_SEA]),
+)
+_CN_SRC_IN_CHINA = ("domestic", "legal", "smuggled")
+_CN_SRC_BASIS = {
+    "measured": "Epoch chip data",
+    "modelled": "Epoch smuggling model",
+    "estimate": "our estimate (hatched)",
+    "none": "not estimated",
+}
+
+
+def _cn_src_mtime():
+    return os.path.getmtime(os.path.join(os.path.dirname(__file__),
+                                         _CN_SRC_FILE))
+
+
+@st.cache_data
+def load_china_compute_sources(_mtime=None):
+    """{'flow'|'stock': {period: {source: (h100e, p5, p95, basis)}}}, periods
+    in file order."""
+    path = os.path.join(os.path.dirname(__file__), _CN_SRC_FILE)
+    with open(path) as f:
+        lines = [ln for ln in f if not ln.lstrip().startswith('#')]
+    out = {"flow": {}, "stock": {}}
+    for r in csv.DictReader(lines):
+        out[r['kind']].setdefault(r['period'], {})[r['source']] = (
+            float(r['h100e']), float(r['p5']), float(r['p95']), r['basis'])
+    return out
+
+
+def _cn_src_period_label(period):
+    return "H1 " + period[:4] if period.endswith("H1") else period
+
+
+def _cn_smuggled_share(rows, in_china_only=True):
+    """Smuggled share of a period's total, over the in-China sources or all."""
+    keys = _CN_SRC_IN_CHINA if in_china_only else tuple(rows)
+    tot = sum(rows[k][0] for k in keys)
+    return rows["smuggled"][0] / tot if tot else 0.0
+
+
 def _duv_log_p50(rows, t):
     """log10 P50 at fractional year `t`, each year's output dated mid-year.
 
@@ -14363,6 +14416,102 @@ def _render_world_shares(today, horizon):
                           "against Epoch's ~15% reading then."))
 
 
+def _render_cc_compute_sources():
+    """China's AI compute by source, added each period and installed.
+
+    Stacked bars from `load_china_compute_sources`; our own estimates are
+    hatched, every bar's hover carries its 90% interval and basis.
+    """
+    st.subheader("Where China's compute comes from")
+    data = load_china_compute_sources(_cn_src_mtime())
+    flow, stock = data["flow"], data["stock"]
+    periods = list(flow)
+    last_full = [p for p in periods if not p.endswith("H1")][-1]
+    latest = periods[-1]
+    f_full, f_last = flow[last_full], flow[latest]
+    in_cn = sum(f_full[k][0] for k in _CN_SRC_IN_CHINA)
+    _fn_line(
+        f"In {last_full}, smuggled chips were **~"
+        f"{_cn_smuggled_share(f_full):.0%}** of the compute China added at "
+        f"home ({f_full['smuggled'][0] / 1e3:,.0f}k of "
+        f"{in_cn / 1e6:.2f}M H100e), and ~"
+        f"{_cn_smuggled_share(f_full, False):.0%} counting remote access "
+        f"abroad. For {_cn_src_period_label(latest)} we estimate ~"
+        f"{_cn_smuggled_share(f_last):.0%}, as domestic chips grew and legal "
+        "sales stopped.",
+        ("smuggled chips", "Epoch's median, with a 90% interval of "
+                           f"{f_full['smuggled'][1] / 1e3:,.0f}k–"
+                           f"{f_full['smuggled'][2] / 1e6:.1f}M H100e: the "
+                           "share could be about half or about twice this."),
+        ("we estimate", "Nobody publishes 2026 smuggling. This holds "
+                        "2025's pace; the low end is 10% of other "
+                        "acquisition (the Substrate's 2026 forecast ratio)."))
+
+    def _fig(rows_by_period, title):
+        fig = go.Figure()
+        xs = [_cn_src_period_label(p) for p in rows_by_period]
+        for key, label, color in _CN_SOURCES:
+            vals, cd, pat = [], [], []
+            for p, rows in rows_by_period.items():
+                v, lo, hi, basis = rows[key]
+                tot = sum(r[0] for r in rows.values())
+                vals.append(v / 1e6)
+                pat.append('/' if basis == "estimate" else '')
+                cd.append(
+                    f"{v / 1e3:,.0f}k H100e ({v / tot:.0%} of the bar)<br>"
+                    f"90%: {lo / 1e3:,.0f}k–{hi / 1e3:,.0f}k<br>"
+                    f"{_CN_SRC_BASIS[basis]}" if basis != "none"
+                    else "No estimate before 2024")
+            fig.add_trace(go.Bar(
+                x=xs, y=vals, name=label,
+                marker=dict(color=color,
+                            pattern=dict(shape=pat, fillmode='overlay',
+                                         fgcolor='white', size=6)),
+                customdata=cd,
+                hovertemplate="%{x}: %{customdata}<extra>" + label
+                              + "</extra>"))
+        fig.update_layout(
+            barmode='stack', height=360, plot_bgcolor='white',
+            paper_bgcolor='white', font=dict(color='#222222'),
+            margin=dict(l=60, r=20, t=36, b=40),
+            title=dict(text=title, font=dict(size=14), x=0.01),
+            legend=dict(orientation='h', y=-0.15, font=dict(size=11)),
+            yaxis=dict(title_text="M H100e", gridcolor='rgba(0,0,0,0.12)'),
+            xaxis=dict(type='category'))
+        return fig
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(_fig(flow, "Added each year"), width="stretch")
+    with c2:
+        st.plotly_chart(_fig(stock, "Installed, cumulative from 2022"),
+                        width="stretch")
+    s = stock[latest]
+    tot = sum(r[0] for r in s.values())
+    _fn_caption(
+        f"By mid-2026 China could use ~{tot / 1e6:.1f}M H100e: "
+        + ", ".join(f"{lab[0].lower()}{lab[1:].split(' (')[0]} "
+                    f"{s[k][0] / tot:.0%}"
+                    for k, lab, _c in _CN_SOURCES)
+        + ". Hatched bars are our estimates; the rest are Epoch's. "
+        f"Sources: Epoch [chip owners]({_CN_SRC_SOURCE_OWNERS}) and "
+        f"[chip sales]({_CN_SRC_SOURCE_SALES}) data, Epoch's "
+        f"[smuggling estimate]({_CN_SRC_SOURCE_SMUGGLING}).",
+        ("could use", "Deliveries since 2022, nothing retired, so an upper "
+                      "read of what is running. Remote access is capacity "
+                      "Chinese firms rent abroad, not chips they own."),
+        ("our estimates",
+         "Remote access: the catalogue's two Johor sites through 2024, then "
+         "SemiAnalysis's leased power of Chinese hyperscalers outside China "
+         "(0.85 GW end-2025, 1.45 GW end-2026) at those sites' ~790 H100e "
+         "per MW. H1 2026 smuggling: 2025's pace held. H200 deliveries "
+         "(~10k each to ByteDance and Tencent, Aug 2026) fall after June."),
+        ("Epoch's", "Domestic and legal are Epoch's chip-sales estimates "
+                    "for China-market chips; their hover intervals sum each "
+                    "chip's, so they read wider than the truth. Smuggling "
+                    "before 2024 is not estimated."))
+
+
 def _render_cc_duv_ceiling(today):
     """US AI chip output against China's lithography ceiling, ban vs continue.
 
@@ -14937,7 +15086,12 @@ def render_compute_capabilities():
                     run_key=run_key, run_days=run_days)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Section 2: the lithography ceiling on China's chip output (CTS)
+    # Section 2: where China's compute comes from, by source
+    # ══════════════════════════════════════════════════════════════════════
+    _render_cc_compute_sources()
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Section 3: the lithography ceiling on China's chip output (CTS)
     # ══════════════════════════════════════════════════════════════════════
     _render_cc_duv_ceiling(_today)
 

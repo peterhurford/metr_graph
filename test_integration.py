@@ -781,6 +781,22 @@ class TestCcDuvCeilingTab:
         assert "techstatecraft.org/duv" in caps
 
 
+class TestCcComputeSourcesTab:
+    """China's compute by source, just above the lithography ceiling."""
+
+    def test_renders_before_the_ceiling_and_cites_epoch(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "China")
+        _assert_no_error(at, "CC / compute sources")
+        heads = [str(h.value) for h in at.subheader]
+        assert heads[-2:] == ["Where China's compute comes from",
+                              TestCcDuvCeilingTab._HEAD]
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "epoch.ai/publications/chip-smuggling" in caps
+        assert "Hatched bars are" in caps
+
+
 class TestRsiTab:
     """CoBench score vs release date, plus the fitted trend."""
 
