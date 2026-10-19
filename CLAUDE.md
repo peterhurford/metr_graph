@@ -1223,9 +1223,11 @@ things are load-bearing:
    its own constant rather than `_WC_GROWTH`, and Pacing exposes it as `pc_duv_growth`
    (`test_faster_output_growth_reaches_the_ceiling_sooner`). Don't revert to the
    ceiling-to-ceiling ratio; it charged the ban ~24% for a limit China hasn't reached.
-3. **A servicing ban erodes the fleet in use, so it bites from 2027.**
-   `pc_duv_service` multiplies the path by (1 − `pc_duv_decay`) per year from
-   `_DUV_POLICY_YEAR`. The rate (`_DUV_SERVICE_DECAY_PCT`, default 15%) is a judgment the
+3. **A servicing ban erodes the fleet, and bites once it falls below HBM-limited output.**
+   `pc_duv_service` lowers the ceiling by (1 − `pc_duv_decay`) per year from
+   `_DUV_POLICY_YEAR`; China's own trend is HBM-limited, so the cut starts only where the
+   eroded ceiling crosses it (`test_servicing_ban_waits_for_the_fleet_to_fall_to_hbm_output`):
+   ~3% to 2031 alone at 15%/yr, ~9% with the import ban. The rate (`_DUV_SERVICE_DECAY_PCT`, default 15%) is a judgment the
    report does not give; it sits under the pause panel's *Advanced* beside
    `pc_duv_growth`, and
    `CHINA_COMPUTE_JUDGMENTS.md` §5 records it.

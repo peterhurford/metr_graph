@@ -10792,12 +10792,14 @@ def _duv_realized_grid(n=15, growth=_DUV_CN_OUTPUT_GROWTH):
 
 
 def _duv_log_output(t, lv0, lg, rows, decay=0.0):
-    """log10 China output at year `t`: its own trend, capped by the ceiling,
-    times the fleet that survives `decay`/yr without servicing."""
-    v = min(lv0 + lg * (t - 2026.5), _duv_log_p50(rows, t))
+    """log10 China output at year `t`: its own trend, capped by what its
+    lithography fleet can print, that fleet shrinking `decay`/yr without
+    servicing. The trend is HBM-limited, so lost scanners cost output only
+    once the shrunken fleet falls below it."""
+    cap = _duv_log_p50(rows, t)
     if decay > 0:
-        v += np.log10(1.0 - decay) * max(t - _DUV_POLICY_YEAR, 0.0)
-    return v
+        cap += np.log10(1.0 - decay) * max(t - _DUV_POLICY_YEAR, 0.0)
+    return min(lv0 + lg * (t - 2026.5), cap)
 
 
 def _duv_policy_cut(start, end, ban_imports=True, decay=0.0,
@@ -10809,9 +10811,9 @@ def _duv_policy_cut(start, end, ban_imports=True, decay=0.0,
     continuing), averaged over `_duv_realized_grid`. China's output is its own
     trend capped by the report's ceiling, so an import ban bites only once
     the banned ceiling binds, which today's low output puts years out.
-    `decay` (fraction/yr) is the servicing ban: it erodes the fleet that makes
-    the chips, so it bites from 2027 whether or not the ceiling binds. None
-    when the window is empty.
+    `decay` (fraction/yr) is the servicing ban: it erodes the fleet, so it
+    lowers the ceiling from 2027 and bites once that eroded ceiling falls to
+    China's HBM-limited output. None when the window is empty.
     """
     data = data or load_duv_production(_duv_mtime())
     t0, t1 = _duv_frac_year(start), _duv_frac_year(end)
@@ -17599,9 +17601,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             key="pc_duv_service",
             help="No foreign servicing, spare parts or field upgrades for the "
                  "scanners making China's AI chips, so that fleet erodes at the "
-                 "rate set under *Advanced*. Unlike the import ban it bites "
-                 "straight away, because it hits the machines in use rather "
-                 "than a ceiling China has not reached yet.")
+                 "rate set under *Advanced*. HBM, not lithography, limits "
+                 "China's output today, so the shrinking fleet costs output "
+                 "only once it falls below what HBM supply allows: little "
+                 "before 2030 at the default rate.")
         _cut_end = horizon if horizon is not None else _PC_HORIZON
         # The cut-off dates sit under Advanced, below this help text, so
         # read them a rerun early, as the DUVi growth rate is.

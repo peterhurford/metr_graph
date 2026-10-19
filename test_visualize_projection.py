@@ -4320,11 +4320,18 @@ class TestDuvProduction:
                 for g in (lo, vp._DUV_CN_OUTPUT_GROWTH, hi)]
         assert cuts == sorted(cuts) and cuts[-1] > cuts[0] + 0.05
 
-    def test_servicing_ban_bites_now_and_rises_with_the_decay(self):
-        t0, t1 = datetime(2026, 10, 1), datetime(2028, 12, 31)
+    def test_servicing_ban_waits_for_the_fleet_to_fall_to_hbm_output(self):
+        """HBM, not lithography, limits China's output, so a shrinking fleet
+        costs nothing until it falls below that output; then the cut rises
+        with the decay rate."""
+        t0 = datetime(2026, 10, 1)
+        near = vp._duv_policy_cut(t0, datetime(2028, 12, 31),
+                                  ban_imports=False, decay=0.15)
+        assert near < 0.01
+        t1 = datetime(2035, 12, 31)
         cuts = [vp._duv_policy_cut(t0, t1, ban_imports=False, decay=d)
                 for d in (0.05, 0.15, 0.30)]
-        assert 0.05 < cuts[0] < cuts[1] < cuts[2] <= 1.0
+        assert cuts[0] < cuts[1] < cuts[2] <= 1.0 and cuts[1] > 0.05
         # Stacking the import ban on top never helps China.
         both = vp._duv_policy_cut(t0, datetime(2035, 12, 31), decay=0.15)
         svc = vp._duv_policy_cut(t0, datetime(2035, 12, 31),
