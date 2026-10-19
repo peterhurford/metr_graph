@@ -4238,6 +4238,17 @@ class TestChinaComputeSources:
         assert 0 < full(3.0) < half(3.0) < 1
         assert half(3.0) == pytest.approx(full(3.0) ** 0.5)
 
+    def test_hbm_controls_remove_their_share_of_domestic_output_only(self):
+        today = datetime(2026, 10, 19)
+        d = self._data()
+        base = vp._cn_src_with_policy(today, data=d)
+        hbm = vp._cn_src_with_policy(today, hbm_cut=vp._PC_HBM_CUT, data=d)
+        assert hbm["flow"]["2029"]["domestic"][0] == pytest.approx(
+            (1 - vp._PC_HBM_CUT) * base["flow"]["2029"]["domestic"][0])
+        assert hbm["flow"]["2025"] == base["flow"]["2025"]
+        for k in ("legal", "smuggled", "remote"):
+            assert hbm["flow"]["2029"][k] == base["flow"]["2029"][k]
+
     def test_slower_domestic_growth_shrinks_only_domestic(self):
         d = self._data()
         hi, lo = vp._cn_src_projection(d), vp._cn_src_projection(d, growth=1.3)

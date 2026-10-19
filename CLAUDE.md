@@ -1512,8 +1512,9 @@ China-accessible sensitivity, whose premise it removes). The pace band deliberat
 stays on the default compute band — it is shared with the CC crossing.
 Beside them, `pc_duv_ban` and `pc_duv_service` (default off) compound the CTS-derived
 DUVi import and servicing cuts into it (see *lithography ceiling* above), as do
-`pc_cut_smuggling` (0–100%) and `pc_stop_legal`, from their own *Advanced* dates
-(`pc_smug_when` / `pc_legal_when`, default *Now*): `_cn_src_channel_cut`
+`pc_cut_smuggling` (0–100%), `pc_stop_legal` and `pc_hbm` (IFP's foreign-HBM controls,
+`_PC_HBM_CUT` = 9% of domestic output), from their own *Advanced* dates
+(`pc_smug_when` / `pc_legal_when` / `pc_hbm_when`, default *Now*): `_cn_src_channel_cut`
 reads the China tab's compute mix (`_cn_src_projection`) for the share of China's in-China
 compute growth that channel supplies to the horizon
 (`test_smuggling_and_legal_sales_levers_stack_on_the_slowdown`). Alongside them, `pc_dom_slow` (0–90%, default 0) slows China's *own* buildout —

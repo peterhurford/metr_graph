@@ -10676,12 +10676,13 @@ def _cn_src_channel_cut(start, end, cuts, data=None):
 
 def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
                         stop_legal=False, legal_start=None, remote_cut=None,
-                        dom_cut=0.0, data=None):
+                        dom_cut=0.0, hbm_cut=0.0, hbm_start=None, data=None):
     """China's compute mix by year under the Pacing tab's chip levers.
 
     Smuggling falls by `smug_cut` (0-1) from `smug_start` and legal sales
     stop from `legal_start` (dates; None is today), each year prorated by
-    the share of it after its date. From `remote_cut`
+    the share of it after its date. `hbm_cut` removes that share of
+    domestic output from `hbm_start` (None is today). From `remote_cut`
     (a date, or None): no new remote access, and the remote stock is lost.
     Domestic output's growth since today's year is slowed by `dom_cut`
     (0-1, the slider and DUVi cuts compounded): a year's flow becomes
@@ -10711,6 +10712,7 @@ def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
         v = rows["domestic"][0]
         if dom_cut and int(p) > today.year and d0 > 0 and v > 0:
             mult["domestic"] = (v / d0) ** -dom_cut
+        mult["domestic"] *= 1.0 - hbm_cut * _after(hbm_start or today, p)
         out_f[p] = {k: (r[0] * mult[k], r[1] * mult[k], r[2] * mult[k], r[3])
                     for k, r in rows.items()}
         for k, r in rows.items():
@@ -15533,7 +15535,7 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_cut_smuggling", "pc_stop_legal", "pc_dist_cut",
                   "pc_duv_service", "pc_duv_decay", "pc_duv_growth",
                   "pc_dist_when", "pc_remote_when", "pc_smug_when",
-                  "pc_legal_when", "pc_cn_run",
+                  "pc_legal_when", "pc_hbm", "pc_hbm_when", "pc_cn_run",
                   "pc_methods_pause", "pc_pace", "pc_tk_follow",
                   "pc_win_n"] + \
                  [f"pc_win{i}_{f}" for i in range(1, _PC_WIN_MAX + 1)
@@ -15546,6 +15548,9 @@ _PC_DOM_SLOW_MAX = 90         # percent: hardest slowdown of China's own buildou
 # distilled falls ~_PC_DIST_PER_OOM per 10x less data (IFP, 20-35%), so a
 # 90% cut keeps ~75% of the channel and only a total cut stops it.
 _PC_DIST_CUT_OPTIONS = [50, 90, 95, 99, 100]
+# Share of China's domestic AI chip output that controls on smuggled foreign
+# HBM remove: IFP's estimate through end-2027, held after it.
+_PC_HBM_CUT = 0.09
 _PC_DIST_PER_OOM = 0.25
 _PC_DIST_PER_OOM_RANGE = (0.20, 0.35)
 
@@ -15609,6 +15614,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_dist_when": _PC_WHEN_NOW,
                 "pc_remote_when": _PC_WHEN_NOW,
                 "pc_smug_when": _PC_WHEN_NOW, "pc_legal_when": _PC_WHEN_NOW,
+                "pc_hbm": False, "pc_hbm_when": _PC_WHEN_NOW,
                 "pc_cn_run": 2, "pc_methods_pause": False,
                 "pc_tk_follow": 0.8,
                 "pc_win_n": 0,
@@ -17579,6 +17585,19 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  f"comes from*). **{_legal_cut:.0%}** less domestic compute "
                  f"growth to {_cut_end.year}, on top of the slider below. "
                  "From today unless dated later under *Advanced*.")
+        _hbm_g = _cn_src_channel_cut(
+            _pc_when_date(st.session_state.get("pc_hbm_when"), today),
+            _cut_end, {"domestic": _PC_HBM_CUT})
+        hbm_ctl = st.checkbox(
+            "Control smuggled foreign HBM", key="pc_hbm",
+            help="Close the co-packaging loophole, red-flag guidance and "
+                 "investigations, from IFP's [package]"
+                 f"({_CN_SRC_SOURCE_IFP}). China cannot make HBM at scale, so "
+                 "memory, not lithography, binds its chip output; IFP sizes "
+                 f"these controls at {_PC_HBM_CUT:.0%} of domestic output. "
+                 f"**{_hbm_g:.0%}** less domestic compute growth to "
+                 f"{_cut_end.year}. From today unless dated later under "
+                 "*Advanced*.")
         cut_smuggling = st.slider(
             "Cut smuggling to China by", 0, 100,
             value=_PC_DEFAULTS["pc_cut_smuggling"], step=5, format="%d%%",
@@ -17600,9 +17619,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             "Slow China's domestic compute growth by", 0, _PC_DOM_SLOW_MAX,
             value=_PC_DEFAULTS["pc_dom_slow"], step=1, format="%d%%",
             key="pc_dom_slow",
-            help="Equipment, HBM and fab controls that bite on the buildout "
-                 "itself (IFP sizes its HBM controls at ~9% of China's chip "
-                 "output): China's own clusters grow this much slower than the "
+            help="Equipment and fab controls that bite on the buildout "
+                 "itself (HBM has its own checkbox above): China's own "
+                 "clusters grow this much slower than the "
                  "catalogued domestic pace. The cut comes off the domestic "
                  "share of the compute term, so it bites whether or not remote "
                  "access is cut \u2014 and a slower domestic pace also makes the "
@@ -17648,7 +17667,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             st.markdown("**When the controls bite**")
             _opts = _pc_when_options(today)
             for _k in ("pc_dist_when", "pc_remote_when", "pc_smug_when",
-                       "pc_legal_when"):
+                       "pc_legal_when", "pc_hbm_when"):
                 if st.session_state.get(_k, _PC_WHEN_NOW) not in _opts:
                     st.session_state.pop(_k, None)
             dist_when = st.select_slider(
@@ -17678,6 +17697,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 disabled=not stop_legal,
                 help="The date licences stop being granted. Needs the "
                      "checkbox above.")
+            hbm_when = st.select_slider(
+                "HBM controls start", options=_opts,
+                value=_PC_DEFAULTS["pc_hbm_when"], key="pc_hbm_when",
+                disabled=not hbm_ctl,
+                help="Needs the HBM checkbox above.")
             st.caption("All default to *Now*, which is what the levers on "
                        "their own mean. Moving a slider right buys China more "
                        "time on that channel before it closes.")
@@ -17733,9 +17757,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                                    {"smuggled": cut_smuggling / 100.0})
     legal_cut = (_cn_src_channel_cut(d_legal, _cut_end, {"legal": 1.0})
                  if stop_legal else 0.0)
+    d_hbm = _pc_when_date(hbm_when, today)
+    hbm_g = (_cn_src_channel_cut(d_hbm, _cut_end, {"domestic": _PC_HBM_CUT})
+             if hbm_ctl else 0.0)
     dom_slow_pct = int(round(100 * (1 - (1 - dom_slow_user / 100.0)
                                     * (1 - duv_cut) * (1 - smug_cut)
-                                    * (1 - legal_cut))))
+                                    * (1 - legal_cut) * (1 - hbm_g))))
     duv_names = " and ".join(n for n, on in (("import", duv_ban),
                                              ("servicing", duv_service)) if on)
     # Each chip-supply lever that is on, with its share of the cut.
@@ -17746,6 +17773,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         _supply.append((f"a {cut_smuggling}% smuggling cut", smug_cut))
     if stop_legal:
         _supply.append(("stopping legal sales", legal_cut))
+    if hbm_ctl:
+        _supply.append(("the HBM controls", hbm_g))
     _supply_txt = ", ".join(f"{c:.0%} from {n}" for n, c in _supply)
     d_dist = _pc_when_date(dist_when, today)
     d_remote = _pc_when_date(remote_when, today)
@@ -17994,7 +18023,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _mix = dict(smug_cut=cut_smuggling / 100.0, smug_start=d_smug,
                 stop_legal=bool(stop_legal), legal_start=d_legal,
                 remote_cut=d_remote if stop_remote else None,
-                dom_cut=1.0 - (1.0 - dom_slow_user / 100.0) * (1.0 - duv_cut))
+                dom_cut=1.0 - (1.0 - dom_slow_user / 100.0) * (1.0 - duv_cut),
+                hbm_cut=_PC_HBM_CUT if hbm_ctl else 0.0, hbm_start=d_hbm)
     _sp_power = float(st.session_state.get("tk_parallelization",
                                            _TK_R_REF_PARALLEL))
     _cn_sp_scale = (_cn_src_compute_ratio(today, anchor_d, _mix, _sp_power)
@@ -18682,7 +18712,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         'base_cn_use': caps.get(_DC_CTY_CN_ACCESS),
         'a_partial': a_partial,
         'levers': bool(stop_remote or duv_ban or duv_service
-                       or dom_slow_user or cut_smuggling or stop_legal),
+                       or dom_slow_user or cut_smuggling or stop_legal
+                       or hbm_ctl),
         'mix': _mix,
         'now': caps_now or {},
         'today': today, 'pause_d': pause_d, 'use_dom': _use_dom,

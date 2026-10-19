@@ -2015,6 +2015,12 @@ class TestPacingTab:
         assert _slowed(at) > smug
         assert "stopping legal sales" in " ".join(str(c.value)
                                                   for c in at.caption)
+        both = _slowed(at)
+        at.checkbox(key="pc_hbm").check().run()
+        _assert_no_error(at, "Pacing / HBM controls")
+        assert _slowed(at) >= both
+        assert "the HBM controls" in " ".join(str(c.value)
+                                              for c in at.caption)
 
     def test_why_breakdown_tracks_the_sliders(self):
         """The bottom breakdown splits the card's months across sources:
