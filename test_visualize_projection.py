@@ -4178,6 +4178,16 @@ class TestChinaComputeSources:
         # Offshore leasing flattens after 2027, so remote additions fall.
         assert p["flow"]["2029"]["remote"][0] < f27["remote"][0]
 
+    def test_compute_payoff_default_is_the_mean_of_ours_and_ifps(self):
+        """IFP's 10.8 months per 10x at the US's 15.7 ECI/yr is ~14 ECI;
+        the default sits halfway between it and our fit."""
+        f = vp._pc_compute_payoff
+        assert f(6.3, 15.7, "fit") == 6.3
+        assert f(6.3, 15.7, "ifp") == pytest.approx(14.13, abs=0.01)
+        assert f(6.3, 15.7, "average") == pytest.approx((6.3 + 14.13) / 2,
+                                                       abs=0.01)
+        assert vp._PC_PAYOFF_OPTIONS[vp._PC_DEFAULTS["pc_payoff"]] == "average"
+
     def test_distillation_keeps_a_quarter_less_per_tenfold_data_cut(self):
         """IFP: ~25% of distilled capability per 10x less harvested data,
         so 90% keeps 75%, 99% keeps 50%, and only a total cut stops it."""

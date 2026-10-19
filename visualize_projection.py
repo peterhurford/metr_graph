@@ -15535,7 +15535,8 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_cut_smuggling", "pc_stop_legal", "pc_dist_cut",
                   "pc_duv_service", "pc_duv_decay", "pc_duv_growth",
                   "pc_dist_when", "pc_remote_when", "pc_smug_when",
-                  "pc_legal_when", "pc_hbm", "pc_hbm_when", "pc_cn_run",
+                  "pc_legal_when", "pc_hbm", "pc_hbm_when", "pc_payoff",
+                  "pc_cn_run",
                   "pc_methods_pause", "pc_pace", "pc_tk_follow",
                   "pc_win_n"] + \
                  [f"pc_win{i}_{f}" for i in range(1, _PC_WIN_MAX + 1)
@@ -15551,6 +15552,20 @@ _PC_DIST_CUT_OPTIONS = [50, 90, 95, 99, 100]
 # Share of China's domestic AI chip output that controls on smuggled foreign
 # HBM remove: IFP's estimate through end-2027, held after it.
 _PC_HBM_CUT = 0.09
+# What 10x training compute is worth in the catch-up: our frontier-grade fit
+# (`_cc_frontier_grade_algo`), IFP's lead model (10.8 months of US progress
+# per 10x before distillation, Fist, Adamson & Pilz 2026), or their mean.
+# Every channel is rescaled to China's observed slope, so this moves what
+# the chip levers buy, not the no-lever crossing.
+_PC_IFP_MO_PER_OOM = 10.8
+_PC_PAYOFF_OPTIONS = {"Average of the two": "average", "Our fit": "fit",
+                      "IFP's": "ifp"}
+
+
+def _pc_compute_payoff(fit, us_eci_per_yr, choice):
+    """ECI per 10x training compute for the Pacing catch-up."""
+    ifp = _PC_IFP_MO_PER_OOM * us_eci_per_yr / 12.0
+    return {"fit": fit, "ifp": ifp, "average": 0.5 * (fit + ifp)}[choice]
 _PC_DIST_PER_OOM = 0.25
 _PC_DIST_PER_OOM_RANGE = (0.20, 0.35)
 
@@ -15615,6 +15630,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_remote_when": _PC_WHEN_NOW,
                 "pc_smug_when": _PC_WHEN_NOW, "pc_legal_when": _PC_WHEN_NOW,
                 "pc_hbm": False, "pc_hbm_when": _PC_WHEN_NOW,
+                "pc_payoff": "Average of the two",
                 "pc_cn_run": 2, "pc_methods_pause": False,
                 "pc_tk_follow": 0.8,
                 "pc_win_n": 0,
@@ -17749,6 +17765,24 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                      "at \u00d71.3\u20132.7/yr for 2026\u201327, with per-chip "
                      "performance rising on top. Needs a DUVi checkbox above.")
             st.divider()
+            st.markdown("**What compute buys**")
+            if st.session_state.get("pc_payoff") not in _PC_PAYOFF_OPTIONS:
+                st.session_state.pop("pc_payoff", None)
+            payoff_label = st.radio(
+                "Capability from 10\u00d7 more training compute",
+                list(_PC_PAYOFF_OPTIONS),
+                index=list(_PC_PAYOFF_OPTIONS).index(
+                    _PC_DEFAULTS["pc_payoff"]),
+                key="pc_payoff",
+                help="Our fit on frontier-grade models gives ~6 ECI (~5 "
+                     "months of US progress) per 10\u00d7; IFP's lead model "
+                     f"gives {_PC_IFP_MO_PER_OOM:g} months (~14 ECI) before "
+                     "distillation. Neither is settled, so the default is "
+                     "their average. China's total pace still matches its "
+                     "observed slope, so this changes what the chip levers "
+                     "buy (roughly double at IFP's value against ours), not "
+                     "the catch-up without them.")
+            st.divider()
             st.markdown("**China's takeoff**")
             tk_follow = st.slider(
                 "How closely China's takeoff tracks the US's", 0.0, 1.0,
@@ -17820,6 +17854,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         cc_rows, load_eci_frontier(mtime=_eci_mtime(), full_window=True))
     if fgm:
         a_partial, b_algo = fgm['a_partial'], fgm['b_time']
+    a_fit = a_partial
+    a_partial = _pc_compute_payoff(
+        a_fit, _cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1)) or 15.0,
+        _PC_PAYOFF_OPTIONS[payoff_label])
     # A longer Chinese run is a one-off *level* move, not a faster rate: it
     # puts ×(L/L_us) the compute into one model, worth a_partial per ×10 of
     # capability, and needs proportionally less cluster so the hardware is

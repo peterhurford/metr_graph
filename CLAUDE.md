@@ -1591,6 +1591,12 @@ grid end (+120d pad) instead of auto-fitting to content, and the pause panel tak
 `horizon=` (sim `horizon_yrs` from China's anchor, floored at 1yr) so its fan ends on the
 year the P(cross by …) column is quoted for.
 
+*What compute buys* (`pc_payoff`, under *Advanced*) sets the catch-up's ECI per 10×
+training compute (`_pc_compute_payoff`): our frontier-grade fit (~6.3), IFP's 10.8 months
+of US progress (~14), or their mean, the default. Channels are rescaled to China's observed
+slope, so it moves what the chip levers buy, not the no-lever crossing
+(`test_compute_payoff_default_is_the_mean_of_ours_and_ifps`).
+
 Guarded by `TestPacing` (unit) and `TestPacingTab` (integration).
 
 ### Why the test suite is fast (and how to not un-fast it)
