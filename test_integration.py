@@ -1973,6 +1973,20 @@ class TestPacingTab:
         stacked = _slowed(at, "import and servicing bans")
         assert abs(stacked - round(100 * (1 - 0.5 * (1 - both / 100)))) <= 1
 
+    def test_compute_mix_shows_what_the_chip_levers_remove(self):
+        at = self._app()
+        assert "##### China's compute by source" in [str(m.value)
+                                                     for m in at.markdown]
+
+        def _pct(at):
+            caps = " ".join(str(c.value) for c in at.caption)
+            m = re.search(r"with no levers \(([+-]\d+)%\)", caps)
+            return int(m.group(1))
+
+        assert _pct(at) == 0
+        at.checkbox(key="pc_stop_legal").check().run()
+        assert _pct(at) < 0
+
     def test_smuggling_and_legal_sales_levers_stack_on_the_slowdown(self):
         """Cutting smuggling or stopping legal sales slows China's domestic
         compute growth, each named in the settings hover, and the two
@@ -2182,7 +2196,10 @@ class TestPacingTab:
         def _ends(at):
             out = []
             for el in at.get("plotly_chart"):
-                rng = json.loads(el.proto.spec)["layout"]["xaxis"]["range"]
+                xaxis = json.loads(el.proto.spec)["layout"]["xaxis"]
+                if xaxis.get("type") == "category":
+                    continue   # the compute mix: whole years, to 2030 at most
+                rng = xaxis["range"]
                 out.append(int(str(rng[1])[:4]))
             return out
 

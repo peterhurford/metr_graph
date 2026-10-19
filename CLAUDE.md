@@ -1570,7 +1570,9 @@ installing through the pause and the DUV/domestic levers slowing China's. Dashed
 last table column give the same date with no compute levers. The table (`Compares` column)
 gives one row per comparison, each cell both values then the ratio, columns dated by the
 pacing start and the crossing card's date; no caption sits under it. Capacity is not the China
-tab's ~50× *actual-run* gap (`test_compute_ratios_show_what_the_compute_levers_cost_china`).
+tab's ~50× *actual-run* gap (`test_compute_ratios_show_what_the_compute_levers_cost_china`). Under it, `_pc_render_compute_mix()` stacks China's installed compute by source
+(the China tab's mix) under these levers, `_cn_src_with_policy`, against the no-lever
+total (`test_compute_mix_shows_what_the_chip_levers_remove`).
 Note for tests: this table renders *after* the race table, so address
 the race table by its columns (`TestPacingTab._entities`), never by position.
 China

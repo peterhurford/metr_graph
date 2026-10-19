@@ -4188,6 +4188,7 @@ class TestChinaComputeSources:
         opts = vp._PC_DIST_CUT_OPTIONS
         assert [k(c) for c in opts] == sorted((k(c) for c in opts),
                                               reverse=True)
+        assert vp._pc_dist_cut_label(99) == "99% \u00b7 keeps 50% (30\u201360%)"
 
     def test_channel_cut_grows_with_the_cut_and_vanishes_without_one(self):
         """Stopping a channel removes a share of China's in-China compute
@@ -4202,6 +4203,27 @@ class TestChinaComputeSources:
         legal = cut(s, e, {"legal": 1.0})
         both = cut(s, e, {"smuggled": 0.5, "legal": 1.0})
         assert both > max(half, legal)
+
+    def test_policy_mix_only_removes_and_matches_baseline_without_levers(self):
+        today, start = datetime(2026, 10, 19), datetime(2029, 1, 1)
+        d = self._data()
+        base = vp._cn_src_with_policy(today, start=start, data=d)
+        proj = vp._cn_src_projection(d)
+        for p, rows in {**d["stock"], **proj["stock"]}.items():
+            for k, r in rows.items():
+                assert base["stock"][p][k][0] == pytest.approx(r[0])
+        pol = vp._cn_src_with_policy(today, start=start, smug_cut=0.5,
+                                     stop_legal=True, remote_cut=today,
+                                     dom_cut=0.4, data=d)
+        for p in base["stock"]:
+            for k in base["stock"][p]:
+                assert pol["stock"][p][k][0] <= base["stock"][p][k][0] + 1e-6
+        # Nothing changes before the pacing date but remote access, lost
+        # from its own cut date; legal sales stop after it.
+        assert pol["stock"]["2028"]["legal"] == base["stock"]["2028"]["legal"]
+        assert pol["stock"]["2026"]["remote"][0] == 0.0
+        assert (pol["flow"]["2030"]["legal"][0] == 0.0
+                < base["flow"]["2030"]["legal"][0])
 
     def test_slower_domestic_growth_shrinks_only_domestic(self):
         d = self._data()

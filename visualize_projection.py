@@ -10674,6 +10674,54 @@ def _cn_src_channel_cut(start, end, cuts, data=None):
     return float(1.0 - np.log((s1 - removed) / s0) / np.log(s1 / s0))
 
 
+def _cn_src_with_policy(today, *, start, smug_cut=0.0, stop_legal=False,
+                        remote_cut=None, dom_cut=0.0, data=None):
+    """China's compute mix by year under the Pacing tab's chip levers.
+
+    From `start`: legal sales stop and smuggling falls by `smug_cut` (0-1),
+    each year prorated by the share of it after `start`. From `remote_cut`
+    (a date, or None): no new remote access, and the remote stock is lost.
+    Domestic output's growth since today's year is slowed by `dom_cut`
+    (0-1, the slider and DUVi cuts compounded): a year's flow becomes
+    flow x (flow / today's-year flow)^-dom_cut. Stocks are the baseline's
+    less the flows removed. Same format as `load_china_compute_sources`.
+    """
+    data = data or load_china_compute_sources(_cn_src_mtime())
+    proj = _cn_src_projection(data)
+    flow = {**data["flow"], **proj["flow"]}
+    stock = {**data["stock"], **proj["stock"]}
+    y_now = str(today.year)
+    d0 = flow.get(y_now, {}).get("domestic", (0.0,))[0]
+
+    def _after(d, p):
+        if d is None:
+            return 0.0
+        y0, y1 = datetime(int(p), 1, 1), datetime(int(p) + 1, 1, 1)
+        return min(max((y1 - d) / (y1 - y0), 0.0), 1.0)
+
+    out_f, out_s, removed = {}, {}, {k: 0.0 for k, *_ in _CN_SOURCES}
+    for p, rows in flow.items():
+        mult = {"legal": 1.0 - (_after(start, p) if stop_legal else 0.0),
+                "smuggled": 1.0 - smug_cut * _after(start, p),
+                "remote": 1.0 - _after(remote_cut, p),
+                "domestic": 1.0}
+        v = rows["domestic"][0]
+        if dom_cut and int(p) > today.year and d0 > 0 and v > 0:
+            mult["domestic"] = (v / d0) ** -dom_cut
+        out_f[p] = {k: (r[0] * mult[k], r[1] * mult[k], r[2] * mult[k], r[3])
+                    for k, r in rows.items()}
+        for k, r in rows.items():
+            removed[k] += r[0] - out_f[p][k][0]
+        lost = (remote_cut is not None
+                and remote_cut < datetime(int(p) + 1, 1, 1))
+        out_s[p] = {k: ((0.0, 0.0, 0.0, r[3]) if k == "remote" and lost
+                        else (max(r[0] - removed[k], 0.0),
+                              max(r[1] - removed[k], 0.0),
+                              max(r[2] - removed[k], 0.0), r[3]))
+                    for k, r in stock[p].items()}
+    return {"flow": out_f, "stock": out_s}
+
+
 def _cn_smuggled_share(rows, in_china_only=True):
     """Smuggled share of a period's total, over the in-China sources or all."""
     keys = _CN_SRC_IN_CHINA if in_china_only else tuple(rows)
@@ -15467,14 +15515,24 @@ _PC_DOM_SLOW_MAX = 90         # percent: hardest slowdown of China's own buildou
 # 90% cut keeps ~75% of the channel and only a total cut stops it.
 _PC_DIST_CUT_OPTIONS = [50, 90, 95, 99, 100]
 _PC_DIST_PER_OOM = 0.25
+_PC_DIST_PER_OOM_RANGE = (0.20, 0.35)
 
 
-def _pc_dist_keep(cut_pct):
+def _pc_dist_keep(cut_pct, per_oom=_PC_DIST_PER_OOM):
     """Share of the distillation channel left when `cut_pct`% of the
     harvested data is stopped."""
     if cut_pct >= 100:
         return 0.0
-    return max(0.0, 1.0 - _PC_DIST_PER_OOM * float(np.log10(100.0 / (100.0 - cut_pct))))
+    return max(0.0, 1.0 - per_oom * float(np.log10(100.0 / (100.0 - cut_pct))))
+
+
+def _pc_dist_cut_label(cut_pct):
+    """'99% · keeps 50% (30–60%)': the kept share over IFP's range."""
+    if cut_pct >= 100:
+        return f"{cut_pct}% \u00b7 keeps 0%"
+    lo, hi = (_pc_dist_keep(cut_pct, r) for r in _PC_DIST_PER_OOM_RANGE[::-1])
+    return (f"{cut_pct}% \u00b7 keeps {_pc_dist_keep(cut_pct):.0%} "
+            f"({lo * 100:.0f}\u2013{hi:.0%})")
 
 # The pause is a date the user names, in months from today — an integer, so a
 # bookmarked URL can never carry a label that has gone stale (as the scenario
@@ -16660,6 +16718,66 @@ def _pc_wc_ratio(years, dom_keep=1.0):
     return (lev[us] / lev[cn]) * (g[us] ** yrs) / (g[cn] ** (yrs * dom_keep))
 
 
+def _pc_render_compute_mix(ci):
+    """China's installed compute by source under these levers, 2025-2030,
+    with the no-lever total for comparison (`_cn_src_with_policy`)."""
+    m = ci.get('mix')
+    if not m:
+        return
+    today = ci['today']
+    base = _cn_src_with_policy(today, start=m['start'])
+    pol = _cn_src_with_policy(today, **m)
+    # From last year to *Project through*, or the mix's last year if sooner.
+    years = [p for p in pol["stock"]
+             if today.year - 1 <= int(p) <= ci['horizon'].year]
+    if not years:
+        return
+    fig = go.Figure()
+    for key, label, color in _CN_SOURCES:
+        vals = [pol["stock"][p][key][0] / 1e6 for p in years]
+        tots = [sum(r[0] for r in pol["stock"][p].values()) for p in years]
+        fig.add_trace(go.Bar(
+            x=years, y=vals, name=label,
+            marker=dict(color=color, line=dict(color='white', width=1)),
+            customdata=[f"{v:,.2f}M H100e ({v * 1e6 / t:.0%} of China's)"
+                        if t else "0" for v, t in zip(vals, tots)],
+            hovertemplate="End-%{x}: %{customdata}<extra>" + label
+                          + "</extra>"))
+    b_tot = [sum(r[0] for r in base["stock"][p].values()) / 1e6
+             for p in years]
+    fig.add_trace(go.Scatter(
+        x=years, y=b_tot, name="Total with no levers", mode='markers+lines',
+        line=dict(color='#555555', width=2, dash='dash'),
+        marker=dict(size=8, symbol='line-ew-open', color='#555555'),
+        hovertemplate="End-%{x}: %{y:,.1f}M H100e with no levers"
+                      "<extra></extra>"))
+    fig.update_layout(
+        barmode='stack', height=360, plot_bgcolor='white',
+        paper_bgcolor='white', font=dict(color='#222222'),
+        margin=dict(l=60, r=20, t=10, b=40),
+        legend=dict(orientation='h', y=-0.15, font=dict(size=11)),
+        yaxis=dict(title_text="Installed, M H100e",
+                   gridcolor='rgba(0,0,0,0.12)'),
+        xaxis=dict(type='category'))
+    st.markdown("##### China's compute by source")
+    st.plotly_chart(fig, width="stretch")
+    end = years[-1]
+    p_tot = sum(r[0] for r in pol["stock"][end].values())
+    b_end = b_tot[-1] * 1e6
+    _fn_caption(
+        f"By end-{end} China has ~{p_tot / 1e6:.1f}M H100e under these "
+        f"settings against ~{b_end / 1e6:.1f}M with no levers "
+        f"({p_tot / b_end - 1:+.0%}).",
+        ("these settings",
+         "Chips China can use, from the China tab's compute mix "
+         "(Epoch to 2025, IFP for 2026\u201327, our projection after). "
+         "Legal sales stop and smuggling falls from the pacing date; remote "
+         "access stops, and its stock is lost, from its cut date; the "
+         "domestic-slowdown slider and DUVi bans slow domestic output's "
+         "growth. Installed chips, not the largest single run the catch-up "
+         "above reads."))
+
+
 def _pc_render_compute_ratios(ci, span):
     """How far ahead the US is in compute, today to the crossing.
 
@@ -17271,6 +17389,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                     *([("these settings", " ".join(notes))] if notes else []))
     if compute_info:
         _pc_render_compute_ratios(compute_info, span)
+        _pc_render_compute_mix(compute_info)
 
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
@@ -17367,11 +17486,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             "Share of harvested data stopped", options=_PC_DIST_CUT_OPTIONS,
             value=_PC_DEFAULTS["pc_dist_cut"], key="pc_dist_cut",
             disabled=not stop_dist,
-            format_func=lambda c: f"{c}% \u00b7 keeps {_pc_dist_keep(c):.0%}",
+            format_func=_pc_dist_cut_label,
             help="Distilled capability falls about "
                  f"{_PC_DIST_PER_OOM:.0%} per 10\u00d7 less harvested data "
-                 f"([IFP]({_CN_SRC_SOURCE_IFP}), 20\u201335%), so a 90% cut "
-                 "keeps ~75% of the channel and only a total cut stops it. "
+                 f"([IFP]({_CN_SRC_SOURCE_IFP}), 20\u201335%, the range in "
+                 "brackets), so a 90% cut keeps ~75% of the channel and only "
+                 "a total cut stops it. "
                  "Anthropic reports its defences cut harvested data 90\u201399%; "
                  "IFP's antitrust safe harbour aims at 95%. Needs the checkbox "
                  "above.")
@@ -18510,7 +18630,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         'base_cn_use': caps.get(_DC_CTY_CN_ACCESS),
         'a_partial': a_partial,
         'levers': bool(stop_remote or duv_ban or duv_service
-                       or dom_slow_user),
+                       or dom_slow_user or cut_smuggling or stop_legal),
+        'mix': dict(start=pause_d, smug_cut=cut_smuggling / 100.0,
+                    stop_legal=bool(stop_legal),
+                    remote_cut=d_remote if stop_remote else None,
+                    dom_cut=1.0 - (1.0 - dom_slow_user / 100.0)
+                    * (1.0 - duv_cut)),
         'now': caps_now or {},
         'today': today, 'pause_d': pause_d, 'use_dom': _use_dom,
         'horizon': horizon if horizon is not None else _PC_HORIZON,
