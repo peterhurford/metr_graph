@@ -1264,7 +1264,9 @@ is its consumer. Load-bearing:
 3. **The end-year gap card's hover gives the fit-window range** (`_cc_gap_end_range` over
    `_CC_CALIB_SENS_STARTS`): China's slope swings on DeepSeek-R1's Jan 2025 jump.
 4. **One channel split, shared.** `_cc_cn_channels` splits China's observed slope into
-   compute, innovation (residual), diffusion and distillation; the China tab's breakdown
+   compute (at China's compute growth over the window, `_CC_CN_HIST_COMPUTE`, ×2.12, above
+   the forward band's ×1.68 mid, so China decelerates; `compute_fwd` is the forward term),
+   innovation (residual), diffusion and distillation; the China tab's breakdown
    chart and scenario chart and the Pacing sim's bands all read it, so the tabs size
    distillation alike (`TestCcCnChannels`).
 5. **Three-channel algorithmic engine.** `_cc_cn_crossing_sim` splits the measured

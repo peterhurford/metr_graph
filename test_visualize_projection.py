@@ -1935,8 +1935,12 @@ class TestCcCnChannels:
             inno_lo=ch['inno'][0], inno_hi=ch['inno'][1],
             pure_lo=ch['pure'][0], pure_hi=ch['pure'][1],
             pace_lo=1.0, pace_hi=1.0, horizon_yrs=1.0, n=4000)
+        # The sim starts China at its observed slope less the compute
+        # slowdown: forward growth (the band) under the window's.
         first_month = (traj[:, 1] - 150.0).mean() / grid[1]
-        assert first_month == pytest.approx(ch['obs'], abs=0.3)
+        assert ch['compute_fwd'] < ch['compute']
+        assert first_month == pytest.approx(
+            ch['obs'] - ch['compute'] + ch['compute_fwd'], abs=0.3)
 
 
 class TestCcCrossingBacktest:

@@ -12471,17 +12471,21 @@ def _cc_pure_innovation_band(cc_rows, eci_all=None):
 
 
 
-def _cc_cn_channels(cc_rows, cn_fr, a_partial, g_lo=None, g_hi=None):
+def _cc_cn_channels(cc_rows, cn_fr, a_partial, g_lo=None, g_hi=None,
+                    g_hist=None):
     """China's observed frontier growth split into channels, ECI/yr.
 
     `obs` (the frontier slope since `_CC_CALIB_SINCE`) = `compute` (a_partial
-    x mid compute growth) + `diffusion` (no-external-teacher band mid minus
+    x `g_hist`, the compute growth China had over that window,
+    `_CC_CN_HIST_COMPUTE` by default) + `diffusion` (no-external-teacher band mid minus
     the pure-innovation band mid) + `distillation` (all-band iso-compute rate
     minus the top band's) + `innovation` (the residual). The China tab's
     breakdown and scenario chart and the Pacing tab's crossing sim all read
     these, so the tabs size distillation alike. `pure`, `inno` and `algo` are
     the sim's bands re-centred on them, keeping the source bands' widths.
-    None when a fit is unavailable.
+    `compute_fwd` is the same term at the forward band's mid (`g_lo`, `g_hi`):
+    below `compute` when China's compute growth is slowing. None when a fit
+    is unavailable.
     """
     g_lo = _CC_CN_COMPUTE_LO if g_lo is None else g_lo
     g_hi = _CC_CN_COMPUTE_HI if g_hi is None else g_hi
@@ -12494,12 +12498,13 @@ def _cc_cn_channels(cc_rows, cn_fr, a_partial, g_lo=None, g_hi=None):
     top = max(isoc['bands'], key=lambda b: b['center'])
     dist = max(isoc['eci_per_yr'] - top['slope'], 0.0)
     diff = max(0.5 * (inno[0] + inno[1]) - 0.5 * (pure[0] + pure[1]), 0.0)
-    comp = a_partial * 0.5 * (g_lo + g_hi)
+    comp = a_partial * (_CC_CN_HIST_COMPUTE if g_hist is None else g_hist)
     innov = max(obs - comp - diff - dist, 0.0)
     nodist, algo = innov + diff, innov + diff + dist
     hw_p, hw_i = 0.5 * (pure[1] - pure[0]), 0.5 * (inno[1] - inno[0])
     return {
-        'obs': obs, 'compute': comp, 'innovation': innov, 'diffusion': diff,
+        'obs': obs, 'compute': comp, 'compute_fwd': a_partial * 0.5 * (g_lo + g_hi),
+        'innovation': innov, 'diffusion': diff,
         'distillation': dist,
         'pure': (max(innov - hw_p, 0.0), min(innov + hw_p, nodist)),
         'inno': (max(nodist - hw_i, 0.0), nodist + hw_i),
@@ -12855,6 +12860,12 @@ _CC_GAP_WINDOWS = [
 # the live data; if a refresh breaks it, retarget these deliberately. It is
 # also mainland China's pace past the catalogued plans on the Data Centers and
 # Pacing tabs (_dc_cty_pace), so moving it moves those projections too.
+# China's largest-cluster compute growth over the calibration window (since
+# 2024), which the channel split credits to compute: the catalogue's
+# China-accessible fit at the Johor usable share (~x2.12/yr), matching its
+# domestic-only fit (~x2.08). The forward band below is slower, so China
+# decelerates. CHINA_COMPUTE_JUDGMENTS.md §8.
+_CC_CN_HIST_COMPUTE = float(np.log10(2.12))
 _CC_CN_COMPUTE_LO = 0.15   # ~1.4×/yr — export controls bite
 _CC_CN_COMPUTE_HI = 0.30   # ~2×/yr — China's recent disclosed pace holds
 
@@ -18169,14 +18180,16 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         comp_shadow = (a_partial * g_dom_hi,
                        (t_today, _regrow_end(t_today, dlvl_today, g_dom))
                        if dlvl_today.any() else None)
+        # Drawn whether or not the box is ticked, so ticking it leaves the
+        # other draws, and the pairing with an unticked run, unchanged.
+        _dom_draw = a_partial * _pc_tri(g_dom_lo, g_dom_hi, n_s)
         if stop_remote:
             if t_cut_r <= t_today:
                 # Bites now: the whole sim runs on the domestic band.
                 g_lo_eff, g_hi_eff = g_dom_lo, g_dom_hi
             else:
                 # Export-control band until the cut, domestic band after.
-                comp_slow = (t_cut_r,
-                             a_partial * _pc_tri(g_dom_lo, g_dom_hi, n_s))
+                comp_slow = (t_cut_r, _dom_draw)
             if dlvl_today.any():
                 # The setback is the gap at the cut date: today's gap,
                 # widened by how far the two paces diverge before it bites.
