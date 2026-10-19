@@ -2005,6 +2005,11 @@ class TestPacingTab:
         assert smug > 0
         assert "50% smuggling cut" in " ".join(str(c.value)
                                                for c in at.caption)
+        # Starting it later leaves China more of the channel.
+        late = at.select_slider(key="pc_smug_when").options[-1]
+        at.select_slider(key="pc_smug_when").set_value(late).run()
+        assert _slowed(at) < smug
+        at.select_slider(key="pc_smug_when").set_value("Now").run()
         at.checkbox(key="pc_stop_legal").check().run()
         _assert_no_error(at, "Pacing / legal sales stopped")
         assert _slowed(at) > smug

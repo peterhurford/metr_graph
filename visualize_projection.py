@@ -10674,12 +10674,14 @@ def _cn_src_channel_cut(start, end, cuts, data=None):
     return float(1.0 - np.log((s1 - removed) / s0) / np.log(s1 / s0))
 
 
-def _cn_src_with_policy(today, *, start, smug_cut=0.0, stop_legal=False,
-                        remote_cut=None, dom_cut=0.0, data=None):
+def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
+                        stop_legal=False, legal_start=None, remote_cut=None,
+                        dom_cut=0.0, data=None):
     """China's compute mix by year under the Pacing tab's chip levers.
 
-    From `start`: legal sales stop and smuggling falls by `smug_cut` (0-1),
-    each year prorated by the share of it after `start`. From `remote_cut`
+    Smuggling falls by `smug_cut` (0-1) from `smug_start` and legal sales
+    stop from `legal_start` (dates; None is today), each year prorated by
+    the share of it after its date. From `remote_cut`
     (a date, or None): no new remote access, and the remote stock is lost.
     Domestic output's growth since today's year is slowed by `dom_cut`
     (0-1, the slider and DUVi cuts compounded): a year's flow becomes
@@ -10701,8 +10703,9 @@ def _cn_src_with_policy(today, *, start, smug_cut=0.0, stop_legal=False,
 
     out_f, out_s, removed = {}, {}, {k: 0.0 for k, *_ in _CN_SOURCES}
     for p, rows in flow.items():
-        mult = {"legal": 1.0 - (_after(start, p) if stop_legal else 0.0),
-                "smuggled": 1.0 - smug_cut * _after(start, p),
+        mult = {"legal": 1.0 - (_after(legal_start or today, p)
+                                if stop_legal else 0.0),
+                "smuggled": 1.0 - smug_cut * _after(smug_start or today, p),
                 "remote": 1.0 - _after(remote_cut, p),
                 "domestic": 1.0}
         v = rows["domestic"][0]
@@ -10729,7 +10732,7 @@ def _cn_src_compute_ratio(today, origin, mix, power):
     keywords. The Pacing tab scales China's AI speed-up by it, with `power`
     the Takeoff model's parallelization exponent: AI research labour grows
     with compute to that power there."""
-    base = _cn_src_with_policy(today, start=mix["start"])
+    base = _cn_src_with_policy(today)
     pol = _cn_src_with_policy(today, **mix)
     xs, ys = [0.0], [0.0]
     for p in base["stock"]:
@@ -15529,7 +15532,8 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
                   "pc_cut_smuggling", "pc_stop_legal", "pc_dist_cut",
                   "pc_duv_service", "pc_duv_decay", "pc_duv_growth",
-                  "pc_dist_when", "pc_remote_when", "pc_cn_run",
+                  "pc_dist_when", "pc_remote_when", "pc_smug_when",
+                  "pc_legal_when", "pc_cn_run",
                   "pc_methods_pause", "pc_pace", "pc_tk_follow",
                   "pc_win_n"] + \
                  [f"pc_win{i}_{f}" for i in range(1, _PC_WIN_MAX + 1)
@@ -15604,6 +15608,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_duv_growth": _DUV_CN_OUTPUT_GROWTH,
                 "pc_dist_when": _PC_WHEN_NOW,
                 "pc_remote_when": _PC_WHEN_NOW,
+                "pc_smug_when": _PC_WHEN_NOW, "pc_legal_when": _PC_WHEN_NOW,
                 "pc_cn_run": 2, "pc_methods_pause": False,
                 "pc_tk_follow": 0.8,
                 "pc_win_n": 0,
@@ -16753,7 +16758,7 @@ def _pc_render_compute_mix(ci):
     if not m:
         return
     today = ci['today']
-    base = _cn_src_with_policy(today, start=m['start'])
+    base = _cn_src_with_policy(today)
     pol = _cn_src_with_policy(today, **m)
     # From last year to *Project through*, or the mix's last year if sooner.
     years = [p for p in pol["stock"]
@@ -16799,8 +16804,8 @@ def _pc_render_compute_mix(ci):
         ("these settings",
          "Chips China can use, from the China tab's compute mix "
          "(Epoch to 2025, IFP for 2026\u201327, our projection after). "
-         "Legal sales stop and smuggling falls from the pacing date; remote "
-         "access stops, and its stock is lost, from its cut date; the "
+         "Legal sales stop, smuggling falls and remote access stops (its "
+         "stock lost) from their cut-off dates; the "
          "domestic-slowdown slider and DUVi bans slow domestic output's "
          "growth. Installed chips, not the largest single run the catch-up "
          "above reads; China's AI speed-up scales with this total, to the "
@@ -17558,25 +17563,29 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "straight away, because it hits the machines in use rather "
                  "than a ceiling China has not reached yet.")
         _cut_end = horizon if horizon is not None else _PC_HORIZON
-        _legal_cut = _cn_src_channel_cut(pause_d, _cut_end, {"legal": 1.0})
+        # The cut-off dates sit under Advanced, below this help text, so
+        # read them a rerun early, as the DUVi growth rate is.
+        _legal_cut = _cn_src_channel_cut(
+            _pc_when_date(st.session_state.get("pc_legal_when"), today),
+            _cut_end, {"legal": 1.0})
         stop_legal = st.checkbox(
-            "Stop legal US chip sales to China from pacing start",
-            key="pc_stop_legal",
+            "Stop legal US chip sales to China", key="pc_stop_legal",
             help="No more H200 licences or RTX gaming and workstation cards, "
                  "IFP's [package]"
                  f"({_CN_SRC_SOURCE_IFP}): legal sales are ~25% of what China "
                  "adds at home in 2026 (China tab, *Where China's compute "
                  f"comes from*). **{_legal_cut:.0%}** less domestic compute "
-                 f"growth to {_cut_end.year}, on top of the slider below.")
+                 f"growth to {_cut_end.year}, on top of the slider below. "
+                 "From today unless dated later under *Advanced*.")
         cut_smuggling = st.slider(
-            "Cut smuggling to China from pacing start by", 0, 100,
+            "Cut smuggling to China by", 0, 100,
             value=_PC_DEFAULTS["pc_cut_smuggling"], step=5, format="%d%%",
             key="pc_cut_smuggling",
             help="Due diligence and enforcement against diversion; IFP models "
                  "its package as halving smuggling. Smuggled chips are ~20% "
                  "of what China adds at home in 2026\u201327. The cut comes "
                  "off China's domestic compute growth with the other supply "
-                 "levers.")
+                 "levers, from today unless dated later under *Advanced*.")
         methods_pause = st.checkbox(
             "US stops publishing methods from pacing start",
             key="pc_methods_pause",
@@ -17635,7 +17644,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             st.divider()
             st.markdown("**When the controls bite**")
             _opts = _pc_when_options(today)
-            for _k in ("pc_dist_when", "pc_remote_when"):
+            for _k in ("pc_dist_when", "pc_remote_when", "pc_smug_when",
+                       "pc_legal_when"):
                 if st.session_state.get(_k, _PC_WHEN_NOW) not in _opts:
                     st.session_state.pop(_k, None)
             dist_when = st.select_slider(
@@ -17653,7 +17663,19 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                      "this date, then takes the setback and continues at the "
                      "domestic pace — so a later cut costs more OOM to regrow. "
                      "Needs the checkbox above.")
-            st.caption("Both default to *Now*, which is what the checkboxes on "
+            smug_when = st.select_slider(
+                "Smuggling cut starts", options=_opts,
+                value=_PC_DEFAULTS["pc_smug_when"], key="pc_smug_when",
+                disabled=not cut_smuggling,
+                help="Due diligence and enforcement take time to stand up. "
+                     "Needs the smuggling slider above.")
+            legal_when = st.select_slider(
+                "Legal sales stop", options=_opts,
+                value=_PC_DEFAULTS["pc_legal_when"], key="pc_legal_when",
+                disabled=not stop_legal,
+                help="The date licences stop being granted. Needs the "
+                     "checkbox above.")
+            st.caption("All default to *Now*, which is what the levers on "
                        "their own mean. Moving a slider right buys China more "
                        "time on that channel before it closes.")
             st.divider()
@@ -17718,9 +17740,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     duv_cut = (_duv_policy_cut(today, _duv_end, ban_imports=duv_ban,
                                decay=(duv_decay / 100.0 if duv_service
                                       else 0.0), growth=duv_growth) or 0.0)
-    smug_cut = _cn_src_channel_cut(pause_d, _cut_end,
+    d_smug = _pc_when_date(smug_when, today)
+    d_legal = _pc_when_date(legal_when, today)
+    smug_cut = _cn_src_channel_cut(d_smug, _cut_end,
                                    {"smuggled": cut_smuggling / 100.0})
-    legal_cut = _legal_cut if stop_legal else 0.0
+    legal_cut = (_cn_src_channel_cut(d_legal, _cut_end, {"legal": 1.0})
+                 if stop_legal else 0.0)
     dom_slow_pct = int(round(100 * (1 - (1 - dom_slow_user / 100.0)
                                     * (1 - duv_cut) * (1 - smug_cut)
                                     * (1 - legal_cut))))
@@ -17979,8 +18004,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     us_anchor_cn = us_best[1] - us_rate * (us_best[0] - anchor_d).days / 365.25
     # The chip levers, as the compute-mix chart reads them; China's AI
     # speed-up runs on that compute, so it shrinks with it.
-    _mix = dict(start=pause_d, smug_cut=cut_smuggling / 100.0,
-                stop_legal=bool(stop_legal),
+    _mix = dict(smug_cut=cut_smuggling / 100.0, smug_start=d_smug,
+                stop_legal=bool(stop_legal), legal_start=d_legal,
                 remote_cut=d_remote if stop_remote else None,
                 dom_cut=1.0 - (1.0 - dom_slow_user / 100.0) * (1.0 - duv_cut))
     _sp_power = float(st.session_state.get("tk_parallelization",

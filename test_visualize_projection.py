@@ -4207,12 +4207,13 @@ class TestChinaComputeSources:
     def test_policy_mix_only_removes_and_matches_baseline_without_levers(self):
         today, start = datetime(2026, 10, 19), datetime(2029, 1, 1)
         d = self._data()
-        base = vp._cn_src_with_policy(today, start=start, data=d)
+        base = vp._cn_src_with_policy(today, data=d)
         proj = vp._cn_src_projection(d)
         for p, rows in {**d["stock"], **proj["stock"]}.items():
             for k, r in rows.items():
                 assert base["stock"][p][k][0] == pytest.approx(r[0])
-        pol = vp._cn_src_with_policy(today, start=start, smug_cut=0.5,
+        pol = vp._cn_src_with_policy(today, smug_start=start, smug_cut=0.5,
+                                     legal_start=start,
                                      stop_legal=True, remote_cut=today,
                                      dom_cut=0.4, data=d)
         for p in base["stock"]:
@@ -4227,11 +4228,10 @@ class TestChinaComputeSources:
 
     def test_compute_ratio_is_one_without_levers_and_scales_with_power(self):
         today = datetime(2026, 10, 19)
-        start = datetime(2029, 1, 1)
-        none = vp._cn_src_compute_ratio(today, today, dict(start=start), 0.5)
+        none = vp._cn_src_compute_ratio(today, today, {}, 0.5)
         assert none(0.0) == pytest.approx(1.0)
         assert none(3.0) == pytest.approx(1.0)
-        mix = dict(start=start, remote_cut=today, dom_cut=0.4)
+        mix = dict(remote_cut=today, dom_cut=0.4)
         half = vp._cn_src_compute_ratio(today, today, mix, 0.5)
         full = vp._cn_src_compute_ratio(today, today, mix, 1.0)
         assert half(0.0) == pytest.approx(1.0)
