@@ -17185,6 +17185,10 @@ def _pc_pace_windows(today):
     return out
 
 
+# The breakdown's leftover row: the gap the per-source medians don't cover.
+_PC_WHY_OTHER = "Other: spread across simulated runs"
+
+
 def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    cn_gain, cn_extra, cn_run_mo, us_run_mo, anchor_name,
                    anchor_d, anchor_eci, horizon_year, notes=(),
@@ -17263,15 +17267,18 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     def _fmt(v):
         return "\u2014" if v is None else f"{v:.1f}"
 
-    # Average rates: the gap over the span, shared out by each source's
-    # median post-pause ECI, so the rows add to the total exactly (medians of
-    # the parts don't add to the median of the whole).
+    # Average rates: each source's median post-pause ECI over the span. The
+    # total is the gap over the span; the medians of the parts fall short of
+    # the median of the whole, and that difference is its own row, so the
+    # rows still add up.
     ravg = (gap + us_up) / span if span > 0 else None
-    pos = sum(max(v, 0.0) for v in after.values())
-    share = {k: (max(v, 0.0) / pos if pos > 0 else 0.0) for k, v in after.items()}
-    rows, shown = [], False
+
+    def _avg(v):
+        return v / span if span > 0 else None
+
+    rows, shown, row_sum = [], False, 0.0
     for k, eci in sorted(after.items(), key=lambda kv: -kv[1]):
-        avg = ravg * share[k] if ravg is not None else None
+        avg = _avg(eci)
         if k == 'run':
             label, r = (f"Longer training run, {cn_run_mo} mo instead of "
                         f"{us_run_mo}"), (None, None)
@@ -17288,9 +17295,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                     r, avg = (None, None), None
                 else:
                     r = rates['compute']
-                    avg = (ravg * (share['compute_domestic']
-                                   + share['compute_abroad'])
-                           if ravg is not None else None)
+                    avg = _avg(after['compute_domestic']
+                               + after['compute_abroad'])
                     label += " (rate: all compute)"
                 shown = True
         start, mid, end = _fmt(r[0]), _fmt(avg), _fmt(r[1])
@@ -17332,6 +17338,11 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
             if start == "Stopped":
                 mid = "Stopped"
         rows.append({"Source": label, c0: start, c1: mid, c2: end})
+        row_sum += avg or 0.0
+    other = ravg - row_sum if ravg is not None else 0.0
+    if abs(other) >= 0.05:
+        rows.append({"Source": _PC_WHY_OTHER, c0: "", c1: _fmt(other),
+                     c2: ""})
     r0 = sum(r[0] for r in rates.values())
     r1 = sum(r[1] for r in rates.values())
     rows.append({"Source": "Total", c0: _fmt(r0), c1: _fmt(ravg),
@@ -17401,6 +17412,11 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
              .hide(axis="index"))
     tags = {v for row in rows for v in row.values()}
     legend = []
+    if abs(other) >= 0.05:
+        legend.append("<b>Other</b>: each source shows its own median over "
+                      "the simulated runs, and those medians add up to less "
+                      "than the median run closes, since the sources vary "
+                      "from run to run. This row is the difference.")
     if "Stopped" in tags:
         cut = [n for n, on in (("distillation", dist_stop_t is not None),
                                ("remote-access", remote_stop_t is not None))

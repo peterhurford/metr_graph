@@ -1770,7 +1770,8 @@ class TestPacingTab:
         rate = {}
         for _, r in why.iterrows():
             src = str(r["Source"]).split(",")[0]
-            if r["China ECI/yr at US pause"] != "\u2014" and src not in ("Total",) \
+            if r["China ECI/yr at US pause"] not in ("\u2014", "") \
+                    and src not in ("Total",) \
                     and not src.startswith(("Time", "Crossover")):
                 end = r["China ECI/yr at US/China cross"]
                 rate[src] = (float(r["China ECI/yr at US pause"]),
@@ -2030,7 +2031,8 @@ class TestPacingTab:
         _KEYS = {"domestic": "Compute, domestic", "abroad": "Compute, clusters abroad",
                  "innovation": "Innovation", "diffusion": "Diffusion",
                  "distillation": "Distillation", "run": "Longer training",
-                 "speedup": "AI speed-up", "total": "Total"}
+                 "speedup": "AI speed-up", "other": "Other:",
+                 "total": "Total"}
 
         def _rows(at):
             t = next(x.value for x in at.table if "Source" in x.value.columns)
@@ -2049,10 +2051,13 @@ class TestPacingTab:
                 "total"} <= set(base)
         parts = sum(v for k, v in base.items() if k != "total")
         assert parts == pytest.approx(base["total"], abs=0.15)  # rounding
+        # Each source reads its own average, so none sits above both its
+        # start and end rates; what they leave is the Other row.
+        assert "other" in base
         # Innovation and diffusion always close part of it; the compute
         # split's domestic row can be zero while its setback is regrown.
         assert base["innovation"] > 0 and base["diffusion"] > 0
-        assert all(v >= 0 for v in base.values())
+        assert all(v >= 0 for k, v in base.items() if k != "other")
 
         # A realistic data cut only shrinks the channel (~25% per 10x less
         # data); a total one stops it.

@@ -1559,8 +1559,9 @@ chart (actual points included) rides the same clock, x-axis titled by milestone.
 The crossing cards sit under the milestone table; the panel ends with `_pc_render_why()`, *Why this US-China gap?*: each source's ECI/yr at the pause,
 its average from the pause to the crossing, and at the crossing (`_pc_rate_at`), then a row
 turning each total into months to close the gap; the average's months are the actual
-catch-up (before the card's one-month release lag). Averages are the gap over the span,
-shared by each source's median post-pause ECI, so rows add to the total. Distillation reads
+catch-up (before the card's one-month release lag). Each source's average is its own median post-pause ECI over
+the span; the medians fall short of the median run's gap, and an *Other* row
+(`_PC_WHY_OTHER`) carries the difference so rows add to the total. Distillation reads
 "Blocked" at the crossing when withholding or the stop lever has dried it up. The compute
 split (`comp_shadow`, a domestic-only counterfactual) has no rate of its own, so the
 measured compute rate shows once, on the first compute row
