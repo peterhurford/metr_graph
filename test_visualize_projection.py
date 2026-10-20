@@ -1056,7 +1056,7 @@ class TestEciGap:
         assert gap[1] == pytest.approx([5, 11, 17], abs=0.1)
         assert gap[2] == pytest.approx([5, -1, -7], abs=0.1)
 
-    def test_rate_ci_defaults_to_the_slowest_and_fastest_year_on_record(self):
+    def test_rate_ci_defaults_to_the_slowest_and_fastest_year_on_record(self, monkeypatch):
         d = lambda y, m: datetime(y, m, 1)
         fr = [{"date": d(2025, 1), "eci_score": 100.0},
               {"date": d(2025, 7), "eci_score": 104.0},
@@ -1064,8 +1064,12 @@ class TestEciGap:
               {"date": d(2027, 1), "eci_score": 121.0}]
         # Read off the steps: Jan 25 -> Jan 26 +15; Jul 25 -> Jul 26 (still
         # at 115) +11; Jan 26 -> Jan 27 +6.
+        # Under six windows the record is too thin to bound the rate.
+        assert vp._eci_yearly_gain_range(fr) is None
+        monkeypatch.setattr(vp, "_ECI_MIN_GAIN_WINDOWS", 3)
         assert vp._eci_yearly_gain_range(fr) == (6.0, 15.0)
-        assert vp._eci_yearly_gain_range(fr[:2]) is None
+        monkeypatch.undo()
+        assert vp._eci_yearly_gain_range(vp._eci_entity_data("Mistral")[1]) is None
         lo, hi = vp._eci_yearly_gain_range(vp._eci_entity_data("China best")[1])
         assert lo < 14 < hi < 20  # under twice China's ~14/yr fit
 

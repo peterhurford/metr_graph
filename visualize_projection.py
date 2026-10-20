@@ -4132,22 +4132,25 @@ def _eci_tab_reset_keys(p):
         f"_{p}_seg_config",
     ]
 
+_ECI_MIN_GAIN_WINDOWS = 6
+
 _ECI_PPY_HELP = ("80% interval on the yearly gain. Default: the smallest and largest "
                  "ECI the frontier gained over any year it covers (half to twice "
-                 "the fit when fewer than two years are on record, or on a "
+                 "the fit when fewer than six year-long windows are on record, or on a "
                  "piecewise fit's last segment).")
 
 
 def _eci_yearly_gain_range(frontier):
     """The smallest and largest ECI gain over any year of `frontier`, one window
     from each frontier model on to a year before the last, read off the step
-    frontier: the linear rate CI's default. None under two windows."""
+    frontier: the linear rate CI's default. None under `_ECI_MIN_GAIN_WINDOWS`,
+    where a few overlapping years pin the band too tight."""
     pts = [(m['date'], m['eci_score']) for m in frontier]
     if len(pts) < 2:
         return None
     gains = [_ecg_frontier_score_at_date(pts, d + timedelta(days=365)) - sc
              for d, sc in pts if d + timedelta(days=365) <= pts[-1][0]]
-    if len(gains) < 2 or min(gains) <= 0 or min(gains) == max(gains):
+    if len(gains) < _ECI_MIN_GAIN_WINDOWS or min(gains) <= 0 or min(gains) == max(gains):
         return None
     return max(0.5, round(min(gains), 1)), round(max(gains), 1)
 
