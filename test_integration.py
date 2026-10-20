@@ -84,11 +84,11 @@ class TestNonDefaultProjectionBases:
     TestModeSwitchingBehavior."""
 
     @pytest.mark.parametrize("tab,kind,key,value", [
-        ("Epoch ECI", "radio", "eci_proj_basis", "Superexponential"),
+        ("ECI", "radio", "eci_proj_basis", "Superexponential"),
         # [US best, China best]: project China against the US trend.
-        ("Epoch ECI", "selectbox", "eci_entity_b", "China best"),
+        ("ECI", "selectbox", "eci_entity_b", "China best"),
         # A non-default primary entity with no comparison renders alone.
-        ("Epoch ECI", "selectbox", "eci_entity_a", "DeepSeek"),
+        ("ECI", "selectbox", "eci_entity_a", "DeepSeek"),
         ("Remote Labor Index", "radio", "rli_proj_basis",
          "Superexponential (logit)"),
         ("Employment", "radio", "emp_proj_basis", "Piecewise linear (logit)"),
@@ -106,6 +106,32 @@ class TestNonDefaultProjectionBases:
 # Mode switching: Linear vs Piecewise produce different widgets and output
 # ===========================================================================
 
+class TestEciTab:
+    """The ECI tab carries the old ECI Company Gap tab: a leaderboard, the
+    projection, then the subject's months behind the reference."""
+
+    def test_old_gap_links_land_on_the_merged_tab(self):
+        at = _fresh_app()
+        at.query_params["tab"] = "ecigap"
+        at.query_params["ecg_highlight"] = "OpenAI"
+        at.run()
+        _assert_no_error(at, "?tab=ecigap")
+        assert at.selectbox(key="eci_entity_a").value == "Frontier (any lab)"
+        assert at.selectbox(key="eci_entity_b").value == "OpenAI"
+        heads = [h.body for h in at.get("subheader")]
+        assert heads[:2] == ["Where each lab stands", "Projection"]
+        assert "OpenAI: months behind Frontier (any lab)" in heads
+
+    def test_compare_to_drives_the_months_behind_chart(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "ECI")
+        assert not [h for h in at.get("subheader") if "months behind" in h.body]
+        at.selectbox(key="eci_entity_b").set_value("China best").run()
+        _assert_no_error(at, "ECI / China best")
+        assert "China best: months behind US best" in [h.body for h in at.get("subheader")]
+
+
 class TestModeSwitchingBehavior:
     """Verify that switching projection basis actually changes the UI —
     not just that it doesn't crash."""
@@ -113,7 +139,7 @@ class TestModeSwitchingBehavior:
     @pytest.mark.parametrize("tab,basis_key,seg_key,piecewise,linear", [
         (None, "metr_proj_basis", "piecewise_n_seg",
          "Piecewise linear", "Linear"),
-        ("Epoch ECI", "eci_proj_basis", "eci_piecewise_n_seg",
+        ("ECI", "eci_proj_basis", "eci_piecewise_n_seg",
          "Piecewise linear", "Linear"),
         ("Remote Labor Index", "rli_proj_basis", "rli_piecewise_n_seg",
          "Piecewise linear (logit)", "Linear (logit)"),
@@ -205,7 +231,7 @@ class TestDefaultValues:
         """ECI linear PPY CI defaults + toggles."""
         at = _fresh_app()
         at.run()
-        _switch_tab(at, "Epoch ECI")
+        _switch_tab(at, "ECI")
         # ECI default basis is "Linear", so no segments radio
         ppy_lo = at.number_input(key="eci_custom_ppy_lo").value
         ppy_hi = at.number_input(key="eci_custom_ppy_hi").value
@@ -257,7 +283,7 @@ class TestWidgetPropagation:
         last segment."""
         at = _fresh_app()
         at.run()
-        _switch_tab(at, "Epoch ECI")
+        _switch_tab(at, "ECI")
         ci_1seg = (at.number_input(key="eci_custom_ppy_lo").value,
                    at.number_input(key="eci_custom_ppy_hi").value)
         at.radio(key="eci_proj_basis").set_value("Piecewise linear").run()
@@ -341,7 +367,7 @@ class TestReset:
         """ECI linear: reset restores CI and toggles."""
         at = _fresh_app()
         at.run()
-        _switch_tab(at, "Epoch ECI")
+        _switch_tab(at, "ECI")
         ppy_lo_default = at.number_input(key="eci_custom_ppy_lo").value
         ppy_hi_default = at.number_input(key="eci_custom_ppy_hi").value
         # Modify
@@ -2563,7 +2589,7 @@ class TestTodayForwardMode:
     projection charts open at today with relative hover dates, and the RSI
     tab's diagnostic charts are left alone."""
 
-    TABS = ["METR Horizon", "Epoch ECI", "Remote Labor Index", "Takeoff",
+    TABS = ["METR Horizon", "ECI", "Remote Labor Index", "Takeoff",
             "Revenue", "Pacing"]
     _DATE = re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) "
                        r"(\d{1,2}, )?\d{4}\b|\b\d{4}-\d{2}-\d{2}\b")

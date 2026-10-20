@@ -45,7 +45,7 @@ No build system, no CI/CD, no package manager beyond requirements.txt (`streamli
 
 ## Architecture
 
-Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `ecigap`, `rli`, `takeoff` (`rsi`, the merged RSI tab, is an alias for it),  `thresholds`, `revenue`, `datacenters`, `china` (`computecap`, its old name, is an alias), `pacing` (`pausing`, its old name, is an alias), `ukcyber`, `employment`.
+Eleven-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci` (`ecigap`, the merged ECI Company Gap tab, is an alias for it), `rli`, `takeoff` (`rsi`, the merged RSI tab, is an alias for it),  `thresholds`, `revenue`, `datacenters`, `china` (`computecap`, its old name, is an alias), `pacing` (`pausing`, its old name, is an alias), `ukcyber`, `employment`.
 
 ### Takeoff scenario explorer
 
@@ -344,13 +344,12 @@ has no main-column headings, so it has no section to link to.
 | Tab | Function | Data Source | Metric |
 |---|---|---|---|
 | METR Horizon | `render_metr()` | `benchmark_results_1_1.yaml` → `load_frontier()` | log₂(minutes) |
-| Epoch ECI | `render_eci()` | `epoch_capabilities_index.csv` → `load_eci_frontier()` | linear score |
+| ECI | `render_eci()` | `epoch_capabilities_index.csv` → `load_eci_frontier()` | linear score: *Where each lab stands* (`_render_eci_leaderboard`), the projection, then *months behind* (`_render_eci_gap_history`), all three driven by *Entity* (the reference) and *Compare to* (the subject). The gap views read each entity's full-window frontier (`_eci_gap_frontier`); *Frontier (any lab)* (`_ECI_FRONTIER_LABEL`) as *Entity* reproduces the old Company Gap tab |
 | Remote Labor Index | `render_rli()` | `_RLI_RAW` → `load_rli_data()` | logit-transformed score |
 | Takeoff, evidence half (was the RSI tab) | `render_rsi(end_year)` | `_RSI_RAW` → `load_rsi_data()`; `anthropic_rd_automation.csv` → `load_rsi_automation()`; `_RSI_SURVEY`; `_RSI_CODE_RAW` → `load_rsi_code()`; `_RSI_DIR_RAW` → `load_rsi_direction()`; `openai_experiment_velocity.csv` → `load_rsi_experiments()` | CoBench score % (logit-projected), AL2+/AL3+/AL4+ shares of R&D tasks % (logit-projected) plus AL5 shifted off their lag ladder, all on one chart, staff speedup ×, merged code per contributor ×, OpenAI experiments per experimenter ×, next-step win rate % |
 | UK Cyber | `render_ukcyber()` | `aisi_cyber_narrow.csv` → `load_ukcyber()`; `aisi_cyber_tlo.csv` → `load_ukcyber_tlo()` | success rate % + open-weight lag in months; plus a TLO cyber-range cross-check in steps (`_render_ukcyber_tlo()`) and a callout for models only the range has measured (`_render_ukcyber_newest_open()`) |
 | Revenue | `render_revenue()` | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE`; `_CN_REVENUE` | ARR in billions; optional summed line (`rev_combined`, off by default) via `_rev_combined_series()`; then a data-only Chinese-lab chart (`_render_rev_china()`: MiniMax, Zhipu API, Alibaba MaaS, Moonshot, DeepSeek), run rates only, each point classed company-stated or press-reported (`TestRevenueChina`); closes on US vs China (`_render_rev_us_china()`): each side summed by `_rev_sum_series` (China from the date every lab reports, each lab held flat past its last report), with the ratio and the date the US labs stood at China's total, then the top-N vs top-N ratio over time (`_rev_ratio_path`), held flat and nowcast to today at each lab's last-interval growth (`_rev_value_nowcast`) (`TestRevenueUsChina`) |
 | Employment | `render_employment()` | RLI frontier + slider assumptions | unemployment % / jobs lost |
-| ECI Company Gap | `render_eci_gap()` | `epoch_capabilities_index.csv` (by org/country) | linear score gap |
 | Data Centers | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` | H100-equiv / power / cost; carries a US-vs-China by-country projection (`_dc_render_country_panel()`), the world-share charts (`_render_world_shares()`), and ends with *Compute ⟷ ECI* and *ECI Forecasts* (`_render_compute_eci()`, see below) |
 | China (slug `china`, was Compute/capabilities/diffusion) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | US vs China through the compute lens, then China's compute mix by source 2022–2030 (`_render_cc_compute_sources()`: projections faded, our own numbers hatched; `TestChinaComputeSources`), and ends with the CTS lithography ceiling (`_render_cc_duv_ceiling()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
@@ -582,7 +581,7 @@ purpose-built fabric is the criterion for the levels that claim a link exists.
 ### Today-forward mode
 
 A sidebar checkbox (`today_fwd`, URL-tracked, reset by no tab) at the foot of
-the sidebar on the six projection tabs (`_TODAY_FWD_TABS` — METR, Epoch ECI,
+the sidebar on the six projection tabs (`_TODAY_FWD_TABS` — METR, ECI,
 RLI, Takeoff, Revenue, Pacing), rendered by the dispatch after the tab's own
 controls. On, a chart opens at today with no history and every hover date
 reads relative to today (`_rel_date_label`: days to 30, then the two largest
@@ -904,25 +903,23 @@ Country and openness are perfectly confounded (no US open-weight, no Chinese clo
 
 `ukc_target_eta()` ("when do open-weight models reach `_UKC_TARGET`") = the frontier's interpolated crossing plus the min/max measured lag. `ukc_target_eta_direct()` fits the open-weight points themselves as a cross-check only — they sit close together in time, which makes that slope very sensitive, so it is never the headline.
 
-### ECI tabs — organization matching
+### ECI tab — organization matching
 
-The Epoch ECI tab and the ECI Company Gap tab read the same CSV and **must resolve
-organizations identically**, both by *substring* match on Epoch's `Organization` field: the
-ECI tab via `load_eci_frontier(orgs=…)` / `_ECI_ENTITY_SPECS`, the gap tab via
-`_ecg_org_display()` / `_ECG_ORG_MAP`. Don't make either an exact-key lookup: Epoch spells
-Google several different ways, so a map keyed on one spelling drops models and draws a
-different frontier point, and the tabs disagree without any visible error.
+Every per-company view resolves a company by *substring* match on Epoch's `Organization`
+field, through `load_eci_frontier(orgs=…)` / `_ECI_ENTITY_SPECS`. Don't make it an
+exact-key lookup: Epoch spells Google several different ways, so a map keyed on one spelling
+drops models and draws a different frontier point.
 
-**Adding a company is one row in `_ECI_COMPANIES`**, the single source of truth for both
-tabs. `_ECG_ORG_MAP`, `_ECG_COLORS`, `_ECG_COUNTRY`, `_ECI_ENTITY_SPECS` and
-`_ECI_ENTITY_SLUG` are derived from it at import — don't hand-write them.
-`_ECI_COUNTRY_ENTITIES` stays separate (the "best" aggregates are country filters, not
-companies) and must come first, since `_ECI_ENTITY_OPTIONS[0]` is the ECI tab's default.
+**Adding a company is one row in `_ECI_COMPANIES`.** `_ECG_COLORS`, `_ECG_COUNTRY`,
+`_ECI_ENTITY_SPECS` and `_ECI_ENTITY_SLUG` are derived from it at import — don't hand-write
+them. `_ECI_COUNTRY_ENTITIES` stays separate (the "best" aggregates and *Frontier (any lab)*
+are country filters, not companies) and must come first, since `_ECI_ENTITY_OPTIONS[0]` is
+the tab's default.
 
 Keep each company's `orgs` list minimal — substring matching makes longer variants redundant
 ("Google" already catches "Google DeepMind,Google"). Matching is unambiguous only while no
-`Organization` string names two companies; `TestEcgOrgMatching` asserts that against the live
-CSV, plus tab-to-tab set equality, the Google spellings, and slug round-tripping.
+`Organization` string names two companies; `TestEciOrgMatching` asserts that against the live
+CSV, plus the Google spellings and slug round-tripping.
 
 **One frontier point per release date.** `_best_per_date()` reduces a date's models to
 its best-scoring one *before* the running max, so a same-day pair puts only the flagship

@@ -698,7 +698,7 @@ class TestAllTracked:
     @pytest.mark.parametrize("key", [
         "metr_proj_basis", "milestones", "log_scale", "eci_proj_basis",
         "ecicn_proj_basis", "rli_proj_basis", "emp_proj_basis",
-        "rev_end_year", "ecg_highlight",
+        "rev_end_year",
     ])
     def test_includes_each_tabs_keys(self, key):
         keys, _ = vp._all_tracked()
@@ -719,7 +719,6 @@ class TestAllTracked:
         assert defaults["log_scale"] is True
         assert defaults["rli_proj_basis"] == "Linear (logit)"
         assert defaults["rev_end_year"] == 2026
-        assert defaults["ecg_highlight"] == "None"
 
 
 class _MockStreamlit:
@@ -970,48 +969,29 @@ class TestCcSegmentFits:
         assert fits == []
 
 
-class TestEcgOrgMatching:
-    """The ECI tab and the ECI Company Gap tab must resolve organizations
-    identically. They read the same CSV but used to disagree: the gap tab did an
-    exact dict lookup on Epoch's `Organization` string while the ECI tab matched
-    by substring. Epoch spells Google four ways, so the gap tab silently dropped
-    four Google models and drew a different 2025 frontier point for Google."""
+class TestEciOrgMatching:
+    """Every per-company view on the ECI tab resolves a company by substring
+    match on Epoch's `Organization`, which Epoch spells several ways."""
 
     def _eci_rows(self):
         return list(csv.DictReader(open(
             os.path.join(os.path.dirname(vp.__file__),
                          "epoch_capabilities_index.csv"))))
 
-    def test_both_tabs_resolve_identical_model_sets(self):
-        eci_all = vp.load_eci_frontier(mtime=vp._eci_mtime())
-        for label, spec in vp._ECI_ENTITY_SPECS.items():
-            if not spec.get("orgs"):
-                continue  # country entities, not org entities
-            tab = vp.load_eci_frontier(mtime=vp._eci_mtime(),
-                                       orgs=tuple(spec["orgs"]))
-            gap = [m for m in eci_all
-                   if vp._ecg_org_display(m["organization"]) == label]
-            assert {m["version"] for m in tab} == {m["version"] for m in gap}, (
-                f"{label}: ECI tab and gap tab disagree on which models belong")
-
     def test_all_google_spellings_resolve(self):
-        # The regression that motivated this class. Every spelling Epoch has
-        # emitted must land on "Google", not just the exact map key.
         for spelling in ("Google DeepMind", "Google", "Google DeepMind,Google",
                          "Google,Google DeepMind"):
-            assert vp._ecg_org_display(spelling) == "Google", spelling
+            hits = {n for n, c in vp._ECI_COMPANIES.items()
+                    if any(o.lower() in spelling.lower() for o in c["orgs"])}
+            assert hits == {"Google"}, spelling
 
-    def test_no_org_string_matches_two_display_names(self):
+    def test_no_org_string_matches_two_companies(self):
         # Substring matching is only safe while no Organization string contains
-        # two different mapped companies. Guard it against future Epoch pulls.
+        # two different companies. Guard it against future Epoch pulls.
         for org in {(r["Organization"] or "").strip() for r in self._eci_rows()}:
-            hits = {d for k, d in vp._ECG_ORG_MAP.items() if k.lower() in org.lower()}
+            hits = {n for n, c in vp._ECI_COMPANIES.items()
+                    if any(o.lower() in org.lower() for o in c["orgs"])}
             assert len(hits) <= 1, f"{org!r} matches multiple companies: {hits}"
-
-    def test_unmatched_org_returns_none(self):
-        assert vp._ecg_org_display("Some Unlisted Lab") is None
-        assert vp._ecg_org_display("") is None
-        assert vp._ecg_org_display(None) is None
 
     def test_registry_rows_are_well_formed(self):
         # Derivation guarantees every company reaches both tabs, so what is left
@@ -1039,6 +1019,29 @@ class TestEcgOrgMatching:
         # also catches a company slug colliding with a country's ("us", "china").
         for label, slug in vp._ECI_ENTITY_SLUG.items():
             assert vp._ECI_ENTITY_FOR_SLUG[slug] == label
+
+
+class TestEciGap:
+    """Months behind: a subject's frontier releases against the reference's
+    full-window frontier."""
+
+    def _fr(self, label):
+        return vp._eci_gap_frontier(label)
+
+    def test_the_frontier_never_trails_itself(self):
+        ref = self._fr(vp._ECI_FRONTIER_LABEL)
+        hist = vp._eci_gap_history(ref, ref)
+        assert all(p["gap_months"] < 1e-9 for p in hist)
+        assert vp._eci_gap_now(ref, hist, datetime.now())["level"]
+
+    def test_gaps_reach_back_past_the_projection_window(self):
+        # The projection's Feb-2024 cutoff would date Llama 3-70B against Claude
+        # 3 Opus (~1.6mo); against GPT-4 it trails by over a year.
+        ref = self._fr(vp._ECI_FRONTIER_LABEL)
+        hist = vp._eci_gap_history(ref, self._fr("Meta"))
+        [llama] = [p for p in hist if p["name"] == "Llama 3-70B"]
+        assert llama["gap_months"] > 12
+
 
 
 class TestCcForwardMatch:

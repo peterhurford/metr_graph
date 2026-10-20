@@ -502,7 +502,7 @@ def _bt_color_for(r):
 # both Pacing charts) — a diagnostic chart of past data has no "forward".
 _TODAY_FWD_KEY = "today_fwd"
 _TODAY_FWD_DEFAULTS = {_TODAY_FWD_KEY: False}
-_TODAY_FWD_TABS = ("METR Horizon", "Epoch ECI", "Remote Labor Index", "Takeoff",
+_TODAY_FWD_TABS = ("METR Horizon", "ECI", "Remote Labor Index", "Takeoff",
                    "Revenue", "Pacing")
 # The visible data must cover at least this share of the recorded y-range,
 # else the axis is refit to it: a chart whose y-range was sized to its
@@ -3222,13 +3222,15 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "Epoch ECI", "ECI Company Gap", "Remote Labor Index", "Takeoff", "Frontier Thresholds", "Revenue", "Data Centers", "China", "Pacing", "UK Cyber", "Employment"]
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "Epoch ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "ECI Company Gap": "ecigap", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing"}
+_TAB_OPTIONS = ["METR Horizon", "ECI", "Remote Labor Index", "Takeoff", "Frontier Thresholds", "Revenue", "Data Centers", "China", "Pacing", "UK Cyber", "Employment"]
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 # The RSI tab merged into Takeoff; its links still land there.
 _TAB_SLUG["rsi"] = _TAB_SLUG["takeoff"]
 # The China tab was Compute/capabilities/diffusion; old links still land.
 _TAB_SLUG["computecap"] = _TAB_SLUG["china"]
+# The ECI Company Gap tab merged into ECI; old links still land.
+_TAB_SLUG["ecigap"] = _TAB_SLUG["eci"]
 # The Pacing tab was Pausing; old links still land.
 _TAB_SLUG["pausing"] = _TAB_SLUG["pacing"]
 
@@ -3249,7 +3251,7 @@ else:
     st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
 
 # a/b (and legacy region) are ECI-only params; drop them on any other tab
-if active_tab != "Epoch ECI":
+if active_tab != "ECI":
     for _p in ("a", "b", "region"):
         if _p in st.query_params:
             del st.query_params[_p]
@@ -5011,15 +5013,11 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
 
 
-# ── Company registry: single source of truth for BOTH ECI tabs ──────────
+# ── Company registry: single source of truth for the ECI tab ────────────
 #
-# The Epoch ECI tab and the ECI Company Gap tab both need to know which of
-# Epoch's `Organization` strings belong to which company. That knowledge used to
-# live twice -- as `orgs` substring lists here and as an `_ECG_ORG_MAP` keyed the
-# other way round in the gap tab -- and the two drifted: the gap tab dropped four
-# Google models because Epoch spells Google four ways and its map was keyed only
-# on "Google DeepMind". Everything both tabs need is now derived from this one
-# table, so they cannot disagree by construction.
+# Which of Epoch's `Organization` strings belong to which company. Every
+# per-company view on the ECI tab (projection, leaderboard, months behind) reads
+# it through `load_eci_frontier(orgs=…)`, so they cannot disagree.
 #
 #   orgs    -- substrings matched case-insensitively against `Organization`,
 #              which handles Epoch's comma-joined multi-org spellings. Keep them
@@ -5027,14 +5025,14 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 #              ("Google" already catches "Google DeepMind,Google"). Adding a
 #              redundant variant is harmless but adds a thing to keep in sync.
 #   country -- key into _ECG_FLAG.
-#   color   -- gap-tab highlight colour.
+#   color   -- months-behind chart colour.
 #   slug    -- ?a= / ?b= deep-link slug on the ECI tab.
 #
 # Insertion order is the ECI tab's dropdown order and is load-bearing: the
 # country entities must come first so `US best` stays the index-0 default.
 #
 # Substring matching is only unambiguous while no `Organization` string contains
-# two different companies. `TestEcgOrgMatching` asserts that across every
+# two different companies. `TestEciOrgMatching` asserts that across every
 # distinct string in the CSV, so a future Epoch pull that breaks it fails loudly
 # rather than silently misattributing models.
 _ECI_COMPANIES = {
@@ -5058,6 +5056,8 @@ _ECI_COMPANIES = {
 _ECI_COUNTRY_ENTITIES = {
     "US best":    {"country": "United States of America", "slug": "us"},
     "China best": {"country": "China", "slug": "china"},
+    # No filter: every lab. As the reference it measures gaps to the frontier.
+    "Frontier (any lab)": {"country": None, "slug": "frontier"},
 }
 
 # Entities selectable in the two ECI comparison dropdowns. Each label maps to a
@@ -5068,6 +5068,7 @@ _ECI_ENTITY_SPECS = {
     **{n: {"orgs": c["orgs"]} for n, c in _ECI_COMPANIES.items()},
 }
 _ECI_ENTITY_OPTIONS = list(_ECI_ENTITY_SPECS.keys())
+_ECI_FRONTIER_LABEL = "Frontier (any lab)"
 _ECI_NONE_LABEL = "—"  # em-dash: "no comparison" for the second dropdown
 
 # Absolute milestone lines shown for the default US-best frontier.
@@ -5086,15 +5087,23 @@ _ECI_ENTITY_FOR_SLUG = {v: k for k, v in _ECI_ENTITY_SLUG.items()}
 
 def _eci_entity_short(label):
     """'US best' → 'US', so composed labels don't read 'US best best 148.3'."""
+    if label == _ECI_FRONTIER_LABEL:
+        return "Frontier"
     return label[:-len(" best")] if label.endswith(" best") else label
+
+
+def _eci_entity_models(label, full_window=False):
+    """Every model of a comparison entity, its frontier marked."""
+    spec = _ECI_ENTITY_SPECS[label]
+    return load_eci_frontier(
+        mtime=_eci_mtime(), country=spec.get("country"),
+        orgs=tuple(spec["orgs"]) if spec.get("orgs") else None,
+        full_window=full_window)
 
 
 def _eci_entity_data(label):
     """Return (all, frontier_all, frontier_names) for a comparison entity."""
-    spec = _ECI_ENTITY_SPECS[label]
-    all_ = load_eci_frontier(
-        mtime=_eci_mtime(), country=spec.get("country"),
-        orgs=tuple(spec["orgs"]) if spec.get("orgs") else None)
+    all_ = _eci_entity_models(label)
     fr = [m for m in all_ if m['is_frontier']]
     return all_, fr, [m['display_name'] for m in fr]
 
@@ -5112,6 +5121,13 @@ def render_eci():
     # Back-compat: the old ?region=china deep link maps to US benchmark / China.
     if _url_a is None and st.query_params.get("region", "").lower() == "china":
         _url_a, _url_b = "US best", "China best"
+    # Back-compat: the old ECI Company Gap tab measured against the frontier and
+    # picked its company with ?ecg_highlight=.
+    if _url_tab == "ecigap":
+        _url_a = _url_a or _ECI_FRONTIER_LABEL
+        _hl = st.query_params.get("ecg_highlight", "")
+        _url_b = _url_b or (_hl if _hl in _ECI_COMPANIES else None)
+    st.query_params.pop("ecg_highlight", None)
     _a_idx = _ECI_ENTITY_OPTIONS.index(_url_a) if _url_a in _ECI_ENTITY_OPTIONS else 0
     _b_idx = _b_opts.index(_url_b) if _url_b in _b_opts else 0
 
@@ -5132,6 +5148,13 @@ def render_eci():
         st.query_params["b"] = _ECI_ENTITY_SLUG[entity_b]
     st.query_params.pop("region", None)  # superseded by ?a= / ?b=
 
+    _render_eci_leaderboard(entity_a, entity_b)
+    st.subheader("Projection")
+    _render_eci_projection(entity_a, entity_b)
+    _render_eci_gap_history(entity_a, entity_b)
+
+
+def _render_eci_projection(entity_a, entity_b):
     # Short display names ("US best" → "US") for composed labels/titles.
     _a_name = _eci_entity_short(entity_a)
     _b_name = _eci_entity_short(entity_b)
@@ -9952,52 +9975,14 @@ def render_employment():
         ("projections, not forecasts", PROJ_DISCLAIMER.strip()))
 
 
-# ── ECI Company Gap ────────────────────────────────────────────────────
+# ── ECI: how far behind the reference entity ───────────────────────────
 
-# Organization substring -> gap-tab display name, inverted from _ECI_COMPANIES
-# so this tab and the Epoch ECI tab resolve companies from one table. Edit the
-# registry, not this. Consumed by _ecg_org_display() below.
-_ECG_ORG_MAP = {o: n for n, c in _ECI_COMPANIES.items() for o in c["orgs"]}
-
-
-def _ecg_org_display(org_raw):
-    """Map Epoch's raw `Organization` string to a gap-tab display name.
-
-    Substring match, longest key first, returning None when nothing matches.
-
-    This deliberately mirrors the substring semantics `load_eci_frontier(orgs=…)`
-    uses for the Epoch ECI tab. The two tabs previously disagreed because this
-    one did an exact dict lookup: Epoch spells Google four different ways
-    ("Google DeepMind", "Google", "Google DeepMind,Google", "Google,Google
-    DeepMind"), so an exact map keyed only on "Google DeepMind" silently dropped
-    four Google models and put a different point on Google's 2025 frontier
-    (Gemini 2.0 Pro Exp 135.43 on 2025-02-05, where the ECI tab correctly showed
-    Gemini 2.0 Flash Thinking Exp 136.00 on 2025-01-21). Matching by substring
-    keeps the two tabs consistent by construction, so a new spelling in a future
-    Epoch pull cannot desync them again. TestEcgOrgMatching guards this.
-
-    Longest-key-first keeps the result deterministic when one key is a substring
-    of another. The registry keeps `orgs` minimal so that rarely applies today,
-    but it costs nothing and removes a footgun from adding a variant later. A
-    census of every distinct Organization string in the CSV finds none matching
-    two *different* companies, so the match is unambiguous; TestEcgOrgMatching
-    re-checks that on each run against the live data.
-    """
-    o = (org_raw or "").lower()
-    for k in sorted(_ECG_ORG_MAP, key=len, reverse=True):
-        if k.lower() in o:
-            return _ECG_ORG_MAP[k]
-    return None
-
-
-# Both derived from _ECI_COMPANIES. (There was also an _ECG_DASH table of
-# per-company line styles; nothing in any render path ever read it -- the gap tab
-# styles one highlighted company at a time via _ECG_COLORS -- so it was removed
-# rather than carried as another table to keep in sync.)
 _ECG_COLORS = {n: c["color"] for n, c in _ECI_COMPANIES.items()}
 _ECG_COUNTRY = {n: c["country"] for n, c in _ECI_COMPANIES.items()}
 
 _ECG_FLAG = {"US": "\U0001f1fa\U0001f1f8", "CN": "\U0001f1e8\U0001f1f3", "FR": "\U0001f1eb\U0001f1f7"}
+
+_ECI_MONTH_S = 30.44 * 86400
 
 
 def _ecg_frontier_date_at_score(frontier_pts, target_score):
@@ -10041,297 +10026,179 @@ def _ecg_frontier_score_at_date(frontier_pts, target_date):
     return score
 
 
-def render_eci_gap():
-    # ── Build overall frontier from eci_all ──
-    all_models = sorted(eci_all, key=lambda m: m['date'])
-    overall_frontier = []  # (date, score) monotonically increasing
-    max_score = -float('inf')
-    for m in all_models:
-        if m['eci_score'] > max_score:
-            max_score = m['eci_score']
-            overall_frontier.append((m['date'], m['eci_score']))
-
-    # ── Build per-org frontiers ──
-    org_models = {}
-    for m in all_models:
-        org_raw = m.get('organization', '')
-        display = _ecg_org_display(org_raw)
-        if not display:
-            continue
-        org_models.setdefault(display, []).append(m)
-
-    org_frontiers = {}
-    for org, models in org_models.items():
-        best = -float('inf')
-        frontier_pts = []
-        for m in models:
-            if m['eci_score'] > best:
-                best = m['eci_score']
-                fdate = _ecg_frontier_date_at_score(overall_frontier, m['eci_score'])
-                if fdate is not None:
-                    gap_months = (m['date'] - fdate).total_seconds() / (30.44 * 86400)
-                else:
-                    gap_months = 0.0
-                frontier_score_at_release = _ecg_frontier_score_at_date(
-                    overall_frontier, m['date'])
-                frontier_pts.append({
-                    'date': m['date'],
-                    'score': m['eci_score'],
-                    'name': m.get('display_name', m.get('name', '')),
-                    'gap_months': max(0.0, gap_months),
-                    'frontier_score': frontier_score_at_release,
-                })
-        org_frontiers[org] = frontier_pts
-
-    # Current frontier score (used to determine who actually owns the frontier)
-    _current_frontier_score = overall_frontier[-1][1] if overall_frontier else None
-
-    # ── Gap formatting helper ──
-    def _fmt_gap(months, at_frontier=False):
-        """Format a gap. 'At frontier' is strict: the org owns the current frontier."""
-        if at_frontier:
-            return "At frontier"
-        if months < 0.5:
-            return "<1mo"
-        return f"{months:.0f}mo"
-
-    def _fmt_release_gap(months):
-        """Gap-at-release formatter. Models that set the frontier show 'At frontier'."""
-        if months < 0.1:
-            return "At frontier"
-        if months < 0.5:
-            return "<1mo"
-        return f"{months:.0f}mo"
-
-    # ── Compute current effective gap (staleness-adjusted) ──
-    _today = datetime.now()
-    org_current = {}
-    for org, pts in org_frontiers.items():
-        if not pts:
-            continue
-        latest = pts[-1]
-        # Strict "at frontier" = currently owns (or ties) the max frontier score
-        is_at_frontier = (
-            _current_frontier_score is not None
-            and latest['score'] >= _current_frontier_score
-        )
-        if is_at_frontier:
-            effective_gap = 0.0
-        else:
-            fdate = _ecg_frontier_date_at_score(overall_frontier, latest['score'])
-            if fdate is not None:
-                effective_gap = max(
-                    0.0, (_today - fdate).total_seconds() / (30.44 * 86400))
-            else:
-                effective_gap = 0.0
-        model_age_months = (_today - latest['date']).total_seconds() / (30.44 * 86400)
-        current_eci_gap = (_current_frontier_score - latest['score']) if _current_frontier_score is not None else 0.0
-        org_current[org] = {
-            'name': latest['name'],
-            'date': latest['date'],
-            'score': latest['score'],
-            'gap_at_release': latest['gap_months'],
-            'effective_gap': effective_gap,
-            'model_age_months': max(0.0, model_age_months),
-            'at_frontier': is_at_frontier,
-            'current_eci_gap': max(0.0, current_eci_gap),
-        }
-
-    # Sort orgs: current frontier holders first, then chasers by effective gap
-    _frontier_orgs = {o for o, info in org_current.items() if info['at_frontier']}
-    _chaser_orgs = [o for o in org_current if o not in _frontier_orgs]
-    _chaser_orgs.sort(key=lambda o: org_current[o]['effective_gap'])
-    all_orgs = sorted(_frontier_orgs) + _chaser_orgs
-
-    # ── Sidebar ──
-    with st.sidebar:
-        st.header("ECI Company Gap")
-        highlight_org = st.selectbox(
-            "Highlight company", ["None"] + all_orgs,
-            key="ecg_highlight")
-        if highlight_org == "None":
-            highlight_org = None
-
-    # ── Header ──
-    st.header("ECI Company Gap: Months Behind Frontier")
-    frontier_model = overall_frontier[-1] if overall_frontier else None
-    if frontier_model:
-        frontier_date, frontier_score = frontier_model
-        st.markdown(f"**Current frontier:** ECI **{frontier_score:.1f}** "
-                    f"(set {frontier_date.strftime('%b %d, %Y')})")
-
-    # ══════════════════════════════════════════════════════════════════════
-    # Section 1: Selected Company Gap Over Time (shown first, before table)
-    # ══════════════════════════════════════════════════════════════════════
-    if highlight_org and highlight_org in org_frontiers:
-        h_pts = org_frontiers[highlight_org]
-        h_flag = _ECG_FLAG.get(_ECG_COUNTRY.get(highlight_org, ""), "")
-        h_color = _ECG_COLORS.get(highlight_org, '#888888')
-        h_info = org_current[highlight_org]
-
-        st.subheader(f"{h_flag} {highlight_org}: Months Behind Frontier Over Time")
-        gap_release = h_info['gap_at_release']
-        gap_now = h_info['effective_gap']
-        eci_gap_now = h_info['current_eci_gap']
-        if h_info['at_frontier']:
-            gap_desc = "Currently **at frontier**."
-        elif gap_release < 0.5:
-            gap_desc = (
-                f"Was at frontier at release, now **{gap_now:.1f}mo behind** "
-                f"(frontier moved to {_current_frontier_score:.1f}, +{eci_gap_now:.1f} ECI).")
-        else:
-            gap_desc = (
-                f"Was **{gap_release:.1f}mo behind** at release, "
-                f"now **{gap_now:.1f}mo behind** "
-                f"(+{eci_gap_now:.1f} ECI from current frontier).")
-        st.markdown(
-            f"Best model: **{h_info['name']}** (ECI {h_info['score']:.1f}, "
-            f"{h_info['date'].strftime('%b %Y')}). {gap_desc}")
-
-        fig_h = go.Figure()
-
-        h_dates = [p['date'] for p in h_pts]
-        h_gaps = [p['gap_months'] for p in h_pts]
-        h_names = [p['name'] for p in h_pts]
-        h_hover = []
-        for p in h_pts:
-            fscore = p.get('frontier_score')
-            if fscore is not None:
-                eci_gap = fscore - p['score']
-                h_hover.append(
-                    f"{p['name']}<br>{p['date'].strftime('%b %Y')}<br>"
-                    f"Model ECI: {p['score']:.1f}<br>"
-                    f"Frontier ECI: {fscore:.1f}<br>"
-                    f"ECI gap: {eci_gap:+.1f}<br>"
-                    f"Time behind: {p['gap_months']:.1f}mo")
-            else:
-                h_hover.append(
-                    f"{p['name']}<br>{p['date'].strftime('%b %Y')}<br>"
-                    f"Model ECI: {p['score']:.1f}<br>"
-                    f"Time behind: {p['gap_months']:.1f}mo")
-
-        fig_h.add_trace(go.Scatter(
-            x=h_dates, y=h_gaps,
-            mode='lines+markers+text',
-            marker=dict(color=h_color, size=10, line=dict(color='white', width=1.5)),
-            line=dict(color=h_color, width=3),
-            text=h_names, textposition='top center',
-            textfont=dict(size=9, color=h_color),
-            hovertext=h_hover, hoverinfo='text',
-            showlegend=False,
-        ))
-
-        # Extend line to today whenever the org is not currently at frontier,
-        # OR its best model is stale enough that staleness is meaningful.
-        _show_today_marker = (not h_info['at_frontier']) or h_info['model_age_months'] > 2
-        if _show_today_marker:
-            fig_h.add_trace(go.Scatter(
-                x=[h_pts[-1]['date'], _today],
-                y=[h_gaps[-1], h_info['effective_gap']],
-                mode='lines',
-                line=dict(color=h_color, width=2, dash='dash'),
-                hoverinfo='skip', showlegend=False,
-            ))
-            _today_frontier = _ecg_frontier_score_at_date(overall_frontier, _today)
-            if _today_frontier is not None:
-                _today_eci_gap = _today_frontier - h_info['score']
-                _today_hover = (
-                    f"Today<br>"
-                    f"Model ECI: {h_info['score']:.1f}<br>"
-                    f"Frontier ECI: {_today_frontier:.1f}<br>"
-                    f"ECI gap: {_today_eci_gap:+.1f}<br>"
-                    f"Time behind: {h_info['effective_gap']:.1f}mo<br>"
-                    f"(no new model in {h_info['model_age_months']:.1f}mo)")
-            else:
-                _today_hover = (
-                    f"Today<br>Effective gap: {h_info['effective_gap']:.1f}mo<br>"
-                    f"(no new model in {h_info['model_age_months']:.1f}mo)")
-            _today_label = (f"Today: {h_info['effective_gap']:.1f}mo"
-                            if h_info['effective_gap'] >= 0.05
-                            else "Today: 0mo")
-            fig_h.add_trace(go.Scatter(
-                x=[_today], y=[h_info['effective_gap']],
-                mode='markers+text',
-                marker=dict(color=h_color, size=12, symbol='diamond',
-                            line=dict(color='white', width=1.5)),
-                text=[_today_label],
-                textposition='top center',
-                textfont=dict(size=10, color=h_color),
-                hovertext=_today_hover,
-                hoverinfo='text', showlegend=False,
-            ))
-
-        fig_h.add_hline(y=0, line=dict(color='black', width=1.5, dash='dot'))
-
-        _y_max = max(h_gaps + [1.0])
-        if _show_today_marker:
-            _y_max = max(_y_max, h_info['effective_gap'] + 1)
-
-        fig_h.update_layout(
-            height=400,
-            plot_bgcolor='white', paper_bgcolor='white',
-            margin=dict(l=50, r=50, t=10, b=40),
-            font=dict(color='#222222'),
-            xaxis=dict(gridcolor='rgba(0,0,0,0.15)',
-                       tickfont=dict(color='#222222'), title_font=dict(color='#222222')),
-            yaxis=dict(title_text="Months behind frontier",
-                       gridcolor='rgba(0,0,0,0.15)',
-                       range=[-0.5, _y_max * 1.15],
-                       tickfont=dict(color='#222222'), title_font=dict(color='#222222')),
-        )
-        st.plotly_chart(fig_h, width="stretch")
-    elif highlight_org is None:
-        st.info("Select a company in the sidebar to see its gap vs frontier over time.")
-
-    # ══════════════════════════════════════════════════════════════════════
-    # Section 2: Detail Table
-    # ══════════════════════════════════════════════════════════════════════
-    st.subheader("Company Details")
-
-    table_orgs = sorted(org_current.keys(), key=lambda o: org_current[o]['score'], reverse=True)
-    rows = []
-    for org in table_orgs:
-        info = org_current.get(org)
-        if not info:
-            continue
-        flag = _ECG_FLAG.get(_ECG_COUNTRY.get(org, ""), "")
-        is_highlighted = (org == highlight_org)
-        marker = " **" if is_highlighted else ""
-        marker_end = "**" if is_highlighted else ""
-        rows.append({
-            "Company": f"{marker}{flag} {org}{marker_end}",
-            "Best Model": f"{marker}{info['name']}{marker_end}",
-            "ECI": f"{marker}{info['score']:.1f}{marker_end}",
-            "Released": f"{marker}{info['date'].strftime('%b %Y')}{marker_end}",
-            "Age": f"{marker}{info['model_age_months']:.1f}mo{marker_end}",
-            "Gap at Release": marker + _fmt_release_gap(info['gap_at_release']) + marker_end,
-            "ECI Gap Now": f"{marker}+{info['current_eci_gap']:.1f}{marker_end}",
-            "Gap Now": marker + _fmt_gap(info['effective_gap'], info['at_frontier']) + marker_end,
+def _eci_gap_history(ref_fr, subj_fr):
+    """Each of the subject's frontier models, with the months the reference
+    frontier had already stood at its score when it shipped (0 if never)."""
+    ref_pts = [(m['date'], m['eci_score']) for m in ref_fr]
+    out = []
+    for m in subj_fr:
+        fdate = _ecg_frontier_date_at_score(ref_pts, m['eci_score'])
+        gap = 0.0 if fdate is None else (m['date'] - fdate).total_seconds() / _ECI_MONTH_S
+        out.append({
+            'date': m['date'], 'score': m['eci_score'], 'name': m['display_name'],
+            'gap_months': max(0.0, gap),
+            'ref_score': _ecg_frontier_score_at_date(ref_pts, m['date']),
         })
-
-    # Use markdown table for highlighting support
-    header = "| Company | Best Model | ECI | Released | Age | Gap at Release | ECI Gap Now | Gap Now |"
-    separator = "|---|---|---|---|---|---|---|---|"
-    md_rows = [header, separator]
-    for r in rows:
-        md_rows.append(
-            f"| {r['Company']} | {r['Best Model']} | {r['ECI']} | {r['Released']} | "
-            f"{r['Age']} | {r['Gap at Release']} | {r['ECI Gap Now']} | {r['Gap Now']} |")
-    st.markdown("\n".join(md_rows))
+    return out
 
 
+def _eci_gap_now(ref_fr, hist, today):
+    """The subject's latest frontier model against the reference today: level
+    (at or above the reference's best), months since the reference reached its
+    score, and the ECI points between them."""
+    ref_pts = [(m['date'], m['eci_score']) for m in ref_fr]
+    latest, ref_best = hist[-1], ref_pts[-1][1]
+    level = latest['score'] >= ref_best
+    fdate = None if level else _ecg_frontier_date_at_score(ref_pts, latest['score'])
+    gap = 0.0 if fdate is None else (today - fdate).total_seconds() / _ECI_MONTH_S
+    return {**latest, 'level': level, 'gap_now': max(0.0, gap),
+            'eci_gap': max(0.0, ref_best - latest['score']),
+            'age': max(0.0, (today - latest['date']).total_seconds() / _ECI_MONTH_S)}
 
+
+def _eci_gap_frontier(label):
+    """An entity's full-window frontier, one model per release date."""
+    return [m for m in _eci_entity_models(label, full_window=True) if m['is_frontier']]
+
+
+def _eci_level_word(entity_a):
+    return "At frontier" if entity_a == _ECI_FRONTIER_LABEL else "Level or ahead"
+
+
+def _fmt_gap_mo(months):
+    return "<1mo" if months < 0.5 else f"{months:.0f}mo"
+
+
+def _render_eci_leaderboard(entity_a, entity_b):
+    """Every lab's best model, and how far it trails the reference entity."""
+    ref_fr = _eci_gap_frontier(entity_a)
+    if not ref_fr:
+        return
+    a = _eci_entity_short(entity_a)
+    today = datetime.now()
+    best = ref_fr[-1]
+    st.subheader("Where each lab stands")
+    st.markdown(f"Measured against **{entity_a}**: ECI **{best['eci_score']:.1f}** "
+                f"({best['display_name']}, {best['date']:%b %d, %Y}).")
+    rows = []
+    for org in _ECI_COMPANIES:
+        subj_fr = _eci_gap_frontier(org)
+        if subj_fr:
+            hist = _eci_gap_history(ref_fr, subj_fr)
+            rows.append((org, hist[-1], _eci_gap_now(ref_fr, hist, today)))
+    rows.sort(key=lambda r: r[2]['score'], reverse=True)
+    level = _eci_level_word(entity_a)
+    md = [f"| Company | Best model | ECI | Released | Age | Behind {a} at release "
+          f"| ECI behind now | Behind {a} now |", "|---|---|---|---|---|---|---|---|"]
+    for org, at_release, now in rows:
+        b = "**" if org == entity_b else ""
+        cells = [
+            f"{_ECG_FLAG.get(_ECG_COUNTRY.get(org, ''), '')} {org}", now['name'],
+            f"{now['score']:.1f}", f"{now['date']:%b %Y}", f"{now['age']:.1f}mo",
+            level if at_release['gap_months'] < 0.1 else _fmt_gap_mo(at_release['gap_months']),
+            f"+{now['eci_gap']:.1f}",
+            level if now['level'] else _fmt_gap_mo(now['gap_now']),
+        ]
+        md.append("| " + " | ".join(f"{b}{c}{b}" for c in cells) + " |")
+    st.markdown("\n".join(md))
     _fn_caption(
-        "Columns: <i>Gap at Release</i>, <i>Gap Now</i>, <i>ECI Gap Now</i>. "
-        "Only each org's running-max (best) models are shown. ECI data from "
-        "Epoch AI.",
-        ("Gap at Release", "Interpolates when the overall ECI frontier first "
-                           "reached each model's score level at the time of "
-                           "release."),
-        ("Gap Now", "How many months ago the frontier first reached the org's "
-                    "current best score \u2014 zero iff they still tie or "
-                    "exceed the current frontier."),
-        ("ECI Gap Now", "The ECI-point gap to the current frontier."))
+        f"Each lab's best model against {a}'s frontier: behind at release and "
+        "behind now. ECI data from Epoch AI.",
+        ("behind at release", f"How long before the release {a}'s frontier first "
+                              "reached the model's score, interpolated between "
+                              f"{a}'s frontier models."),
+        ("behind now", f"How long ago {a}'s frontier first reached the lab's best "
+                       f"score; zero once the lab ties or passes {a}'s best. ECI "
+                       f"behind now is the point gap to {a}'s best."),
+        ("best model", "Frontier models are one per release date, the best scoring, "
+                       "from Epoch's full catalogue. Pick a lab under Compare to "
+                       "for its history below."))
+
+
+def _render_eci_gap_history(entity_a, entity_b):
+    """The subject's months behind the reference, at each of its frontier
+    releases, carried to today."""
+    if entity_b in (_ECI_NONE_LABEL, entity_a):
+        st.info("Pick an entity under *Compare to* to chart how far it has trailed "
+                f"{entity_a} over time.")
+        return
+    ref_fr, subj_fr = _eci_gap_frontier(entity_a), _eci_gap_frontier(entity_b)
+    if not ref_fr or not subj_fr:
+        return
+    a, b = _eci_entity_short(entity_a), _eci_entity_short(entity_b)
+    today = datetime.now()
+    pts = _eci_gap_history(ref_fr, subj_fr)
+    now = _eci_gap_now(ref_fr, pts, today)
+    ref_pts = [(m['date'], m['eci_score']) for m in ref_fr]
+    color = _ECG_COLORS.get(entity_b, '#c0392b')
+
+    st.subheader(f"{entity_b}: months behind {entity_a}")
+    if now['level']:
+        desc = f"Currently **level with or ahead of {a}**."
+    elif pts[-1]['gap_months'] < 0.5:
+        desc = (f"Level with {a} at release, now **{now['gap_now']:.1f}mo behind** "
+                f"({a} moved to {ref_pts[-1][1]:.1f}, +{now['eci_gap']:.1f} ECI).")
+    else:
+        desc = (f"**{pts[-1]['gap_months']:.1f}mo behind** at release, "
+                f"now **{now['gap_now']:.1f}mo behind** (+{now['eci_gap']:.1f} ECI).")
+    st.markdown(f"Best model: **{now['name']}** (ECI {now['score']:.1f}, "
+                f"{now['date']:%b %Y}). {desc}")
+
+    def _hover(name, d, score, ref_score, gap):
+        s = f"{name}<br>{d:%b %Y}<br>{b} ECI: {score:.1f}"
+        if ref_score is not None:
+            s += f"<br>{a} ECI: {ref_score:.1f}<br>ECI gap: {ref_score - score:+.1f}"
+        return s + f"<br>Time behind: {gap:.1f}mo"
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=[p['date'] for p in pts], y=[p['gap_months'] for p in pts],
+        mode='lines+markers+text',
+        marker=dict(color=color, size=10, line=dict(color='white', width=1.5)),
+        line=dict(color=color, width=3),
+        text=[p['name'] for p in pts], textposition='top center',
+        textfont=dict(size=9, color=color),
+        hovertext=[_hover(p['name'], p['date'], p['score'], p['ref_score'],
+                          p['gap_months']) for p in pts],
+        hoverinfo='text', showlegend=False,
+    ))
+    # Carry the line to today unless the subject leads with a fresh model.
+    show_today = not now['level'] or now['age'] > 2
+    if show_today:
+        fig.add_trace(go.Scatter(
+            x=[pts[-1]['date'], today], y=[pts[-1]['gap_months'], now['gap_now']],
+            mode='lines', line=dict(color=color, width=2, dash='dash'),
+            hoverinfo='skip', showlegend=False,
+        ))
+        hover = _hover("Today", today, now['score'],
+                       _ecg_frontier_score_at_date(ref_pts, today), now['gap_now'])
+        fig.add_trace(go.Scatter(
+            x=[today], y=[now['gap_now']], mode='markers+text',
+            marker=dict(color=color, size=12, symbol='diamond',
+                        line=dict(color='white', width=1.5)),
+            text=[f"Today: {now['gap_now']:.1f}mo"], textposition='top center',
+            textfont=dict(size=10, color=color),
+            hovertext=hover + f"<br>(no new model in {now['age']:.1f}mo)",
+            hoverinfo='text', showlegend=False,
+        ))
+    fig.add_hline(y=0, line=dict(color='black', width=1.5, dash='dot'))
+    y_max = max([p['gap_months'] for p in pts] + [1.0]
+                + ([now['gap_now'] + 1] if show_today else []))
+    fig.update_layout(
+        height=400, plot_bgcolor='white', paper_bgcolor='white',
+        margin=dict(l=50, r=50, t=10, b=40), font=dict(color='#222222'),
+        xaxis=dict(gridcolor='rgba(0,0,0,0.15)', tickfont=dict(color='#222222')),
+        yaxis=dict(title_text=f"Months behind {a}", gridcolor='rgba(0,0,0,0.15)',
+                   range=[-0.5, y_max * 1.15], tickfont=dict(color='#222222'),
+                   title_font=dict(color='#222222')),
+    )
+    st.plotly_chart(fig, width="stretch")
+    _fn_caption(
+        f"Each point is one of {b}'s frontier releases; the dashed line carries "
+        "its best model to today.",
+        ("frontier releases", f"The months {a}'s frontier had already stood at the "
+                              "release's score when it shipped, zero if it had not "
+                              "reached it."))
 
 
 # ── Data Centers ───────────────────────────────────────────────────────────
@@ -12514,7 +12381,7 @@ def _cc_cn_channels(cc_rows, cn_fr, a_partial, g_lo=None, g_hi=None,
 def _eci_to_metr_p50_min(eci_score, a=0):
     """ECI score → estimated METR p50 time-horizon in minutes (central, lo, hi).
 
-    Same Anthropic-calibrated fit the Epoch ECI tab uses for its ECI→METR hover
+    Same Anthropic-calibrated fit the ECI tab uses for its ECI→METR hover
     (`a=1` for Anthropic-style models). The frontier forecast isn't tied to one
     lab, so `a` defaults to 0 (org-neutral). lo/hi are the fit's ±band.
     """
@@ -12525,7 +12392,7 @@ def _eci_to_metr_p50_min(eci_score, a=0):
 def _eci_to_metr_p80_min(eci_score, a=0):
     """ECI score → estimated METR p80 time-horizon in minutes (central, lo, hi).
 
-    The p80 companion to `_eci_to_metr_p50_min`, using the Epoch ECI tab's p80
+    The p80 companion to `_eci_to_metr_p50_min`, using the ECI tab's p80
     fit. p80 is the more demanding reliability bar, so horizons are shorter.
     """
     central = 2 ** (0.23 * eci_score + 0.35 * a - 29.95)
@@ -15420,9 +15287,6 @@ _REV_TRACKED_KEYS = list(_REV_DEFAULTS.keys()) + [
     "comb_dt_lo", "comb_dt_hi",
 ]
 
-_ECG_DEFAULTS = {"ecg_highlight": "None"}
-_ECG_TRACKED_KEYS = list(_ECG_DEFAULTS.keys())
-
 # Internal cache keys: never round-trip through URL
 _URL_EXCLUDED_SUFFIXES = ("_seg_config",)
 
@@ -15441,7 +15305,6 @@ def _all_tracked():
         (_UKC_RESET_KEYS, _UKC_DEFAULTS),
         (_EMP_RESET_KEYS, _EMP_DEFAULTS),
         (_REV_TRACKED_KEYS, _REV_DEFAULTS),
-        (_ECG_TRACKED_KEYS, _ECG_DEFAULTS),
         (_DC_RESET_KEYS, _DC_DEFAULTS),
         (_CC_RESET_KEYS, _CC_DEFAULTS),
         (_PC_RESET_KEYS, _PC_DEFAULTS),
@@ -21632,7 +21495,7 @@ if not os.environ.get("_VP_TESTING"):
     with _seeded_rng(_APP_SEED):
         if active_tab == "METR Horizon":
             render_metr()
-        elif active_tab == "Epoch ECI":
+        elif active_tab == "ECI":
             render_eci()
         elif active_tab == "Remote Labor Index":
             render_rli()
@@ -21646,8 +21509,6 @@ if not os.environ.get("_VP_TESTING"):
             render_revenue()
         elif active_tab == "Employment":
             render_employment()
-        elif active_tab == "ECI Company Gap":
-            render_eci_gap()
         elif active_tab == "Data Centers":
             render_data_centers()
         elif active_tab == "China":

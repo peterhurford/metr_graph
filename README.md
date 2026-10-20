@@ -25,8 +25,7 @@ and the sidebar's *Share view* button copies a URL carrying your current control
 | Tab | `?tab=` | Data source | What it measures |
 |---|---|---|---|
 | METR Horizon | `metr` | `benchmark_results_1_1.yaml` | Task horizon length — the longest task a model completes reliably. log₂(minutes) |
-| Epoch ECI | `eci` | `epoch_capabilities_index.csv` | Epoch's Capabilities Index, a pooled benchmark score |
-| ECI Company Gap | `ecigap` | Same CSV, split by organization | How far each lab/country trails the frontier |
+| ECI | `eci` | `epoch_capabilities_index.csv` | Epoch's Capabilities Index, a pooled benchmark score: where each lab stands, a projection, and how many months one entity trails another |
 | Remote Labor Index | `rli` | `_RLI_RAW` (hardcoded) | Share of real remote-work projects completed. Fitted in logit space |
 | RSI | `rsi` | `_RSI_RAW` / `_RSI_SURVEY` (hardcoded) | Anthropic's internal AI-R&D benchmark, staff-survey speedup, merged code, and research direction; OpenAI experiment velocity; ends with the *Capabilities Milestones* cards and the blended RSI projection |
 | Takeoff | `takeoff` | Final RSI blend + assumptions in `takeoff_model.py` | Research feedback from today, with inherited coding milestones and evidence calibration |
