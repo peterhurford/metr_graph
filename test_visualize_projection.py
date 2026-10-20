@@ -1030,17 +1030,26 @@ class TestEciGap:
 
     def test_the_frontier_never_trails_itself(self):
         ref = self._fr(vp._ECI_FRONTIER_LABEL)
-        hist = vp._eci_gap_history(ref, ref)
+        hist = vp._eci_gap_history(ref, ref, 1.0)
         assert all(p["gap_months"] < 1e-9 for p in hist)
         assert vp._eci_gap_now(ref, hist, datetime.now(), 1.0)["level"]
 
     def test_gaps_reach_back_past_the_projection_window(self):
-        # The projection's Feb-2024 cutoff would date Llama 3-70B against Claude
-        # 3 Opus (~1.6mo); against GPT-4 it trails by over a year.
+        # Llama 2-70B shipped in 2023, before the projection's Feb-2024 cutoff;
+        # the full-window frontier still has GPT-4 above it.
         ref = self._fr(vp._ECI_FRONTIER_LABEL)
-        hist = vp._eci_gap_history(ref, self._fr("Meta"))
-        [llama] = [p for p in hist if p["name"] == "Llama 3-70B"]
-        assert llama["gap_months"] > 12
+        hist = vp._eci_gap_history(ref, self._fr("Meta"), 1.0)
+        [llama] = [p for p in hist if p["name"] == "Llama 2-70B"]
+        assert llama["ref_score"] is not None and llama["gap_months"] > 5
+
+    def test_a_lab_never_trails_another_by_more_than_the_frontier_holding_it(self):
+        # Dated by interpolation, Gemini 4 Argon trailed OpenAI 2.7mo but the
+        # frontier, which holds OpenAI, by 1.0mo.
+        rate = 1.0
+        g = self._fr("Google")
+        to = lambda lab: vp._eci_gap_history(self._fr(lab), g, rate)
+        for f, o in zip(to(vp._ECI_FRONTIER_LABEL), to("OpenAI")):
+            assert o["gap_months"] <= f["gap_months"] + 1e-9, (f, o)
 
     def test_projected_gap_runs_from_the_release_gap_at_the_reference_rate(self):
         d = lambda y, m: datetime(y, m, 1)
