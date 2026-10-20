@@ -131,6 +131,34 @@ class TestEciTab:
         assert "same frontier" in at.info[0].body
         assert not [h for h in at.get("subheader") if "months behind" in h.body]
 
+    def test_a_new_entity_takes_its_own_rate_ci(self):
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "ECI")
+        at.selectbox(key="eci_entity_b").set_value("China best").run()
+        _assert_no_error(at, "ECI / China best")
+        got = (at.number_input(key="eci_custom_ppy_lo").value,
+               at.number_input(key="eci_custom_ppy_hi").value)
+        assert got == vp._eci_yearly_gain_range(vp._eci_entity_data("China best")[1])
+
+    def test_two_labs_cannot_both_fall_behind_each_other(self):
+        drift = []
+        for a, b in (("Anthropic", "OpenAI"), ("OpenAI", "Anthropic")):
+            at = _fresh_app()
+            at.run()
+            _switch_tab(at, "ECI")
+            at.selectbox(key="eci_entity_a").set_value(a).run()
+            at.selectbox(key="eci_entity_b").set_value(b).run()
+            _assert_no_error(at, f"ECI / {a} vs {b}")
+            spec = json.loads(at.get("plotly_chart")[-1].proto.spec)
+            [med] = [t for t in spec["data"] if t.get("name") == "Projected median"]
+            ys = [float(h.split("Median: ")[1].split("mo")[0])
+                  * (1 if "behind" in h.split("Median: ")[1].split("<br>")[0] else -1)
+                  for h in med["hovertext"]]
+            drift.append(ys[-1] - ys[0])
+        assert drift[0] * drift[1] <= 0, drift
+
     def test_compare_to_drives_the_months_behind_chart(self):
         at = _fresh_app()
         at.run()

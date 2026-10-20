@@ -4195,6 +4195,16 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     for k, v in _eci_tab_defaults(p).items():
         if k not in st.session_state:
             st.session_state[k] = v
+    # The CIs, breakpoints and vantage default off the projected frontier, so a
+    # new entity under Entity or Compare to takes its own, not the last one's.
+    _data_key = tuple(tab_frontier_names)
+    if st.session_state.get(f"_{p}_data_key") != _data_key:
+        st.session_state[f"_{p}_data_key"] = _data_key
+        for k in ("custom_ppy_lo", "custom_ppy_hi", "custom_pos_lo", "custom_pos_hi",
+                  "superexp_ppy_ci_lo", "superexp_ppy_ci_hi", "superexp_pos_lo",
+                  "superexp_pos_hi", "bp1_select", "bp2_select"):
+            st.session_state.pop(f"{p}_{k}", None)
+        st.session_state.pop(f"_{p}_proj_as_of", None)
 
     # ── ECI Sidebar controls ─────────────────────────────────────────────
     with st.sidebar:
@@ -10091,6 +10101,18 @@ def _eci_trend_rate(trend_fr):
     return slope * _ECI_MONTH_S / 86400
 
 
+def _eci_ref_rate(label):
+    """The reference's ECI a month as its own default projection's median: the
+    geometric midpoint of its rate CI, or the fit where that CI is half to twice
+    it. The subject's band is centred the same way, so A against B and B against
+    A drift in opposite directions."""
+    fr = _eci_entity_data(label)[1]
+    gains = _eci_yearly_gain_range(fr)
+    if gains is None:
+        return _eci_trend_rate(fr)
+    return float(np.sqrt(gains[0] * gains[1])) * _ECI_MONTH_S / (365.25 * 86400)
+
+
 def _eci_gap_now(ref_fr, hist, today, rate):
     """The subject's latest frontier model against the reference's best today:
     level (at or above it), the ECI points between them, and those points in
@@ -10151,7 +10173,7 @@ def _render_eci_leaderboard(entity_a, entity_b):
         return
     ref = _eci_ref_name(entity_a)
     today = datetime.now()
-    rate = _eci_trend_rate(_eci_entity_data(entity_a)[1])
+    rate = _eci_ref_rate(entity_a)
     best = ref_fr[-1]
     st.subheader("Where each lab stands")
     st.markdown(f"Measured against **{entity_a}**: ECI **{best['eci_score']:.1f}** "
@@ -10186,7 +10208,7 @@ def _render_eci_leaderboard(entity_a, entity_b):
                               "models."),
         ("the gap now", f"The ECI points between the lab's best and {ref}'s best "
                         f"model, and in brackets the months {ref} takes to climb "
-                        f"them at its fitted {rate:.2f} ECI a month. Not on the "
+                        f"them at {rate:.2f} ECI a month, its projection's median. Not on the "
                         "release column's ruler: months since the score was first "
                         "reached would grow with the model's age while nothing new "
                         "ships."),
@@ -10208,7 +10230,7 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
         return
     a, b = _eci_ref_name(entity_a), _eci_entity_short(entity_b)
     today = datetime.now()
-    rate = _eci_trend_rate(_eci_entity_data(entity_a)[1])
+    rate = _eci_ref_rate(entity_a)
     pts = _eci_gap_history(ref_fr, subj_fr)
     now = _eci_gap_now(ref_fr, pts, today, rate)
     ref_pts = [(m['date'], m['eci_score']) for m in ref_fr]
@@ -10294,8 +10316,8 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
                               "reached it."),
         ("the band", f"Each sampled {b} path, weekly from its latest release's gap: "
                      f"every month adds a month, and the path's ECI gain since the "
-                     f"release takes one off per {rate:.2f} points, the fitted "
-                     f"rate of {a}, whose trend carries no uncertainty here, so the band "
+                     f"release takes one off per {rate:.2f} points, the median rate "
+                     f"of {a}'s own projection, which carries no uncertainty here, so the band "
                      f"is {b}'s spread in pace alone. It reads {b} as improving "
                      "between releases, so it can sit below a gap measured off "
                      "released models only. Below zero is ahead."))
