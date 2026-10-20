@@ -1032,7 +1032,7 @@ class TestEciGap:
         ref = self._fr(vp._ECI_FRONTIER_LABEL)
         hist = vp._eci_gap_history(ref, ref)
         assert all(p["gap_months"] < 1e-9 for p in hist)
-        assert vp._eci_gap_now(ref, hist, datetime.now())["level"]
+        assert vp._eci_gap_now(ref, hist, datetime.now(), 1.0)["level"]
 
     def test_gaps_reach_back_past_the_projection_window(self):
         # The projection's Feb-2024 cutoff would date Llama 3-70B against Claude
@@ -1042,21 +1042,29 @@ class TestEciGap:
         [llama] = [p for p in hist if p["name"] == "Llama 3-70B"]
         assert llama["gap_months"] > 12
 
-    def test_projected_gap_dates_reached_levels_on_the_frontier_and_higher_from_its_best(self):
+    def test_projected_gap_runs_from_the_release_gap_at_the_reference_rate(self):
+        d = lambda y, m: datetime(y, m, 1)
+        at = [d(2026, 7), d(2027, 1), d(2027, 7)]
+        # Rate 1 ECI a month, 5mo behind at release: a path gaining 1 a month
+        # holds 5, a flat one falls 6 further behind in half a year, one gaining
+        # 2 a month closes a month a month. Straight lines, whatever the
+        # reference frontier's steps.
+        paths = np.array([[150.0, 156.0, 162.0], [150.0, 150.0, 150.0],
+                          [150.0, 162.0, 174.0]])
+        gap = vp._eci_projected_gap(5.0, 1.0, at, paths)
+        assert gap[0] == pytest.approx([5, 5, 5], abs=0.1)
+        assert gap[1] == pytest.approx([5, 11, 17], abs=0.1)
+        assert gap[2] == pytest.approx([5, -1, -7], abs=0.1)
+
+    def test_behind_now_is_the_eci_gap_at_the_reference_rate_not_the_models_age(self):
         d = lambda y, m: datetime(y, m, 1)
         ref = [{"date": d(2025, 1), "eci_score": 100.0},
-               {"date": d(2026, 1), "eci_score": 112.0}]  # 1 point a month
-        today, at = d(2026, 7), [d(2026, 7), d(2027, 1)]
-        gap = vp._eci_projected_gap(ref, ref, at, np.array([[106.0, 106.0],
-                                                             [118.0, 118.0]]), today)
-        # 106 was reached mid-2025: ~12mo behind now, ~18mo half a year on.
-        assert gap[0] == pytest.approx([12.0, 18.0], abs=0.3)
-        # 118 is 6 points past the reference's best, which climbs from today at
-        # its trend's 1 point a month: 6mo ahead now, level six months later.
-        assert gap[1] == pytest.approx([-6.0, 0.0], abs=0.3)
-        # Level with the reference's best reads level, not its model's age.
-        assert vp._eci_projected_gap(ref, ref, [today], np.array([[112.0]]),
-                                     today)[0, 0] == pytest.approx(0.0, abs=1e-9)
+               {"date": d(2026, 1), "eci_score": 112.0}]
+        hist = [{"date": d(2025, 12), "score": 111.0, "name": "m"}]
+        now = vp._eci_gap_now(ref, hist, d(2026, 10), 1.3)
+        assert now["eci_gap"] == pytest.approx(1.0)
+        assert now["gap_now"] == pytest.approx(1 / 1.3)
+        assert not now["level"]
 
 
 

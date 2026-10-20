@@ -10045,41 +10045,35 @@ def _eci_gap_history(ref_fr, subj_fr):
     return out
 
 
-def _eci_gap_now(ref_fr, hist, today):
-    """The subject's latest frontier model against the reference today: level
-    (at or above the reference's best), months since the reference reached its
-    score, and the ECI points between them."""
-    ref_pts = [(m['date'], m['eci_score']) for m in ref_fr]
-    latest, ref_best = hist[-1], ref_pts[-1][1]
-    level = latest['score'] >= ref_best
-    fdate = None if level else _ecg_frontier_date_at_score(ref_pts, latest['score'])
-    gap = 0.0 if fdate is None else (today - fdate).total_seconds() / _ECI_MONTH_S
-    return {**latest, 'level': level, 'gap_now': max(0.0, gap),
-            'eci_gap': max(0.0, ref_best - latest['score']),
+def _eci_trend_rate(trend_fr):
+    """The OLS slope through `trend_fr` (the projection's overlay), ECI a month."""
+    base = trend_fr[0]['date']
+    _, slope = fit_line(np.array([(m['date'] - base).days for m in trend_fr], dtype=float),
+                        np.array([m['eci_score'] for m in trend_fr]))
+    return slope * _ECI_MONTH_S / 86400
+
+
+def _eci_gap_now(ref_fr, hist, today, rate):
+    """The subject's latest frontier model against the reference's best today:
+    level (at or above it), the ECI points between them, and those points in
+    months of the reference's trend `rate` (ECI a month)."""
+    latest, ref_best = hist[-1], ref_fr[-1]['eci_score']
+    eci_gap = max(0.0, ref_best - latest['score'])
+    return {**latest, 'level': eci_gap == 0, 'eci_gap': eci_gap,
+            'gap_now': eci_gap / rate if rate > 0 else float('nan'),
             'age': max(0.0, (today - latest['date']).total_seconds() / _ECI_MONTH_S)}
 
 
-def _eci_projected_gap(ref_fr, trend_fr, dates, paths, today):
+def _eci_projected_gap(gap0, rate, dates, paths):
     """Months each sampled path trails the reference at each date (negative =
-    ahead). A level below the reference's best dates as on its frontier, as
-    `_eci_gap_history` does; its best or higher as the reference climbing from
-    its best today at its trend's rate (OLS on `trend_fr`, the projection's
-    overlay). NaN where the trend is flat."""
-    base = ref_fr[0]['date']
-    ref_days = np.array([(m['date'] - base).days for m in ref_fr], dtype=float)
-    ref_scores = np.array([m['eci_score'] for m in ref_fr])
-    t_days = np.array([(m['date'] - base).days for m in trend_fr], dtype=float)
-    intercept, slope = fit_line(t_days, np.array([m['eci_score'] for m in trend_fr]))
+    ahead), from `gap0` at `dates[0]`: a month passes, and the path's ECI gain
+    since then counts back at the reference's trend `rate` (ECI a month). NaN
+    where the trend is flat."""
     paths = np.asarray(paths, dtype=float)
-    reached = np.interp(paths, ref_scores, ref_days)
-    if slope > 0:
-        ahead = (today - base).days + (paths - ref_scores[-1]) / slope
-    else:
-        ahead = np.full_like(paths, np.nan)
-    # At the reference's best counts as level, as `_eci_gap_now` has it.
-    ref_at = np.where(paths < ref_scores[-1], reached, ahead)
-    at = np.array([(d - base).days for d in dates], dtype=float)
-    return (at[None, :] - ref_at) * 86400 / _ECI_MONTH_S
+    if rate <= 0:
+        return np.full_like(paths, np.nan)
+    at = np.array([(d - dates[0]).total_seconds() for d in dates]) / _ECI_MONTH_S
+    return gap0 + at[None, :] - (paths - paths[:, :1]) / rate
 
 
 def _eci_gap_frontier(label):
@@ -10102,6 +10096,7 @@ def _render_eci_leaderboard(entity_a, entity_b):
         return
     a = _eci_entity_short(entity_a)
     today = datetime.now()
+    rate = _eci_trend_rate(_eci_entity_data(entity_a)[1])
     best = ref_fr[-1]
     st.subheader("Where each lab stands")
     st.markdown(f"Measured against **{entity_a}**: ECI **{best['eci_score']:.1f}** "
@@ -10111,13 +10106,16 @@ def _render_eci_leaderboard(entity_a, entity_b):
         subj_fr = _eci_gap_frontier(org)
         if subj_fr:
             hist = _eci_gap_history(ref_fr, subj_fr)
-            rows.append((org, hist[-1], _eci_gap_now(ref_fr, hist, today)))
+            rows.append((org, hist[-1], _eci_gap_now(ref_fr, hist, today, rate)))
     rows.sort(key=lambda r: r[2]['score'], reverse=True)
     level = _eci_level_word(entity_a)
+    # A country under Compare to bolds its labs.
+    b_cc = {"United States of America": "US", "China": "CN"}.get(
+        (_ECI_COUNTRY_ENTITIES.get(entity_b) or {}).get('country'))
     md = [f"| Company | Best model | ECI | Released | Age | Behind {a} at release "
           f"| ECI behind now | Behind {a} now |", "|---|---|---|---|---|---|---|---|"]
     for org, at_release, now in rows:
-        b = "**" if org == entity_b else ""
+        b = "**" if org == entity_b or _ECG_COUNTRY.get(org) == b_cc else ""
         cells = [
             f"{_ECG_FLAG.get(_ECG_COUNTRY.get(org, ''), '')} {org}", now['name'],
             f"{now['score']:.1f}", f"{now['date']:%b %Y}", f"{now['age']:.1f}mo",
@@ -10133,19 +10131,20 @@ def _render_eci_leaderboard(entity_a, entity_b):
         ("behind at release", f"How long before the release {a}'s frontier first "
                               "reached the model's score, interpolated between "
                               f"{a}'s frontier models."),
-        ("behind now", f"How long ago {a}'s frontier first reached the lab's best "
-                       f"score; zero once the lab ties or passes {a}'s best. ECI "
-                       f"behind now is the point gap to {a}'s best."),
+        ("behind now", f"The ECI points between the lab's best and {a}'s best, in "
+                       f"months of {a}'s trend ({rate:.2f} ECI a month); zero once "
+                       f"the lab ties or passes {a}'s best. Not the months since "
+                       f"{a} first reached the score, which grow with the model's "
+                       "age while nothing new ships."),
         ("best model", "Frontier models are one per release date, the best scoring, "
                        "from Epoch's full catalogue. Pick a lab under Compare to "
                        "for its history below."))
 
 
 def _render_eci_gap_history(entity_a, entity_b, proj=None):
-    """The subject's months behind the reference, at each of its frontier
-    releases, carried to today, then projected off the subject's sampled paths
-    `proj` (dates, paths) where the projection drew them, shifted so their
-    median starts today at the subject's best released score."""
+    """The subject's months behind the reference at each of its frontier
+    releases, then projected off the subject's sampled paths `proj` (dates,
+    paths), which start at its latest release (`_eci_projected_gap`)."""
     if entity_b in (_ECI_NONE_LABEL, entity_a):
         st.info("Pick an entity under *Compare to* to chart how far it has trailed "
                 f"{entity_a} over time.")
@@ -10155,20 +10154,21 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
         return
     a, b = _eci_entity_short(entity_a), _eci_entity_short(entity_b)
     today = datetime.now()
+    rate = _eci_trend_rate(_eci_entity_data(entity_a)[1])
     pts = _eci_gap_history(ref_fr, subj_fr)
-    now = _eci_gap_now(ref_fr, pts, today)
+    now = _eci_gap_now(ref_fr, pts, today, rate)
     ref_pts = [(m['date'], m['eci_score']) for m in ref_fr]
     color = _ECG_COLORS.get(entity_b, '#c0392b')
 
     st.subheader(f"{entity_b}: months behind {entity_a}")
     if now['level']:
         desc = f"Currently **level with or ahead of {a}**."
-    elif pts[-1]['gap_months'] < 0.5:
-        desc = (f"Level with {a} at release, now **{now['gap_now']:.1f}mo behind** "
-                f"({a} moved to {ref_pts[-1][1]:.1f}, +{now['eci_gap']:.1f} ECI).")
     else:
-        desc = (f"**{pts[-1]['gap_months']:.1f}mo behind** at release, "
-                f"now **{now['gap_now']:.1f}mo behind** (+{now['eci_gap']:.1f} ECI).")
+        at_rel = ("Level with" if pts[-1]['gap_months'] < 0.5
+                  else f"**{pts[-1]['gap_months']:.1f}mo behind**")
+        desc = (f"{at_rel} {a} at release; now **{now['eci_gap']:.1f} ECI** under "
+                f"{a}'s best ({ref_pts[-1][1]:.1f}), **{now['gap_now']:.1f}mo** "
+                f"of {a}'s trend.")
     st.markdown(f"Best model: **{now['name']}** (ECI {now['score']:.1f}, "
                 f"{now['date']:%b %Y}). {desc}")
 
@@ -10190,39 +10190,14 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
                           p['gap_months']) for p in pts],
         hoverinfo='text', showlegend=False,
     ))
-    # Carry the line to today unless the subject leads with a fresh model.
-    show_today = not now['level'] or now['age'] > 2
-    if show_today:
-        fig.add_trace(go.Scatter(
-            x=[pts[-1]['date'], today], y=[pts[-1]['gap_months'], now['gap_now']],
-            mode='lines', line=dict(color=color, width=2, dash='dash'),
-            hoverinfo='skip', showlegend=False,
-        ))
-        hover = _hover("Today", today, now['score'],
-                       _ecg_frontier_score_at_date(ref_pts, today), now['gap_now'])
-        fig.add_trace(go.Scatter(
-            x=[today], y=[now['gap_now']], mode='markers+text',
-            marker=dict(color=color, size=12, symbol='diamond',
-                        line=dict(color='white', width=1.5)),
-            text=[f"Today: {now['gap_now']:.1f}mo"], textposition='top center',
-            textfont=dict(size=10, color=color),
-            hovertext=hover + f"<br>(no new model in {now['age']:.1f}mo)",
-            hoverinfo='text', showlegend=False,
-        ))
     y_lo, y_hi = [], []
     if proj is not None:
         dates, paths = proj
-        keep = [i for i, d in enumerate(dates) if d >= today][::7]
+        keep = list(range(0, len(dates), 7))
         if keep:
             fdates = [dates[i] for i in keep]
-            paths = np.asarray(paths)[:, keep]
-            # The fan stands on the fitted trend; the measured gap on the best
-            # release. Moving the fan by their difference keeps its spread. The
-            # lower median lands on the best score, so a subject level with the
-            # reference starts level rather than astride the release cliff.
-            paths = paths - np.percentile(paths[:, 0], 50, method='lower') + now['score']
-            gap = _eci_projected_gap(ref_fr, _eci_entity_data(entity_a)[1], fdates,
-                                     paths, today)
+            gap = _eci_projected_gap(pts[-1]['gap_months'], rate, fdates,
+                                     np.asarray(paths)[:, keep])
             q10, q25, q50, q75, q90 = np.nanpercentile(gap, [10, 25, 50, 75, 90], axis=0)
             rgb = tuple(int(color.lstrip('#')[i:i + 2], 16) for i in (0, 2, 4))
             for lo, hi, alpha, name in ((q10, q90, 0.12, "80% CI"),
@@ -10244,8 +10219,7 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
             ))
             y_lo, y_hi = [float(np.nanmin(q10))], [float(np.nanmax(q90))]
     fig.add_hline(y=0, line=dict(color='black', width=1.5, dash='dot'))
-    y_max = max([p['gap_months'] for p in pts] + [1.0] + y_hi
-                + ([now['gap_now'] + 1] if show_today else []))
+    y_max = max([p['gap_months'] for p in pts] + [1.0] + y_hi)
     y_min = min([-0.5] + [v * 1.15 for v in y_lo])
     fig.update_layout(
         height=400, plot_bgcolor='white', paper_bgcolor='white',
@@ -10258,20 +10232,18 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
     )
     st.plotly_chart(fig, width="stretch")
     _fn_caption(
-        f"Each point is one of {b}'s frontier releases; the dashed line carries "
-        f"its best model to today, and the band is {b}'s projection above, "
-        "moved to start from its best released model rather than its trend line.",
+        f"Each point is one of {b}'s frontier releases; the band is {b}'s "
+        "projection above, from its latest release.",
         ("frontier releases", f"The months {a}'s frontier had already stood at the "
                               "release's score when it shipped, zero if it had not "
                               "reached it."),
-        ("the band", f"Each sampled {b} path, weekly from today: a level {a} has "
-                     f"reached is dated on {a}'s frontier, a higher one as {a} "
-                     f"climbing from its best today at its trend's rate. {a}'s trend carries no "
-                     f"uncertainty here, so the band is {b}'s spread alone. The "
-                     f"projection's fan stands on {b}'s fitted trend; it is moved "
-                     f"so its median starts at {b}'s best released score, where "
-                     "the dashed line ends, keeping its spread. Below zero is "
-                     "ahead."))
+        ("the band", f"Each sampled {b} path, weekly from its latest release's gap: "
+                     f"every month adds a month, and the path's ECI gain since the "
+                     f"release takes one off per {rate:.2f} points, {a}'s fitted "
+                     f"rate. {a}'s trend carries no uncertainty here, so the band "
+                     f"is {b}'s spread in pace alone. It reads {b} as improving "
+                     "between releases, so it can sit below a gap measured off "
+                     "released models only. Below zero is ahead."))
 
 
 # ── Data Centers ───────────────────────────────────────────────────────────
