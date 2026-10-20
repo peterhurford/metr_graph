@@ -54,17 +54,22 @@ N_SAMPLES = int(os.environ.get("_VP_SAMPLES", "5000"))
 st.markdown("""<style>
     .block-container { padding-top: 2rem !important; }
     /* The sidebar's tab list (`_active_tab`): small chips with no radio dots,
-       packed tight, so twelve tabs take a few short rows. */
+       packed tight, so the main tabs take a few short rows. */
     .st-key-_active_tab [role="radiogroup"] { gap: 0.2rem 0.25rem !important; }
     [data-testid="stSidebarHeader"] { height: 2rem; min-height: 0; }
     [data-testid="stSidebarUserContent"] { padding-top: 0.25rem; }
     .st-key-_active_tab [data-testid="stRadioOption"] { margin: 0 !important;
-        padding: 0 0.4rem; border-radius: 0.6rem;
+        padding: 0.1rem 0.55rem; border-radius: 0.7rem;
         border: 1px solid rgba(128,128,128,0.35); }
     .st-key-_active_tab [data-testid="stRadioOption"] > div > div:first-child {
         display: none; }
     .st-key-_active_tab [data-testid="stRadioOption"] p {
-        font-size: 0.74rem !important; line-height: 1.35; }
+        font-size: 0.86rem !important; line-height: 1.4; }
+    /* The tabs under *More* (from `_TAB_MAIN_N`, 7, so n+8): their chips here are hidden,
+       and the expander's buttons select them instead. */
+    .st-key-_active_tab [role="radiogroup"] > :nth-child(n+8) { display: none !important; }
+    .st-key-_more_tabs button { min-height: 0; padding: 0.1rem 0.55rem; }
+    .st-key-_more_tabs button p { font-size: 0.86rem !important; }
     .st-key-_active_tab [data-testid="stRadioOption"][data-selected="true"] {
         background: rgba(255,75,75,0.12); border-color: rgba(255,75,75,0.7); }
     .st-key-_active_tab [data-testid="stRadioOption"][data-selected="true"] p {
@@ -3222,7 +3227,12 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-_TAB_OPTIONS = ["METR Horizon", "ECI", "Remote Labor Index", "Takeoff", "Frontier Thresholds", "Revenue", "Data Centers", "China", "Pacing", "UK Cyber", "Employment"]
+# The first `_TAB_MAIN_N` show as chips; the rest sit under *More*, as buttons
+# that set the same radio, whose own chips for them the style block hides.
+_TAB_OPTIONS = ["ECI", "METR Horizon", "Remote Labor Index", "Data Centers", "China", "Takeoff", "Pacing",
+                "Revenue", "UK Cyber", "Employment", "Frontier Thresholds"]
+_TAB_MAIN_N = 7
+_TAB_LABEL = {"ECI": "Epoch ECI"}
 _SLUG_FOR_TAB = {"METR Horizon": "metr", "ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
 # The RSI tab merged into Takeoff; its links still land there.
@@ -3240,7 +3250,15 @@ _default_tab_idx = _TAB_SLUG.get(_url_tab, 0)
 
 with st.sidebar:
     active_tab = st.radio("Tab", _TAB_OPTIONS, index=_default_tab_idx, horizontal=True,
-                          key="_active_tab", label_visibility="collapsed")
+                          key="_active_tab", label_visibility="collapsed",
+                          format_func=lambda t: _TAB_LABEL.get(t, t))
+    with st.expander("More", expanded=active_tab in _TAB_OPTIONS[_TAB_MAIN_N:]):
+        with st.container(key="_more_tabs", horizontal=True, gap="small"):
+            for _t in _TAB_OPTIONS[_TAB_MAIN_N:]:
+                st.button(_t, key=f"_more_tab_{_SLUG_FOR_TAB[_t]}",
+                          type="primary" if _t == active_tab else "secondary",
+                          on_click=st.session_state.__setitem__,
+                          args=("_active_tab", _t))
 
 # Keep URL in sync with selected tab (omit when at default)
 _DEFAULT_TAB = _TAB_OPTIONS[0]

@@ -94,7 +94,7 @@ def test_category_switches_and_collapsed_details():
     at.run()
     assert not at.exception
     assert len(at.get('plotly_chart')) == 3
-    assert all(not expander.proto.expanded for expander in at.expander)
+    assert all(not e.proto.expanded for e in at.expander if e.label != 'More')
     for category, count in [('Biological / chemical', 3), ('Autonomy / AI R&D', 2), ('Persuasion', 2)]:
         at.radio(key='ft_category').set_value(category).run()
         assert not at.exception

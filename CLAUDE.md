@@ -45,7 +45,7 @@ No build system, no CI/CD, no package manager beyond requirements.txt (`streamli
 
 ## Architecture
 
-Eleven-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci` (`ecigap`, the merged ECI Company Gap tab, is an alias for it), `rli`, `takeoff` (`rsi`, the merged RSI tab, is an alias for it),  `thresholds`, `revenue`, `datacenters`, `china` (`computecap`, its old name, is an alias), `pacing` (`pausing`, its old name, is an alias), `ukcyber`, `employment`.
+Eleven-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`, ECI first and the default; tabs from `_TAB_MAIN_N` on have their chips hidden by CSS and are picked by buttons under a *More* expander that set the same radio; `_TAB_LABEL` shows ECI as *Epoch ECI*) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci` (`ecigap`, the merged ECI Company Gap tab, is an alias for it), `rli`, `takeoff` (`rsi`, the merged RSI tab, is an alias for it),  `thresholds`, `revenue`, `datacenters`, `china` (`computecap`, its old name, is an alias), `pacing` (`pausing`, its old name, is an alias), `ukcyber`, `employment`.
 
 ### Takeoff scenario explorer
 

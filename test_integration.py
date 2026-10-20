@@ -192,7 +192,7 @@ class TestModeSwitchingBehavior:
     not just that it doesn't crash."""
 
     @pytest.mark.parametrize("tab,basis_key,seg_key,piecewise,linear", [
-        (None, "metr_proj_basis", "piecewise_n_seg",
+        ("METR Horizon", "metr_proj_basis", "piecewise_n_seg",
          "Piecewise linear", "Linear"),
         ("ECI", "eci_proj_basis", "eci_piecewise_n_seg",
          "Piecewise linear", "Linear"),
@@ -219,6 +219,7 @@ class TestModeSwitchingBehavior:
     def test_metr_linear_to_piecewise_gets_segments(self):
         """Switching Linear → Piecewise should create the segments radio."""
         at = _fresh_app()
+        at.query_params["tab"] = "metr"
         at.run()
         # Switch to Linear first
         at.radio(key="metr_proj_basis").set_value("Linear").run()
@@ -233,6 +234,7 @@ class TestModeSwitchingBehavior:
     def test_metr_superexp_has_no_segments_or_dt_keys(self):
         """Superexponential should not have linear/piecewise widgets."""
         at = _fresh_app()
+        at.query_params["tab"] = "metr"
         at.run()
         at.radio(key="metr_proj_basis").set_value("Superexponential").run()
         _assert_no_error(at, "METR / Superexponential")
@@ -254,6 +256,7 @@ class TestDefaultValues:
     def test_metr_piecewise_defaults(self):
         """METR piecewise-linear CI defaults + toggles + segment count."""
         at = _fresh_app()
+        at.query_params["tab"] = "metr"
         at.run()
         _assert_no_error(at, "METR default")
         # DT CI values should be positive with ~4x spread (lo=dt/2, hi=dt*2)
@@ -273,6 +276,7 @@ class TestDefaultValues:
     def test_metr_superexp_defaults(self):
         """METR superexp CI defaults should be data-driven."""
         at = _fresh_app()
+        at.query_params["tab"] = "metr"
         at.run()
         proj = at.radio(key="metr_proj_basis")
         proj.set_value("Superexponential").run()
@@ -327,6 +331,7 @@ class TestWidgetPropagation:
         """Switching METR from 2-segment to 1-segment should change CI
         defaults (full OLS vs last-segment OLS)."""
         at = _fresh_app()
+        at.query_params["tab"] = "metr"
         at.run()
         dt_lo_2seg = at.number_input(key="custom_dt_lo").value
         # Switch to 1 segment (uses full OLS, not last-segment)
@@ -371,6 +376,7 @@ class TestReset:
     def test_metr_linear_reset(self):
         """METR linear: reset restores CI values and toggles."""
         at = _fresh_app()
+        at.query_params["tab"] = "metr"
         at.run()
         # Record defaults
         dt_lo_default = at.number_input(key="custom_dt_lo").value
@@ -402,6 +408,7 @@ class TestReset:
         """METR superexp reset reverts to default projection basis
         (Piecewise linear) with correct piecewise CI defaults."""
         at = _fresh_app()
+        at.query_params["tab"] = "metr"
         at.run()
         # Record default piecewise CI values
         pw_dt_lo_default = at.number_input(key="custom_dt_lo").value
@@ -2709,6 +2716,7 @@ class TestTodayForwardMode:
         """The METR axis is sized to its history; from today the fan sits in
         a sliver of it, so the mode refits the y-range."""
         at = _fresh_app()
+        at.query_params["tab"] = "metr"
         at.run()
         _switch_tab(at, "METR Horizon")
         before = self._specs(at)[0]["layout"]["yaxis"]["range"]
