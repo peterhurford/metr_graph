@@ -181,7 +181,16 @@ sooner, since scale-dependent gains then wait less. The rest,
 data-center compute included (~1 month), sit in one *Advanced* expander. Retarget that
 grouping, and the expander's caption, if a rerun of the sweep reorders them.
 AI judgment is gated by the direction stage's human share, uncapped
-(`test_ai_judgment_only_counts_where_ai_directs_research`). `judgment_drift` (default 0)
+(`test_ai_judgment_only_counts_where_ai_directs_research`), at `judgment_today` (default 1)
+times people's, with quality normalized to 1 today (`quality0_log`) so the level moves only
+what handing direction over buys (`test_judgment_today_only_changes_what_handing_direction_over_buys`);
+the default deliberately ignores benchmark claims that AI already out-judges experts.
+`direction_adoption` (k, default 0.5, *What decides RSI*) moves direction along its curve
+J^k times as fast, J = `ai_judgment_log` (AI judgment over today's AI's, transfer and cap
+included; pace clipped at e^30 for runaways), passed to `workflow_state` as
+`direction_pace` (`test_delegation_follows_judgment`). Still a function of capability, so RSI
+stays a capability threshold. At 0.5 it brings RSI ~3 months sooner and ultraintelligence
+~half a month: the RSI date marks the takeoff more than it paces it. `judgment_drift` (default 0)
 changes its elasticity by that fraction per 10× of capability (`judgment_gain_log`), so b
 can fall or rise as AI improves; the b card's hover gives b at 100× when it is set. A draw
 that runs away numerically counts as reaching RSI then (under a human floor above the bar,

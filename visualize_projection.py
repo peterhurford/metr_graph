@@ -21180,6 +21180,14 @@ def _render_takeoff(loading):
                              "stage needs people at all; the hours left in experiment "
                              "design and verification are dropped. Off: each stage keeps "
                              "shedding human hours at its own pace.")
+            number("Delegation follows judgment (power)", "direction_adoption", 0.0, 2.0, 0.1,
+                   "Labs hand research direction over faster as AI picks experiments "
+                   "better: direction moves along its human-hours curve J^k times as "
+                   "fast, J being AI research judgment over today's AI's (1 today, so "
+                   "today's share is unchanged). At 0.5, AI judgment 4× today's "
+                   "halves direction's halving time. Unmeasured; 0 keeps the curve's "
+                   "own pace. It moves RSI more than ultraintelligence, since handing "
+                   "direction over buys research only as AI judgment grows.")
             st.caption("RSI otherwise follows the coding-automation date, and research "
                        "direction's starting share and halving time under Advanced.")
         with st.expander("Advanced (small effects)"):
@@ -21334,6 +21342,13 @@ def _render_takeoff(loading):
             number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
                    "Discounts coding and judgment gains beyond today. Zero removes "
                    "AI feedback; baseline research and compute can still improve models.")
+            number("AI research judgment today (× people's)", "judgment_today", 0.25, 4.0, 0.05,
+                   "AI's judgment against people's on the research direction it does "
+                   "today. Quality is normalized to 1 today, so it moves only what "
+                   "handing direction over buys: above 1 each share handed over speeds "
+                   "research, below 1 slows it. Default 1 counts them alike; benchmark "
+                   "claims that AI already out-judges experts (TasteVal's 2.3× "
+                   "compute multiplier) are deliberately not taken as a level.")
             
             
             

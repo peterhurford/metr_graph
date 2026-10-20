@@ -67,6 +67,15 @@ DEFAULTS = {
     # Ceiling on AI research judgment, as a multiple of today's AI judgment;
     # 0 is no ceiling. AI Futures caps AI research taste near 4x the best human.
     "judgment_cap": 0.0,
+    # Delegation follows judgment: research direction moves along its
+    # human-hours curve J^k times as fast, J being AI research judgment over
+    # today's AI's (1 today), so labs hand direction over sooner as AI picks
+    # experiments better. Unmeasured; 0 keeps the curve's own pace.
+    "direction_adoption": 0.5,
+    # AI research judgment against people's today, on the direction AI does.
+    # Quality is normalized to 1 today, so it only changes what handing
+    # direction over buys; 1 counts AI and people alike.
+    "judgment_today": 1.0,
     # Serial speed-up: validation shrinks as AI takes over verification, and a
     # new training run shortens as capability grows faster than today (a run
     # should not outlast the time better methods take to beat it). 0 holds
@@ -178,6 +187,7 @@ def validate(params):
             or not (p["ceiling_high_oom"] == 0 or 0 < p["ceiling_low_oom"] <= p["ceiling_high_oom"]) \
             or p["rsi_autopilot"] not in (0, 1) or not 0 <= p["ai_copies"] <= 2 \
             or not (p["judgment_cap"] == 0 or p["judgment_cap"] >= 1) \
+            or not 0 <= p["direction_adoption"] <= 2 or not 0.25 <= p["judgment_today"] <= 4 \
             or p["serial_speedup"] not in (0, 1) or p["reallocate_compute"] not in (0, 1) \
             or not 0 <= p["compute_bound_corr"] <= 1 or not 0 <= p["ceiling_returns_corr"] <= 1 \
             or not -90 <= p["hiring_growth"] <= 200 or not -90 <= p["staff_after_rsi"] <= 200 \
@@ -251,6 +261,17 @@ def judgment_gain_log(effective, slope, drift):
                     slope * np.expm1(np.minimum(safe * effective, 700)) / safe)
 
 
+def ai_judgment_log(effective, slope, drift, transfer, cap=0.0):
+    """Log of AI research judgment at capability `effective`, over today's AI's
+    (0 today): the judgment gain through the transfer discount, held under
+    `cap` (a multiple of today's; 0 for none). Zero without transfer."""
+    if not transfer:
+        return np.zeros(np.shape(effective))
+    out = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
+                       np.log(transfer) + judgment_gain_log(effective, slope, drift))
+    return np.minimum(out, np.log(cap)) if cap else out
+
+
 def _ces_log(x, y, rho):
     """Log of the CES mean of exp(x) and exp(y), equal to 1 when both are 1."""
     flat = np.abs(rho) < 1e-9
@@ -271,7 +292,7 @@ def normal_scores(uniform):
 
 
 def workflow_state(capability_log, baseline_rate, starts, half_months, floor,
-                   curve=None, reference_half=None):
+                   curve=None, reference_half=None, direction_pace=None):
     """Human hours per stage relative to a fixed baseline project.
 
     Capability progress is measured in years at today's effective-compute
@@ -281,14 +302,18 @@ def workflow_state(capability_log, baseline_rate, starts, half_months, floor,
     `half_months` its pace: the halving times then only set each stage's
     speed along the curve. `share` is one curve, or one per draw (rows) on an
     evenly spaced `years` grid; a third element gives research direction (the
-    first stage) its own curve of the same form.
+    first stage) its own curve of the same form. `direction_pace`, one
+    multiple per draw, moves research direction that much faster.
     """
     equivalent_years = np.maximum(capability_log, 0) / baseline_rate
+    stage_years = np.repeat(equivalent_years[:, None], np.shape(starts)[-1], axis=1)
+    if direction_pace is not None:
+        stage_years[:, 0] = stage_years[:, 0] * direction_pace
     if curve is None:
-        decline = np.exp(-np.log(2) * equivalent_years[:, None] * 12 / half_months)
+        decline = np.exp(-np.log(2) * stage_years * 12 / half_months)
     else:
         years, share = curve[0], curve[1]
-        along = equivalent_years[:, None] * reference_half / half_months
+        along = stage_years * reference_half / half_months
 
         def follow(shape, at):
             if np.ndim(shape) == 1:
@@ -444,8 +469,14 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     reference_half = float(np.array([p["half_" + s] for s in WORKFLOW_KEYS]) @ WORKFLOW_WEIGHTS)
 
     def humans(capability):
+        # Direction is handed over faster as AI judgment passes today's AI's.
+        # Clipped in logs: a runaway's judgment would overflow, and past e^30
+        # direction has long since been handed over.
+        pace = (np.exp(np.minimum(p["direction_adoption"] * ai_judgment_log(
+                    capability, taste_slope, drift, transfer, p["judgment_cap"]), 30))
+                if p["direction_adoption"] else None)
         return workflow_state(capability, baseline_capability_rate, starts, halves, floor,
-                              human_curve, reference_half)
+                              human_curve, reference_half, pace)
     baseline_capability_rate = software_rate + compute_rate
     events = {name: np.full(n, np.inf) for name in MILESTONES}
     outcomes = {name: {key: np.full(n, np.nan) for key in
@@ -637,6 +668,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     ai_speed = p["ai_speed"]
     human0 = starts @ WORKFLOW_WEIGHTS
     amdahl0 = np.log(human0 + (1 - human0) / ai_speed)
+    # Today's research quality, so the level of AI judgment moves only what
+    # handing direction over buys, not today's calibrated pace.
+    quality0_log = np.log(starts[:, 0] + (1 - starts[:, 0]) * p["judgment_today"])
     # Non-AI inputs. Human staff grow `hiring_growth` a year until RSI and
     # `staff_after_rsi` after, speeding the human share of the work; their
     # effect on labor today is that growth times the human share of the time.
@@ -761,14 +795,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         if transfer:
             coding_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
                                      np.log(transfer) + coding_gain)
-            ai_taste_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
-                                        np.log(transfer) + judgment_gain_log(
-                                            effective, taste_slope, drift))
-            if p["judgment_cap"]:
-                ai_taste_log = np.minimum(ai_taste_log, np.log(p["judgment_cap"]))
+            # AI judgment against people's: today's level times its gain.
+            ai_taste_log = np.log(p["judgment_today"]) + ai_judgment_log(
+                effective, taste_slope, drift, transfer, p["judgment_cap"])
             with np.errstate(divide="ignore"):   # a share of 0 or 1 drops a term
-                quality_log = np.logaddexp(np.log(direction),
-                                           np.log1p(-direction) + ai_taste_log)
+                quality_log = (np.logaddexp(np.log(direction),
+                                            np.log1p(-direction) + ai_taste_log)
+                               - quality0_log)
             automation_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
                                           np.log(transfer) + amdahl_log)
         else:

@@ -76,6 +76,20 @@ rest, so quality = h_dir + (1 - h_dir) x AI judgment. Ungated, judgment compound
 capability drove takeoff whether or not people had left; gated, it takes over as
 research direction is handed off, which is RSI.
 
+Two settings tie that handoff to judgment. `judgment_today` (default 1) is AI judgment against
+people's today, L, so quality = (h_dir + (1 - h_dir) L J) / (h_dir0 + (1 - h_dir0) L), with J
+AI judgment over today's AI's: today's quality stays 1 and the calibrated pace is untouched,
+and L only changes what each share handed over buys. The default counts AI and people alike;
+benchmark readings that AI already out-judges experts (TasteVal's 2.3x compute multiplier)
+are not taken as a level. `direction_adoption` (k, default 0.5) moves research direction
+along its human-hours curve J^k times as fast, so labs delegate sooner as AI judgment grows:
+at 4x today's judgment the stage halves twice as fast. J is a function of capability, so
+RSI is still a capability threshold, only a lower one. Nothing measures k. At 0.5 it brings
+RSI about 3 months sooner and ultraintelligence about half a month: handing direction over
+buys research only as fast as AI judgment grows, so the RSI date is mostly a marker of the
+takeoff, not what paces it. L of 0.75 or 1.5 moves ultraintelligence about a month either
+way.
+
 Difficulty is set from the returns to research r (the tab's control, default 1.0, the
 revised Forethought central estimate): difficulty = 0.5 / r, the semi-endogenous relation
 in which each doubling of cumulative effort buys r doublings of efficiency at the default

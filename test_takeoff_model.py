@@ -698,6 +698,36 @@ def test_ai_judgment_only_counts_where_ai_directs_research():
     assert e["software_log"][0] > f["software_log"][0]
 
 
+def test_delegation_follows_judgment():
+    """Direction is handed over J^k times as fast, J being AI judgment over
+    today's AI's: RSI comes sooner the more delegation tracks judgment, and
+    with no judgment gain (or no transfer) the link moves nothing."""
+    base = dict(**tk.POINT_ESTIMATE, years=6, taste_slope=0.6)
+    onset = np.full(1, 0.0)
+    rsi = lambda **kw: tk.simulate(dict(base, **kw), n=1, onset_years=onset)["events"]["RSI"][0]
+    off, half, full = rsi(direction_adoption=0.0), rsi(), rsi(direction_adoption=1.0)
+    assert np.isfinite(off) and full < half < off
+    for flat in (dict(taste_slope=0.0), dict(transfer=0)):
+        a = tk.simulate(dict(base, direction_adoption=0.0, **flat), n=1, onset_years=onset)
+        b = tk.simulate(dict(base, direction_adoption=1.0, **flat), n=1, onset_years=onset)
+        np.testing.assert_allclose(a["software_log"], b["software_log"])
+        assert a["events"]["RSI"][0] == b["events"]["RSI"][0]
+
+
+def test_judgment_today_only_changes_what_handing_direction_over_buys():
+    """Quality is normalized to 1 today, so AI judgment's level against people's
+    moves nothing while the human share of direction holds; once direction is
+    handed over, a higher level buys more research and a lower one less."""
+    base = dict(**tk.POINT_ESTIMATE, years=3, taste_slope=0.0, transfer=100)
+    held = dict(base, human_floor=100.0, human_direction=100.0,
+                human_experiments=100.0, human_verification=100.0)
+    a = tk.simulate(dict(held, judgment_today=0.5), n=1)
+    b = tk.simulate(dict(held, judgment_today=2.0), n=1)
+    np.testing.assert_allclose(a["software_log"], b["software_log"])
+    level = lambda v: tk.simulate(dict(base, judgment_today=v), n=1)["software_log"][0]
+    assert level(0.5) < level(1.0) < level(2.0)
+
+
 def test_judgment_drift_bends_the_judgment_rate_per_10x():
     """Zero drift is a constant elasticity; drift d multiplies the elasticity by
     (1 + d) per 10x of capability, so the gain's slope at 10x is slope * (1 + d)."""
