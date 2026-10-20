@@ -194,7 +194,7 @@ to the literature:
 | Setting | 1σ | Range it gives | Source |
 |---|---|---|---|
 | Returns to research r | 0.65 in ln r | ~90%: 0.34–2.9× the setting | Forethought 0.33–3 around 1.0; Davidson & Houlden 0.4–3.6 around 1.2 |
-| Judgment elasticity | 0.5 in its log | 80%: 0.5–1.9× | The odds-to-judgment power is an assumption that could be half or double |
+| Judgment elasticity | 0.7 in its log | 80%: 0.4–2.5× | Its three readings (next-step ~0.29, TasteVal before and after its break ~0.25 and ~0.76) disagree by ~3×; the band holds all of them |
 | Judgment-rate change | 15 points per 10× | 80%: ±19 points | No measurement; sized so it adds to, rather than sets, the runaway share |
 | Labor–compute elasticity 1/(1−ρ) | 0.8 in its log | ~90%: 0.22–3.1 around 0.83 | Erdil et al. 0.83 (chess), Davidson's −0.2; Whitfill & Wu ~0 (frontier experiments) to 2.6 (compute) |
 | Software ceiling | uniform | 6–16 orders of magnitude above today's efficiency | Forethought: 6–16 above full automation, returns falling linearly to 0 there |
@@ -257,10 +257,17 @@ autopilot, which Forethought's labor already stands for.
 Four priors come from the RSI tab. Today's human hours per stage are scaled so their
 25/50/25 average matches the R&D automation index's latest month, with each AL level
 assumed to take 100/90/70/40/15/0% of unassisted human time (AL0–AL5); stage halving times
-are scaled to that share's past-year halving. The research-quality prior is the next-step
-study's win-odds growth (a Bradley-Terry strength ratio) and the coding elasticity the staff
-survey's output growth, each divided through the same transfer form by assumed
-effective-capability growth.
+are scaled to that share's past-year halving. The research-quality prior is the geometric
+mean of three readings: the next-step study's win-odds growth (a Bradley-Terry strength
+ratio), and TasteVal's compute multiplier (P-Zero Research, 2026) before and after the break
+its Chow scan finds at GPT-5.2: 15.7 and 4.6 ECI points per doubling, read at today's ECI
+climb. The multiplier saves serial experiment time, so it counts toward quality at the
+experiment input's half share of the research CES, without the parallelization penalty.
+Both of its regimes are kept because a steady trend in final scores reproduces the break:
+near the expert's level each gain in score is worth more compute, so the post-break rate is
+partly a property of the benchmark's own score curves (and it slows at shorter budgets).
+The coding elasticity is the staff survey's output growth. Each is divided through the same
+transfer form by assumed effective-capability growth.
 
 `openai_experiment_velocity.csv` contains 32 source-tooltip observations, already used by
 the RSI tab. OpenAI experiments per active researcher rise from 0.72× on January 5, 2026 to

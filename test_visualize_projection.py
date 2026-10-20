@@ -3053,9 +3053,24 @@ class TestRsiMilestoneCards:
                  f"rdauto_{vp._RSI_AUTO_TARGET:.0f}"]
         for slug in slugs:
             assert vp._PC_RSI_WEIGHTS.get(slug, 0) > 0, slug
-        # AL5 is a card only: no weight, no row in the projection.
-        al5 = f"al5_{vp._RSI_AL5_TARGET:.0f}"
-        assert al5 in vp._PC_RSI_CARD_ONLY and al5 not in vp._PC_RSI_WEIGHTS
+        # AL5 and TasteVal's experiment prediction are cards only: no
+        # weight, no row in the projection.
+        for only in (f"al5_{vp._RSI_AL5_TARGET:.0f}",
+                     f"tasteval_predict_{vp._TASTEVAL_PREDICT_TARGET:.0f}"):
+            assert only in vp._PC_RSI_CARD_ONLY and only not in vp._PC_RSI_WEIGHTS
+
+    def test_tasteval_prediction_card_reproduces_the_papers_dates(self):
+        """The card is the paper's own fit: its median is the printed Oct 2030,
+        its 95% interval read as an 80% band, drawn off a quantile grid so it
+        never touches the seeded stream the other cards share."""
+        state = np.random.get_state()
+        early, med, late = vp._pc_tasteval_predict_eta(n=2000)
+        assert np.random.get_state()[1].tolist() == state[1].tolist()
+        lo, mid, hi = (datetime.strptime(d, '%Y-%m-%d')
+                       for d in vp._TASTEVAL_PREDICT_DATES)
+        assert abs((med - mid).days) < 3
+        assert abs((early - lo).days) < 45 and abs((late - hi).days) < 45
+        assert early < med < late
 
 
 class TestUkCyberTlo:
@@ -5153,7 +5168,7 @@ class TestPacing:
         assert set(notes) == set(vp._PC_RSI_WEIGHTS) | set(vp._PC_RSI_CARD_ONLY)
         internal = ("cobench_", "rdauto_", "al5_", "staff_", "code_",
                     "experiments_")
-        released = ("metr_", "rli_", "nextstep_")
+        released = ("metr_", "rli_", "nextstep_", "tasteval_")
         for slug, note in notes.items():
             if slug.startswith(internal):
                 assert "internal evaluation" in note, slug
@@ -5678,7 +5693,7 @@ class TestRevenueUsChina:
 
 
 class TestMilestoneCardLayout:
-    """Thirteen cards have to stay legible: at most four per row, and the
+    """Eleven cards have to stay legible: at most four per row, and the
     rows balanced rather than filled greedily."""
 
     def test_no_row_is_wider_than_the_cap(self):
@@ -5692,11 +5707,11 @@ class TestMilestoneCardLayout:
             # Balanced: no row carries two more cards than another.
             assert max(sizes) - min(sizes) <= 1, (n, sizes)
 
-    def test_the_live_card_count_lays_out_four_three_three(self):
+    def test_the_live_card_count_lays_out_four_four_three(self):
         """The shape the RSI tab actually renders today. If a milestone is
         added or dropped, retarget this deliberately."""
-        assert len(vp._PC_RSI_WEIGHTS) + len(vp._PC_RSI_CARD_ONLY) == 10
-        assert vp._pc_card_rows(10) == [4, 3, 3]
+        assert len(vp._PC_RSI_WEIGHTS) + len(vp._PC_RSI_CARD_ONLY) == 11
+        assert vp._pc_card_rows(11) == [4, 4, 3]
 
 
 class TestTakeoffYearlyProgress:
@@ -5834,6 +5849,28 @@ class TestTakeoffRsiCalibration:
         assert taste > 0
         # Faster capability growth means each unit of it buys less judgment.
         assert vp._tk_nextstep_taste(*args, 2 * cap, 0.6) < taste
+
+    def test_tasteval_regimes_bracket_the_next_step_fit(self):
+        """TasteVal's multiplier per ECI point, read at today's ECI climb:
+        the pre-break regime sits near the next-step fit, the post-break one
+        well above it, and a faster ECI climb per year reads as more judgment
+        per year."""
+        ev = vp.load_rsi_experiments()
+        cap = vp._TK_DEFAULTS["tk_cal_capability"]
+        before, after = vp._tk_tasteval_taste(ev, cap, 0.6)
+        nextstep = vp._tk_nextstep_taste(vp.rsi_dir_frontier_all, ev, cap, 0.6)
+        assert 0 < before < nextstep * 1.5 and after > 2 * nextstep
+        assert vp._tk_tasteval_taste(ev, cap, 0.6, eci_ppy=20.0)[1] > after
+
+    def test_taste_default_is_the_geometric_mean_of_three_readings(self):
+        ev = vp.load_rsi_experiments()
+        cap = vp._TK_DEFAULTS["tk_cal_capability"]
+        tr = vp._TK_DEFAULTS["tk_transfer"] / 100
+        reads = (vp._tk_nextstep_taste(vp.rsi_dir_frontier_all, ev, cap, tr),
+                 *vp._tk_tasteval_taste(ev, cap, tr))
+        assert vp._TK_DEFAULTS["tk_taste_slope"] == pytest.approx(
+            np.exp(np.mean(np.log(reads))), abs=0.006)
+        assert min(reads) < vp._TK_DEFAULTS["tk_taste_slope"] < max(reads)
 
     def test_halving_times_match_the_ladders_decline(self):
         rows = vp.load_rsi_automation()

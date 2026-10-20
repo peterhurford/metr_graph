@@ -1137,7 +1137,7 @@ class TestTakeoffTab:
         assert not _has_widget(at, "number_input", "tk_onset_low")
         evidence = json.loads(_tk_charts(at)[0].proto.spec)
         titles = " ".join(a["text"] for a in evidence["layout"]["annotations"])
-        for name in ("Next-step wins", "Staff speedup", "Experiments/researcher"):
+        for name in ("Next-step + TasteVal", "Staff speedup", "Experiments/researcher"):
             assert name in titles
         yearly = json.loads(_tk_charts(at)[8].proto.spec)
         # Last year measured, this year partly, then each year to the sidebar's.
@@ -1900,7 +1900,9 @@ class TestPacingTab:
         months = why[why["Source"].str.startswith("Time")].iloc[0]
         m = [_span_mo(months[c]) for c in
              ("China ECI/yr at US pause", "Overall China ECI/yr", "China ECI/yr at US/China cross")]
-        assert m[0] < m[1] < m[2]
+        # China's AI speed-up climbs toward the crossing as distillation dries
+        # up, so the last two can round to the same tenth of a year.
+        assert m[0] < m[1] <= m[2]
         # The crossover row dates each rate from the pause; the crossing
         # column has no date of its own.
         cross = why[why["Source"] == "Crossover date"].iloc[0]
@@ -2159,7 +2161,9 @@ class TestPacingTab:
         base_after = dict(at.session_state["_pc_why_after"])
         assert base_after["compute_abroad"] > 0
         parts = sum(v for k, v in base.items() if k != "total")
-        assert parts == pytest.approx(base["total"], abs=0.15)  # rounding
+        # Exact before display (Other takes the remainder); each of up to six
+        # rows then rounds to a tenth.
+        assert parts == pytest.approx(base["total"], abs=0.3)
         # Each source reads its own average, so none sits above both its
         # start and end rates; what they leave is the Other row.
         assert "other" in base

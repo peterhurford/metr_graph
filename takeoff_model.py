@@ -81,7 +81,7 @@ DEFAULTS = {
     # away (TAKEOFF_MODEL.md, *Parameter uncertainty*): 1-sigma of ln r,
     # 1-sigma of ln(judgment elasticity), 1-sigma of the drift in percentage
     # points, and 1-sigma of ln(elasticity of substitution 1 / (1 - rho)).
-    "returns_spread": 65.0, "judgment_spread": 50.0,
+    "returns_spread": 65.0, "judgment_spread": 70.0,
     "drift_spread": 15.0, "substitution_spread": 80.0,
     # Compute growth keeps this share of its log rate from `compute_slow_years`
     # after today (the app sets end-2030, where Epoch's feasibility analysis

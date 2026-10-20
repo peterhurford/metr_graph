@@ -1213,6 +1213,32 @@ _RSI_DIR_RAW = [
     {"name": "Claude Opus 4.7",       "date": "2026-04-16", "better": 59.0, "tie": 12.0},
 ]
 
+# TasteVal (P-Zero Research, Jaffe & Sherburn, arXiv 2610.06824v2, Oct 2026):
+# eight private AI R&D tasks on one H100 for 40 GPU hours, where the model only
+# designs experiments and a fixed Coder (Opus 4.8) runs them. Taste is the
+# compute multiplier: the GPU hours the best of >=2 human experts needs to reach
+# a score over the hours the model needs, serial time on the same hardware.
+# Every number below is transcribed from the paper's text, none digitized.
+_TASTEVAL_SOURCE_URL = "https://arxiv.org/abs/2610.06824"
+
+# ECI points per doubling of the multiplier before and after the break its
+# Chow scan places at GPT-5.2 (Figure 11; 95% CI 3.1-8.8 after). The break
+# is statistically solid, but a steady final-score trend reproduces it: the
+# multiplier climbs faster per unit of final score the closer a model gets to
+# the expert's flattening score-vs-GPU-hours curve (their Table 2), and the
+# post-break doubling stretches to ~7 months at a 5-hour budget (Figure 13).
+# So both regimes are carried, not the post-break one alone.
+_TASTEVAL_ECI_PER_DOUBLING = (15.7, 4.6)
+
+# Its section 3.6: predicting an experiment's validation score from its
+# description and the run's earlier results. A sigmoid in release date from
+# the predict-the-last-score baseline (MASE 0.608) to the replication noise
+# floor (0.211) closes 90% of that gap in October 2030, 95% CI October 2029
+# to December 2031 (mid-month below). Dated off released models.
+_TASTEVAL_PREDICT_TARGET = 90.0
+_TASTEVAL_PREDICT_PUBLISHED = "2026-10-06"
+_TASTEVAL_PREDICT_DATES = ("2029-10-15", "2030-10-15", "2031-12-15")
+
 
 @st.cache_data
 def load_rsi_direction():
@@ -15636,8 +15662,9 @@ _PC_RSI_WEIGHTS = {
 _PC_RSI_W_KEY = "pc_rsiw_"        # session-state prefix, one float per slug
 # Cards shown in the milestone row but left out of the RSI projection, its
 # weights table and editor, and Takeoff's coding blend: AL5 dates full R&D
-# autonomy itself, not a candidate definition of the threshold.
-_PC_RSI_CARD_ONLY = ("al5_90",)
+# autonomy itself, not a candidate definition of the threshold, and TasteVal's
+# experiment prediction is a research skill, not coding.
+_PC_RSI_CARD_ONLY = ("al5_90", "tasteval_predict_90")
 
 
 def _pc_blend_parts(components):
@@ -16335,6 +16362,22 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n):
                  "study's own practical ceiling \u2014 what a judge shown the "
                  "finished session scores \u2014 and the sampled turns were "
                  "selected for having room for improvement."))
+    # Appended last, and drawn off a quantile grid, so the cards above keep
+    # their draws.
+    _cap.append((f"tasteval_predict_{_TASTEVAL_PREDICT_TARGET:.0f}",
+                 f"Experiment prediction {_TASTEVAL_PREDICT_TARGET:.0f}% to noise floor",
+                 _pc_tasteval_predict_eta(n=n, samples=True), True,
+                 "TasteVal's own fit (P-Zero, Oct 2026, section 3.6), not this "
+                 "app's: models predict an experiment's validation score from "
+                 "its description and the run's earlier results, and a sigmoid "
+                 "from the predict-the-last-score baseline down to the "
+                 "replication noise floor closes "
+                 f"{_TASTEVAL_PREDICT_TARGET:.0f}% of that gap in Oct 2030. Its "
+                 "95% interval (Oct 2029\u2013Dec 2031) is read here as an 80% "
+                 "one, since it holds the four tasks fixed. A model there knows "
+                 "what an experiment will return about as well as rerunning it "
+                 "would. A card only, outside the projection: predicting "
+                 "results is not coding, nor a definition of the threshold."))
     _notes = {slug: note + _pc_clock_note(rel, timing_label)
               for slug, _l, r, rel, note in _cap if r is not None}
     _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label, n=n))
@@ -16647,6 +16690,22 @@ def _pc_nextstep_eta(frontier, target_pct=_RSI_DIR_TARGET, n=None,
     start = np.random.normal(_logit(cur['better'] / 100), max(float(sigma), 0), n)
     days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
     return _pc_eta_out(cur['date'], days_to, samples)
+
+
+def _pc_tasteval_predict_eta(n=None, samples=False):
+    """(early, median, late) dates for TasteVal's experiment-prediction error
+    to close `_TASTEVAL_PREDICT_TARGET`% of its gap to the noise floor: the
+    paper's own sigmoid and dates, not a refit. Its 95% interval is read as an
+    80% one, since that bootstrap holds the four tasks and the curve's form
+    fixed. A quantile grid rather than random draws, so adding the card leaves
+    every other card's seeded stream as it was."""
+    n = n or N_SAMPLES
+    anchor = datetime.strptime(_TASTEVAL_PREDICT_PUBLISHED, '%Y-%m-%d')
+    lo, med, hi = ((datetime.strptime(d, '%Y-%m-%d') - anchor).days
+                   for d in _TASTEVAL_PREDICT_DATES)
+    sigma = (np.log(hi) - np.log(lo)) / (2 * 1.282)
+    z = np.array([statistics.NormalDist().inv_cdf((k + 0.5) / n) for k in range(n)])
+    return _pc_eta_out(anchor, np.exp(np.log(med) + sigma * z), samples)
 
 
 def _pc_condition_on_today(components, today, ramp_days=0.0):
@@ -19591,6 +19650,41 @@ def _tk_nextstep_taste(frontier, experiments, capability_growth, transfer):
 # a hedge between reading the odds as productivity (1) and ignoring them (0).
 _TK_ODDS_TO_JUDGMENT = 0.5
 
+# TasteVal's multiplier saves serial GPU time, so the parallelization penalty
+# does not apply; it speeds the experiment input, which carries half the
+# research CES at today's balanced point whatever rho is.
+_TK_TASTEVAL_TO_QUALITY = 0.5
+
+
+def _tk_eci_points_a_year():
+    """The US frontier's fitted ECI climb a year, the one `_tk_eci_scale` uses."""
+    frontier = _eci_entity_data("US best")[1]
+    days = np.array([(m['date'] - frontier[0]['date']).days for m in frontier], dtype=float)
+    return fit_line(days, np.array([m['eci_score'] for m in frontier]))[1] * 365.25
+
+
+def _tk_tasteval_taste(experiments, capability_growth, transfer, eci_ppy=None):
+    """Research-judgment elasticities implied by TasteVal's compute multiplier,
+    one per regime of `_TASTEVAL_ECI_PER_DOUBLING` (before, after its break).
+
+    Per ECI point, so it is read at today's ECI climb; the multiplier's growth
+    becomes quality growth at `_TK_TASTEVAL_TO_QUALITY`, then goes through the
+    same transfer form as the next-step study."""
+    ppy = _tk_eci_points_a_year() if eci_ppy is None else eci_ppy
+    return tuple(_tk_elasticity(2 ** (_TK_TASTEVAL_TO_QUALITY * ppy / per_doubling),
+                                experiments, capability_growth, transfer,
+                                takeoff.DEFAULTS["taste_slope"])
+                 for per_doubling in _TASTEVAL_ECI_PER_DOUBLING)
+
+
+def _tk_taste_default(frontier, experiments, capability_growth, transfer):
+    """The judgment elasticity default: the geometric mean of the next-step
+    study's and TasteVal's two regimes, so the post-break rate carries a third
+    of the weight, about the odds its curvature carries over to frontier R&D."""
+    estimates = (_tk_nextstep_taste(frontier, experiments, capability_growth, transfer),
+                 *_tk_tasteval_taste(experiments, capability_growth, transfer))
+    return round(float(np.exp(np.mean(np.log(np.maximum(estimates, 1e-3))))), 2)
+
 
 def _tk_hist_compute_rate():
     """Log growth a year of the US largest training run, the Data Centers
@@ -19791,7 +19885,7 @@ def _tk_on_human_accel():
 
 _TK_DEFAULTS["tk_human_accel"] = _TK_HUMAN_ACCELERATION
 _TK_DEFAULTS.update(_tk_human_calibration(_TK_HUMAN_ACCELERATION))
-_TK_DEFAULTS["tk_taste_slope"] = _tk_nextstep_taste(
+_TK_DEFAULTS["tk_taste_slope"] = _tk_taste_default(
     rsi_dir_frontier_all, load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
     _TK_DEFAULTS["tk_transfer"] / 100)
 _TK_DEFAULTS["tk_coding_slope"] = _tk_survey_coding(
@@ -19983,7 +20077,7 @@ def _tk_evidence_fig(params):
     sdays = np.array([(r['date'] - survey[0]['date']).days for r in survey], dtype=float)
     s_icpt, s_slope = fit_line(sdays, np.log([r['uplift'] for r in survey]))
     panels = [
-        (f"Next-step wins \u2192 judgment {params['taste_slope']:g}",
+        (f"Next-step + TasteVal \u2192 judgment {params['taste_slope']:g}",
          nxt, odds, "Win odds vs researcher", _rsi_dir_fit(nxt), True, "#8e44ad"),
         (f"Staff speedup \u2192 coding labor {params['coding_slope']:g}",
          survey, [r['uplift'] for r in survey], "Self-reported output (\u00d7)",
@@ -21007,8 +21101,9 @@ def _render_takeoff(loading):
                    "setting.")
             number("How fast AI research judgment improves", "taste_slope", 0.0, 2.0, 0.1,
                    "Research quality scales as capability raised to this power. The "
-                   "default is fitted from the next-step study above: its win odds "
-                   "against researchers grow as research judgment does.")
+                   "default is the geometric mean of three readings: the next-step "
+                   "study above (win odds against researchers) and TasteVal's compute "
+                   "multiplier before and after its Dec 2025 break, per ECI point.")
             number("Change in judgment rate per 10\u00d7 capability (%)", "judgment_drift",
                    -90.0, 300.0, 5.0,
                    "Today's judgment rate is measured on today's models. Above 0, judgment "
@@ -21287,9 +21382,9 @@ def _render_takeoff(loading):
                    "spans Forethought's 0.33\u20133 (and Davidson & Houlden's "
                    "0.4\u20133.6 around 1.2) as a ~90% range.")
             number("Spread on judgment elasticity (%)", "judgment_spread", 0, 200, 5,
-                   "1\u03c3 of the log judgment elasticity. 50 is an 80% range of "
-                   "0.5\u20131.9\u00d7: the fit converts win odds to research at an "
-                   "assumed power that could be half or double.")
+                   "1\u03c3 of the log judgment elasticity. 70 is an 80% range of "
+                   "0.4\u20132.5\u00d7, wide enough to hold both TasteVal regimes "
+                   "and the next-step fit, which disagree by about 3\u00d7.")
             number("Spread on judgment-rate change (points)", "drift_spread", 0, 200, 5,
                    "1\u03c3, in percentage points per 10\u00d7 capability, of the "
                    "change in judgment rate. No study measures it; above 0 it is the "

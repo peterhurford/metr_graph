@@ -291,16 +291,24 @@ independently: a median ~1.6 years each to 5% of direction's start.
 capability-equivalent years (`workflow_state`; `test_human_hours_can_follow_a_given_curve`).
 The stage halving times only set each stage's pace along it, as the weighted halving over
 its own (1.5× for direction, 0.75× for verification at the defaults). The
-judgment elasticity (`taste_slope`) is the next-step study's yearly odds growth raised to
-`_TK_ODDS_TO_JUDGMENT` (0.5: picking the better step more often is not proportionally more
-research); the coding elasticity is the staff survey's yearly output growth. Both go
+judgment elasticity (`taste_slope`, `_tk_taste_default`) is the geometric mean of three
+readings, ~0.38: the next-step study's yearly odds growth raised to `_TK_ODDS_TO_JUDGMENT`
+(0.5: picking the better step more often is not proportionally more research; ~0.29), and
+TasteVal's compute multiplier before and after its GPT-5.2 break (`_tk_tasteval_taste`,
+`_TASTEVAL_ECI_PER_DOUBLING` 15.7 and 4.6 ECI per doubling, read at today's ECI climb and
+taken to quality at `_TK_TASTEVAL_TO_QUALITY` 0.5, since it saves serial time on the
+experiment half of the research CES; ~0.25 and ~0.76). Both regimes are carried because a
+steady final-score trend reproduces the break (the paper's Table 2: the multiplier climbs
+faster per unit of score near the expert's flattening curve), so the post-break rate gets a
+third of the weight; `judgment_spread` (70) keeps all three inside its 80% band
+(`TestTakeoffRsiCalibration`). The coding elasticity is the staff survey's yearly output growth. Both go
 through `_tk_elasticity` against capability growth over the experiment window, which
 comes from evidence (`_tk_evidence_window_growth`: the data-center compute fit times the
 software trend, ~7.8×/yr), never a free assumption: an elasticity measured against one
 capability rate and applied at another is inflated by their ratio. The experiment fit
 runs the model's own research equation over the window, crediting compute, coding help and
-the automation index's falling human share (`_tk_automation_growth`) before judgment. The
-two judgment estimates then agree (~0.29 and ~0.27).
+the automation index's falling human share (`_tk_automation_growth`) before judgment, and
+lands near the next-step fit (~0.27) and below the three-way default.
 
 `_rsi_experiment_draws` uses a local fixed seed so the RSI fan, threshold card, and Takeoff
 reuse the same paths without perturbing global RNG. `_tk_rsi_activity` shifts these to today
@@ -369,6 +377,7 @@ recipe, including the AISI cyber data deliberately *not* ingested.
 | `_RLI_RAW` (hardcoded) | Scale Labs RLI leaderboard (`labs.scale.com/leaderboard/rli`) / `remotelabor.ai` | Hand-edit rows |
 | `_RSI_RAW` (hardcoded) | Anthropic, Redacted Risk Report (Aug 2026), §3.4.3 Fig 3.4.3.A (`_RSI_SOURCE_URL`) | **Not downloadable** — scores read off the figure, Anthropic prints no table. Hand-edit rows |
 | `_RSI_DIR_RAW` (hardcoded) | Anthropic, [*When AI builds itself*](https://www.anthropic.com/institute/recursive-self-improvement) (`_RSI_DIR_SOURCE_URL`) | **Not downloadable** — the figure prints its own bar values, so the rows are read off the labels, not pixel-digitized. Dates are the models' Epoch-catalogued release dates (`test_dates_are_the_published_release_dates`), not the figure's row order, which is not chronological. Hand-edit rows |
+| `_TASTEVAL_*` (hardcoded) | P-Zero Research, [*TasteVal*](https://arxiv.org/abs/2610.06824) (`_TASTEVAL_SOURCE_URL`) | **Not downloadable**, tasks private: the break's ECI-per-doubling rates (Figure 11) and section 3.6's 90% date and CI, transcribed from the text. Hand-edit when a version reports new models |
 | `_RSI_CODE_RAW` (hardcoded) | Same post's *Code contributed per person, by quarter* figure (`_RSI_CODE_SOURCE_URL`) | **Not downloadable** — the figure labels its bars only from 2025Q1 on; the earlier ones are read off the axis. Their mean must come back at ~1 (`test_pre_2025_bars_average_to_the_baseline_they_define`) and the post states the 2026Q2 figure in prose, which pins the other end. Hand-edit rows |
 | `anthropic_rd_automation.csv` | Anthropic, [*Measuring the pace of AI development*](https://www.anthropic.com/institute/measuring-pace-of-ai-development) (`_RSI_AUTO_SOURCE_URL`) | **Not downloadable** — the R&D Automation Index, as **cumulative** shares (`al3_plus` = “rated AL3 or above”, the stacked figure's band boundary). The six AL4 months the figure labels are *transcribed*; every other number is pixel-digitized from the chart asset the page serves. Two calibration guards: each 90% interval brackets its own printed label, and `al4_dig` — the AL4 boundary read the same way as the unlabelled rungs — matches the printed `al4_pct` within ~0.6pt (`test_digitised_al4_reproduces_the_printed_labels`), which is what validates the method on the rungs that have no printed truth. **AL5 has no column**: it is absent in every month, and that absence is used as a censoring bound, not as a zero to fit. Refreshing is a re-read of the figure when Anthropic re-versions the index — the version is in `_RSI_AUTO_VERSION` and the file's `#` header. Hand-edit rows |
 | `openai_experiment_velocity.csv` | OpenAI research-acceleration [post](https://openai.com/index/research-acceleration-view-inside-openai/) (`_RSI_EXPERIMENT_SOURCE_URL`) | **Not downloadable**: the *Experiment velocity* chart's tooltip values, transcribed by hand (four-week trailing experiments per active experimenter, 2025 = 1x); method and caveats in the file's `#` header. Hand-edit rows |
@@ -1334,7 +1343,7 @@ human in the loop — reaching `_RSI_AL5_TARGET`, the same 90% bar, which is
 **not a fitted series** but the AL4 rung shifted by the ladder's own step (see
 the R&D automation section; it is a card only, `_PC_RSI_CARD_ONLY`, outside the projection,
 its weights and Takeoff's coding blend, and carries the loudest caveat), `_pc_nextstep_eta()` for the detour study's frontier reaching
-`_RSI_DIR_TARGET` (that study's own practical ceiling — see the RSI tab section). They render at most `_PC_CARDS_PER_ROW` (4) to a row — wider and a label truncates mid-word — with the rows **balanced** rather than filled greedily, so ten cards read 4–3–3 (`TestMilestoneCardLayout`). Each reproduces
+`_RSI_DIR_TARGET` (that study's own practical ceiling — see the RSI tab section), and `_pc_tasteval_predict_eta()` for TasteVal's experiment-prediction error closing `_TASTEVAL_PREDICT_TARGET`% of its gap to the noise floor (section 3.6). That last is **the paper's own sigmoid and printed dates, not a refit**: its 95% interval is read as an 80% band (the bootstrap holds the four tasks fixed), drawn off a quantile grid and appended last so the other cards keep their seeded draws (`test_tasteval_prediction_card_reproduces_the_papers_dates`). Like AL5 it is card-only (`_PC_RSI_CARD_ONLY`): predicting results is a research skill, not coding, and it has no section above it. They render at most `_PC_CARDS_PER_ROW` (4) to a row — wider and a label truncates mid-word — with the rows **balanced** rather than filled greedily, so eleven cards read 4–4–3 (`TestMilestoneCardLayout`). Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
 [DT/2, DT*2], position over the current model's CI, p50 slope fits the trend; RLI: single OLS in
 logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
@@ -1357,11 +1366,11 @@ than fitting its own, so the tabs can't quote different dates for the same miles
 `test_rli_eta_reproduces_the_rli_tab_defaults` and
 `test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that.
 
-Four of the ten are dated off *released* models (METR p50 and p80, RLI and the detour
-study — publicly benchmarked or run on shipped models); CoBench, the staff survey, merged code, experiment
+Five of the eleven are dated off *released* models (METR p50 and p80, RLI, the detour
+study and TasteVal's prediction fit — publicly benchmarked or run on shipped models); CoBench, the staff survey, merged code, experiment
 velocity and both R&D-automation cards (AL4 and AL5) are internal
 measurements, driven by work on models the lab has internal access to
-before release. So `_pc_report_lag()` pulls the four back
+before release. So `_pc_report_lag()` pulls the five back
 by `_PC_REPORT_LAG_DAYS` (sampled over the range so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other six
 are already on that clock and must not be shifted twice.
 
