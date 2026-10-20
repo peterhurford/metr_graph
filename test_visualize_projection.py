@@ -1056,6 +1056,12 @@ class TestEciGap:
         assert gap[1] == pytest.approx([5, 11, 17], abs=0.1)
         assert gap[2] == pytest.approx([5, -1, -7], abs=0.1)
 
+    def test_a_lab_inside_the_reference_is_at_it_not_ahead_of_it(self):
+        assert vp._eci_level_word("US best", "Anthropic") == "At US best"
+        assert vp._eci_level_word("US best", "DeepSeek") == "Level or ahead"
+        assert vp._eci_level_word(vp._ECI_FRONTIER_LABEL, "DeepSeek") == "At frontier"
+        assert vp._eci_ref_name("US best") == "US best"
+
     def test_behind_now_is_the_eci_gap_at_the_reference_rate_not_the_models_age(self):
         d = lambda y, m: datetime(y, m, 1)
         ref = [{"date": d(2025, 1), "eci_score": 100.0},

@@ -10081,8 +10081,25 @@ def _eci_gap_frontier(label):
     return [m for m in _eci_entity_models(label, full_window=True) if m['is_frontier']]
 
 
-def _eci_level_word(entity_a):
-    return "At frontier" if entity_a == _ECI_FRONTIER_LABEL else "Level or ahead"
+def _eci_ref_name(entity_a):
+    """The reference as the gap views name it: 'US best', never bare 'US', which
+    would read as excluding the US labs measured against it."""
+    return "the frontier" if entity_a == _ECI_FRONTIER_LABEL else entity_a
+
+
+def _eci_level_word(entity_a, org):
+    """A lab at the reference's best: inside the reference it is the reference."""
+    if entity_a == _ECI_FRONTIER_LABEL:
+        return "At frontier"
+    if _ECG_COUNTRY.get(org) == _eci_country_code(entity_a) or org == entity_a:
+        return f"At {entity_a}"
+    return "Level or ahead"
+
+
+def _eci_country_code(label):
+    """'US best' → 'US', in `_ECG_COUNTRY`'s codes; None for anything else."""
+    return {"United States of America": "US", "China": "CN"}.get(
+        (_ECI_COUNTRY_ENTITIES.get(label) or {}).get('country'))
 
 
 def _fmt_gap_mo(months):
@@ -10094,7 +10111,7 @@ def _render_eci_leaderboard(entity_a, entity_b):
     ref_fr = _eci_gap_frontier(entity_a)
     if not ref_fr:
         return
-    a = _eci_entity_short(entity_a)
+    ref = _eci_ref_name(entity_a)
     today = datetime.now()
     rate = _eci_trend_rate(_eci_entity_data(entity_a)[1])
     best = ref_fr[-1]
@@ -10108,34 +10125,33 @@ def _render_eci_leaderboard(entity_a, entity_b):
             hist = _eci_gap_history(ref_fr, subj_fr)
             rows.append((org, hist[-1], _eci_gap_now(ref_fr, hist, today, rate)))
     rows.sort(key=lambda r: r[2]['score'], reverse=True)
-    level = _eci_level_word(entity_a)
     # A country under Compare to bolds its labs.
-    b_cc = {"United States of America": "US", "China": "CN"}.get(
-        (_ECI_COUNTRY_ENTITIES.get(entity_b) or {}).get('country'))
-    md = [f"| Company | Best model | ECI | Released | Age | Behind {a} at release "
-          f"| ECI behind now | Behind {a} now |", "|---|---|---|---|---|---|---|---|"]
+    b_cc = _eci_country_code(entity_b)
+    md = [f"| Company | Best model | ECI | Released | Age | Behind {ref} at release "
+          f"| Gap to {ref} now |", "|---|---|---|---|---|---|---|"]
     for org, at_release, now in rows:
         b = "**" if org == entity_b or _ECG_COUNTRY.get(org) == b_cc else ""
+        level = _eci_level_word(entity_a, org)
         cells = [
             f"{_ECG_FLAG.get(_ECG_COUNTRY.get(org, ''), '')} {org}", now['name'],
             f"{now['score']:.1f}", f"{now['date']:%b %Y}", f"{now['age']:.1f}mo",
             level if at_release['gap_months'] < 0.1 else _fmt_gap_mo(at_release['gap_months']),
-            f"+{now['eci_gap']:.1f}",
-            level if now['level'] else _fmt_gap_mo(now['gap_now']),
+            level if now['level'] else f"{now['eci_gap']:.1f} ECI ({_fmt_gap_mo(now['gap_now'])})",
         ]
         md.append("| " + " | ".join(f"{b}{c}{b}" for c in cells) + " |")
     st.markdown("\n".join(md))
     _fn_caption(
-        f"Each lab's best model against {a}'s frontier: behind at release and "
-        "behind now. ECI data from Epoch AI.",
-        ("behind at release", f"How long before the release {a}'s frontier first "
-                              "reached the model's score, interpolated between "
-                              f"{a}'s frontier models."),
-        ("behind now", f"The ECI points between the lab's best and {a}'s best, in "
-                       f"months of {a}'s trend ({rate:.2f} ECI a month); zero once "
-                       f"the lab ties or passes {a}'s best. Not the months since "
-                       f"{a} first reached the score, which grow with the model's "
-                       "age while nothing new ships."),
+        f"Each lab's best model against {ref}: how far behind at release, and "
+        "the gap now. ECI data from Epoch AI.",
+        ("behind at release", f"How long before the release {ref} first reached the "
+                              "model's score, interpolated between its frontier "
+                              "models."),
+        ("the gap now", f"The ECI points between the lab's best and {ref}'s best "
+                        f"model, and in brackets the months {ref} takes to climb "
+                        f"them at its fitted {rate:.2f} ECI a month. Not on the "
+                        "release column's ruler: months since the score was first "
+                        "reached would grow with the model's age while nothing new "
+                        "ships."),
         ("best model", "Frontier models are one per release date, the best scoring, "
                        "from Epoch's full catalogue. Pick a lab under Compare to "
                        "for its history below."))
@@ -10152,7 +10168,7 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
     ref_fr, subj_fr = _eci_gap_frontier(entity_a), _eci_gap_frontier(entity_b)
     if not ref_fr or not subj_fr:
         return
-    a, b = _eci_entity_short(entity_a), _eci_entity_short(entity_b)
+    a, b = _eci_ref_name(entity_a), _eci_entity_short(entity_b)
     today = datetime.now()
     rate = _eci_trend_rate(_eci_entity_data(entity_a)[1])
     pts = _eci_gap_history(ref_fr, subj_fr)
@@ -10167,15 +10183,15 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
         at_rel = ("Level with" if pts[-1]['gap_months'] < 0.5
                   else f"**{pts[-1]['gap_months']:.1f}mo behind**")
         desc = (f"{at_rel} {a} at release; now **{now['eci_gap']:.1f} ECI** under "
-                f"{a}'s best ({ref_pts[-1][1]:.1f}), **{now['gap_now']:.1f}mo** "
-                f"of {a}'s trend.")
+                f"its best model ({ref_pts[-1][1]:.1f}), **{now['gap_now']:.1f}mo** "
+                "of its trend.")
     st.markdown(f"Best model: **{now['name']}** (ECI {now['score']:.1f}, "
                 f"{now['date']:%b %Y}). {desc}")
 
     def _hover(name, d, score, ref_score, gap):
         s = f"{name}<br>{d:%b %Y}<br>{b} ECI: {score:.1f}"
         if ref_score is not None:
-            s += f"<br>{a} ECI: {ref_score:.1f}<br>ECI gap: {ref_score - score:+.1f}"
+            s += f"<br>{a[:1].upper() + a[1:]} ECI: {ref_score:.1f}<br>ECI gap: {ref_score - score:+.1f}"
         return s + f"<br>Time behind: {gap:.1f}mo"
 
     fig = go.Figure()
@@ -10219,6 +10235,7 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
             ))
             y_lo, y_hi = [float(np.nanmin(q10))], [float(np.nanmax(q90))]
     fig.add_hline(y=0, line=dict(color='black', width=1.5, dash='dot'))
+    _add_today_vline(fig)
     y_max = max([p['gap_months'] for p in pts] + [1.0] + y_hi)
     y_min = min([-0.5] + [v * 1.15 for v in y_lo])
     fig.update_layout(
@@ -10234,13 +10251,13 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
     _fn_caption(
         f"Each point is one of {b}'s frontier releases; the band is {b}'s "
         "projection above, from its latest release.",
-        ("frontier releases", f"The months {a}'s frontier had already stood at the "
+        ("frontier releases", f"The months {a} had already stood at the "
                               "release's score when it shipped, zero if it had not "
                               "reached it."),
         ("the band", f"Each sampled {b} path, weekly from its latest release's gap: "
                      f"every month adds a month, and the path's ECI gain since the "
-                     f"release takes one off per {rate:.2f} points, {a}'s fitted "
-                     f"rate. {a}'s trend carries no uncertainty here, so the band "
+                     f"release takes one off per {rate:.2f} points, the fitted "
+                     f"rate of {a}, whose trend carries no uncertainty here, so the band "
                      f"is {b}'s spread in pace alone. It reads {b} as improving "
                      "between releases, so it can sit below a gap measured off "
                      "released models only. Below zero is ahead."))
