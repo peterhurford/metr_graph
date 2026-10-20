@@ -5118,6 +5118,14 @@ def _eci_entity_short(label):
     return label[:-len(" best")] if label.endswith(" best") else label
 
 
+def _eci_same_frontier(a, b):
+    """True when two entities' full-window frontiers are the same models, as US
+    best's and Frontier (any lab)'s are while no other country has led."""
+    names = lambda e: [m['display_name'] for m in _eci_entity_models(e, full_window=True)
+                       if m['is_frontier']]
+    return names(a) == names(b)
+
+
 def _eci_entity_models(label, full_window=False):
     """Every model of a comparison entity, its frontier marked."""
     spec = _ECI_ENTITY_SPECS[label]
@@ -5175,6 +5183,11 @@ def render_eci():
     st.query_params.pop("region", None)  # superseded by ?a= / ?b=
 
     st.subheader("Projection")
+    if entity_b not in (_ECI_NONE_LABEL, entity_a) and _eci_same_frontier(entity_a, entity_b):
+        st.info(f"{entity_a} and {entity_b} have the same frontier: every model that "
+                f"set one set the other, so there is no gap to chart. Showing "
+                f"{entity_a} alone.")
+        entity_b = _ECI_NONE_LABEL
     proj = _render_eci_projection(entity_a, entity_b)
     _render_eci_gap_history(entity_a, entity_b, proj)
     _render_eci_leaderboard(entity_a, entity_b)

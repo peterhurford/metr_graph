@@ -122,6 +122,15 @@ class TestEciTab:
         assert heads == ["Projection", "OpenAI: months behind Frontier (any lab)",
                          "Where each lab stands"]
 
+    def test_an_identical_frontier_draws_one_entity_not_a_flat_gap(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "ECI")
+        at.selectbox(key="eci_entity_b").set_value("Frontier (any lab)").run()
+        _assert_no_error(at, "ECI / Frontier")
+        assert "same frontier" in at.info[0].body
+        assert not [h for h in at.get("subheader") if "months behind" in h.body]
+
     def test_compare_to_drives_the_months_behind_chart(self):
         at = _fresh_app()
         at.run()
