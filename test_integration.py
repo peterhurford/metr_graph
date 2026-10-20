@@ -239,7 +239,10 @@ class TestDefaultValues:
         ppy_lo = at.number_input(key="eci_custom_ppy_lo").value
         ppy_hi = at.number_input(key="eci_custom_ppy_hi").value
         assert ppy_lo > 0 and ppy_hi > ppy_lo
-        assert 3.0 <= ppy_hi / ppy_lo <= 5.0
+        # The record's slowest and fastest year, not half to twice the fit.
+        import visualize_projection as vp
+        assert (ppy_lo, ppy_hi) == vp._eci_yearly_gain_range(
+            vp._eci_entity_data("US best")[1])
         assert at.toggle(key="eci_milestones").value is True
         assert at.toggle(key="eci_labels").value is True
         assert not _has_widget(at, "radio", "eci_piecewise_n_seg"), \

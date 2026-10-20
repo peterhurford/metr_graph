@@ -4132,6 +4132,26 @@ def _eci_tab_reset_keys(p):
         f"_{p}_seg_config",
     ]
 
+_ECI_PPY_HELP = ("80% interval on the yearly gain. Default: the smallest and largest "
+                 "ECI the frontier gained over any year it covers (half to twice "
+                 "the fit when fewer than two years are on record, or on a "
+                 "piecewise fit's last segment).")
+
+
+def _eci_yearly_gain_range(frontier):
+    """The smallest and largest ECI gain over any year of `frontier`, one window
+    from each frontier model on to a year before the last, read off the step
+    frontier: the linear rate CI's default. None under two windows."""
+    pts = [(m['date'], m['eci_score']) for m in frontier]
+    if len(pts) < 2:
+        return None
+    gains = [_ecg_frontier_score_at_date(pts, d + timedelta(days=365)) - sc
+             for d, sc in pts if d + timedelta(days=365) <= pts[-1][0]]
+    if len(gains) < 2 or min(gains) <= 0 or min(gains) == max(gains):
+        return None
+    return max(0.5, round(min(gains), 1)), round(max(gains), 1)
+
+
 def _eci_tab_defaults(p):
     return {
         f"{p}_proj_basis": "Linear",
@@ -4253,6 +4273,8 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                         _eci_pw_seg_ppy = _eci_pre_ppy
                     _eci_default_ppy_lo = round(_eci_pw_seg_ppy / 2, 1)
                     _eci_default_ppy_hi = round(_eci_pw_seg_ppy * 2, 1)
+                elif (_eci_gains := _eci_yearly_gain_range(_eci_pre_fr)) is not None:
+                    _eci_default_ppy_lo, _eci_default_ppy_hi = _eci_gains
                 else:
                     _eci_default_ppy_lo = round(_eci_pre_ppy / 2, 1)
                     _eci_default_ppy_hi = round(_eci_pre_ppy * 2, 1)
@@ -4267,10 +4289,10 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                 _eci_ppy_lo_col, _eci_ppy_hi_col = st.columns(2)
                 eci_custom_ppy_lo = _ss_number_input(_eci_ppy_lo_col,
                     "+Pts/Yr CI low", f"{p}_custom_ppy_lo", _eci_default_ppy_lo,
-                    min_value=0.5, max_value=365.0, step=0.5)
+                    min_value=0.5, max_value=365.0, step=0.5, help=_ECI_PPY_HELP)
                 eci_custom_ppy_hi = _ss_number_input(_eci_ppy_hi_col,
                     "+Pts/Yr CI high", f"{p}_custom_ppy_hi", _eci_default_ppy_hi,
-                    min_value=0.5, max_value=365.0, step=0.5)
+                    min_value=0.5, max_value=365.0, step=0.5, help=_ECI_PPY_HELP)
                 if eci_custom_ppy_lo > eci_custom_ppy_hi:
                     st.error("+Pts/Yr CI low must be ≤ +Pts/Yr CI high.")
                     st.stop()

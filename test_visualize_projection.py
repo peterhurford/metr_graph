@@ -1056,6 +1056,19 @@ class TestEciGap:
         assert gap[1] == pytest.approx([5, 11, 17], abs=0.1)
         assert gap[2] == pytest.approx([5, -1, -7], abs=0.1)
 
+    def test_rate_ci_defaults_to_the_slowest_and_fastest_year_on_record(self):
+        d = lambda y, m: datetime(y, m, 1)
+        fr = [{"date": d(2025, 1), "eci_score": 100.0},
+              {"date": d(2025, 7), "eci_score": 104.0},
+              {"date": d(2026, 1), "eci_score": 115.0},
+              {"date": d(2027, 1), "eci_score": 121.0}]
+        # Read off the steps: Jan 25 -> Jan 26 +15; Jul 25 -> Jul 26 (still
+        # at 115) +11; Jan 26 -> Jan 27 +6.
+        assert vp._eci_yearly_gain_range(fr) == (6.0, 15.0)
+        assert vp._eci_yearly_gain_range(fr[:2]) is None
+        lo, hi = vp._eci_yearly_gain_range(vp._eci_entity_data("China best")[1])
+        assert lo < 14 < hi < 20  # under twice China's ~14/yr fit
+
     def test_a_lab_inside_the_reference_is_at_it_not_ahead_of_it(self):
         assert vp._eci_level_word("US best", "Anthropic") == "At US best"
         assert vp._eci_level_word("US best", "DeepSeek") == "Level or ahead"
