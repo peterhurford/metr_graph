@@ -1558,9 +1558,10 @@ the setback is sized at the cut date (today's OOM gap widened by `(g_mid − g_d
 per year of lead), so a later cut costs more to regrow but is never worse for China
 overall. Cutting *at* today keeps the old global band cap instead. Above the milestone table under the chart
 sits an `st.warning` that it assumes ~SL5 secure weights (theft would put China at
-the bar). A policy lever, `pc_methods_pause` (default off; label says "from pacing start"), sets whether diffusion dries up
-over `_CC_DIFF_ABSORB_YRS` after the pause (`t_pause`) or runs at full rate because the US
-keeps publishing (`test_methods_toggle_keeps_diffusion_running`). Each lever's state in
+the bar). A policy lever, `pc_stop_leak` (default off), stops `pc_leak_cut`% (default 90) of the
+methods leak (diffusion) from today or `pc_leak_when` (*Advanced*): the channel fades over
+`pc_leak_absorb` years (*Advanced*, default `_CC_DIFF_ABSORB_YRS`) to the share left (`diff_keep` in the sim; `t_pause` is the cut date,
+not the pacing date) (`test_methods_toggle_keeps_diffusion_running`). Each lever's state in
 words (distillation teacher, cut dates, compute band) sits in the "these settings"
 hover under the table. The panel adds **no release-queue
 wait** (unlike the CC 161 section — a queue delays both sides alike); dates follow the

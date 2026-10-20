@@ -12298,8 +12298,8 @@ def _cc_iso_compute_rate(rows, country, halfwidth=0.4):
 # Epoch's estimate of pure pretraining algorithmic efficiency (~doubling every
 # 8-9 months) — the floor for frontier progress with no stronger teacher.
 _CC_PRETRAIN_ALGO_OOM = 0.4
-# How long the already-published methods stock keeps paying out after a pause
-# stops new publications — the diffusion channel's absorption ramp.
+# How long the already-leaked methods stock keeps paying out after the leak
+# is cut — the diffusion channel's absorption ramp.
 _CC_DIFF_ABSORB_YRS = 1.0
 
 
@@ -13710,7 +13710,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         release_gap_days=None, n=None, horizon_yrs=12.0,
                         us_pause_level=None, pure_lo=None, pure_hi=None,
                         t_pause=None, diff_absorb_yrs=_CC_DIFF_ABSORB_YRS,
-                        t_dist_stop=None, dist_keep=0.0, comp_dead=None,
+                        diff_keep=0.0, t_dist_stop=None, dist_keep=0.0, comp_dead=None,
                         comp_slow=None,
                         dist_teacher=None, channels=None, comp_shadow=None,
                         level_sd=0.0, level_ramp_yrs=0.5, us_path=None,
@@ -13728,7 +13728,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     your teacher; gap vs US(t) = us_anchor + us_rate·t, capped at
     `us_pause_level`); the diffusion channel decays only after a pause —
     D(t) ramps 1→0 over `diff_absorb_yrs` from `t_pause` (years, scalar or
-    per-sample), the published stock being absorbed. With `pure_lo=None` or
+    per-sample), the leaked stock being absorbed, down to `diff_keep` of its
+    rate (0, the default, stops it). With `pure_lo=None` or
     `t_pause=None`, diffusion never decays and the law reduces to the
     two-channel model. `t_dist_stop` (years, scalar) cuts the distillation
     channel abruptly at that time — an enforcement action (API-level
@@ -13841,8 +13842,9 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                    else np.minimum(us_level, dist_teacher))
         gap = np.maximum(t_level - e, 0.0)
         d_avail = (1.0 if tp is None else
-                   np.clip(1.0 - (grid[i - 1] - tp) / diff_absorb_yrs,
-                           0.0, 1.0))
+                   diff_keep + (1.0 - diff_keep) * np.clip(
+                       1.0 - (grid[i - 1] - tp) / max(diff_absorb_yrs, 1e-9),
+                       0.0, 1.0))
         d_on = (1.0 if (t_dist_stop is None or grid[i - 1] < t_dist_stop)
                 else dist_keep)
         comp_t = (comp if comp_slow is None or grid[i - 1] < comp_slow[0]
@@ -15625,7 +15627,8 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_dist_when", "pc_remote_when", "pc_smug_when",
                   "pc_legal_when", "pc_hbm", "pc_hbm_when", "pc_payoff",
                   "pc_cn_run",
-                  "pc_methods_pause", "pc_pace", "pc_tk_follow",
+                  "pc_stop_leak", "pc_leak_cut", "pc_leak_when", "pc_leak_absorb",
+                  "pc_pace", "pc_tk_follow",
                   "pc_win_n"] + \
                  [f"pc_win{i}_{f}" for i in range(1, _PC_WIN_MAX + 1)
                   for f in ("pace", "start", "end")] + \
@@ -15719,7 +15722,9 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_smug_when": _PC_WHEN_NOW, "pc_legal_when": _PC_WHEN_NOW,
                 "pc_hbm": False, "pc_hbm_when": _PC_WHEN_NOW,
                 "pc_payoff": "Average of the two",
-                "pc_cn_run": 2, "pc_methods_pause": False,
+                "pc_cn_run": 2, "pc_stop_leak": False, "pc_leak_cut": 90,
+                "pc_leak_when": _PC_WHEN_NOW,
+                "pc_leak_absorb": _CC_DIFF_ABSORB_YRS,
                 "pc_tk_follow": 0.8,
                 "pc_win_n": 0,
                 **{k: v for i in range(1, _PC_WIN_MAX + 1) for k, v in (
@@ -16810,7 +16815,7 @@ _PC_CHANNEL_LABELS = {
     'compute_domestic': "Compute, domestic clusters",
     'compute_abroad': "Compute, clusters abroad",
     'innovation': "Innovation, China's own (never stops)",
-    'diffusion': "Diffusion, published US methods (stops ~1 yr after pause)",
+    'diffusion': "Diffusion, leaked US methods",
     'distillation': "Distillation, learning from US models (stops near the "
                     "teacher)",
     'speedup': "AI speed-up, China's own automated coder and RSI",
@@ -17388,9 +17393,10 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                         f"{us_run_mo}"), (None, None)
         else:
             label = _PC_CHANNEL_LABELS[k]
-            if k == 'diffusion' and not st.session_state.get(
-                    "pc_methods_pause", _PC_DEFAULTS["pc_methods_pause"]):
-                label = "Diffusion, published US methods (US keeps publishing)"
+            if k == 'diffusion':
+                label += (" (leak cut)" if st.session_state.get(
+                    "pc_stop_leak", _PC_DEFAULTS["pc_stop_leak"])
+                    else " (leak not cut)")
             r = rates.get(k, (None, None))
             if split and k in ('compute_domestic', 'compute_abroad'):
                 # The split is a counterfactual with no rate of its own: the
@@ -17488,7 +17494,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         + ". At its starting pace that would take "
         f"{_mo(r0)}; as distillation and diffusion run out it slows, so the "
         f"actual average gives **{_mo(ravg)}**.",
-        ("run out", "Diffusion fades over the year after the pause. "
+        ("run out", "Diffusion fades after the leak is cut, over the "
+                    "absorption time under *Advanced*. "
                     "Distillation fades as China nears the best model it can "
                     "learn from, which with models withheld sits below the "
                     "bar."),
@@ -17536,8 +17543,8 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                if "Dried up" in row.values()}
         why = []
         if "Diffusion" in dry:
-            why.append("diffusion, China has absorbed what the US published "
-                       "before the pause")
+            why.append("diffusion, China has absorbed the US methods that "
+                       "leaked before the cut")
         if "Distillation" in dry:
             why.append("distillation, China has caught "
                        + ("the last model the US released before withholding "
@@ -17729,14 +17736,27 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "of what China adds at home in 2026\u201327. The cut comes "
                  "off China's domestic compute growth with the other supply "
                  "levers, from today unless dated later under *Advanced*.")
-        methods_pause = st.checkbox(
-            "US stops publishing methods from pacing start",
-            key="pc_methods_pause",
-            value=_PC_DEFAULTS["pc_methods_pause"],
-            help="On: from the pacing date the US publishes no new methods, and "
-                 "China absorbs what was already published over "
-                 f"~{_CC_DIFF_ABSORB_YRS:.0f} yr, so diffusion dries up. Off: "
-                 "the US keeps publishing and diffusion runs at full rate.")
+        # The absorption slider sits under Advanced, below this help text, so
+        # read it a rerun early, as the DUVi growth rate is.
+        _absorb = float(st.session_state.get(
+            "pc_leak_absorb", _PC_DEFAULTS["pc_leak_absorb"]))
+        stop_leak = st.checkbox(
+            "Stop leak of US methods to China", key="pc_stop_leak",
+            value=_PC_DEFAULTS["pc_stop_leak"],
+            help="Papers, talent moving, espionage: every way US research "
+                 "methods reach Chinese labs, the diffusion channel. From "
+                 "today (or the date under *Advanced*) the share set below "
+                 "stops; China absorbs what already leaked over "
+                 f"~{_absorb:g} yr (set under *Advanced*), after which "
+                 "diffusion runs "
+                 "at the share left. Off: diffusion runs at full rate.")
+        leak_cut = st.slider(
+            "Share of the leak stopped", 0, 100,
+            value=_PC_DEFAULTS["pc_leak_cut"], step=5, format="%d%%",
+            key="pc_leak_cut", disabled=not stop_leak,
+            help="100% stops diffusion once the leaked stock is absorbed; "
+                 "lower keeps that share of the channel. Needs the checkbox "
+                 "above.")
         with (advanced_box if advanced_box is not None
               else st.expander("Advanced")):
             st.markdown("**Pacing windows**")
@@ -17776,8 +17796,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             st.divider()
             st.markdown("**When the controls bite**")
             _opts = _pc_when_options(today)
-            for _k in ("pc_dist_when", "pc_remote_when", "pc_smug_when",
-                       "pc_legal_when", "pc_hbm_when"):
+            for _k in ("pc_dist_when", "pc_leak_when", "pc_remote_when",
+                       "pc_smug_when", "pc_legal_when", "pc_hbm_when"):
                 if st.session_state.get(_k, _PC_WHEN_NOW) not in _opts:
                     st.session_state.pop(_k, None)
             dist_when = st.select_slider(
@@ -17787,6 +17807,22 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 help="Enforcement takes time. Until this date China keeps "
                      "distilling under the gap-decay law; after it the channel "
                      "is gone. Needs the checkbox above.")
+            leak_when = st.select_slider(
+                "Methods leak cut off", options=_opts,
+                value=_PC_DEFAULTS["pc_leak_when"], key="pc_leak_when",
+                disabled=not stop_leak,
+                help="Until this date diffusion runs at full rate; after it "
+                     "the leaked stock is absorbed over the time set below. "
+                     "Needs the checkbox above.")
+            leak_absorb = st.slider(
+                "Years to absorb what already leaked", 0.0, 3.0,
+                value=float(_PC_DEFAULTS["pc_leak_absorb"]), step=0.25,
+                format="%.2g yr", key="pc_leak_absorb",
+                disabled=not stop_leak,
+                help="After the leak is cut, diffusion fades linearly over "
+                     "this long to the share left, as China works through "
+                     "the methods it already has. 0 stops it at once. Needs "
+                     "the leak checkbox above.")
             remote_when = st.select_slider(
                 "Remote access cut off", options=_opts,
                 value=_PC_DEFAULTS["pc_remote_when"], key="pc_remote_when",
@@ -17920,6 +17956,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         _supply.append(("the HBM controls", hbm_g))
     _supply_txt = ", ".join(f"{c:.0%} from {n}" for n, c in _supply)
     d_dist = _pc_when_date(dist_when, today)
+    d_leak = _pc_when_date(leak_when, today)
     d_remote = _pc_when_date(remote_when, today)
     cc_rows = load_eci_compute(mtime=_eci_mtime())
     eci_all = load_eci_frontier(mtime=_eci_mtime())
@@ -18081,7 +18118,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         released = np.minimum(_us_trained_unpaced(_us_clock(t - _ship)), trained)
         return trained, released
     # Three-channel algorithmic engine: distillation decays with the gap,
-    # diffusion over ~a year after the pause (published stock absorbed),
+    # diffusion over ~a year after the leak is cut (leaked stock absorbed),
     # innovation never. The checkboxes tighten two channels: distillation
     # cut at `d_dist` (not at the gap's close), and remote compute cut at
     # `d_remote` as a *level setback* — losing the sites abroad drops
@@ -18219,7 +18256,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               g_hi=g_hi_eff, algo_lo=a_lo, algo_mid=a_mid,
               algo_hi=a_hi, pace_lo=pace_lo, pace_hi=pace_hi,
               n=n_s, comp_dead=comp_dead,
-              t_pause=t_pause_s if methods_pause else None,
+              t_pause=(max((d_leak - anchor_d).days, 0) / 365.25
+                       if stop_leak else None),
+              diff_keep=1.0 - leak_cut / 100.0, diff_absorb_yrs=leak_absorb,
               comp_slow=comp_slow,
               t_dist_stop=(max((d_dist - anchor_d).days, 0) / 365.25
                            if stop_dist else None),
@@ -18849,6 +18888,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             "access to clusters abroad adds on top — the same "
             "domestic-only counterfactual the remote-access checkbox "
             "applies, which is why ticking it zeroes that row.")
+    if stop_leak:
+        _notes.append(
+            f"The methods leak is cut {leak_cut}% "
+            + ("today" if d_leak <= today else f"{d_leak:%b %Y}")
+            + f"; diffusion fades over ~{leak_absorb:g} yr to "
+            f"{1 - leak_cut / 100:.0%} of its rate.")
     if stop_dist:
         _notes.append(
             "Distillation is cut "
@@ -19091,7 +19136,7 @@ def render_pacing():
             format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
             help="From this date the US grows at the pace above. It also "
                  "sets the compute and capability each side has then, the "
-                 "date the model-access and methods levers bite, and the bar "
+                 "date the model-access lever bites, and the bar "
                  "the *Compute Thresholds* race runs to.")
     pause_d = _pc_add_months(_today, pause_mo)
     caps = _pc_capacity_at(

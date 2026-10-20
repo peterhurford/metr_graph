@@ -1645,14 +1645,15 @@ class TestPacingTab:
 
     def _app(self):
         """The pause scenario most of these tests read: pace 0%, models
-        withheld and methods unpublished from the pause. The defaults (no
+        withheld from the pause and the methods leak fully cut today. The defaults (no
         pacing, both levers off) are covered on their own."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
         at.select_slider(key="pc_pace").set_value(0)
         at.checkbox(key="pc_withhold").check()
-        at.checkbox(key="pc_methods_pause").check().run()
+        at.checkbox(key="pc_stop_leak").check().run()
+        at.slider(key="pc_leak_cut").set_value(100).run()
         return at
 
     @staticmethod
@@ -1737,8 +1738,8 @@ class TestPacingTab:
         assert "China, no compute levers" in names
 
     def test_methods_toggle_keeps_diffusion_running(self):
-        """With the US still publishing methods, diffusion never dries up and
-        China crosses sooner."""
+        """With the leak only half cut, diffusion keeps part of its rate and
+        China crosses sooner; uncut, it runs at full rate, sooner still."""
         at = self._app()
 
         def surpass(at):
@@ -1752,12 +1753,23 @@ class TestPacingTab:
 
         base = surpass(self._paired(at))
         assert diffusion(at)["China ECI/yr at US/China cross"] == "Dried up"
-        self._paired(at.checkbox(key="pc_methods_pause").uncheck())
-        _assert_no_error(at, "Pacing / methods keep publishing")
-        assert surpass(at) < base
+        self._paired(at.slider(key="pc_leak_cut").set_value(50))
+        _assert_no_error(at, "Pacing / methods leak half cut")
+        half, half_rate = surpass(at), float(
+            diffusion(at)["China ECI/yr at US/China cross"])
+        assert half < base
+        self._paired(at.checkbox(key="pc_stop_leak").uncheck())
+        _assert_no_error(at, "Pacing / methods leak not cut")
+        assert surpass(at) <= half
+        at.checkbox(key="pc_stop_leak").check().run()
+        at.slider(key="pc_leak_cut").set_value(100).run()
+        self._paired(at.slider(key="pc_leak_absorb").set_value(2.0))
+        _assert_no_error(at, "Pacing / methods leak absorbed slowly")
+        assert half < surpass(at) <= base
+        self._paired(at.checkbox(key="pc_stop_leak").uncheck())
         row = diffusion(at)
-        assert "keeps publishing" in row["Source"]
-        assert float(row["China ECI/yr at US/China cross"]) > 1.0
+        assert "leak not cut" in row["Source"]
+        assert float(row["China ECI/yr at US/China cross"]) > half_rate
 
     def test_why_states_the_gap_and_the_slowing_rate(self):
         """The breakdown says how much gap is left at the pause and how fast
@@ -1826,7 +1838,7 @@ class TestPacingTab:
         md = " ".join(str(m.value) for m in at.markdown)
         assert "**Assumes**" not in md
         assert any("SL5 secure weights" in str(w.value) for w in at.warning)
-        assert at.checkbox(key="pc_methods_pause").value is True
+        assert at.checkbox(key="pc_stop_leak").value is True
         # The clock line follows the sidebar default (run finished).
         clock = next(m.help for m in at.metric if "paused US frontier" in str(m.label))
         assert "Dates are training-run finishes" in clock
@@ -2286,7 +2298,8 @@ class TestPacingTab:
         at.run()
         _switch_tab(at, "Pacing")
         assert at.checkbox(key="pc_withhold").value is False
-        assert at.checkbox(key="pc_methods_pause").value is False
+        assert at.checkbox(key="pc_stop_leak").value is False
+        assert at.slider(key="pc_leak_cut").value == 90
         pace = at.select_slider(key="pc_pace")
         assert pace.value == 100 and pace.options[0] == "100% \u00b7 no pacing"
         assert pace.options[-1] == "0% \u00b7 pause"
