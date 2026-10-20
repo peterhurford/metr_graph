@@ -159,6 +159,21 @@ class TestEciTab:
             drift.append(ys[-1] - ys[0])
         assert drift[0] * drift[1] <= 0, drift
 
+    def test_a_model_is_named_once_and_close_edge_labels_stack(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "ECI")
+        at.selectbox(key="eci_entity_a").set_value("Anthropic").run()
+        at.selectbox(key="eci_entity_b").set_value("OpenAI").run()
+        _assert_no_error(at, "ECI / Anthropic vs OpenAI")
+        spec = json.loads(at.get("plotly_chart")[0].proto.spec)
+        names = [t["text"][0] for t in spec["data"]
+                 if "text" in t.get("mode", "") and t.get("text")]
+        assert len(names) == len(set(names)), names
+        edge = [an["text"] for an in spec["layout"]["annotations"]
+                if an.get("xref") == "paper" and an.get("x") == 1.0]
+        assert [e for e in edge if "Anthropic best" in e and "OpenAI best" in e], edge
+
     def test_compare_to_drives_the_months_behind_chart(self):
         at = _fresh_app()
         at.run()

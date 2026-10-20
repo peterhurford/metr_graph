@@ -4679,6 +4679,8 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         ))
 
     # --- Milestone hlines ---
+    _edge_labels = []      # (score, text, color) at the right edge, drawn with the layout
+    _fr_textpos = _eci_label_positions(tab_frontier_all)
     if eci_show_milestones:
         x_lo = tab_all[0]['date'] - timedelta(days=30)
         x_hi = proj_end_date
@@ -4714,21 +4716,17 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     mode='lines', line=dict(color=color, width=1.2, dash='dot'),
                     hoverinfo='skip', showlegend=False,
                 ))
-            fig.add_annotation(
-                x=1.0, xref='paper', y=score_val, text=f"  {label}",
-                showarrow=False, xanchor='left', yanchor='middle',
-                font=dict(size=10, color=color))
+            _edge_labels.append((score_val, label, color))
             if _is_us_best:
-                _add_us_dot(us_best_marker, color)
+                # on the side the subject's latest name is not
+                _add_us_dot(us_best_marker, color, textpos=(
+                    'top left' if _fr_textpos[-1].startswith('bottom') else 'bottom right'))
 
         if us_match_marker is not None:
-            _add_us_dot(us_match_marker, '#8e44ad', textpos='bottom center')
+            if us_best_marker is None or us_match_marker['name'] != us_best_marker['name']:
+                _add_us_dot(us_match_marker, '#8e44ad', textpos='bottom left')
             if us_match_label:
-                fig.add_annotation(
-                    x=1.0, xref='paper', y=us_match_marker['score'],
-                    text=f"  {us_match_label}", showarrow=False,
-                    xanchor='left', yanchor='middle',
-                    font=dict(size=10, color='#8e44ad'))
+                _edge_labels.append((us_match_marker['score'], us_match_label, '#8e44ad'))
 
         # Third comparison marker: the benchmark model nearest where the
         # subject's median projection sits today. Only meaningful when the
@@ -4750,12 +4748,11 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                             'date': _proj_match['date'],
                             'score': _proj_match['eci_score'],
                             'name': _proj_match['display_name'],
-                        }, '#a569bd', textpos='bottom center')
-                        fig.add_annotation(
-                            x=1.0, xref='paper', y=_proj_match['eci_score'],
-                            text=f"  {subject_name or 'Subject'} proj. today {_proj_today_score:.1f}",
-                            showarrow=False, xanchor='left', yanchor='middle',
-                            font=dict(size=10, color='#a569bd'))
+                        }, '#a569bd', textpos='top left')
+                        _edge_labels.append((
+                            _proj_match['eci_score'],
+                            f"{subject_name or 'Subject'} proj. today {_proj_today_score:.1f}",
+                            '#a569bd'))
 
     # --- Overlay trendline (e.g., US trend on the China chart) ---
     if overlay_frontier is not None and len(overlay_frontier) >= 2:
@@ -4804,16 +4801,13 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             hover += _eci_metr_hover(m['eci_score'], m.get('organization', ''))
         fig.add_trace(go.Scatter(
             x=[m['date']], y=[m['eci_score']],
-            mode='markers' + ('+text' if eci_show_labels else ''),
+            mode='markers',
             marker=dict(color='#aaaaaa', size=6, symbol='circle-open',
                         line=dict(color='#bbbbbb', width=1)),
-            text=[m['display_name']] if eci_show_labels else None,
-            textposition='top right',
-            textfont=dict(size=8, color='#bbbbbb'),
             hovertext=hover, hoverinfo='text', showlegend=False,
         ))
 
-    # Then plot frontier models
+    # Then plot frontier models (the rest are named on hover only)
     for idx_m, m in enumerate(tab_frontier_all):
         is_used = idx_m <= eci_proj_as_of_idx
         is_selected = idx_m == eci_proj_as_of_idx
@@ -4832,7 +4826,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                 marker=dict(color=color, size=sz, symbol=sym,
                             line=dict(color='white', width=1)),
                 text=[m['display_name']] if eci_show_labels else None,
-                textposition='top right',
+                textposition=_fr_textpos[idx_m],
                 textfont=dict(size=9, color='#c0392b' if is_selected else '#1a1a2e'),
                 hovertext=hover, hoverinfo='text', showlegend=False,
             ))
@@ -4848,7 +4842,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     marker=dict(color=_btc, size=12, symbol='diamond',
                                 line=dict(color='white', width=1)),
                     text=[_bt_label],
-                    textposition='top right',
+                    textposition=_fr_textpos[idx_m],
                     textfont=dict(size=9, color=_btc),
                     hovertext=hover + f"<br>Percentile: {r['percentile']:.0f}%",
                     hoverinfo='text', showlegend=False,
@@ -4860,7 +4854,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     marker=dict(color='#aaaaaa', size=10, symbol='circle-open',
                                 line=dict(color='#777777', width=2)),
                     text=[m['display_name']] if eci_show_labels else None,
-                    textposition='top right',
+                    textposition=_fr_textpos[idx_m],
                     textfont=dict(size=9, color='#999999'),
                     hovertext=hover, hoverinfo='text', showlegend=False,
                 ))
@@ -4875,6 +4869,10 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     y_min = min(all_scores) - 5
     _milestone_y_max = max(s for s, _, _ in milestone_list) if milestone_list else 170
     y_max = max(pct95[-1], max(all_scores) + 5, _milestone_y_max) + 5
+    for _y, _text in _eci_edge_label_groups(_edge_labels, (y_max - y_min) / 560 * 13):
+        fig.add_annotation(x=1.0, xref='paper', y=_y, text=_text, showarrow=False,
+                           xanchor='left', yanchor='middle', align='left',
+                           font=dict(size=10))
     yaxis_cfg = dict(
         title="ECI Score",
         range=[y_min, y_max],
@@ -5126,6 +5124,33 @@ def _eci_entity_short(label):
     if label == _ECI_FRONTIER_LABEL:
         return "Frontier"
     return label[:-len(" best")] if label.endswith(" best") else label
+
+
+def _eci_label_positions(frontier, edge_days=120):
+    """Frontier names alternate above-left and below-right of their points: the
+    trend rises, so those sides are empty and two neighbours' names point away
+    from each other. Points within `edge_days` of the first stay right of it,
+    off the plot's left edge."""
+    pos = []
+    for i, m in enumerate(frontier):
+        above = i % 2 == 1
+        right = not above or (m['date'] - frontier[0]['date']).days < edge_days
+        pos.append(('top ' if above else 'bottom ') + ('right' if right else 'left'))
+    return pos
+
+
+def _eci_edge_label_groups(labels, min_gap):
+    """Right-edge labels as (y, text), any within `min_gap` of the next stacked
+    into one annotation at their mean, highest first, each keeping its colour."""
+    groups = []
+    for y, text, color in sorted(labels, key=lambda t: -t[0]):
+        if groups and groups[-1][-1][0] - y < min_gap:
+            groups[-1].append((y, text, color))
+        else:
+            groups.append([(y, text, color)])
+    return [(sum(g[0] for g in grp) / len(grp),
+             "<br>".join(f'  <span style="color:{c}">{t}</span>' for _, t, c in grp))
+            for grp in groups]
 
 
 def _eci_same_frontier(a, b):

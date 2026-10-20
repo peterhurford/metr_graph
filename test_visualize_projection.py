@@ -1073,6 +1073,18 @@ class TestEciGap:
         lo, hi = vp._eci_yearly_gain_range(vp._eci_entity_data("China best")[1])
         assert lo < 14 < hi < 20  # under twice China's ~14/yr fit
 
+    def test_close_edge_labels_stack_and_far_ones_stay_apart(self):
+        groups = vp._eci_edge_label_groups(
+            [(166.4, "B", "#111"), (170.0, "C", "#222"), (166.8, "A", "#333")], 1.0)
+        assert [round(y, 1) for y, _ in groups] == [170.0, 166.6]
+        assert groups[1][1].index(">A<") < groups[1][1].index(">B<")
+
+    def test_neighbouring_frontier_names_sit_on_opposite_sides(self):
+        d0 = datetime(2025, 1, 1)
+        fr = [{'date': d0 + timedelta(days=60 * i)} for i in range(5)]
+        assert vp._eci_label_positions(fr) == [
+            'bottom right', 'top right', 'bottom right', 'top left', 'bottom right']
+
     def test_a_lab_inside_the_reference_is_at_it_not_ahead_of_it(self):
         assert vp._eci_level_word("US best", "Anthropic") == "At US best"
         assert vp._eci_level_word("US best", "DeepSeek") == "Level or ahead"
