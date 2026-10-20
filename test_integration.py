@@ -119,8 +119,8 @@ class TestEciTab:
         assert at.selectbox(key="eci_entity_a").value == "Frontier (any lab)"
         assert at.selectbox(key="eci_entity_b").value == "OpenAI"
         heads = [h.body for h in at.get("subheader")]
-        assert heads[:2] == ["Where each lab stands", "Projection"]
-        assert "OpenAI: months behind Frontier (any lab)" in heads
+        assert heads == ["Projection", "OpenAI: months behind Frontier (any lab)",
+                         "Where each lab stands"]
 
     def test_compare_to_drives_the_months_behind_chart(self):
         at = _fresh_app()

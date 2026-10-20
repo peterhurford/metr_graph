@@ -4141,7 +4141,7 @@ def _eci_tab_defaults(p):
         f"{p}_milestones": True,
         f"{p}_labels": True,
         f"{p}_eci_metr_proj": False,
-        f"{p}_end_year": 2026,
+        f"{p}_end_year": 2027,
     }
 
 def _eci_metr_hover(eci_score, organization):
@@ -5149,10 +5149,10 @@ def render_eci():
         st.query_params["b"] = _ECI_ENTITY_SLUG[entity_b]
     st.query_params.pop("region", None)  # superseded by ?a= / ?b=
 
-    _render_eci_leaderboard(entity_a, entity_b)
     st.subheader("Projection")
     proj = _render_eci_projection(entity_a, entity_b)
     _render_eci_gap_history(entity_a, entity_b, proj)
+    _render_eci_leaderboard(entity_a, entity_b)
 
 
 def _render_eci_projection(entity_a, entity_b):
@@ -10061,10 +10061,10 @@ def _eci_gap_now(ref_fr, hist, today):
 
 def _eci_projected_gap(ref_fr, trend_fr, dates, paths, today):
     """Months each sampled path trails the reference at each date (negative =
-    ahead). A level the reference has reached dates as on its frontier, as
-    `_eci_gap_history` does; a higher one by the reference's trend (OLS on
-    `trend_fr`, the projection's overlay), never before today, since its frontier
-    has not shown it yet. NaN where the trend is flat."""
+    ahead). A level below the reference's best dates as on its frontier, as
+    `_eci_gap_history` does; its best or higher as the reference climbing from
+    its best today at its trend's rate (OLS on `trend_fr`, the projection's
+    overlay). NaN where the trend is flat."""
     base = ref_fr[0]['date']
     ref_days = np.array([(m['date'] - base).days for m in ref_fr], dtype=float)
     ref_scores = np.array([m['eci_score'] for m in ref_fr])
@@ -10073,10 +10073,11 @@ def _eci_projected_gap(ref_fr, trend_fr, dates, paths, today):
     paths = np.asarray(paths, dtype=float)
     reached = np.interp(paths, ref_scores, ref_days)
     if slope > 0:
-        ahead = np.maximum((today - base).days, (paths - intercept) / slope)
+        ahead = (today - base).days + (paths - ref_scores[-1]) / slope
     else:
         ahead = np.full_like(paths, np.nan)
-    ref_at = np.where(paths <= ref_scores[-1], reached, ahead)
+    # At the reference's best counts as level, as `_eci_gap_now` has it.
+    ref_at = np.where(paths < ref_scores[-1], reached, ahead)
     at = np.array([(d - base).days for d in dates], dtype=float)
     return (at[None, :] - ref_at) * 86400 / _ECI_MONTH_S
 
@@ -10143,7 +10144,8 @@ def _render_eci_leaderboard(entity_a, entity_b):
 def _render_eci_gap_history(entity_a, entity_b, proj=None):
     """The subject's months behind the reference, at each of its frontier
     releases, carried to today, then projected off the subject's sampled paths
-    `proj` (dates, paths) where the projection drew them."""
+    `proj` (dates, paths) where the projection drew them, shifted so their
+    median starts today at the subject's best released score."""
     if entity_b in (_ECI_NONE_LABEL, entity_a):
         st.info("Pick an entity under *Compare to* to chart how far it has trailed "
                 f"{entity_a} over time.")
@@ -10213,8 +10215,14 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
         keep = [i for i, d in enumerate(dates) if d >= today][::7]
         if keep:
             fdates = [dates[i] for i in keep]
+            paths = np.asarray(paths)[:, keep]
+            # The fan stands on the fitted trend; the measured gap on the best
+            # release. Moving the fan by their difference keeps its spread. The
+            # lower median lands on the best score, so a subject level with the
+            # reference starts level rather than astride the release cliff.
+            paths = paths - np.percentile(paths[:, 0], 50, method='lower') + now['score']
             gap = _eci_projected_gap(ref_fr, _eci_entity_data(entity_a)[1], fdates,
-                                     np.asarray(paths)[:, keep], today)
+                                     paths, today)
             q10, q25, q50, q75, q90 = np.nanpercentile(gap, [10, 25, 50, 75, 90], axis=0)
             rgb = tuple(int(color.lstrip('#')[i:i + 2], 16) for i in (0, 2, 4))
             for lo, hi, alpha, name in ((q10, q90, 0.12, "80% CI"),
@@ -10251,18 +10259,19 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
     st.plotly_chart(fig, width="stretch")
     _fn_caption(
         f"Each point is one of {b}'s frontier releases; the dashed line carries "
-        f"its best model to today, and the band is {b}'s projection above against "
-        f"{a}'s trend.",
+        f"its best model to today, and the band is {b}'s projection above, "
+        "moved to start from its best released model rather than its trend line.",
         ("frontier releases", f"The months {a}'s frontier had already stood at the "
                               "release's score when it shipped, zero if it had not "
                               "reached it."),
         ("the band", f"Each sampled {b} path, weekly from today: a level {a} has "
-                     f"reached is dated on {a}'s frontier, a higher one by {a}'s "
-                     f"trend line (no earlier than today). {a}'s trend carries no "
-                     f"uncertainty here, so the band is {b}'s spread alone. It "
-                     f"opens where the projection's fan stands today, on {b}'s "
-                     "fitted trend rather than its last release, so it can open "
-                     "above or below the dashed line. Below zero is ahead."))
+                     f"reached is dated on {a}'s frontier, a higher one as {a} "
+                     f"climbing from its best today at its trend's rate. {a}'s trend carries no "
+                     f"uncertainty here, so the band is {b}'s spread alone. The "
+                     f"projection's fan stands on {b}'s fitted trend; it is moved "
+                     f"so its median starts at {b}'s best released score, where "
+                     "the dashed line ends, keeping its spread. Below zero is "
+                     "ahead."))
 
 
 # ── Data Centers ───────────────────────────────────────────────────────────
