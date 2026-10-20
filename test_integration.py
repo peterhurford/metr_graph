@@ -130,6 +130,9 @@ class TestEciTab:
         at.selectbox(key="eci_entity_b").set_value("China best").run()
         _assert_no_error(at, "ECI / China best")
         assert "China best: months behind US best" in [h.body for h in at.get("subheader")]
+        # The projection's paths carry the chart forward from today.
+        spec = json.loads(at.get("plotly_chart")[-1].proto.spec)
+        assert "Projected median" in [t.get("name") for t in spec["data"]]
 
 
 class TestModeSwitchingBehavior:

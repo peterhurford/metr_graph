@@ -5010,6 +5010,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         "ECI = Epoch Capabilities Index. +Pts/Yr = ECI points gained per year. "
         "These are projections, not forecasts.",
         ("projections, not forecasts", PROJ_DISCLAIMER.strip()))
+    return proj_dates, all_trajectories
 
 
 
@@ -5150,11 +5151,13 @@ def render_eci():
 
     _render_eci_leaderboard(entity_a, entity_b)
     st.subheader("Projection")
-    _render_eci_projection(entity_a, entity_b)
-    _render_eci_gap_history(entity_a, entity_b)
+    proj = _render_eci_projection(entity_a, entity_b)
+    _render_eci_gap_history(entity_a, entity_b, proj)
 
 
 def _render_eci_projection(entity_a, entity_b):
+    """Draw the projection; in the comparison view, return the subject's
+    (dates, sampled ECI paths) for the months-behind chart."""
     # Short display names ("US best" → "US") for composed labels/titles.
     _a_name = _eci_entity_short(entity_a)
     _b_name = _eci_entity_short(entity_b)
@@ -5181,7 +5184,7 @@ def _render_eci_projection(entity_a, entity_b):
         st.warning(f"Not enough {_a_name} models to draw a comparison trend.")
         _render_eci_tab(subj_all, subj_fr, subj_names, "eci",
                         f"{_b_name} ECI Projection", [])
-        return
+        return None
 
     # Benchmark's best model → milestone line + labeled dot at its release date.
     bench_best = max(bench_fr, key=lambda m: m['eci_score'])
@@ -5194,7 +5197,7 @@ def _render_eci_projection(entity_a, entity_b):
     if bench_best['eci_score'] >= subj_current['eci_score']:
         bench_match = min(
             bench_fr, key=lambda m: abs(m['eci_score'] - subj_current['eci_score']))
-    _render_eci_tab(
+    return _render_eci_tab(
         subj_all, subj_fr, subj_names, "eci",
         f"{_b_name} ECI Projection",
         [(bench_best['eci_score'], f"{_a_name} best {bench_best['eci_score']:.1f}", '#8e44ad')],
@@ -10056,6 +10059,28 @@ def _eci_gap_now(ref_fr, hist, today):
             'age': max(0.0, (today - latest['date']).total_seconds() / _ECI_MONTH_S)}
 
 
+def _eci_projected_gap(ref_fr, trend_fr, dates, paths, today):
+    """Months each sampled path trails the reference at each date (negative =
+    ahead). A level the reference has reached dates as on its frontier, as
+    `_eci_gap_history` does; a higher one by the reference's trend (OLS on
+    `trend_fr`, the projection's overlay), never before today, since its frontier
+    has not shown it yet. NaN where the trend is flat."""
+    base = ref_fr[0]['date']
+    ref_days = np.array([(m['date'] - base).days for m in ref_fr], dtype=float)
+    ref_scores = np.array([m['eci_score'] for m in ref_fr])
+    t_days = np.array([(m['date'] - base).days for m in trend_fr], dtype=float)
+    intercept, slope = fit_line(t_days, np.array([m['eci_score'] for m in trend_fr]))
+    paths = np.asarray(paths, dtype=float)
+    reached = np.interp(paths, ref_scores, ref_days)
+    if slope > 0:
+        ahead = np.maximum((today - base).days, (paths - intercept) / slope)
+    else:
+        ahead = np.full_like(paths, np.nan)
+    ref_at = np.where(paths <= ref_scores[-1], reached, ahead)
+    at = np.array([(d - base).days for d in dates], dtype=float)
+    return (at[None, :] - ref_at) * 86400 / _ECI_MONTH_S
+
+
 def _eci_gap_frontier(label):
     """An entity's full-window frontier, one model per release date."""
     return [m for m in _eci_entity_models(label, full_window=True) if m['is_frontier']]
@@ -10115,9 +10140,10 @@ def _render_eci_leaderboard(entity_a, entity_b):
                        "for its history below."))
 
 
-def _render_eci_gap_history(entity_a, entity_b):
+def _render_eci_gap_history(entity_a, entity_b, proj=None):
     """The subject's months behind the reference, at each of its frontier
-    releases, carried to today."""
+    releases, carried to today, then projected off the subject's sampled paths
+    `proj` (dates, paths) where the projection drew them."""
     if entity_b in (_ECI_NONE_LABEL, entity_a):
         st.info("Pick an entity under *Compare to* to chart how far it has trailed "
                 f"{entity_a} over time.")
@@ -10181,24 +10207,62 @@ def _render_eci_gap_history(entity_a, entity_b):
             hovertext=hover + f"<br>(no new model in {now['age']:.1f}mo)",
             hoverinfo='text', showlegend=False,
         ))
+    y_lo, y_hi = [], []
+    if proj is not None:
+        dates, paths = proj
+        keep = [i for i, d in enumerate(dates) if d >= today][::7]
+        if keep:
+            fdates = [dates[i] for i in keep]
+            gap = _eci_projected_gap(ref_fr, _eci_entity_data(entity_a)[1], fdates,
+                                     np.asarray(paths)[:, keep], today)
+            q10, q25, q50, q75, q90 = np.nanpercentile(gap, [10, 25, 50, 75, 90], axis=0)
+            rgb = tuple(int(color.lstrip('#')[i:i + 2], 16) for i in (0, 2, 4))
+            for lo, hi, alpha, name in ((q10, q90, 0.12, "80% CI"),
+                                        (q25, q75, 0.25, "50% CI")):
+                fig.add_trace(go.Scatter(
+                    x=fdates + fdates[::-1], y=list(hi) + list(lo[::-1]),
+                    fill='toself', fillcolor=f"rgba{rgb + (alpha,)}", line=dict(width=0),
+                    name=name, hoverinfo='skip', showlegend=True,
+                ))
+
+            def _mo(g):
+                return f"{g:.1f}mo behind" if g >= 0 else f"{-g:.1f}mo ahead"
+            fig.add_trace(go.Scatter(
+                x=fdates, y=q50, mode='lines', name="Projected median",
+                line=dict(color=color, width=2, dash='dot'),
+                hovertext=[f"{d:%b %Y}<br>Median: {_mo(m)}<br>80% CI: {_mo(l)} to {_mo(h)}"
+                           for d, m, l, h in zip(fdates, q50, q10, q90)],
+                hoverinfo='text',
+            ))
+            y_lo, y_hi = [float(np.nanmin(q10))], [float(np.nanmax(q90))]
     fig.add_hline(y=0, line=dict(color='black', width=1.5, dash='dot'))
-    y_max = max([p['gap_months'] for p in pts] + [1.0]
+    y_max = max([p['gap_months'] for p in pts] + [1.0] + y_hi
                 + ([now['gap_now'] + 1] if show_today else []))
+    y_min = min([-0.5] + [v * 1.15 for v in y_lo])
     fig.update_layout(
         height=400, plot_bgcolor='white', paper_bgcolor='white',
         margin=dict(l=50, r=50, t=10, b=40), font=dict(color='#222222'),
         xaxis=dict(gridcolor='rgba(0,0,0,0.15)', tickfont=dict(color='#222222')),
         yaxis=dict(title_text=f"Months behind {a}", gridcolor='rgba(0,0,0,0.15)',
-                   range=[-0.5, y_max * 1.15], tickfont=dict(color='#222222'),
+                   range=[y_min, y_max * 1.15], tickfont=dict(color='#222222'),
                    title_font=dict(color='#222222')),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, x=0),
     )
     st.plotly_chart(fig, width="stretch")
     _fn_caption(
         f"Each point is one of {b}'s frontier releases; the dashed line carries "
-        "its best model to today.",
+        f"its best model to today, and the band is {b}'s projection above against "
+        f"{a}'s trend.",
         ("frontier releases", f"The months {a}'s frontier had already stood at the "
                               "release's score when it shipped, zero if it had not "
-                              "reached it."))
+                              "reached it."),
+        ("the band", f"Each sampled {b} path, weekly from today: a level {a} has "
+                     f"reached is dated on {a}'s frontier, a higher one by {a}'s "
+                     f"trend line (no earlier than today). {a}'s trend carries no "
+                     f"uncertainty here, so the band is {b}'s spread alone. It "
+                     f"opens where the projection's fan stands today, on {b}'s "
+                     "fitted trend rather than its last release, so it can open "
+                     "above or below the dashed line. Below zero is ahead."))
 
 
 # ── Data Centers ───────────────────────────────────────────────────────────

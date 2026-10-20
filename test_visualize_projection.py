@@ -1042,6 +1042,22 @@ class TestEciGap:
         [llama] = [p for p in hist if p["name"] == "Llama 3-70B"]
         assert llama["gap_months"] > 12
 
+    def test_projected_gap_dates_reached_levels_on_the_frontier_and_higher_on_the_trend(self):
+        d = lambda y, m: datetime(y, m, 1)
+        ref = [{"date": d(2025, 1), "eci_score": 100.0},
+               {"date": d(2026, 1), "eci_score": 112.0}]  # 1 point a month
+        today, at = d(2026, 7), [d(2026, 7), d(2027, 1)]
+        gap = vp._eci_projected_gap(ref, ref, at, np.array([[106.0, 106.0],
+                                                             [118.0, 118.0]]), today)
+        # 106 was reached mid-2025: ~12mo behind now, ~18mo half a year on.
+        assert gap[0] == pytest.approx([12.0, 18.0], abs=0.3)
+        # 118 is past the reference's best and due on its trend in Jul 2026:
+        # level today, 6mo behind six months later.
+        assert gap[1] == pytest.approx([0.0, 6.0], abs=0.3)
+        # Far above the trend reads as ahead.
+        assert vp._eci_projected_gap(ref, ref, [today], np.array([[136.0]]),
+                                     today)[0, 0] < -11
+
 
 
 class TestCcForwardMatch:
