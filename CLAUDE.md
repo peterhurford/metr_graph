@@ -251,7 +251,11 @@ The tab reads as a story, top to bottom: the warning, *The takeoff model* (the l
 `_TK_LOOP_HTML`, its three brakes, the headline cards for coding automation, RSI and
 ultraintelligence with 80%/90% CIs, the two gaps between them and the first-year progress),
 *The evidence* (the former RSI tab), then *Inside the takeoff model*: the evidence row, **1. Research speeds
-up** (`_tk_pace_fig`, the factor chart, whose labor-and-compute factor splits exactly into
+up** (`_tk_pace_fig` twice: *Capability relative to 2025* (`capability=True`,
+`capability_2025_quantiles`: the pace with the labor, compute and difficulty factors held
+at today's, so only AI and judgment move it, axis to `_TK_CAPABILITY_VIEW`;
+`test_capability_pace_holds_headcount_compute_and_difficulty_at_todays`), then the net
+pace; then the factor chart, whose labor-and-compute factor splits exactly into
 human labor, AI capabilities and compute (`pace_factors` `labor`/`ai`/`compute`, summing to
 `resources`; `test_pace_factors_multiply_back_to_the_pace`), then *Compute going in*
 (`_tk_compute_fig`, each draw's `workflow_progress["compute_log"]`, post-RSI boost included,

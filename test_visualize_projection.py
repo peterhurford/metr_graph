@@ -2663,6 +2663,22 @@ class TestRsiExperiments:
             assert sample_key not in h      # dropped from the cached result
         np.testing.assert_array_equal(a['software_log'], b['software_log'])
 
+    def test_capability_pace_holds_headcount_compute_and_difficulty_at_todays(self):
+        """Only the AI and judgment factors move the capability pace, which starts
+        at the net pace and runs above it."""
+        params = dict(years=3)
+        onset, starts, slopes = np.ones(40), np.full(40, np.log(1.7)), np.full(40, 0.3)
+        wp = vp._tk_simulate(params, onset, "cap-test", starts, slopes)['workflow_progress']
+        f = vp.takeoff.simulate(params, n=40, onset_years=onset,
+                                experiment_slopes=slopes)['workflow_progress']['pace_factors']
+        moved = (f["ai"] - f["ai"][:, :1]) + (f["judgment"] - f["judgment"][:, :1])
+        pace0 = f["resources"][:, :1] + f["judgment"][:, :1] - f["difficulty"][:, :1]
+        np.testing.assert_allclose(wp['capability_2025_quantiles'], np.quantile(
+            np.exp(np.minimum(pace0 + moved, 700)) * 1.7, [.1, .5, .9], axis=0).T, rtol=1e-6)
+        cap, pace = wp['capability_2025_quantiles'], wp['pace_2025_quantiles']
+        np.testing.assert_allclose(cap[0], pace[0], rtol=1e-6)
+        assert cap[-1, 1] > pace[-1, 1]
+
     def test_takeoff_inherits_the_same_activity_paths_without_changing_global_rng(self):
         rows = vp.load_rsi_experiments()
         before = np.random.get_state()

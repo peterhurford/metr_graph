@@ -20099,6 +20099,8 @@ _TK_LOOP_HTML = (
 _TK_PACE_GUIDES = (2, 5, 10)
 # Top of the pace chart's view; FOOM scenarios run off it.
 _TK_PACE_VIEW = 1000
+# The capability chart's: with difficulty held, judgment alone runs thousands-fold.
+_TK_CAPABILITY_VIEW = 1e6
 # Chart 1 opens a year back. Nothing is simulated before today, so the past
 # is reconstructed: each scenario's pace runs log-linearly from 1x at the
 # middle of 2025 (the baseline year, 1x by definition) to its own value today.
@@ -20122,8 +20124,10 @@ def _tk_dates(result, today):
             for y in result["workflow_progress"]["years"]]
 
 
-def _tk_pace_fig(result, today, markers=(), history=None, today_note="OpenAI trend"):
-    """Research pace in multiples of 2025, actual vs AI frozen at today.
+def _tk_pace_fig(result, today, markers=(), history=None, today_note="OpenAI trend",
+                 capability=False):
+    """Research pace in multiples of 2025, actual vs AI frozen at today; with
+    `capability`, the pace with headcount, compute and difficulty held at today's.
 
     `markers` is [(label, date)] drawn as dotted verticals: the milestones'
     median dates, so the reader sees where on the curve each one lands.
@@ -20152,10 +20156,13 @@ def _tk_pace_fig(result, today, markers=(), history=None, today_note="OpenAI tre
                            text=f"Today: {hq[-1, 1]:.1f}\u00d7 ({today_note})",
                            xanchor="right", textangle=-90,
                            font=dict(size=11, color="#555"))
-    for key, name, color, dash in (
-            ("reference_2025_quantiles", "If AI stopped improving today",
-             "#7f8c8d", "dash"),
-            ("pace_2025_quantiles", "Modeled research pace", "#2980b9", None)):
+    lines = ((("capability_2025_quantiles", "Pace from capability", "#2980b9", None),)
+             if capability else
+             (("reference_2025_quantiles", "If AI stopped improving today",
+               "#7f8c8d", "dash"),
+              ("pace_2025_quantiles", "Modeled research pace", "#2980b9", None)))
+    view = _TK_CAPABILITY_VIEW if capability else _TK_PACE_VIEW
+    for key, name, color, dash in lines:
         q = p[key]
         if dash is None:
             fig.add_trace(go.Scatter(x=x, y=q[:, 0], mode="lines",
@@ -20176,14 +20183,13 @@ def _tk_pace_fig(result, today, markers=(), history=None, today_note="OpenAI tre
         fig.add_hline(y=level, line_dash="dot", line_color="#999", line_width=1)
     # A runaway's pace reaches ~1e300: hold the view to the readable range,
     # letting those scenarios run off the top.
-    lows = [p["reference_2025_quantiles"][:, 0], p["pace_2025_quantiles"][:, 0]]
-    highs = [p["reference_2025_quantiles"][:, 2], p["pace_2025_quantiles"][:, 2]]
+    lows = [p[key][:, 0] for key, *_ in lines]
+    highs = [p[key][:, 2] for key, *_ in lines]
     if history is not None:
         lows.append(history[1][:, 0])
         highs.append(history[1][:, 2])
     low = max(min(float(np.nanmin(v)) for v in lows), 0.1) / 1.3
-    high = min(max(max(float(np.nanmax(v)) for v in highs), 10) * 1.3,
-               _TK_PACE_VIEW)
+    high = min(max(max(float(np.nanmax(v)) for v in highs), 10) * 1.3, view)
     for i, (label, when) in enumerate(markers):
         fig.add_vline(x=when, line_dash="dot", line_color="#b0b0b0", line_width=1)
         fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper",
@@ -20194,10 +20200,12 @@ def _tk_pace_fig(result, today, markers=(), history=None, today_note="OpenAI tre
         xaxis=dict(range=[history[0][0] if history is not None else x[0], x[-1]]),
         yaxis=dict(type="log", title="Research pace (× the 2025 pace)",
                    range=[np.log10(low), np.log10(high)],
-                   tickvals=[0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000],
+                   tickvals=[0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000,
+                             1e4, 1e5, 1e6],
                    ticktext=["0.5×", "1×", "2×", "5×",
                              "10×", "20×", "50×", "100×",
-                             "200×", "500×", "1,000×"]),
+                             "200×", "500×", "1,000×", "10,000×", "100,000×",
+                             "1,000,000×"]),
         legend=dict(orientation="h", y=-0.12), hovermode="x")
     return fig
 
@@ -20924,6 +20932,13 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
         progress[key] = np.quantile(values * baseline, [.1, .5, .9], axis=0).T
     # The factor chart draws each factor's median change since today.
     f = progress.pop("pace_factors")
+    # Chart 1's capability pace: the pace with headcount, compute and difficulty
+    # held at today's, so only AI help and judgment move it. Built from the
+    # factors, since difficulty is infinite at a ceiling.
+    held = (f["resources"] - f["labor"] + f["labor"][:, :1] - f["compute"]
+            + f["compute"][:, :1] + f["judgment"] - f["difficulty"][:, :1])
+    progress["capability_2025_quantiles"] = np.quantile(
+        np.exp(np.minimum(held, 700)) * baseline, [.1, .5, .9], axis=0).T
     logs = dict(f, difficulty=-f["difficulty"], pace=np.log(progress["pace"]))
     progress["factor_medians"] = {k: np.median(v - v[:, :1], axis=0) for k, v in logs.items()}
     progress["agent_share_quantiles"] = np.quantile(progress["agent_share"], [.1, .5, .9], axis=0).T
@@ -21720,17 +21735,31 @@ def _render_takeoff(loading):
                     width="stretch")
 
     st.subheader("1. Research speeds up")
+    pace_history = _tk_pace_history(np.exp(experiment_starts) * pace_yield, today)
+    pace_note = ("OpenAI trend" if abs(pace_today - _TK_DEFAULTS["tk_pace_today"]) < 0.05
+                 else "set")
+    st.markdown("**Capability relative to 2025**")
     _fn_caption(
-        "Research pace as a multiple of 2025. Verticals mark milestone medians.",
+        "Research pace as a multiple of 2025 from AI capabilities and research "
+        "judgment alone, with headcount, compute and idea difficulty held at today's.",
+        ("headcount, compute and idea difficulty held",
+         "The net pace below with its human-researchers, compute and harder-ideas "
+         "factors taken back out from today on; today's level still carries the past's. "
+         "Medians, with the middle 80% shaded. The axis stops at "
+         f"{_TK_CAPABILITY_VIEW:,.0f}\u00d7."))
+    st.plotly_chart(_tf(_tk_to(_tk_pace_fig(
+        result, today, markers, history=pace_history, today_note=pace_note,
+        capability=True), view_end)), width="stretch")
+    st.markdown("**Overall net research speedup**")
+    _fn_caption(
+        "Research pace as a multiple of 2025, with more researchers and harder "
+        "ideas. Verticals mark milestone medians.",
         ("Research pace", "Useful work before validation, including work in "
          "progress while successors train. Medians, with the middle 80% shaded. "
          f"The axis stops at {_TK_PACE_VIEW:,}\u00d7; scenarios that run away "
          "leave the top of the chart."))
     st.plotly_chart(_tf(_tk_to(_tk_pace_fig(
-        result, today, markers,
-        history=_tk_pace_history(np.exp(experiment_starts) * pace_yield, today),
-        today_note="OpenAI trend" if abs(pace_today - _TK_DEFAULTS["tk_pace_today"]) < 0.05
-        else "set"), view_end)),
+        result, today, markers, history=pace_history, today_note=pace_note), view_end)),
         width="stretch")
     st.markdown("**What moves the pace**")
     _fn_caption(
