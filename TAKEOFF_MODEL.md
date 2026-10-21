@@ -181,7 +181,10 @@ been measured, so each scenario draws its own AL4-to-AL5 gap over the AL5 card's
 range. Research direction, the stage RSI is defined on, also reads an independent source,
 the next-step study: direction needs people in proportion to the odds a researcher still
 picks the better step, above the odds left at the study's own ceiling. Its dates and the
-ladder's are averaged, half each. Halving or doubling the AL5 gap moves the median RSI
+ladder's are averaged, half each. Alone, each puts direction's 5% bar a median ~1.6 years
+out (ladder 1.57, next-step 1.71), so the weight moves the tails, not the median: at 0,
+0.5 and 1 the median RSI stays May 2028 while its 90th percentile is Oct 2029, Nov 2029
+and Feb 2030. Halving or doubling the AL5 gap moves the median RSI
 from May 2028 to April or August 2028. Each stage moves along its curve at the index's
 past-year pace, in months of capability progress at today's rate, so faster progress
 compresses it. A
