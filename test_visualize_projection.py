@@ -5804,6 +5804,30 @@ class TestTakeoffHumanSpeedup:
         assert starts["tk_human_direction"] == max(
             starts[f"tk_human_{k}"] for k in vp.takeoff.WORKFLOW_KEYS)
 
+    def test_stages_are_their_activities(self):
+        """The model's stage weights are its activities' shares of unassisted
+        time, and each stage's prior is its activities' time-weighted average."""
+        times = {k: sum(a[2] for a in vp._TK_ACTIVITIES if a[1] == k)
+                 for k in vp.takeoff.WORKFLOW_KEYS}
+        assert sum(a[2] for a in vp._TK_ACTIVITIES) == pytest.approx(1.0)
+        np.testing.assert_allclose([times[k] for k in vp.takeoff.WORKFLOW_KEYS],
+                                   vp.takeoff.WORKFLOW_WEIGHTS)
+        np.testing.assert_allclose(vp._TK_AL_STAGE_HOURS_PRIOR[2],
+                                   [a[3] for a in vp._TK_ACTIVITIES if a[1] == "verification"][0])
+
+    def test_activity_readout_gives_the_speedup_and_ends_with_al5(self):
+        """The activities' fitted hours reproduce the speed-up today; people
+        hand implementation over before direction, and their time falls toward
+        zero only once AL5 arrives."""
+        hours, years, shares = vp._tk_activity_path(vp._TK_HUMAN_ACCELERATION)
+        times = np.array([a[2] for a in vp._TK_ACTIVITIES])
+        total = times @ shares
+        assert total[0] == pytest.approx(1 / vp._TK_HUMAN_ACCELERATION, abs=0.02)
+        assert (np.diff(total) <= 1e-12).all() and total[-1] < 0.01
+        names = [a[0] for a in vp._TK_ACTIVITIES]
+        under = lambda name: np.argmax(shares[names.index(name)] < 0.05)
+        assert under("Implementation and debugging") < under("High-level direction")
+
     def test_each_stage_follows_its_own_ladder_curve(self):
         """Direction's curve holds its hours through AL4's climb and drops as
         AL5 arrives; experiments, handed over at AL4, fall sooner."""

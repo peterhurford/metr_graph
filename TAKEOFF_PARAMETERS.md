@@ -139,7 +139,7 @@ or calibrated tail coverage. The displayed bands reflect these scenario assumpti
 
 - End year 2031 was requested by the user, not forecast as a transition date.
 - The coding anchor represents 95% of baseline coding human hours automated.
-- Human-hour reporting weights are 25/50/25; they do not affect the per-stage automation gate.
+- Stage weights are 20/70/10, each stage's share of an unassisted researcher's time (the app's activity table); they do not affect the per-stage automation gate.
 - Sustained feedback requires at least a 10% output improvement per qualifying cycle.
 - Integration steps are at most weekly, with monthly observations; these are numerical choices.
 - Standalone fallback coding dates are uniform over 6–24 months with a 10-year horizon.

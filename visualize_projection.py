@@ -19541,37 +19541,56 @@ _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
 _TK_DEFAULTS["tk_serial_speedup"] = bool(takeoff.DEFAULTS["serial_speedup"])
 _TK_DEFAULTS["tk_reallocate_compute"] = bool(takeoff.DEFAULTS["reallocate_compute"])
 
-# Human hours a task at each automation level (AL0..AL5) still takes in each
-# research stage (rows: direction, experiments, verification), as a share of
-# doing it unassisted. The index rates who leads a task, not how long people
-# spend, so this is a prior, stretched by one common power until the ladder's
-# latest month makes people `_TK_HUMAN_ACCELERATION` times as fast as
-# unassisted overall (stage-weighted human share 1 / that). AL0 and AL5 stay
-# 100% and 0%. The rows follow Anthropic's level definitions: at AL3 people
-# give "close human direction", and at AL4 AI works "from a high-level prompt,
-# while the human supervises" and the person still decides what ships, so
-# direction stays mostly human until AL5 while experiments go first. Epoch's
-# researcher interviews (2024) and Anthropic's staff studies (2025-26) rank
-# the stages the same way; none gives numbers.
-_TK_AL_STAGE_HOURS_PRIOR = (
-    (1.0, 1.0, 0.95, 0.9, 0.75, 0.0),
-    (1.0, 0.95, 0.8, 0.55, 0.2, 0.0),
-    (1.0, 0.95, 0.85, 0.7, 0.45, 0.0),
+# Research work by activity: (activity, the model's stage it belongs to, share
+# of an unassisted researcher's time, human time a task at each automation
+# level AL0..AL5 still takes as a share of doing it unassisted). No study
+# measures these shares; they triangulate Epoch's researcher interviews (2024:
+# direction "relatively little dedicated time, but crucial", engineering and
+# debugging the time-consuming part, one put coding at ~70%) and Microsoft's
+# developer time study (about half the day on development, the rest
+# coordination). The hours follow Anthropic's level definitions: at AL3 people
+# give "close human direction"; at AL4 AI works "from a high-level prompt,
+# while the human supervises" and the person decides what ships, so direction
+# and coordination stay mostly human until AL5 while implementation goes
+# first. Epoch and Anthropic's staff studies rank the activities so; none
+# gives numbers. `takeoff.WORKFLOW_WEIGHTS` is the stages' sum of these shares.
+_TK_ACTIVITIES = (
+    ("High-level direction", "direction", 0.10, (1.0, 1.0, 0.95, 0.9, 0.75, 0.0)),
+    ("Coordination and communication", "direction", 0.10, (1.0, 1.0, 0.95, 0.9, 0.8, 0.0)),
+    ("Detailed planning and design", "experiments", 0.10, (1.0, 0.95, 0.85, 0.7, 0.35, 0.0)),
+    ("Implementation and debugging", "experiments", 0.35, (1.0, 0.9, 0.7, 0.4, 0.1, 0.0)),
+    ("Running and monitoring runs", "experiments", 0.10, (1.0, 0.95, 0.75, 0.45, 0.1, 0.0)),
+    ("Analyzing results", "experiments", 0.15, (1.0, 0.95, 0.85, 0.65, 0.4, 0.0)),
+    ("Review, verification and merging", "verification", 0.10, (1.0, 0.95, 0.85, 0.7, 0.45, 0.0)),
 )
+
+
+def _tk_stage_prior(activities=_TK_ACTIVITIES):
+    """Each stage's human time per level: its activities' priors, weighted by
+    their share of the stage's time."""
+    out = []
+    for key in takeoff.WORKFLOW_KEYS:
+        rows = [(t, np.array(h)) for _n, k, t, h in activities if k == key]
+        out.append(tuple(float(v) for v in sum(t * h for t, h in rows) / sum(t for t, _ in rows)))
+    return tuple(out)
+
+
+_TK_AL_STAGE_HOURS_PRIOR = _tk_stage_prior()
 # From Peter's conversations with frontier researchers; between METR's RCT
 # (1.04-1.2x) and self-reports (METR's 2026 survey 1.4-2x value, Anthropic's
 # staff rounds 2-4x).
 _TK_HUMAN_ACCELERATION = 1.7
 
 
-def _tk_fit_al_hours(row, prior=_TK_AL_STAGE_HOURS_PRIOR, accel=_TK_HUMAN_ACCELERATION):
-    """`prior` (stages x levels) raised to the power that makes `row`'s
-    ladder imply a stage-weighted human share of 1 / `accel` (bisection on the
-    power; the share rises as it falls). The prior unchanged if the target is
-    out of reach."""
+def _tk_fit_al_hours(row, prior=_TK_AL_STAGE_HOURS_PRIOR, accel=_TK_HUMAN_ACCELERATION,
+                     weights=None):
+    """`prior` (stages, or activities, x levels) raised to the power that
+    makes `row`'s ladder imply a human share of 1 / `accel` at `weights`
+    (default the stages'; bisection on the power, the share rises as it
+    falls). The prior unchanged if the target is out of reach."""
     bands = np.array(_tk_al_bands(row))
     base = np.array(prior)[:, :5]
-    weights = takeoff.WORKFLOW_WEIGHTS
+    weights = takeoff.WORKFLOW_WEIGHTS if weights is None else np.asarray(weights)
 
     def share(k):
         return float(weights @ (base ** k @ bands))
@@ -19834,6 +19853,19 @@ def _tk_staff_survey_note(hours):
             "share of the work of building a frontier model at " + ", ".join(pairs) +
             ", against this ladder's AI share of hours carried forward. Self-reported, and "
             "a share of work, not of hours.")
+
+
+def _tk_activity_path(accel):
+    """Each activity's fitted human time per level at a speed-up of `accel`,
+    and the human share of its own hours over the coming years on the
+    automation index's projection (median AL4->AL5 gap): (hours, years, shares)
+    with shares one row per activity, or None if the ladder will not fit."""
+    hours = _tk_fit_al_hours(load_rsi_automation()[-1], [a[3] for a in _TK_ACTIVITIES],
+                             accel, [a[2] for a in _TK_ACTIVITIES])
+    curves = [_tk_ladder_curve(h) for h in hours]
+    if any(c is None for c in curves):
+        return None
+    return hours, curves[0][0], np.array([c[1] for c in curves])
 
 
 # Weight of the next-step study, against the automation index's ladder, in
@@ -21704,6 +21736,53 @@ def _render_takeoff(loading):
         "All stages, weighted": [f"{100 * v:.1f}%" for v in overall]
                                 + [f"{100 * _tk_ladder_human_share(latest, hours):.1f}%"],
     }), hide_index=True, width="stretch")
+
+    path = _tk_activity_path(accel)
+    if path is not None:
+        act_hours, years, shares = path
+        times = np.array([a[2] for a in _TK_ACTIVITIES])
+        total = times @ shares
+        human = times * shares[:, 0]
+
+        def on(y):
+            return latest['date'] + timedelta(days=365.25 * y)
+
+        def first_under(series, level):
+            hit = np.flatnonzero(series < level)
+            return f"{on(years[hit[0]]):%b %Y}" if hit.size else "not in view"
+        mid_2027 = float(np.interp((datetime(2027, 7, 1) - latest['date']).days / 365.25,
+                                   years, total))
+        st.markdown("**Where people's time goes, and when it stops being the bottleneck**")
+        _fn_caption(
+            f"In mid-2027 people still do {100 * mid_2027:.0f}% of the unassisted hours, so "
+            f"research can run at most {1 / mid_2027:.1f}\u00d7 however fast AI is; human time "
+            f"falls under 5% in {first_under(total, 0.05)} and under 1% in "
+            f"{first_under(total, 0.01)}, as AL5 arrives.",
+            ("at most",
+             "Amdahl's law: with AI infinitely fast on its part, research takes the human "
+             "hours left, so the ceiling is one over their share. A readout of the "
+             "automation index's projection at its median AL4-to-AL5 gap, on the calendar; "
+             "the model moves each scenario along it in capability time and draws its own "
+             "gap, and does not read this table."),
+            ("unassisted hours",
+             "No study measures how AI researchers split their time. The shares below "
+             "triangulate Epoch's researcher interviews (2024: direction takes \"relatively "
+             "little dedicated time, but crucial\"; engineering and debugging are the "
+             "time-consuming part) and Microsoft's developer time study (about half the day "
+             "on development, the rest coordination). Human time per level follows "
+             "Anthropic's level definitions, raised to one common power so the mix gives "
+             f"the sidebar's {accel:g}\u00d7. Each stage's shares sum to its weight in the "
+             "model, and its priors are its activities' average."))
+        st.dataframe(pandas.DataFrame({
+            "Activity": [a[0] for a in _TK_ACTIVITIES],
+            "Stage": [dict(zip(takeoff.WORKFLOW_KEYS, takeoff.WORKFLOW_STAGES))[a[1]]
+                      for a in _TK_ACTIVITIES],
+            "Share of unassisted time": [f"{100 * a[2]:.0f}%" for a in _TK_ACTIVITIES],
+            "Human time at AL4": [f"{100 * h[4]:.0f}%" for h in act_hours],
+            "Human time kept today": [f"{100 * v:.0f}%" for v in shares[:, 0]],
+            "Share of people's time today": [f"{100 * v / human.sum():.0f}%" for v in human],
+            "Under 5% of its hours": [first_under(row, 0.05) for row in shares],
+        }), hide_index=True, width="stretch")
 
     st.subheader("3. The research workforce")
     wf_humans, wf_hiring, wf_decline, wf_copies, wf_power = _tk_workforce_settings()

@@ -17,7 +17,8 @@ SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
 WORKFLOW_KEYS = ("direction", "experiments", "verification")
-WORKFLOW_WEIGHTS = np.array([0.25, 0.5, 0.25])
+# Share of an unassisted researcher's time in each stage (the app's `_TK_ACTIVITIES`).
+WORKFLOW_WEIGHTS = np.array([0.2, 0.7, 0.1])
 # RSI: research direction (the stage that chooses what to try next) needs at
 # most `full_human`% of baseline human hours, once coding is automated.
 # Capability past it is read as ECI.

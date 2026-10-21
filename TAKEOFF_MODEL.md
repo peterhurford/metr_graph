@@ -166,7 +166,7 @@ analysis and validated milestone definitions; they are not the chart's ongoing p
 needs at most 5% of its baseline human hours, with the coding date arrived. Human hours
 feed back into research through the Amdahl labor term and through who directs research.
 From RSI on, autopilot (the default) drops every stage's remaining human hours: at RSI
-experiment design still needs about 4% of its hours and verification about 10%, and from
+experiment design still needs about 6% of its hours and verification about 12%, and from
 then on none do. That lifts research pace about 15% just after RSI (2.35x today's against
 2.05x), a gain difficulty erases within a year; ultraintelligence does not move. Every draw
 runs to the horizon, so its capability path continues past RSI.
@@ -269,14 +269,22 @@ autopilot, which Forethought's labor already stands for.
 
 ## Evidence calibration
 
-Four priors come from the RSI tab. Today's human hours per stage are the R&D automation
-index's latest month read through the human time each level takes in that stage, a prior
-(AL0–AL5: direction 100/100/95/90/75/0%, experiments 100/95/80/55/20/0%, verification
-100/95/85/70/45/0%) raised to one common power so the 25/50/25 average makes people 1.7x
-as fast as unassisted; that gives direction 85%, experiments 44%, verification 62%. The
-order follows Anthropic's level definitions, Epoch's researcher interviews (2024) and
-Anthropic's staff studies; no source gives the numbers. Stage halving times all take that
-share's past-year halving. The research-quality prior is the geometric
+Four priors come from the RSI tab. Research work splits into seven activities, each with
+a share of an unassisted researcher's time and the human time a task at each level still
+takes (the app's `_TK_ACTIVITIES`). No study measures the shares; they triangulate Epoch's
+researcher interviews (2024: direction takes little dedicated time but is crucial,
+engineering and debugging the time-consuming part) and Microsoft's developer time study
+(about half the day coordination). The stages sum them: direction (high-level direction
+and coordination) 20%, experiments (planning, implementation, running, analysis) 70%,
+verification 10%, which are the stage weights. Each stage's prior per level (AL0–AL5) is
+its activities' average, direction 100/100/95/90/78/0%, raised to one common power so the
+weighted mix of the index's latest month makes people 1.7x as fast as unassisted; that
+gives direction 89%, experiments 49%, verification 68%. The order follows Anthropic's
+level definitions and Epoch's and Anthropic's staff studies; no source gives the numbers.
+On the index's projection people still do ~35% of unassisted hours in mid-2027, capping
+research near 3x however fast AI is, and fall under 5% only as AL5 arrives (Mar 2028). The weights barely move
+dates: 25/50/25 gave the same median RSI and ultraintelligence. Stage halving times all
+take that share's past-year halving. The research-quality prior is the geometric
 mean of three readings: the next-step study's win-odds growth (a Bradley-Terry strength
 ratio), and TasteVal's compute multiplier (P-Zero Research, 2026) before and after the break
 its Chow scan finds at GPT-5.2: 15.7 and 4.6 ECI points per doubling, read at today's ECI
