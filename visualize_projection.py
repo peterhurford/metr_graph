@@ -19532,7 +19532,7 @@ _TK_DEFAULTS.update({
     "tk_pace_today": 1.7, "tk_returns": 1.0, "tk_dc_compute": True,
     "tk_coding_pairing": 0.7,
     "tk_wf_humans": 10_000,
-    "tk_wf_copies": 75_000, "tk_wf_power": 10.0,
+    "tk_wf_copies": 50_000, "tk_wf_power": 10.0,
 })
 _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
 _TK_DEFAULTS["tk_serial_speedup"] = bool(takeoff.DEFAULTS["serial_speedup"])
@@ -20561,7 +20561,7 @@ _TK_HIRING_GROWTH = 1.3
 _TK_POST_RSI_DECLINE = 0.7
 # AI research-agent copies running today (an estimate); and how each copy's
 # worth grows with capability: as (ECI / today's)^this power, a judgment.
-_TK_AI_COPIES_TODAY = 75_000
+_TK_AI_COPIES_TODAY = 50_000
 _TK_AI_COMPETENCE_POWER = 10
 
 
