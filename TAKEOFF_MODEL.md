@@ -166,7 +166,7 @@ analysis and validated milestone definitions; they are not the chart's ongoing p
 needs at most 5% of its baseline human hours, with the coding date arrived. Human hours
 feed back into research through the Amdahl labor term and through who directs research.
 From RSI on, autopilot (the default) drops every stage's remaining human hours: at RSI
-experiment design still needs about 6% of its hours and verification about 12%, and from
+experiment design still needs about 5% of its hours and verification about 11%, and from
 then on none do. That lifts research pace about 15% just after RSI (2.35x today's against
 2.05x), a gain difficulty erases within a year; ultraintelligence does not move. Every draw
 runs to the horizon, so its capability path continues past RSI.
@@ -272,17 +272,20 @@ autopilot, which Forethought's labor already stands for.
 
 ## Evidence calibration
 
-Four priors come from the RSI tab. Research work splits into seven activities, each with
-a share of an unassisted researcher's time and the human time a task at each level still
-takes (the app's `_TK_ACTIVITIES`). No study measures the shares; they triangulate Epoch's
-researcher interviews (2024: direction takes little dedicated time but is crucial,
-engineering and debugging the time-consuming part) and Microsoft's developer time study
-(about half the day coordination). The stages sum them: direction (high-level direction
-and coordination) 20%, experiments (planning, implementation, running, analysis) 70%,
-verification 10%, which are the stage weights. Each stage's prior per level (AL0–AL5) is
-its activities' average, direction 100/100/95/90/78/0%, raised to one common power so the
+Four priors come from the RSI tab. Research work splits into nine activities, each with
+the human hours a task at each level still takes, as a share of an unassisted researcher's
+total (the app's `_TK_ACTIVITIES`). The unassisted column is how researchers split their
+time; no study measures it, so it triangulates Epoch's researcher interviews (2024:
+direction takes little dedicated time but is crucial, engineering and debugging the
+time-consuming part) and Microsoft's developer time study (about half the day
+coordination). The level columns move time rather than only cut it: at AL3 people write no
+code and spend more directing and reviewing AI's work (13% of unassisted time, from 0).
+The stages sum the activities: direction (high-level direction and coordination) 20%,
+experiments (planning, code, debugging, directing AI, runs, analysis) 70%, verification
+10%, which are the stage weights. Each stage's prior per level (AL0–AL5) is its activities'
+sum over that weight, direction 100/100/100/97.5/85/0%, raised to one common power so the
 weighted mix of the index's latest month makes people 1.7x as fast as unassisted; that
-gives direction 89%, experiments 49%, verification 68%. The order follows Anthropic's
+gives direction 94%, experiments 46%, verification 80%. The order follows Anthropic's
 level definitions and Epoch's and Anthropic's staff studies; no source gives the numbers.
 On the index's projection people still do ~35% of unassisted hours in mid-2027, capping
 research near 3x however fast AI is, and fall under 5% only as AL5 arrives (Mar 2028). The weights barely move

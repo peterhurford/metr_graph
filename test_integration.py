@@ -1295,7 +1295,7 @@ class TestTakeoffTab:
         direction = at.number_input(key="tk_human_direction").value
         assert table.iloc[-1, 2] == f"{direction:.1f}%"
         activities = next(df.value for df in at.dataframe
-                          if "Share of unassisted time" in df.value.columns)
+                          if "Share of people's time today" in df.value.columns)
         import visualize_projection as vp
         assert list(activities["Activity"]) == [a[0] for a in vp._TK_ACTIVITIES]
         assert any("however fast AI is" in str(c.value) for c in at.caption)

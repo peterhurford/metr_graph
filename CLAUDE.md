@@ -276,17 +276,20 @@ dates and the gap between them). `test_default_render_and_stable_rerun` pins the
 
 Today's human share comes from the automation index's latest mix of AL levels times the
 human time each level still takes in each stage: `_TK_AL_STAGE_HOURS_PRIOR` (stages x
-AL0–AL5; direction keeps ~78% at AL4, experiments 20%), the time-weighted average of
-`_TK_ACTIVITIES` (seven activities, each a share of unassisted time and a prior per level;
-the stages' shares are `takeoff.WORKFLOW_WEIGHTS`, 20/70/10,
-`test_stages_are_their_activities`), raised to one common power by
+AL0–AL5; direction keeps 85% at AL4, experiments 24%), each stage's sum of
+`_TK_ACTIVITIES` (nine activities, each people's hours per level as a share of an unassisted
+researcher's total; AL0 sums are `takeoff.WORKFLOW_WEIGHTS`, 20/70/10,
+`test_stages_are_their_activities`; at AL3 writing code goes to 0 and directing and
+reviewing AI's work peaks, `test_al3_moves_time_from_writing_code_to_directing_ai`),
+raised to one common power by
 `_tk_fit_al_hours` so the stage-weighted mix gives `tk_human_accel` (default 1.7×, from
 Peter's conversations with researchers; *Human research speed-up today*), ends fixed.
 Direction keeps the most hours at every level short of AL5
 (`test_people_keep_directing_until_al5`). Changing it resets each stage's starting
 share and halving time (`_tk_on_human_accel`, `_tk_human_calibration`), and section 2's
 table shows the arithmetic (`TestTakeoffHumanSpeedup`). Under it, *Where people's time goes* (`_tk_activity_path`) is a readout the model
-never reads: each activity on the index's projection at the median AL5 gap, and the Amdahl
+never reads: each stage's fitted hours split among its activities by their priors, on the
+index's projection at the median AL5 gap, and the Amdahl
 ceiling (one over the human share) in mid-2027, before AL5.
 Four defaults are read off RSI data at import (`TestTakeoffRsiCalibration`). Today's human
 share per stage is the R&D automation index's latest month read through that stage's row
