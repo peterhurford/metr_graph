@@ -19541,38 +19541,54 @@ _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
 _TK_DEFAULTS["tk_serial_speedup"] = bool(takeoff.DEFAULTS["serial_speedup"])
 _TK_DEFAULTS["tk_reallocate_compute"] = bool(takeoff.DEFAULTS["reallocate_compute"])
 
-# Human hours a task at each automation level still takes, as a share of
-# doing it unassisted (AL0..AL5). The index rates who leads, not how long
-# people spend, so this is a prior shape, stretched by one common power until
-# the ladder's latest month makes people `_TK_HUMAN_ACCELERATION` times as fast
-# as unassisted (human share 1 / that). The ends stay 100% and 0%. It turns
-# the ladder into today's human share of R&D work.
-_TK_AL_HUMAN_HOURS_PRIOR = (1.0, 0.95, 0.8, 0.6, 0.3, 0.0)
+# Human hours a task at each automation level (AL0..AL5) still takes in each
+# research stage (rows: direction, experiments, verification), as a share of
+# doing it unassisted. The index rates who leads a task, not how long people
+# spend, so this is a prior, stretched by one common power until the ladder's
+# latest month makes people `_TK_HUMAN_ACCELERATION` times as fast as
+# unassisted overall (stage-weighted human share 1 / that). AL0 and AL5 stay
+# 100% and 0%. The rows follow Anthropic's level definitions: at AL3 people
+# give "close human direction", and at AL4 AI works "from a high-level prompt,
+# while the human supervises" and the person still decides what ships, so
+# direction stays mostly human until AL5 while experiments go first. Epoch's
+# researcher interviews (2024) and Anthropic's staff studies (2025-26) rank
+# the stages the same way; none gives numbers.
+_TK_AL_STAGE_HOURS_PRIOR = (
+    (1.0, 1.0, 0.95, 0.9, 0.75, 0.0),
+    (1.0, 0.95, 0.8, 0.55, 0.2, 0.0),
+    (1.0, 0.95, 0.85, 0.7, 0.45, 0.0),
+)
+# From Peter's conversations with frontier researchers; between METR's RCT
+# (1.04-1.2x) and self-reports (METR's 2026 survey 1.4-2x value, Anthropic's
+# staff rounds 2-4x).
 _TK_HUMAN_ACCELERATION = 1.7
 
 
-def _tk_fit_al_hours(row, prior=_TK_AL_HUMAN_HOURS_PRIOR, accel=_TK_HUMAN_ACCELERATION):
-    """`prior` raised to the power that makes `row`'s ladder imply a human
-    share of 1 / `accel` (bisection on the power; the share rises as it
-    falls). The prior unchanged if the target is out of reach."""
-    cum = [100.0, row['al1'], row['al2'], row['al3'], row['al4'], 0.0]
-    bands = np.array([(cum[i] - cum[i + 1]) / 100 for i in range(5)])
-    base = np.array(prior[:5])
+def _tk_fit_al_hours(row, prior=_TK_AL_STAGE_HOURS_PRIOR, accel=_TK_HUMAN_ACCELERATION):
+    """`prior` (stages x levels) raised to the power that makes `row`'s
+    ladder imply a stage-weighted human share of 1 / `accel` (bisection on the
+    power; the share rises as it falls). The prior unchanged if the target is
+    out of reach."""
+    bands = np.array(_tk_al_bands(row))
+    base = np.array(prior)[:, :5]
+    weights = takeoff.WORKFLOW_WEIGHTS
 
     def share(k):
-        return float(bands @ base ** k)
+        return float(weights @ (base ** k @ bands))
     target = 1 / accel
     lo, hi = 1e-3, 20.0
     if not share(hi) <= target <= share(lo):
-        return tuple(prior)
+        return tuple(tuple(r) for r in prior)
     for _ in range(60):
         mid = (lo + hi) / 2
         lo, hi = (mid, hi) if share(mid) > target else (lo, mid)
     k = (lo + hi) / 2
-    return tuple(float(v) for v in base ** k) + (0.0,)
+    return tuple(tuple(float(v) for v in r) + (0.0,) for r in base ** k)
 
 
-_TK_AL_HUMAN_HOURS = _tk_fit_al_hours(load_rsi_automation()[-1])
+def _tk_overall_hours(hours):
+    """Per-level human time across stages, at the stages' weights."""
+    return tuple(float(v) for v in takeoff.WORKFLOW_WEIGHTS @ np.array(hours))
 
 
 def _tk_al_bands(row):
@@ -19581,37 +19597,41 @@ def _tk_al_bands(row):
     return [(cum[i] - cum[i + 1]) / 100 for i in range(5)]
 
 
-def _tk_ladder_human_share(row, hours=None):
-    """Human share of R&D hours implied by one month of the AL ladder, at
-    `hours` per level (default `_TK_AL_HUMAN_HOURS`)."""
+_TK_AL_HUMAN_HOURS = _tk_fit_al_hours(load_rsi_automation()[-1])
+
+
+def _tk_stage_shares(row, hours=None):
+    """Human share of each stage's hours (direction, experiments,
+    verification) implied by one month of the AL ladder, at `hours` per stage
+    and level (default `_TK_AL_HUMAN_HOURS`)."""
     hours = _TK_AL_HUMAN_HOURS if hours is None else hours
-    return sum(b * hours[i] for i, b in enumerate(_tk_al_bands(row)))
+    return np.array(hours)[:, :5] @ np.array(_tk_al_bands(row))
+
+
+def _tk_ladder_human_share(row, hours=None):
+    """Human share of R&D hours implied by one month of the AL ladder, the
+    stages weighted."""
+    return float(takeoff.WORKFLOW_WEIGHTS @ _tk_stage_shares(row, hours))
 
 
 def _tk_ladder_stage_starts(rows, hours=None):
-    """Today's human share per stage: the model's stage pattern, rescaled so
-    its weighted mean matches the ladder's latest month."""
-    keys = [f"human_{k}" for k in takeoff.WORKFLOW_KEYS]
-    prior = np.array([takeoff.DEFAULTS[k] for k in keys])
-    scale = (100 * _tk_ladder_human_share(rows[-1], hours)
-             / float(prior @ takeoff.WORKFLOW_WEIGHTS))
-    return {f"tk_{k}": round(float(v * scale), 1) for k, v in zip(keys, prior)}
+    """Today's human share per stage, from the ladder's latest month."""
+    return {f"tk_human_{k}": round(float(100 * v), 1)
+            for k, v in zip(takeoff.WORKFLOW_KEYS, _tk_stage_shares(rows[-1], hours))}
 
 
 def _tk_ladder_stage_halvings(rows, floor, hours=None):
-    """Stage halving times (months): the model's stage pattern, rescaled so
-    its weighted mean matches how fast the ladder-implied human share falls
-    toward `floor` (%). Calendar months over the past year stand in for months
-    of capability progress at today's rate."""
+    """Stage halving times (months), all at how fast the ladder-implied human
+    share has fallen toward `floor` (%), so each stage moves along its own
+    ladder curve at the curve's pace. Calendar months over the past year stand
+    in for months of capability progress at today's rate."""
     months = np.array([(r['date'] - rows[0]['date']).days / 30.44 for r in rows])
     share = np.array([100 * _tk_ladder_human_share(r, hours) for r in rows])
     _icpt, slope = fit_line(months, np.log(np.maximum(share - floor, 1e-6)))
     keys = [f"half_{k}" for k in takeoff.WORKFLOW_KEYS]
-    prior = np.array([takeoff.DEFAULTS[k] for k in keys])
     if slope >= 0:
-        return {f"tk_{k}": float(v) for k, v in zip(keys, prior)}
-    scale = (-np.log(2) / slope) / float(prior @ takeoff.WORKFLOW_WEIGHTS)
-    return {f"tk_{k}": round(float(v * scale), 1) for k, v in zip(keys, prior)}
+        return {f"tk_{k}": float(takeoff.DEFAULTS[k]) for k in keys}
+    return {f"tk_{k}": round(float(-np.log(2) / slope), 1) for k in keys}
 
 
 def _tk_elasticity(yearly_growth, experiments, capability_growth, transfer, fallback):
@@ -19756,9 +19776,12 @@ def _tk_ladder_curve(hours=None, years=40.0, lag_days=None):
     lag, and AL2 and AL3 follow their own logit fits, kept nested above AL4,
     so the curve reaches the "AL4 reaches 90%" and "AL5 reaches 90%" cards'
     medians. `lag_days`, an array, gives one curve per AL5 gap (rows) instead
-    of the median's. Non-increasing; None if the ladder will not fit."""
+    of the median's. `hours` per stage and level gives the stages' weighted
+    curve. Non-increasing; None if the ladder will not fit."""
     rows = load_rsi_automation()
     hours = _TK_AL_HUMAN_HOURS if hours is None else hours
+    if np.ndim(hours) == 2:
+        hours = _tk_overall_hours(hours)
     base4, _icpt4, slope4 = _rsi_auto_fit(rows)
     lag = _rsi_al5_lag(rows)
     if slope4 <= 0 or lag is None:
@@ -19860,7 +19883,8 @@ def _tk_blend_in_time(t, a, b, weight):
 
 
 def _tk_ladder_curves(hours, n, seed):
-    """(years, one human-share curve per draw): `_tk_ladder_curve` with each
+    """(years, the stages' weighted curve, [one curve per stage]), each one
+    row per draw: `_tk_ladder_curve` at `hours` (stages x levels) with each
     draw's own AL4->AL5 gap, lognormal over the AL5 card's own 80% range
     (`_rsi_al5_tau_draws`'s), from a fixed seed so reruns pair. None if the
     ladder will not fit."""
@@ -19872,7 +19896,10 @@ def _tk_ladder_curves(hours, n, seed):
     rng = np.random.default_rng(int(seed) + 7)
     gaps = np.exp(rng.normal((np.log(lo) + np.log(hi)) / 2,
                              (np.log(hi) - np.log(lo)) / (2 * 1.282), n))
-    return _tk_ladder_curve(hours, lag_days=gaps)
+    overall = _tk_ladder_curve(hours, lag_days=gaps)
+    if overall is None:
+        return None
+    return (*overall, [_tk_ladder_curve(h, lag_days=gaps)[1] for h in hours])
 
 
 def _tk_al_hours_now():
@@ -20984,16 +21011,17 @@ def _tk_run(today, progress=None):
     eci_rates = _tk_eci_rates(params, hist_compute)
     coding_level = _TK_ULTRA_ECI - eci_now          # in ECI points, through eci_rates
     coding_weights = (eci_rates["compute"], eci_rates["software"])
-    # Research hours follow the automation index's own projection, each
-    # scenario with its own AL4->AL5 gap.
+    # Research hours follow the automation index's own projection, each stage
+    # at its own hours per level and each scenario with its own AL4->AL5 gap.
     human_curve = _tk_ladder_curves(_tk_al_hours_now(), len(onset_years), params["seed"])
     # Research direction also reads the next-step study, an independent
     # measurement of that stage: a log blend of the two curves.
     nextstep = _tk_nextstep_curves(len(onset_years), params["seed"], today=today)
-    if human_curve is not None and nextstep is not None:
-        years_, ladder = human_curve
-        human_curve = (years_, ladder, _tk_blend_in_time(
-            years_, ladder, nextstep[1], _TK_NEXTSTEP_WEIGHT))
+    if human_curve is not None:
+        years_, ladder, (direction, experiments, verification) = human_curve
+        if nextstep is not None:
+            direction = _tk_blend_in_time(years_, direction, nextstep[1], _TK_NEXTSTEP_WEIGHT)
+        human_curve = (years_, ladder, direction, experiments, verification)
     progress(1)
     rest = (experiment_starts, experiment_slopes, pace_yield, compute_rates,
             hist_compute, coding_level, coding_weights, human_curve)
@@ -21323,13 +21351,15 @@ def _render_takeoff(loading):
             for stage, key in zip(takeoff.WORKFLOW_STAGES, takeoff.WORKFLOW_KEYS):
                 number(f"{stage}: human work today (%)", "human_" + key, 0.0, 100.0, 5.0,
                        "Default set from the R&D automation index above: its latest "
-                       "month, read through an assumed human-time share per level, gives "
-                       "the average; the split across stages is assumed.")
+                       "month, read through an assumed human-time share per level for "
+                       "this stage (the table in section 2).")
                 number(f"{stage}: human-work halving time (months)", "half_" + key, 1.0, 60.0, 1.0,
-                       "Sets this stage's pace along the curve human hours follow (the "
-                       "automation index's own projection: an AL4 plateau, then a drop as "
-                       "AL5 arrives): a stage halving faster than the stages' weighted "
-                       "average moves along it faster, and only these ratios matter. "
+                       "Sets this stage's pace along its own curve of human hours (the "
+                       "automation index's projection read through this stage's hours per "
+                       "level: an AL4 plateau, then a drop as AL5 arrives). All default to "
+                       "the index's past-year pace; a stage halving faster than the "
+                       "stages' weighted average moves along it faster, and only these "
+                       "ratios matter. "
                        "Measured in months of capability progress at today's pace, so "
                        "future acceleration shortens calendar time.")
             number("Persistent human-work floor (%)", "human_floor", 0.0, 25.0, 1.0)
@@ -21638,8 +21668,8 @@ def _render_takeoff(loading):
         "RSI is when research direction is under the bar, after coding is automated.",
         ("research direction is under the bar",
          "Checked per scenario, not on the medians. How fast human hours fall "
-         "with capability is calibrated on the automation index, but the split "
-         "across stages is assumed."))
+         "with capability is calibrated on the automation index; how much each "
+         "level leaves people in each stage is assumed (table below)."))
     st.plotly_chart(_tf(_tk_to(_tk_humans_fig(result, today, load_rsi_automation()),
                                view_end)), width="stretch")
     latest = load_rsi_automation()[-1]
@@ -21652,17 +21682,26 @@ def _render_takeoff(loading):
         "\u00d7 their unassisted speed.",
         ("human time each level still takes",
          "The index rates who leads a task, not how long people spend on it, so the time "
-         "per level is a judgment: the prior below, raised to one common power so the "
-         f"mix gives the sidebar's {accel:g}\u00d7 speed-up. AL0 and AL5 stay at 100% and 0%."),
+         "per level and stage is a judgment: a prior, raised to one common power so the "
+         f"mix gives the sidebar's {accel:g}\u00d7 speed-up. AL0 and AL5 stay at 100% and 0%. "
+         "Direction keeps the most: at AL4 AI works from a person's high-level prompt and "
+         "the person decides what ships (Anthropic's definition), so direction stays mostly "
+         "human until AL5, while experiments are handed over first (Epoch's researcher "
+         "interviews and Anthropic's staff studies rank the stages so; none gives numbers)."),
         *([("mix of tasks", note)] if (note := _tk_staff_survey_note(hours)) else []))
     bands = _tk_al_bands(latest) + [0.0]
     names = ["AL0", "AL1", "AL2", "AL3", "AL4 (AI leads, person supervises)", "AL5 (no human)"]
+    stages = _tk_stage_shares(latest, hours)
+    overall = _tk_overall_hours(hours)
     st.dataframe(pandas.DataFrame({
-        "Level": names + ["Total"],
-        "Share of tasks": [f"{100 * b:.1f}%" for b in bands] + ["100%"],
-        "Prior human time": [f"{100 * v:.0f}%" for v in _TK_AL_HUMAN_HOURS_PRIOR] + [""],
-        "Fitted human time": [f"{100 * v:.1f}%" for v in hours] + [""],
-        "Human share of work": [f"{100 * b * v:.1f} pts" for b, v in zip(bands, hours)]
+        "Level": names + ["Human share of each stage's work"],
+        "Share of tasks": [f"{100 * b:.1f}%" for b in bands] + [""],
+        **{f"{name}: human time (prior)": [f"{100 * v:.0f}% ({100 * p:.0f}%)"
+                                           for v, p in zip(row, prior)]
+           + [f"{100 * share:.1f}%"]
+           for name, row, prior, share in zip(takeoff.WORKFLOW_STAGES, hours,
+                                              _TK_AL_STAGE_HOURS_PRIOR, stages)},
+        "All stages, weighted": [f"{100 * v:.1f}%" for v in overall]
                                 + [f"{100 * _tk_ladder_human_share(latest, hours):.1f}%"],
     }), hide_index=True, width="stretch")
 

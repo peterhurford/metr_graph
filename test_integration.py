@@ -1288,8 +1288,12 @@ class TestTakeoffTab:
         at.number_input(key="tk_human_accel").set_value(2.5).run()
         _assert_no_error(at, "Takeoff / human speed-up")
         assert at.number_input(key="tk_human_direction").value < before
-        table = next(df.value for df in at.dataframe if "Fitted human time" in df.value.columns)
-        assert table["Human share of work"].iloc[-1] == "40.0%"
+        table = next(df.value for df in at.dataframe
+                     if "All stages, weighted" in df.value.columns)
+        assert table["All stages, weighted"].iloc[-1] == "40.0%"
+        # Each stage's column ends with its starting share, the sidebar's.
+        direction = at.number_input(key="tk_human_direction").value
+        assert table.iloc[-1, 2] == f"{direction:.1f}%"
 
     @pytest.mark.parametrize("bad,fix,message", [
         # A floor above a stage's starting share is inconsistent.
@@ -1900,9 +1904,10 @@ class TestPacingTab:
         months = why[why["Source"].str.startswith("Time")].iloc[0]
         m = [_span_mo(months[c]) for c in
              ("China ECI/yr at US pause", "Overall China ECI/yr", "China ECI/yr at US/China cross")]
+        # The pause's rate, distillation still flowing, closes the gap fastest.
         # China's AI speed-up climbs toward the crossing as distillation dries
-        # up, so the last two can round to the same tenth of a year.
-        assert m[0] < m[1] <= m[2]
+        # up, so the other two can fall in either order.
+        assert m[0] < min(m[1], m[2])
         # The crossover row dates each rate from the pause; the crossing
         # column has no date of its own.
         cross = why[why["Source"] == "Crossover date"].iloc[0]

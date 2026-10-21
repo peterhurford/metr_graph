@@ -352,6 +352,12 @@ def test_human_hours_can_follow_a_given_curve():
     later[3] = np.where(years < 20, 0.6, 0.006)
     h2 = tk.workflow_state(cap, 1.0, starts, halves, 0.0, (years, later), ref)
     assert (h2[3] > h[3]).all()
+    # Further elements give the stages, in order, their own curves; a stage
+    # without one keeps the shared curve.
+    own = tk.workflow_state(cap, 1.0, starts, halves, 0.0,
+                            (years, rows, rows, later), ref)
+    np.testing.assert_allclose(own[:, [0, 2]], h[:, [0, 2]])
+    np.testing.assert_allclose(own[:, 1], h2[:, 1])
 
 
 @pytest.mark.parametrize("slow_years", [2.0, 6.0])

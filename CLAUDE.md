@@ -275,31 +275,34 @@ how fast** (`_tk_dist_fig`: density and cumulative share of the RSI and ultraint
 dates and the gap between them). `test_default_render_and_stable_rerun` pins the order.
 
 Today's human share comes from the automation index's latest mix of AL levels times the
-human time each level still takes: `_TK_AL_HUMAN_HOURS_PRIOR` (100/95/80/60/30/0%) raised
-to one common power by `_tk_fit_al_hours` so the mix gives `tk_human_accel` (default 1.7×,
-*Human research speed-up today*), ends fixed. Changing it resets each stage's starting
+human time each level still takes in each stage: `_TK_AL_STAGE_HOURS_PRIOR` (stages x
+AL0–AL5; direction keeps 75% at AL4, experiments 20%) raised to one common power by
+`_tk_fit_al_hours` so the stage-weighted mix gives `tk_human_accel` (default 1.7×, from
+Peter's conversations with researchers; *Human research speed-up today*), ends fixed.
+Direction keeps the most hours at every level short of AL5
+(`test_people_keep_directing_until_al5`). Changing it resets each stage's starting
 share and halving time (`_tk_on_human_accel`, `_tk_human_calibration`), and section 2's
 table shows the arithmetic (`TestTakeoffHumanSpeedup`).
-Four defaults are read off RSI data at import (`TestTakeoffRsiCalibration`), each
-keeping the model's stage pattern and rescaling it. Today's human share per stage matches
-the R&D automation index's latest month, read through `_TK_AL_HUMAN_HOURS` (assumed human
-time per AL level). Research hours then follow the index's own projection, not an
+Four defaults are read off RSI data at import (`TestTakeoffRsiCalibration`). Today's human
+share per stage is the R&D automation index's latest month read through that stage's row
+of `_TK_AL_HUMAN_HOURS` (`_tk_stage_shares`). Research hours then follow the index's own projection, not an
 exponential: `_tk_ladder_curve` builds the human share over the coming years from the
 ladder (AL4 from the projection's start at the "AL4 reaches 90%" card's median rate, AL5 as
 AL4 shifted by an AL4→AL5 gap, AL2/AL3 on their own fits, nested), times the hours per
-level. `_tk_ladder_curves` gives each scenario its own gap, lognormal over the AL5 card's
+level, one curve per stage (`test_each_stage_follows_its_own_ladder_curve`). `_tk_ladder_curves` gives each scenario its own gap, lognormal over the AL5 card's
 80% range from a fixed seed, so RSI carries the unmeasured AL5 rung's uncertainty; one
 curve per draw (rows on an even grid). Research direction, the stage RSI is defined on, also
 reads the next-step study: `_tk_nextstep_curves` (the researcher's odds of the better step
 in excess of the odds left at the study's ceiling, per-draw rate over the card's range),
 averaged with the ladder in *dates*, not values (`_tk_blend_in_time`,
 `_TK_NEXTSTEP_WEIGHT` 0.5), so RSI lies between the two sources' dates
-(`TestTakeoffDirectionCurve`); `human_curve`'s third element carries it. The two agree
+(`TestTakeoffDirectionCurve`); `human_curve` is (years, weighted curve, direction,
+experiments, verification), elements past the second overriding stages in order. The two agree
 independently: a median ~1.6 years each to 5% of direction's start.
 `simulate(human_curve=…)` moves each stage along that shape in
 capability-equivalent years (`workflow_state`; `test_human_hours_can_follow_a_given_curve`).
-The stage halving times only set each stage's pace along it, as the weighted halving over
-its own (1.5× for direction, 0.75× for verification at the defaults). The
+The stage halving times only set each stage's pace along its curve, as the weighted
+halving over its own; all default to the index's past-year halving, so pace is 1. The
 judgment elasticity (`taste_slope`, `_tk_taste_default`) is the geometric mean of three
 readings, ~0.38: the next-step study's yearly odds growth raised to `_TK_ODDS_TO_JUDGMENT`
 (0.5: picking the better step more often is not proportionally more research; ~0.29), and

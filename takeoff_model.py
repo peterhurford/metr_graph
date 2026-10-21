@@ -301,8 +301,8 @@ def workflow_state(capability_log, baseline_rate, starts, half_months, floor,
     shape instead (share relative to its start), at `reference_half` /
     `half_months` its pace: the halving times then only set each stage's
     speed along the curve. `share` is one curve, or one per draw (rows) on an
-    evenly spaced `years` grid; a third element gives research direction (the
-    first stage) its own curve of the same form. `direction_pace`, one
+    evenly spaced `years` grid; further elements give the stages in order
+    (research direction first) their own curves of the same form. `direction_pace`, one
     multiple per draw, moves research direction that much faster.
     """
     equivalent_years = np.maximum(capability_log, 0) / baseline_rate
@@ -326,8 +326,8 @@ def workflow_state(capability_log, baseline_rate, starts, half_months, floor,
             rows = np.arange(len(shape))[:, None]
             return (shape[rows, i0] * (1 - w) + shape[rows, i0 + 1] * w) / shape[:, :1]
         decline = follow(share, along)
-        if len(curve) > 2:      # research direction's own curve
-            decline[:, :1] = follow(curve[2], along[:, :1])
+        for i, own in enumerate(curve[2:]):     # stages with their own curves
+            decline[:, i:i + 1] = follow(own, along[:, i:i + 1])
     return floor + (starts - floor) * decline
 
 

@@ -5776,17 +5776,42 @@ class TestTakeoffEciRates:
 
 
 class TestTakeoffHumanSpeedup:
-    """Hours per automation level: the prior raised to one common power so
-    the index's latest month gives the set human speed-up, ends fixed."""
+    """Hours per stage and automation level: the prior raised to one common
+    power so the index's latest month gives the set human speed-up, ends fixed."""
 
     @pytest.mark.parametrize("accel", [1.3, 1.7, 2.5])
     def test_fitted_hours_reproduce_the_speedup(self, accel):
         row = vp.load_rsi_automation()[-1]
         hours = vp._tk_fit_al_hours(row, accel=accel)
-        assert hours[0] == pytest.approx(1.0) and hours[-1] == 0.0
         assert vp._tk_ladder_human_share(row, hours) == pytest.approx(1 / accel, rel=1e-6)
-        # The prior's order survives: each level takes less human time than the one below.
-        assert all(a > b for a, b in zip(hours, hours[1:]))
+        for stage in hours:
+            assert stage[0] == pytest.approx(1.0) and stage[-1] == 0.0
+            # The prior's order survives: no level takes more human time than the one below.
+            assert all(a >= b for a, b in zip(stage, stage[1:]))
+
+    @pytest.mark.parametrize("accel", [1.3, 1.7, 3.0])
+    def test_people_keep_directing_until_al5(self, accel):
+        """At AL4 AI works from a person's high-level prompt and the person
+        decides what ships, so direction keeps most of its hours there, and
+        more of them than any other stage at every level short of AL5."""
+        row = vp.load_rsi_automation()[-1]
+        direction, experiments, verification = vp._tk_fit_al_hours(row, accel=accel)
+        if accel <= vp._TK_HUMAN_ACCELERATION:
+            assert direction[4] > 0.5
+        assert all(d >= max(e, v) for d, e, v in
+                   zip(direction[:5], experiments[:5], verification[:5]))
+        starts = vp._tk_human_calibration(accel)
+        assert starts["tk_human_direction"] == max(
+            starts[f"tk_human_{k}"] for k in vp.takeoff.WORKFLOW_KEYS)
+
+    def test_each_stage_follows_its_own_ladder_curve(self):
+        """Direction's curve holds its hours through AL4's climb and drops as
+        AL5 arrives; experiments, handed over at AL4, fall sooner."""
+        t, overall, stages = vp._tk_ladder_curves(vp._TK_AL_HUMAN_HOURS, 50, 42)
+        rel = [c / c[:, :1] for c in stages]
+        assert overall.shape == stages[0].shape == (50, len(t))
+        j = np.searchsorted(t, 1.0)
+        assert (rel[0][:, j] > rel[1][:, j]).all()
 
     def test_a_faster_speedup_starts_people_lower(self):
         slow, fast = vp._tk_human_calibration(1.4), vp._tk_human_calibration(2.5)

@@ -173,17 +173,18 @@ runs to the horizon, so its capability path continues past RSI.
 The stages are direction, experiment design/interpretation, and verification/integration.
 Human hours follow the R&D automation index's own projection rather than an exponential:
 the share of tasks at each level over the coming years (AL4 at the milestone card's median
-rate, AL5 as AL4 shifted by a gap), times the human time each level takes, gives a curve
-that holds people near the AL4 level (about 35% of hours) through 2027, then drops as AL5
-arrives. AL5 has never been measured, so each scenario draws its own AL4-to-AL5 gap over
-the AL5 card's 80% range: the share reaches 5% between 1.0 and 2.9 years after August 2026
-(80%), 1.6 at the median. Research direction, the stage RSI is defined on, also reads an
-independent source, the next-step study: direction needs people in proportion to the odds
-a researcher still picks the better step, above the odds left at the study's own ceiling.
-Its dates and the ladder's are averaged, half each. The two agree on the median (about 1.6
-years each to 5% of direction's start), so RSI rests on both rather than on AL5 alone. Each stage moves
-along that curve at its own pace (direction 1.5x the average, verification 0.75x), in
-months of capability progress at today's rate, so faster progress compresses it. A
+rate, AL5 as AL4 shifted by a gap), times the human time each level takes in each stage,
+gives each stage its own curve. Direction keeps most of its hours at AL4 (AI works from a
+person's high-level prompt and the person decides what ships), so its curve holds near
+its start until AL5 arrives; experiments, handed over at AL4, fall sooner. AL5 has never
+been measured, so each scenario draws its own AL4-to-AL5 gap over the AL5 card's 80%
+range. Research direction, the stage RSI is defined on, also reads an independent source,
+the next-step study: direction needs people in proportion to the odds a researcher still
+picks the better step, above the odds left at the study's own ceiling. Its dates and the
+ladder's are averaged, half each. Halving or doubling the AL5 gap moves the median RSI
+from May 2028 to April or August 2028. Each stage moves along its curve at the index's
+past-year pace, in months of capability progress at today's rate, so faster progress
+compresses it. A
 persistent human-work floor (default 0) and the stage paces remain adjustable. The available research system includes validated fast gains.
 
 **Capability as ECI.** Each draw's deployed model is read as ECI from its two parts, both
@@ -268,10 +269,14 @@ autopilot, which Forethought's labor already stands for.
 
 ## Evidence calibration
 
-Four priors come from the RSI tab. Today's human hours per stage are scaled so their
-25/50/25 average matches the R&D automation index's latest month, with each AL level
-assumed to take 100/90/70/40/15/0% of unassisted human time (AL0–AL5); stage halving times
-are scaled to that share's past-year halving. The research-quality prior is the geometric
+Four priors come from the RSI tab. Today's human hours per stage are the R&D automation
+index's latest month read through the human time each level takes in that stage, a prior
+(AL0–AL5: direction 100/100/95/90/75/0%, experiments 100/95/80/55/20/0%, verification
+100/95/85/70/45/0%) raised to one common power so the 25/50/25 average makes people 1.7x
+as fast as unassisted; that gives direction 85%, experiments 44%, verification 62%. The
+order follows Anthropic's level definitions, Epoch's researcher interviews (2024) and
+Anthropic's staff studies; no source gives the numbers. Stage halving times all take that
+share's past-year halving. The research-quality prior is the geometric
 mean of three readings: the next-step study's win-odds growth (a Bradley-Terry strength
 ratio), and TasteVal's compute multiplier (P-Zero Research, 2026) before and after the break
 its Chow scan finds at GPT-5.2: 15.7 and 4.6 ECI points per doubling, read at today's ECI
