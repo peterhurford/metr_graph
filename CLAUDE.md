@@ -261,7 +261,7 @@ with the milestone medians marked)), **2. People step out of the loop**
 by `_TK_POST_RSI_DECLINE` after, and AI copies from `_TK_AI_COPIES_TODAY` (50k, an
 estimate; all five workforce assumptions are *Advanced* inputs, `tk_wf_*`, read by
 `_tk_workforce_settings`), growing with agent compute and more copies; and human FTEs, each copy worth today
-the automation index's share of today's work spread over those copies (~0.375 people), rising
+the automation index's share of today's work spread over those copies (~0.13 people), rising
 as (ECI / today's)^`_TK_AI_COMPETENCE_POWER`. Counts
 read k/M/B/T (`_tk_count`, axis `exponentformat="B"`), carried in `text` so today-forward
 can still relabel the dates. A readout, never an input), **4. What it does to capability (ECI)** (plus *2025-level ECI progress in

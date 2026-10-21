@@ -6,17 +6,17 @@ Colossus 2,1111672.5618999496,946,35.836372,SpaceXAI #confident,"Anthropic #conf
 - [Anthropic to use Colossus 2 from June 2026](https://x.com/nottombrown/status/2057194829986300375)
 - [SpaceX S-1 filing, mentioning exact compute and power for Colossus 2](https://www.sec.gov/Archives/edgar/data/1181412/000162828026036936/spaceexplorationtechnologi.htm)
 ",https://docs.google.com/spreadsheets/d/1oZpZ9nTTV6wW0xjc1pPOQmKS7NCyDzuG2HiycC1GqFs/edit?usp=sharing,,"B200,B300","B200,B300",,,,United States,"5420 Tulane Rd, Memphis, TN 38109"
+Anthropic-Amazon New Carlisle,818428.4992420415,1037,39.283634,Amazon #confident,Anthropic #confident,"- [Air Construction Permit application for the northern portion](https://drive.google.com/file/d/1BKiTFNUk2KDaUaiHG7fz0KlkNSBTHzbb/view?usp=sharing)
+- [Backup diesel generator referenced in the permit](https://www.cat.com/en_US/products/new/power-systems/electric-power/diesel-generator-sets/117341.html)
+- [Announcement of Project Rainier coming online](https://www.aboutamazon.com/news/aws/aws-project-rainier-ai-trainium-chips-compute-cluster)
+- [Air permit for Buildings 19-32, suggesting expansion to 2.3 GW total facility power](https://t.co/HsAO7oyKa2)
+",https://docs.google.com/spreadsheets/d/1umU-KLAB_6A-lKRCdLuF7SPv74HlqKjDdfDor1bRGuY/edit?usp=sharing,Project Rainier #confident,Trainium2,Trainium2,,,,United States,"55001 Larrison Blvd, New Carlisle, IN 46552"
 Microsoft Fairwater Atlanta,768768.7220818596,636,24.092952,Microsoft #confident,"OpenAI #likely, Microsoft #likely","- [2023 Air Permit application](https://drive.google.com/file/d/1p7aY9syz319IcEuyukgIIvzmhTNKRS6p/view?usp=sharing) 
 - [YouTube video with aerial views](https://www.youtube.com/watch?v=44eWesI-174) 
 - [OpenAI article mentioning they use Microsoft's Fairwater supercomputers](https://openai.com/index/mrc-supercomputer-networking/)
 - [Bloomberg article](https://www.bloomberg.com/news/features/2024-12-08/georgia-s-blackstone-backed-qts-data-center-hits-resistance-over-ai-power-needs)
 
 ",https://docs.google.com/spreadsheets/d/1XeruHu2ES3UsSrsAU3HSMkk5zwzFOQzxQE9pQ_fuEUw/edit?usp=sharing,Microsoft AI WAN #confident,B200,B200,,,Georgia Power,United States,"1435 Hwy 54 W, Fayetteville, GA 30214"
-Anthropic-Amazon New Carlisle,685912.076806468,910,34.47262,Amazon #confident,Anthropic #confident,"- [Air Construction Permit application for the northern portion](https://drive.google.com/file/d/1BKiTFNUk2KDaUaiHG7fz0KlkNSBTHzbb/view?usp=sharing)
-- [Backup diesel generator referenced in the permit](https://www.cat.com/en_US/products/new/power-systems/electric-power/diesel-generator-sets/117341.html)
-- [Announcement of Project Rainier coming online](https://www.aboutamazon.com/news/aws/aws-project-rainier-ai-trainium-chips-compute-cluster)
-- [Air permit for Buildings 19-32, suggesting expansion to 2.3 GW total facility power](https://t.co/HsAO7oyKa2)
-",https://docs.google.com/spreadsheets/d/1umU-KLAB_6A-lKRCdLuF7SPv74HlqKjDdfDor1bRGuY/edit?usp=sharing,Project Rainier #confident,Trainium2,Trainium2,,,,United States,"55001 Larrison Blvd, New Carlisle, IN 46552"
 Google Pryor (North),636685.1945426983,368,13.940576,Google #confident,Google DeepMind #speculative,"- [Google announces expansion of Pryor facility](https://blog.google/inside-google/company-announcements/google-american-innovation-oklahoma/)
 - [Google 2025 Environmental Report](https://sustainability.google/reports/google-2025-environmental-report/) with PUE and water use on pp.109-110
 - [News of a 9 exaflop TPUv4 cluster in the Pryor data center, launched in 2022](https://techcrunch.com/2022/05/11/google-launches-a-9-exaflop-cluster-of-cloud-tpu-v4-pods-into-public-preview/)
@@ -342,6 +342,9 @@ EcoDataCenter 2,0,0,0,Mistral AI #confident,Mistral AI #confident,"- [EcoDataCen
 - [EcoDataCenter groundbreaking announcement](https://ecodatacenter.tech/press/ecodatacenter-breaks-ground-on-mega-campus-in-borlnge-3406556)
 - [Mistral AI partnership announcement](https://ecodatacenter.tech/press/mistral-ai-and-ecodatacenter-partner-to-build-ai-focused-data-center-in-sweden-3431886)
 ",https://docs.google.com/spreadsheets/d/1JqKpYvy0REqpg30GweXlCKhUQ1D0mHLH_yI9erMoeEM/edit?usp=sharing,,,Rubin,,,,Sweden,"Kvarnsvedsvägen 420, 784 66 Borlänge, Sweden"
+Envision Galaxy Ulanqab,0,0,0,,,"- [Envision Galaxy Campus website](https://web.archive.org/web/20261020151735/https://www.envision-group.com/envision-galaxy-campus-ulanqab)
+- [Interview with Envision’s head of AI data centers](https://web.archive.org/web/20261020151337/https://m.21jingji.com/article/20260820/herald/b332589beede6b5fbfb4079dab9a6a03.html)
+",https://docs.google.com/spreadsheets/d/18eP6s8BK-Lzqy7zEEzt7ofxYK3IMmpeNwUP48OmhLHk/edit?usp=sharing,,,"Ascend 950PR,Ascend 950DT",,,,China,
 Goodnight,0,0,0,Google #speculative,Google DeepMind #speculative,"- [Amended tax abatement agreement, with updated blueprints on p.46](https://www.co.armstrong.tx.us/upload/page/5361/Amended_Restated_Consolidated%20Second%20Property%20Tax%20Abatement%20Agreement%20%20GNDC1_ArmstrongCounty.pdf)
 - [Original tax abatement agreement, with original blueprints and specs on the last page](https://drive.google.com/file/d/1ky5HhuhU8_JADNB2GziWa4WDRbTU4qtO/view?usp=sharing)
 - [TABS database, with ""Llano"" data centers in the city of Claude](https://www.tdlr.texas.gov/TABS/Search/)
