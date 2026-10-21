@@ -166,7 +166,7 @@ analysis and validated milestone definitions; they are not the chart's ongoing p
 needs at most 5% of its baseline human hours, with the coding date arrived. Human hours
 feed back into research through the Amdahl labor term and through who directs research.
 From RSI on, autopilot (the default) drops every stage's remaining human hours: at RSI
-experiment design still needs about 5% of its hours and verification about 13%, and from
+experiment design still needs about 4% of its hours and verification about 10%, and from
 then on none do. That lifts research pace about 15% just after RSI (2.35x today's against
 2.05x), a gain difficulty erases within a year; ultraintelligence does not move. Every draw
 runs to the horizon, so its capability path continues past RSI.
