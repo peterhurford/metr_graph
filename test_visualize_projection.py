@@ -5862,6 +5862,26 @@ class TestTakeoffHumanSpeedup:
         assert "80% vs" in note and "95% vs" in note
 
 
+class TestStaffAl5Check:
+    """The AL5 card's hover dates the AL4-to-AL5 gap Anthropic's staff survey
+    implies, read through the same ladder and hours the Takeoff tab uses."""
+
+    def test_each_implied_gap_reproduces_the_staff_share(self):
+        check = vp._tk_staff_al5_check()
+        start = vp.load_rsi_automation()[-1]['date']
+        for label, staff, gap, _date in check["survey"]:
+            assert isinstance(gap, float)
+            when = dict((lbl, d) for lbl, d, _s in vp._TK_STAFF_SURVEY_AI_SHARE)[label]
+            t, share = vp._tk_ladder_curve(lag_days=np.array([gap]))
+            years = (datetime.strptime(when, '%Y-%m-%d') - start).days / 365.25
+            assert 1 - np.interp(years, t, share[0]) == pytest.approx(staff / 100, abs=0.005)
+
+    def test_a_later_share_needs_a_longer_gap_and_the_card_says_so(self):
+        gaps = [g for _l, _s, g, _d in vp._tk_staff_al5_check()["survey"]]
+        assert gaps == sorted(gaps)
+        assert "Cross-check: Anthropic's staff" in vp._tk_staff_al5_note()
+
+
 class TestTakeoffDirectionCurve:
     """Research direction's human-hours curve averages the dates two sources
     give, the automation index's ladder and the next-step study."""

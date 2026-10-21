@@ -16323,7 +16323,7 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n):
                  "a ladder measured inside supervised work says anything about "
                  "the step that removes the supervisor. Treat it as the "
                  "section's assumption made datable, not as a forecast the "
-                 "data supports."))
+                 "data supports." + _tk_staff_al5_note()))
     _cap.append((f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x",
                  f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
                  _pc_rsi_survey_eta(load_rsi_survey(), n=n, samples=True), False,
@@ -19857,6 +19857,72 @@ def _tk_staff_survey_note(hours):
             "share of the work of building a frontier model at " + ", ".join(pairs) +
             ", against this ladder's AI share of hours carried forward. Self-reported, and "
             "a share of work, not of hours.")
+
+
+def _tk_staff_al5_check(hours=None):
+    """The AL4-to-AL5 gaps Anthropic's staff survey implies: for its end-2027
+    and end-2030 medians of AI's share of the work, the gap that makes this
+    ladder's AI share of hours (at `hours`) equal it on that date, and the
+    date AL5 then reaches `_RSI_AL5_TARGET`, with the ladder's own median gap.
+    A gap of None means the survey's share is beyond any gap from 0 to 20
+    years ('sooner': above the ladder even with AL5 right behind AL4). None if
+    the ladder will not fit."""
+    rows = load_rsi_automation()
+    base = _tk_ladder_curve(hours)
+    if base is None:
+        return None
+    start = rows[-1]['date']
+    _b, _i, slope4 = _rsi_auto_fit(rows)
+    dt_lo, dt_hi = _rsi_auto_dt_ci(rows, round(np.log(2) / slope4))
+    slope = np.log(2) / np.sqrt(dt_lo * dt_hi)
+    _cur, centre, _sigma = _rsi_auto_start(rows)
+    lag = _rsi_al5_lag(rows)
+    median_gap = np.sqrt(lag['lag'] * max(lag['lag'], lag['slow']) * _RSI_AL5_TAU_HI_MULT)
+    to_target = (_logit(_RSI_AL5_TARGET / 100) - centre) / slope
+
+    def human_at(gap, when):
+        t, share = _tk_ladder_curve(hours, lag_days=np.array([gap]))
+        return float(np.interp((when - start).days / 365.25, t, share[0]))
+    out = []
+    for label, d, staff in _TK_STAFF_SURVEY_AI_SHARE[1:]:
+        when = datetime.strptime(d, '%Y-%m-%d')
+        target = 1 - staff / 100
+        lo, hi = 0.0, 20 * 365.25
+        if human_at(lo, when) > target:
+            out.append((label, staff, "sooner", None))
+            continue
+        if human_at(hi, when) < target:
+            out.append((label, staff, None, None))
+            continue
+        for _ in range(40):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if human_at(mid, when) < target else (lo, mid)
+        gap = (lo + hi) / 2
+        out.append((label, staff, gap, start + timedelta(days=to_target + gap)))
+    return {"median_gap": median_gap,
+            "median_date": start + timedelta(days=to_target + median_gap), "survey": out}
+
+
+def _tk_staff_al5_note():
+    """Hover text for the AL5 card: the gaps and dates the staff survey implies."""
+    check = _tk_staff_al5_check()
+    if check is None:
+        return ""
+    shares, gaps = [], []
+    for label, staff, gap, date in check["survey"]:
+        shares.append(f"{staff}% of the work by {label}")
+        if gap == "sooner":
+            gaps.append(f"the {label} figure needs AL5 right behind AL4")
+        elif gap is None:
+            gaps.append(f"the {label} figure is out of this ladder's reach")
+        else:
+            gaps.append(f"the {label} figure implies a {gap / 30.44:.0f}-month AL4-to-AL5 gap "
+                        f"(AL5 at {_RSI_AL5_TARGET:.0f}% around {date:%b %Y})")
+    return (" Cross-check: Anthropic's staff (August 2026 survey, n=1,093, median) expect AI "
+            "to do " + " and ".join(shares) + ". Through the Takeoff tab's human hours per "
+            "level, " + " and ".join(gaps) + ", against the "
+            f"ladder's median {check['median_gap'] / 30.44:.0f}-month gap "
+            f"({check['median_date']:%b %Y}). Self-reported, and a share of work, not of hours.")
 
 
 def _tk_activity_path(accel):
