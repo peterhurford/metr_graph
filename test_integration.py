@@ -1752,6 +1752,18 @@ class TestDataCentersParty:
         _assert_no_error(at, "Data Centers / reset")
         assert at.radio(key="dc_party").value == "Tenant (who trains there)"
 
+    def test_shared_sites_keep_every_tenant_on_a_shifted_clock(self):
+        """Shifting dates to a later milestone moves points, never tenants:
+        the same companies are charted on every clock, Cursor (whose only
+        site is shared Colossus 2) among them."""
+        at = self._app()
+        base = self._names(at)
+        assert "Cursor" in base
+        for timing in ("Training run finished", "Model release"):
+            at.selectbox(key="dc_timing").set_value(timing).run()
+            _assert_no_error(at, f"Data Centers / {timing}")
+            assert self._names(at) == base, timing
+
 
 # ===========================================================================
 # Pacing tab

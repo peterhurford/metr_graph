@@ -11684,9 +11684,10 @@ def render_data_centers():
     # then the run length that metric assumes (2mo or 6mo).
     hover_run_days = cfg.get("run_days") if key in ('train_flop', 'train_flop_6mo') else None
     if shift_days:
-        series = {n: {'company': v['company'],
-                      'pts': [(d + timedelta(days=site_shift(n)), val)
-                              for d, val in v['pts']]}
+        # Keep every field: `companies` is what counts a shared site under
+        # each listed tenant.
+        series = {n: {**v, 'pts': [(d + timedelta(days=site_shift(n)), val)
+                                   for d, val in v['pts']]}
                   for n, v in series.items()}
         cap_date = cap_date + timedelta(days=shift_days)
 
