@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v30-reallocation-and-ceiling-link"
+MODEL_VERSION = "takeoff-v31-direction-waits-for-coding"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -469,15 +469,22 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # time over its own (with its draw's spread).
     reference_half = float(np.array([p["half_" + s] for s in WORKFLOW_KEYS]) @ WORKFLOW_WEIGHTS)
 
-    def humans(capability):
+    def humans(capability, t=None):
         # Direction is handed over faster as AI judgment passes today's AI's.
         # Clipped in logs: a runaway's judgment would overflow, and past e^30
         # direction has long since been handed over.
         pace = (np.exp(np.minimum(p["direction_adoption"] * ai_judgment_log(
                     capability, taste_slope, drift, transfer, p["judgment_cap"]), 30))
                 if p["direction_adoption"] else None)
-        return workflow_state(capability, baseline_capability_rate, starts, halves, floor,
-                              human_curve, reference_half, pace)
+        hours = workflow_state(capability, baseline_capability_rate, starts, halves, floor,
+                               human_curve, reference_half, pace)
+        if t is None:
+            return hours
+        # AI cannot direct research before it can code: direction holds at the
+        # RSI bar until the draw's coding date at time(s) `t`.
+        uncoded = coding > t + 1e-12
+        hours[uncoded, 0] = np.maximum(hours[uncoded, 0], p["full_human"] / 100)
+        return hours
     baseline_capability_rate = software_rate + compute_rate
     events = {name: np.full(n, np.inf) for name in MILESTONES}
     outcomes = {name: {key: np.full(n, np.nan) for key in
@@ -763,7 +770,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # The deployed model only changes at the end of a step, where `now`
         # is refreshed, so the last step's reading still holds here.
         effective = now[2].copy()
-        human_now = humans(effective)
+        human_now = humans(effective, t)
         if p["rsi_autopilot"]:
             human_now[np.isfinite(events["RSI"]) & (t >= events["RSI"] - 1e-12)] = 0.0
         share_now = human_now @ WORKFLOW_WEIGHTS
@@ -1005,7 +1012,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             history[rows] = np.where(future, values[rows, None], history[rows])
         # A diverged draw's state is a numerical ceiling: record nothing from it.
         live = active & ~diverged
-        human = humans(effective)
+        human = humans(effective, end)
         coding_hit = active & (end >= coding) & ~coding_recorded
         record("Full coding automation", coding_hit, human, delivered_rate, advantage)
         coding_recorded |= coding_hit
@@ -1065,8 +1072,14 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     compute_history = log_level(workflow_grid[None, :], compute_rate[:, None],
                                 compute_late[:, None], slow_at) + held
     # Retain all draws in each percentile, including slow/non-arriving paths.
+    # `direction_ready`: the first grid month direction would be under the bar
+    # were coding no gate, which the app pairs coding dates against.
+    direction_ready = np.full(n, np.inf)
+
     def humans_at(j):
-        hours = humans(capability_history[:, j])
+        ready = humans(capability_history[:, j])[:, 0] <= p["full_human"] / 100
+        direction_ready[ready & ~np.isfinite(direction_ready)] = workflow_grid[j]
+        hours = humans(capability_history[:, j], workflow_grid[j])
         if p["rsi_autopilot"]:
             hours[events["RSI"] <= workflow_grid[j] + 1e-12] = 0.0
         return hours
@@ -1102,6 +1115,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
 
     return {
         "params": p, "version": MODEL_VERSION, "onset": onset, "coding_at": coding,
+        "direction_ready": direction_ready,
         "events": events, "acceleration_events": acceleration_events,
         "time_origin": "today",
         "compute_limited": last_experiments <= last_labor,

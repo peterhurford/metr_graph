@@ -19533,7 +19533,7 @@ _TK_DEFAULTS.update({
     "tk_cal_capability": 2.0, "tk_cal_yield": 1.0, "tk_cal_validated": 0.0,
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
     "tk_pace_today": 1.7, "tk_returns": 1.0, "tk_dc_compute": True,
-    "tk_coding_pairing": 0.7,
+    "tk_coding_pairing": 0.9,
     "tk_wf_humans": 10_000,
     "tk_wf_copies": 50_000, "tk_wf_power": 10.0,
 })
@@ -20816,9 +20816,9 @@ def _tk_workforce_fig(result, today, eci, markers=()):
     return fig
 
 
-def _tk_humans_fig(result, today, ladder=None):
+def _tk_humans_fig(result, today, ladder=None, markers=()):
     """The share of baseline human hours each research stage still takes,
-    falling toward the RSI bar."""
+    falling toward the RSI bar, with the milestones' median dates marked."""
     p = result["workflow_progress"]
     x = _tk_dates(result, today)
     series = [(name, 100 * p["human_quantiles"][:, :, i], color)
@@ -20850,6 +20850,11 @@ def _tk_humans_fig(result, today, ladder=None):
             hovertemplate="%{x|%b %Y}<br>%{y:.0f}% of R&D hours still human"
                           "<extra>Automation index, all stages</extra>"))
         fig.add_vline(x=today, line_color="#555", line_width=1.5)
+    for i, (label, when) in enumerate(markers):
+        fig.add_vline(x=when, line_dash="dot", line_color="#b0b0b0", line_width=1)
+        fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper",
+                           text=label, showarrow=False, xanchor="left",
+                           font=dict(size=11, color="#888"))
     fig.update_layout(
         height=420, margin=dict(l=55, r=20, t=30, b=40),
         yaxis=dict(range=[0, 100], ticksuffix="%",
@@ -20906,7 +20911,8 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
                  capability_at=None):
     """`takeoff.simulate` plus the tab's quantiles, holding per draw only what
     the tab reads per draw: cached results stay in memory, ~3.4 MB per (draws x
-    months) array. With `capability_at` (years), only each draw's capability then."""
+    months) array. With `capability_at` (years), only each draw's capability then
+    and the year its research direction is ready (`direction_ready`)."""
     # The source digest invalidates results when the imported simulator changes.
     result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
                              experiment_slopes=experiment_slopes, compute_rates=compute_rates,
@@ -20916,7 +20922,7 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
     if capability_at is not None:
         wp = result["workflow_progress"]
         k = min(int(np.searchsorted(wp["years"], capability_at)), len(wp["years"]) - 1)
-        return wp["capability_log"][:, k].copy()
+        return wp["capability_log"][:, k].copy(), result["direction_ready"]
     # A trimmed copy: the simulator's own result keeps every array.
     result = dict(result, workflow_progress=dict(result["workflow_progress"]))
     progress = result["workflow_progress"]
@@ -20991,13 +20997,15 @@ def _tk_clip(result, years):
 _TK_PAIRING_YEARS = 4.0      # capability is compared this many years out
 
 
-def _tk_pair_onset(onset, capability, corr, seed=0):
+def _tk_pair_onset(onset, ready, capability, corr, seed=0):
     """`onset` (the RSI projection's coding dates) reassigned across draws so a
-    later date goes with slower `capability`, at copula correlation `corr`.
-    Only the pairing moves, so the dates' distribution is exactly the RSI
-    tab's."""
+    later date goes with a later `ready` (the year research direction could be
+    handed over), ties (never ready) broken by slower `capability`, at copula
+    correlation `corr`. Only the pairing moves, so the dates' distribution is
+    exactly the RSI tab's."""
     n = len(onset)
-    slow = takeoff.normal_scores(2 * (np.argsort(np.argsort(-capability)) + 0.5) / n - 1)
+    order = np.lexsort((-capability, ready))
+    slow = takeoff.normal_scores(2 * (np.argsort(order) + 0.5) / n - 1)
     noise = np.random.default_rng(seed).standard_normal(n)
     latent = corr * slow + np.sqrt(max(1 - corr ** 2, 0)) * noise
     paired = np.empty(n)
@@ -21152,17 +21160,18 @@ def _tk_run(today, progress=None):
     progress(1)
     rest = (experiment_starts, experiment_slopes, pace_yield, compute_rates,
             hist_compute, coding_level, coding_weights, human_curve)
-    # Late coding dates go with slow scenarios: rank a first run's capability
-    # growth, reassign the RSI projection's dates along it, and run again.
-    # The pairing reads capability only at `_TK_PAIRING_YEARS` and the
+    # One pace sets both dates: rank a first run's draws by when research
+    # direction could be handed over, reassign the RSI projection's coding dates
+    # along it, and run again. The pairing reads only to `_TK_PAIRING_YEARS` and the
     # simulation is causal, so that first run stops a month past it
     # (`test_the_pairing_run_stops_where_the_pairing_reads`).
     corr = float(ss("tk_coding_pairing"))
     if corr > 0:
-        capability = _tk_simulate(
+        capability, ready = _tk_simulate(
             dict(params, years=min(horizon, _TK_PAIRING_YEARS + 1 / 12)), onset_years,
             _TK_SOURCE_DIGEST, *rest, capability_at=_TK_PAIRING_YEARS)
-        onset_years = _tk_pair_onset(onset_years, capability, corr, int(params["seed"]))
+        onset_years = _tk_pair_onset(onset_years, ready, capability, corr,
+                                     int(params["seed"]))
         progress(2)
     result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST, *rest)
     # The ECI trend reflects the compute growth behind it: the data-center
@@ -21357,12 +21366,13 @@ def _render_takeoff(loading):
                              "chart horizon. Off: the flat rate below.")
             number("Compute growth per year (×)", "compute_growth", 1.0, 5.0, 0.1,
                    "Used when the data-center projection is off.")
-            number("Coding date tracks capability (correlation)", "coding_pairing",
+            number("Coding date tracks research direction (correlation)", "coding_pairing",
                    0.0, 1.0, 0.1,
                    "How closely each scenario's coding-automation date, from the RSI "
-                   "tab, follows its own capability growth: a late date goes with a "
-                   "slow scenario. 0 pairs them at random; 1 matches them exactly. "
-                   "The automated coder projection's dates are unchanged. 0.7 is a judgment: "
+                   "tab, follows when its research direction could be handed over: a "
+                   "late date goes with a scenario slow to hand it over. 0 pairs them at "
+                   "random; 1 matches them exactly. Either way direction waits for coding. "
+                   "The automated coder projection's dates are unchanged. 0.9 is a judgment: "
                    "both read the same progress, but the projection's fits carry "
                    "benchmark-specific noise too.")
             number("Software ceiling, low end (orders of magnitude)", "ceiling_low_oom",
@@ -21806,12 +21816,13 @@ def _render_takeoff(loading):
 
     st.subheader("2. People step out of the loop")
     _fn_caption(
-        "RSI is when research direction is under the bar, after coding is automated.",
+        "RSI is when research direction is under the bar, after coding is automated. "
+        "Verticals mark milestone medians.",
         ("research direction is under the bar",
          "Checked per scenario, not on the medians. How fast human hours fall "
          "with capability is calibrated on the automation index; how much each "
          "level leaves people in each stage is assumed (table below)."))
-    st.plotly_chart(_tf(_tk_to(_tk_humans_fig(result, today, load_rsi_automation()),
+    st.plotly_chart(_tf(_tk_to(_tk_humans_fig(result, today, load_rsi_automation(), markers),
                                view_end)), width="stretch")
     latest = load_rsi_automation()[-1]
     hours = _tk_al_hours_now()

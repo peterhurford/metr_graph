@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v30-reallocation-and-ceiling-link`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v31-direction-waits-for-coding`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -28,11 +28,12 @@ RSI requires the coding date to have arrived, or a deployed model at ECI 250: a 
 ultraintelligence has automated coding whatever the inherited date says. This anchoring
 constraint is not a joint statistical fit of coding and research capabilities.
 
-The RSI tab's coding dates and this model's capability paths read the same underlying
-progress, so a late coding date should go with a slow scenario. The app runs the model
-once, ranks scenarios by capability four years out, reassigns the coding dates along that
-ranking through a Gaussian copula (correlation 0.7 by default, a judgment), and runs
-again. Only the pairing changes; the dates' distribution is the RSI tab's exactly.
+The RSI tab's coding dates and this model's research-direction curves read the same
+underlying progress, so a late coding date should go with a scenario slow to hand direction
+over. The app runs the model once, ranks scenarios by the month direction would first be
+under the RSI bar with coding no gate (`direction_ready`; never-ready ones by capability
+four years out), reassigns the coding dates along that ranking through a Gaussian copula
+(correlation 0.9 by default, a judgment), and runs again. Only the pairing changes; the dates' distribution is the RSI tab's exactly.
 
 ## Fast and slow feedback
 
@@ -163,7 +164,9 @@ three-month delivered-rate and actual/reference diagnostics remain available for
 analysis and validated milestone definitions; they are not the chart's ongoing pace.
 
 **RSI** is the first time research direction (the stage that chooses what to try next)
-needs at most 5% of its baseline human hours, with the coding date arrived. Human hours
+needs at most 5% of its baseline human hours, with the coding date arrived. AI cannot direct
+research before it can code, so until a draw's coding date its direction hours hold at that
+bar (`test_research_direction_waits_for_coding`). Human hours
 feed back into research through the Amdahl labor term and through who directs research.
 From RSI on, autopilot (the default) drops every stage's remaining human hours: at RSI
 experiment design still needs about 5% of its hours and verification about 11%, and from

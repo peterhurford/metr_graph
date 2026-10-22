@@ -49,7 +49,7 @@ Eleven-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_O
 
 ### Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v30-reallocation-and-ceiling-link`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v31-direction-waits-for-coding`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -67,13 +67,16 @@ This remains shared with the RSI tab. The display horizon does not clip its tail
 left out). Takeoff simulates every `_TK_DRAW_STRIDE`th (2) of those sorted dates, half
 `N_SAMPLES`, so its coding CDF is the projection's as shown to within one full-sample draw
 (`test_coding_automation_inherits_the_exact_final_rsi_cdf`). `render_takeoff` then runs
-twice: `_tk_pair_onset` reassigns those dates so later ones go with slower capability
-(`tk_coding_pairing`, copula correlation, default 0.7), which moves the pairing only, never
-the CDF (`test_coding_dates_pair_with_capability_without_changing_their_distribution`). The
+twice: `_tk_pair_onset` reassigns those dates so later ones go with a later first-run
+`direction_ready` (the month direction would be under the bar were coding no gate; ties by
+slower capability) (`tk_coding_pairing`, copula correlation, default 0.9), which moves the
+pairing only, never the CDF
+(`test_coding_dates_pair_with_direction_without_changing_their_distribution`). The
 first run stops a month past `_TK_PAIRING_YEARS`, all the pairing reads
 (`test_the_pairing_run_stops_where_the_pairing_reads`). RSI is the first time research direction is at
 or under `full_human`% of baseline human hours with the coding date arrived
-(`test_capability_paths_span_the_grid_and_rsi_waits_for_coding`).
+(`test_capability_paths_span_the_grid_and_rsi_waits_for_coding`); until that date direction's
+hours hold at the bar (`test_research_direction_waits_for_coding`).
 
 Every factor is lognormal: `z` is fixed uniform draws mapped to normal scores. r,
 the judgment elasticity, its drift and ρ each carry their own literature-sized spread

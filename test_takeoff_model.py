@@ -601,6 +601,21 @@ def test_capability_paths_span_the_grid_and_rsi_waits_for_coding():
     assert np.all(r["events"]["RSI"][held] >= np.maximum(r["onset"], 0)[held])
 
 
+def test_research_direction_waits_for_coding():
+    """AI cannot direct research before it can code: until a draw's coding
+    date its direction hours hold at the RSI bar, then fall past it."""
+    bar = tk.DEFAULTS["full_human"] / 100
+    early = tk.simulate(dict(years=6), n=200, onset_years=np.zeros(200))
+    late = tk.simulate(dict(years=6), n=200, onset_years=np.full(200, 3.0))
+    years = early["workflow_progress"]["years"]
+    before = years < 3 - 1e-9
+    low_early = early["workflow_progress"]["human_quantiles"][:, 0, 0]
+    low_late = late["workflow_progress"]["human_quantiles"][:, 0, 0]
+    assert (low_early[before] < bar - 1e-9).any()
+    assert np.all(low_late[before] >= bar - 1e-12)
+    assert (low_late[~before] < bar - 1e-9).any()
+
+
 def test_cdf_and_quantile_keep_censored_draws():
     """Non-arrivals (+inf) stay in the denominator and can be the quantile."""
     assert tk.cdf([1, 2, np.inf, np.inf], [0, 1, 2, 20]).tolist() == [0, .25, .5, .5]

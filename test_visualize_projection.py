@@ -6017,17 +6017,22 @@ class TestTakeoffRsiCalibration:
         assert with_aut["quality_slope"] < without["quality_slope"]
 
 
-def test_coding_dates_pair_with_capability_without_changing_their_distribution():
+def test_coding_dates_pair_with_direction_without_changing_their_distribution():
     """Reassigning the RSI tab's dates keeps them exactly, and puts late dates
-    on slow scenarios as strongly as the correlation says."""
+    on scenarios slow to hand direction over as strongly as the correlation
+    says; among those never ready, on the slowest capability."""
     rng = np.random.default_rng(1)
     onset = np.r_[rng.uniform(0, 3, 1999), np.inf]
+    ready = np.r_[rng.uniform(0, 4, 1800), np.full(200, np.inf)]
     capability = rng.standard_normal(2000)
     rank = lambda x: np.argsort(np.argsort(x))
-    for corr, lo, hi in ((0.0, -0.1, 0.1), (0.7, -0.75, -0.55), (1.0, -1.0, -0.999)):
-        paired = vp._tk_pair_onset(onset, capability, corr)
+    for corr, lo, hi in ((0.0, -0.1, 0.1), (0.7, 0.55, 0.75), (1.0, 0.999, 1.0)):
+        paired = vp._tk_pair_onset(onset, ready, capability, corr)
         np.testing.assert_array_equal(np.sort(paired), np.sort(onset))
-        assert lo <= np.corrcoef(rank(paired), rank(capability))[0, 1] <= hi, corr
+        assert lo <= np.corrcoef(rank(paired), rank(ready))[0, 1] <= hi, corr
+    paired = vp._tk_pair_onset(onset, ready, capability, 1.0)
+    never = ~np.isfinite(ready)
+    assert np.corrcoef(rank(paired[never]), rank(capability[never]))[0, 1] < -0.999
 
 
 def test_takeoff_durations_read_in_the_coarsest_fitting_unit():
