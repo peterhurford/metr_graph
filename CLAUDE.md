@@ -366,7 +366,10 @@ a China release at t races the US as of t less China's lag (`us_path_cn`); the b
 milestone table and the time to surpass are trained against trained on every clock, while
 on *Model release* each side's dates add its own lag (the race's too, by site country), so
 China's sit 49 days nearer the US's (`test_pause_dates_follow_timing_in_lockstep`,
-`test_a_longer_us_release_lag_raises_the_trained_bar`).
+`test_a_longer_us_release_lag_raises_the_trained_bar`). The Data Centers tab's *Model
+release* does the same per site (`_dc_release_lag`: China's lag for mainland and Johor sites
+and China's country lines), shows the settings only on that clock, and its hovers' *Model
+out* line uses the site's lag (`test_release_dates_follow_each_countrys_lag`).
 
 ### Section deep links
 

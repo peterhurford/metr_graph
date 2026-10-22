@@ -623,6 +623,22 @@ class TestDataCenters:
         if units:
             assert any(u in text for u in ("hour", "day", "week", "month"))
 
+    def test_release_dates_follow_each_countrys_lag(self):
+        """On *Model release* the lag settings appear, and a Chinese site's
+        model comes out on China's lag while a US one waits the US's."""
+        at = self._dc_app()
+        assert not [n for n in at.number_input if n.key == "us_ship_lag"]
+        at.selectbox(key="dc_metric").set_value("2mo train log OP").run()
+        at.selectbox(key="dc_timing").set_value("Model release").run()
+        _assert_no_error(at, "Data Centers / model release")
+        assert at.number_input(key="cn_ship_lag").value == 21
+        hovers = " ".join(str(t) for el in at.get("plotly_chart")
+                          for d in json.loads(el.proto.spec)["data"]
+                          for t in (d.get("hovertext") or []))
+        assert "Model out" in hovers
+        at.number_input(key="us_ship_lag").set_value(140).run()
+        _assert_no_error(at, "Data Centers / 140-day US lag")
+
     def test_projection_range_change(self):
         at = self._dc_app()
         at.radio(key="dc_end_year").set_value(2029).run()

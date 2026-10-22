@@ -3812,8 +3812,8 @@ class TestDcTrainFlopWindows:
 
     def test_timing_shift_follows_the_metric_run_length(self):
         # Construction is the site's own date; the other two milestones are one
-        # training run (and, for release, the post-training lag) later.
-        lag = vp._CC_RUN_COMPLETION_LAG.days
+        # training run (and, for release, the trained-to-release lag) later.
+        lag = vp._SHIP_LAG_DEFAULTS["us_ship_lag"]
         assert vp._dc_timing_shift("Data center construction", vp._DAYS_6MO) == 0
         assert vp._dc_timing_shift("Training run finished") == vp._DAYS_2MO
         assert vp._dc_timing_shift("Training run finished", vp._DAYS_6MO) == vp._DAYS_6MO
@@ -3821,6 +3821,14 @@ class TestDcTrainFlopWindows:
         assert (vp._dc_timing_shift("Model release", vp._DAYS_6MO)
                 == vp._DAYS_6MO + lag)
         assert vp._DC_DEFAULTS["dc_timing"] in vp._DC_TIMING_OPTIONS
+        # Chinese sites, at home or abroad, release on China's lag.
+        cn = vp._SHIP_LAG_DEFAULTS["cn_ship_lag"]
+        assert vp._dc_release_lag(country=vp._DC_CTY_CN) == cn
+        assert vp._dc_release_lag(country=vp._DC_CTY_CN_ACCESS) == cn
+        assert vp._dc_release_lag(vp._DC_CN_ACCESS_ABROAD[0], "Malaysia") == cn
+        assert vp._dc_release_lag("Any US site", vp._DC_CTY_US) == lag
+        assert (vp._dc_timing_shift("Model release", vp._DAYS_2MO, cn)
+                == vp._DAYS_2MO + cn)
 
     def test_value_reads_as_log10_operations(self):
         assert vp._dc_fmt_value(1e28, 'flop') == "28 log OP"
@@ -4625,8 +4633,11 @@ class TestDcMilestoneDates:
         assert "Training done (2mo run)" in two and "Training done (6mo run)" in six
         assert f"~{base + timedelta(days=vp._DAYS_2MO):%b %d, %Y}" in two
         assert f"~{base + timedelta(days=vp._DAYS_6MO):%b %d, %Y}" in six
-        assert (f"Model out ~{base + timedelta(days=vp._DAYS_6MO) + vp._CC_RUN_COMPLETION_LAG:%b %d, %Y}"
-                in six)
+        done = base + timedelta(days=vp._DAYS_6MO)
+        lag = vp._SHIP_LAG_DEFAULTS["us_ship_lag"]
+        assert f"Model out ~{done + timedelta(days=lag):%b %d, %Y}" in six
+        china = vp._dc_milestone_dates(base, 0, vp._DAYS_6MO, release_lag=21)
+        assert f"Model out ~{done + timedelta(days=21):%b %d, %Y}" in china
 
     def test_shift_is_undone_before_expanding(self):
         base = datetime(2026, 3, 1)
