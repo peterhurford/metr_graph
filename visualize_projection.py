@@ -1024,6 +1024,7 @@ _RLI_RAW = [
     # and Gemini 3.8 Flash (5.83), matching Scale; Sonnet 5.5, Haiku 5.5, Gemini 4 Argon, Mythos 5.1 and
     # Opus 5 still have no score on either surface.
     # Rechecked 2026-10-21: no new model or changed score; Scale's newest createdAt is still Opus 5.5 (10-07).
+    # Rechecked 2026-10-22: no new model or changed score on either surface.
 ]
 
 
@@ -8157,6 +8158,7 @@ _OPENAI_REVENUE = [
     # Rechecked 2026-10-18: no TickerTrends post since. Epoch has replaced its $70B row with the FT's $50B
     # (as of 09-30) and a $30B July row; press line only, so this series is unchanged.
     # Rechecked 2026-10-21: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
+    # Rechecked 2026-10-22: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -8264,6 +8266,7 @@ _ANTHROPIC_REVENUE = [
     # 10-18 public benefit fund) states none. Excluded: SemiAnalysis's ~$74B Q3 run rate (via the FT), a
     # third-party estimate.
     # Rechecked 2026-10-21: still no run rate on anthropic.com/news or EDGAR; Epoch's newest row unchanged.
+    # Rechecked 2026-10-22: still none (10-21 LTBT post states no run rate; no public S-1).
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
