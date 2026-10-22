@@ -17183,16 +17183,14 @@ def _pc_ratio_paths(ci):
                 us=_us, us_cap=_us_cap, series=series, g_us=g_us, pace=pace)
 
 
-def _pc_run_lead(ci):
-    """US largest run trained over the largest China can use, at the
+def _pc_compute_lead(ci):
+    """US over China in total installed compute (`_pc_wc_ratio`), at the
     crossing (or end of *Project through*): (ratio, date, crossed), or None."""
     rp = _pc_ratio_paths(ci)
     if rp is None:
         return None
-    cn = rp['path'](*rp['series'][0][2], rp['t_x'])
-    if cn is None:
-        return None
-    return 10 ** (rp['us'](rp['t_x']) - cn), rp['end_d'], rp['cross']
+    return (float(_pc_wc_ratio(rp['t_x'], ci.get('dom_keep', 1.0))),
+            rp['end_d'], rp['cross'])
 
 
 def _pc_render_compute_ratios(ci):
@@ -19193,21 +19191,24 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     }
     # Third card: the compute gap left when China catches up (or by the end
     # of *Project through*), off the ratio table's own paths.
-    _lead = _pc_run_lead(compute_info)
+    _lead = _pc_compute_lead(compute_info)
     if _lead is not None:
         _r, _rd, _rx = _lead
         _cards.append((
             "US compute lead at the crossing" if _rx
             else f"US compute lead, end-{_rd:%Y}",
             f"{_r:.1f}\u00d7" if _r < 10 else f"{_r:,.0f}\u00d7",
-            f"largest run, {_rd:%b %Y}",
-            "The largest run the US trains over the largest China can use, "
+            f"total installed, {_rd:%b %Y}",
+            "US over China in total installed AI compute, "
             + ("at the median crossing date" if _rx else
                f"at the end of {_rd:%Y}, since China has not caught up by then")
-            + "; China needs less compute than the US to match it, since it "
-              "also gains through distillation, diffusion and its own "
-              "innovation. The table under *Compute: largest run* gives "
-              "both sides' levels."))
+            + ": the world-share centrals grown at their central rates, "
+              "China's slowed by the chip levers. The US keeps installing "
+              "through a pause. Only the chip levers and the date move it; "
+              "the model-access levers move it only through the crossing "
+              "date. The table under *Compute: total installed* gives both "
+              "sides' levels, and the largest-run rows the gap in single "
+              "runs."))
     for _col, (_lab, _val, _dlt, _hlp) in zip(st.columns(len(_cards)), _cards):
         _col.metric(_lab, _val, _dlt, delta_color="off", help=_hlp)
     if _run_note:

@@ -1890,9 +1890,9 @@ class TestPacingTab:
         assert any(c == f"End-{end}, China not caught up" for c in tbl.columns)
         # No pacing, so the pacing date is a bare date, not "Pacing starts".
         assert not any("Pacing starts" in c for c in tbl.columns)
-        # The third card quotes the table's end-column ratio.
+        # The third card quotes the table's end-column installed ratio.
         lead = next(m for m in at.metric if "US compute lead" in str(m.label))
-        row = tbl[tbl["Compares"].str.contains("all China can use")].iloc[0]
+        row = tbl[tbl["Compares"].str.startswith("Installed compute")].iloc[0]
         cell = row[f"End-{end}, China not caught up"]
         assert cell.endswith("US " + lead.value)
 
@@ -1907,7 +1907,7 @@ class TestPacingTab:
                                "US compute lead at the crossing"]
         tbl = next(x.value for x in at.table if "Compares" in x.value.columns)
         cross = next(c for c in tbl.columns if c.startswith("China catches up"))
-        row = tbl[tbl["Compares"].str.contains("all China can use")].iloc[0]
+        row = tbl[tbl["Compares"].str.startswith("Installed compute")].iloc[0]
         assert row[cross].endswith("US " + at.metric[-1].value)
         # Order on the page: the cards, then the warning, then the table.
         def walk(node):
