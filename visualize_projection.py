@@ -14864,12 +14864,17 @@ def _render_cc_compute_sources():
             plot_bgcolor='white',
             paper_bgcolor='white', font=dict(color='#222222'),
             margin=dict(l=50, r=20, t=56, b=40),
-            title=dict(text=title, font=dict(size=14), x=0.01),
-            legend=dict(orientation='h', y=-0.15, font=dict(size=11),
+            title=dict(text=title, font=dict(size=14, color='#222222'),
+                       x=0.01),
+            legend=dict(orientation='h', y=-0.15,
+                        font=dict(size=11, color='#222222'),
                         traceorder='normal'),
             yaxis=dict(title_text="Share of H100e", ticksuffix='%',
-                       range=[0, 100], gridcolor='rgba(0,0,0,0.12)'),
-            xaxis=dict(type='category', range=[-0.5, len(xs) - 0.5]))
+                       range=[0, 100], gridcolor='rgba(0,0,0,0.12)',
+                       tickfont=dict(color='#222222'),
+                       title_font=dict(color='#222222')),
+            xaxis=dict(type='category', range=[-0.5, len(xs) - 0.5],
+                       tickfont=dict(color='#222222')))
         return fig
 
     c1, c2 = st.columns(2)
