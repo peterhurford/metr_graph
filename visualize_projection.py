@@ -18825,10 +18825,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         marker=dict(size=4, color='#1F77B4', line=dict(color='white', width=0.5)),
         text=[_hover(d, s, n) + _trend_note(_us_obs) for d, s, n in us_fr],
         hoverinfo='text', name='US (actual)'))
-    # Two visually distinct segments: the projected climb (dashed, like every
-    # projection) and the bar the plan holds from the pacing date (solid dark
-    # blue, as China's projection is dark red). Both are medians of the per-sample bar China is crossed
+    # One dashed projection in two pieces, the climb to the pacing date and
+    # the path from it, both medians of the per-sample bar China is crossed
     # against, dated as the pause is, monthly so a hover answers anywhere.
+    # The no-pacing counterfactual is dotted, drawn only where pacing bites.
     t0_us = max(us_best[0] + off_us_rel, anchor_d + off_us)
     _tp50 = float(np.median(t_pause_s))
 
@@ -18845,8 +18845,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                   / max((d_pause_v - t0_us).days / 365.25, 1e-6))
         fig.add_trace(go.Scatter(
             x=_cx, y=_cy, mode='lines',
-            line=dict(color='#1F77B4', width=2, dash='dash'),
-            name='US, no pacing', legendgroup='us_nopace',
+            line=dict(color='#1450A3', width=2.5, dash='dash'),
+            name='US, projected', legendgroup='us_proj', showlegend=False,
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                           + ('<extra>US climb, Takeoff tab' if tk
                              else '<extra>US climb, projected')
@@ -18865,8 +18865,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     if _paused:
         fig.add_trace(go.Scatter(
             x=[max(d_pause_v, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
-            line=dict(color='#1450A3', width=2.5),
-            name='US, projected',
+            line=dict(color='#1450A3', width=2.5, dash='dash'),
+            name='US, projected', legendgroup='us_proj',
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                           f'<extra>US paused at {lvl50:.0f}</extra>'))
     else:
@@ -18882,14 +18882,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                                            1e-6) if len(_py) > 1 else 0.0)
         fig.add_trace(go.Scatter(
             x=_px, y=_py, mode='lines',
-            line=dict(color='#1450A3', width=2.5),
-            name='US, projected',
+            line=dict(color='#1450A3', width=2.5, dash='dash'),
+            name='US, projected', legendgroup='us_proj',
             hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                           + ('<extra>US paced on a schedule' if pace_wins else
                              f'<extra>US paced at {pace:.0%}' if pace < 1
                              else '<extra>US, no pacing')
                           + f', avg {_prate:.1f} ECI/yr</extra>'))
-    # Where the US would be with no pacing, dashed like China's no-levers
+    # Where the US would be with no pacing, dotted like China's no-levers
     # line, from the first change in its pace.
     _chg = _pc_pace_changes(pause_d, pace, _pc_pace_windows(today))
     if _chg:
@@ -18904,9 +18904,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 (_ux[-1] - _ux[0]).days / 365.25, 1e-6)
             fig.add_trace(go.Scatter(
                 x=_ux, y=[float(v) for v in _un], mode='lines',
-                line=dict(color='#1F77B4', width=2, dash='dash'),
-                name='US, no pacing', legendgroup='us_nopace',
-                showlegend=False,
+                line=dict(color='#1F77B4', width=2, dash='dot'),
+                name='US, no pacing',
                 hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
                               f'<extra>US, no pacing, avg {_urate:.1f} '
                               'ECI/yr</extra>'))
@@ -18986,30 +18985,32 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         line=dict(width=0), hoverinfo='skip', name='China, 80% range'))
     fig.add_trace(go.Scatter(
         x=xs, y=[pct[50][i] for i in keep], mode='lines',
-        line=dict(color='#7F1010', width=2.5),
+        line=dict(color='#7F1010', width=2.5, dash='dash'),
         name='China, projected',
         hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>China median'
                       + ("" if _cn_avg is None
                          else f", avg {_cn_avg:.1f} ECI/yr to crossing")
                       + '</extra>'))
     # China if the US kept going and nothing were done: `traj_free`, the
-    # projection's own sim and draws with no pacing and no levers.
+    # projection's own sim and draws with no pacing and no levers, dotted
+    # and drawn only where the settings move China off it.
     _nl50 = np.median(traj_free, axis=0)
-    _keep0 = [i for i, y in enumerate(grid0)
-              if anchor_d + off_cn + timedelta(days=y * 365.25) <= x_end]
+    _keep0 = ([i for i, y in enumerate(grid0)
+               if anchor_d + off_cn + timedelta(days=y * 365.25) <= x_end]
+              if not np.allclose(traj_free, traj, atol=0.05) else [])
     _nl_rate = ((_nl50[_keep0[-1]] - _nl50[0])
                 / max(grid0[_keep0[-1]] - grid0[0], 1e-6)
                 if _keep0 else _cn_obs)
-    fig.add_trace(go.Scatter(
-        x=[anchor_d + off_cn + timedelta(days=grid0[i] * 365.25)
-           for i in _keep0],
-        y=[float(_nl50[i]) for i in _keep0],
-        mode='lines', line=dict(color='#D62728', width=2, dash='dash'),
-        name='China if the US kept going',
-        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                      '<extra>China, no pacing or levers'
-                      + (f", avg {_nl_rate:.1f} ECI/yr" if _keep0 else "")
-                      + '</extra>'))
+    if _keep0:
+        fig.add_trace(go.Scatter(
+            x=[anchor_d + off_cn + timedelta(days=grid0[i] * 365.25)
+               for i in _keep0],
+            y=[float(_nl50[i]) for i in _keep0],
+            mode='lines', line=dict(color='#D62728', width=2, dash='dot'),
+            name='China if the US kept going',
+            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                          '<extra>China, no pacing or levers'
+                          f', avg {_nl_rate:.1f} ECI/yr</extra>'))
     if crossed:
         # The 80% crossing window as a neutral bracket through the diamond;
         # a red band read as part of China's own fan.
@@ -19051,7 +19052,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # Below the plot, four to a row: US, China, then the marks.
         legend=dict(font=dict(size=12, color='#222'), orientation='h',
                     x=0, y=-0.14, xanchor='left', yanchor='top',
-                    entrywidth=0.25, entrywidthmode='fraction',
+                    entrywidth=(0.25 if any(
+                        t.name in ('US, no pacing', 'China if the US kept going')
+                        for t in fig.data) else 1 / 3),
+                    entrywidthmode='fraction',
                     traceorder='normal'),
         xaxis=dict(gridcolor='rgba(0,0,0,0.12)', title_text=_xtitle,
                    range=[datetime(2024, 1, 1) + off_cn, x_end],
@@ -19059,9 +19063,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
                    range=_y_rng,
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
-    _rank = {'US (actual)': 1, 'US, no pacing': 2, 'US, projected': 3,
+    _rank = {'US (actual)': 1, 'US, projected': 2, 'US, no pacing': 3,
              'US, 80% range': 4, 'China (actual)': 5,
-             'China if the US kept going': 6, 'China, projected': 7,
+             'China, projected': 6, 'China if the US kept going': 7,
              'China, 80% range': 8, 'automated coder': 9, 'RSI': 10,
              '80% crossing window': 11, 'Median crossing': 12}
     for _tr in fig.data:

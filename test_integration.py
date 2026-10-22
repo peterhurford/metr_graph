@@ -1824,28 +1824,35 @@ class TestPacingTab:
         at.run()
         assert cards() == china
 
-    def test_the_dashed_china_line_is_the_projection_with_no_levers(self):
-        """'China if the US kept going' reruns the projection's own sim and
-        draws with no pacing and no levers: at the defaults it lies on the
-        projection, and a pause plus levers move only the projection."""
+    def test_the_dotted_lines_show_only_what_the_settings_changed(self):
+        """Projections are dashed; the no-pacing, no-lever counterfactuals
+        are dotted and drawn only once the settings move a country off them.
+        China's reruns the projection's own sim and draws, so a pause and
+        levers move only the projection."""
         import json
 
-        def lines(at):
+        def traces(at):
             for el in at.get("plotly_chart"):
                 d = {t.get("name"): t for t in json.loads(el.proto.spec)["data"]}
-                if "China if the US kept going" in d:
-                    return (d["China, projected"]["y"],
-                            d["China if the US kept going"]["y"])
+                if "China, projected" in d:
+                    return d
             raise AssertionError("no pause chart")
 
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
-        solid, dashed = lines(at)
-        assert solid == pytest.approx(dashed)
-        paused = lines(self._app())
-        assert paused[1] == pytest.approx(dashed)
-        assert paused[0][-1] < dashed[-1] - 5
+        d = traces(at)
+        assert "China if the US kept going" not in d
+        assert "US, no pacing" not in d
+        assert d["China, projected"]["line"]["dash"] == "dash"
+        assert d["US, projected"]["line"]["dash"] == "dash"
+        free = d["China, projected"]["y"]
+
+        p = traces(self._app())
+        assert p["China if the US kept going"]["line"]["dash"] == "dot"
+        assert p["US, no pacing"]["line"]["dash"] == "dot"
+        assert p["China if the US kept going"]["y"] == pytest.approx(free)
+        assert p["China, projected"]["y"][-1] < free[-1] - 5
 
     def test_compute_ratios_show_without_a_crossing(self):
         """At the defaults (no pacing) China does not catch up by *Project

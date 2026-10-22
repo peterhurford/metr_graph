@@ -1646,9 +1646,10 @@ the race table by its columns (`TestPacingTab._entities`), never by position.
 China
 races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the
 paused stock stays distillable while a gap remains, then China runs on its
-indigenous band plus its export-control-bound compute term. The dashed *China if the US kept going* is that same sim, from the same draws, with
-the US unpaced and every lever off, so at the defaults it lies on the projection
-(`test_the_dashed_china_line_is_the_projection_with_no_levers`). A *Project through*
+indigenous band plus its export-control-bound compute term. Projections are dashed; the dotted *US, no pacing* and *China if the US kept going*
+are the counterfactuals, drawn only where the settings move a country off them, China's
+from the same sim and draws with the US unpaced and every lever off
+(`test_the_dotted_lines_show_only_what_the_settings_changed`). A *Project through*
 dropdown (`pc_end_year`, options 2027–2035, default 2031) sets the crossing-search horizon and — like every
 other tab's *Project through* — the x-axis of **both** charts: the timeline runs to the
 grid end (+120d pad) instead of auto-fitting to content, and the pause panel takes
