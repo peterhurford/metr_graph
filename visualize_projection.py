@@ -18497,9 +18497,29 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # least a year of grid so a near-term horizon still draws.
         kw['horizon_yrs'] = max((horizon - anchor_d).days / 365.25, 1.0)
     chan = {}
+    _rng0 = np.random.get_state()
     years, grid_yrs, traj = _cc_cn_crossing_sim(
         anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
         channels=chan, comp_shadow=comp_shadow, **kw)
+    # The dashed "China if the US kept going" line: the same sim from the
+    # same draws, with the US unpaced and every lever off, so at defaults it
+    # is the projection and any gap is what the settings did.
+    _rng1 = np.random.get_state()
+    np.random.set_state(_rng0)
+
+    def _us_path_free(grid):
+        t = np.broadcast_to(np.asarray(grid, dtype=float) - _cn_ship,
+                            (n_s, len(grid)))
+        trained = _us_trained_unpaced(t)
+        return trained, np.minimum(_us_trained_unpaced(t - _ship), trained)
+    _, _, traj_free = _cc_cn_crossing_sim(
+        anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
+        **{**kw, 'us_path': _us_path_free,
+           'g_lo': _CC_CN_COMPUTE_LO, 'g_hi': _CC_CN_COMPUTE_HI,
+           'comp_dead': None, 'comp_slow': None, 't_pause': None,
+           't_dist_stop': None, 'dist_teacher': None,
+           'speedup_scale': None, 'comp_cut': None})
+    np.random.set_state(_rng1)
     # The run-length trade-off, read off the *same* sampled paths so the
     # comparison is paired (no MC noise between the two answers): the bar
     # drops by cn_gain, then the extra wall clock is added back. The organic
@@ -18972,34 +18992,24 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                       + ("" if _cn_avg is None
                          else f", avg {_cn_avg:.1f} ECI/yr to crossing")
                       + '</extra>'))
-    # China's own trend if the US kept going and nothing were done: its
-    # observed rate (distillation never fading, since the US keeps pulling
-    # ahead of it), sped up by its own automated coder and RSI exactly as
-    # its projection is (`cn_speedup`, `tk_follow`), per sample, then the
-    # median. Without a Takeoff run it is the straight trend.
-    if _cn_obs:
-        _nl = np.empty((n_s, len(grid_yrs)))
-        _nl[:, 0] = anchor_eci + _cn_obs * grid_yrs[0]
-        _gdt = np.diff(grid_yrs)
-        for _i, _dt in enumerate(_gdt, start=1):
-            _e = _nl[:, _i - 1]
-            _extra = ((cn_speedup(_e) - 1.0)
-                      * (tk_follow * tk['ppy'] + (1.0 - tk_follow) * _cn_obs)
-                      if cn_speedup is not None else 0.0)
-            _nl[:, _i] = _e + (_cn_obs + _extra) * _dt
-        _nl50 = np.median(_nl, axis=0)
-        _nl_rate = ((_nl50[keep[-1]] - _nl50[0])
-                    / max(grid_yrs[keep[-1]] - grid_yrs[0], 1e-6)
-                    if keep else _cn_obs)
-        fig.add_trace(go.Scatter(
-            x=xs, y=[float(_nl50[i]) for i in keep],
-            mode='lines', line=dict(color='#D62728', width=2, dash='dash'),
-            name='China if the US kept going',
-            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                          '<extra>China, no levers'
-                          + (f", {_cn_obs:.1f} ECI/yr now, avg "
-                             f"{_nl_rate:.1f}" if cn_speedup is not None
-                             else _per_yr(_cn_obs)) + '</extra>'))
+    # China if the US kept going and nothing were done: `traj_free`, the
+    # projection's own sim and draws with no pacing and no levers.
+    _nl50 = np.median(traj_free, axis=0)
+    _keep0 = [i for i, y in enumerate(grid0)
+              if anchor_d + off_cn + timedelta(days=y * 365.25) <= x_end]
+    _nl_rate = ((_nl50[_keep0[-1]] - _nl50[0])
+                / max(grid0[_keep0[-1]] - grid0[0], 1e-6)
+                if _keep0 else _cn_obs)
+    fig.add_trace(go.Scatter(
+        x=[anchor_d + off_cn + timedelta(days=grid0[i] * 365.25)
+           for i in _keep0],
+        y=[float(_nl50[i]) for i in _keep0],
+        mode='lines', line=dict(color='#D62728', width=2, dash='dash'),
+        name='China if the US kept going',
+        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
+                      '<extra>China, no pacing or levers'
+                      + (f", avg {_nl_rate:.1f} ECI/yr" if _keep0 else "")
+                      + '</extra>'))
     if crossed:
         # The 80% crossing window as a neutral bracket through the diamond;
         # a red band read as part of China's own fan.
