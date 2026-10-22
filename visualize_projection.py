@@ -17018,31 +17018,27 @@ def _pc_render_compute_mix(ci):
          "Takeoff model's parallelization exponent."))
 
 
-def _pc_render_compute_ratios(ci, span):
-    """How far ahead the US is in compute, today to the crossing, or to
-    *Project through* when `span` is None (China does not catch up).
+def _pc_ratio_paths(ci):
+    """The log-compute paths behind the US-vs-China ratios, today to the
+    crossing (`ci['cross_label']`, the crossing card's median date) or, with
+    none, to the end of *Project through*. None without a US reading.
 
     Largest trainable run (cluster capacity, `_pc_capacity_at`) for China's
     usable run and its domestic clusters, against two US lines: its clusters,
     which keep growing at their own pace (`g_us`), and the largest run it
     actually trains, which grows at `pace` of that from the pacing date
-    (frozen under a pause), the gap between them being the overhang; and
-    total installed compute from the world shares (`_pc_wc_ratio`). China's runs grow from the pause at the pace the
-    levers leave it over `span` years (pause to crossing). Solid lines are
-    these settings, dashed the same with no compute levers. A table gives
-    the readings at the pause and at the crossing.
+    (frozen under a pause). China's runs grow from the pause at the pace the
+    levers leave it.
     """
     us, now = ci.get('us'), ci.get('now') or {}
     today, pause_d = ci['today'], ci['pause_d']
     t_p = max((pause_d - today).days / 365.25, 0.0)
-    cross = span is not None
-    # Without a crossing, end on the last day of *Project through*.
-    end_d = ci['horizon'].replace(month=12, day=31)
-    if not cross:
-        span = (end_d - today).days / 365.25 - t_p
-    if not us or span <= 0:
-        return
-    t_x = t_p + span
+    cross = ci.get('cross_label') is not None
+    end_d = (ci['cross_label'] if cross
+             else ci['horizon'].replace(month=12, day=31))
+    t_x = (end_d - today).days / 365.25
+    if not us or t_x <= t_p:
+        return None
 
     def _lv(cap):
         return float(np.log10(cap[1])) if cap else None
@@ -17062,9 +17058,10 @@ def _pc_render_compute_ratios(ci, span):
         return lp + (g or 0.0) * (t - t_p)
 
     g_us, pace = ci.get('g_us') or 0.0, ci.get('pace', 0.0)
-    windowed = bool(ci.get('windowed'))
-    paused = pace <= 0 and not windowed
-    paced = pace < 1 or windowed
+
+    def _us_cap(t):
+        """US cluster capacity, which keeps growing whatever is trained."""
+        return _path(us_0, us_p, g_us, t)
 
     def _us(t):
         """The largest run the US trains: capacity to the pacing date, then
@@ -17073,10 +17070,6 @@ def _pc_render_compute_ratios(ci, span):
         if ci.get('clock'):
             return _us_cap(ci['clock'](t))
         return _path(us_0, us_p, pace * g_us, t)
-
-    def _us_cap(t):
-        """US cluster capacity, which keeps growing whatever is trained."""
-        return _path(us_0, us_p, g_us, t)
 
     series = [  # label, colour, (l0, lp, g), (l0, lp, g) without levers
         ("Largest run China can use", '#D62728',
@@ -17089,12 +17082,45 @@ def _pc_render_compute_ratios(ci, span):
          (_lv(now.get(_DC_CTY_CN_DOMESTIC)), _lv(ci.get('cn_dom')),
           ci.get('g_dom_base'))),
     ]
+    return dict(t_p=t_p, t_x=t_x, cross=cross, end_d=end_d, path=_path,
+                us=_us, us_cap=_us_cap, series=series, g_us=g_us, pace=pace)
+
+
+def _pc_run_lead(ci):
+    """US largest run trained over the largest China can use, at the
+    crossing (or end of *Project through*): (ratio, date, crossed), or None."""
+    rp = _pc_ratio_paths(ci)
+    if rp is None:
+        return None
+    cn = rp['path'](*rp['series'][0][2], rp['t_x'])
+    if cn is None:
+        return None
+    return 10 ** (rp['us'](rp['t_x']) - cn), rp['end_d'], rp['cross']
+
+
+def _pc_render_compute_ratios(ci):
+    """How far ahead the US is in compute (`_pc_ratio_paths`), the gap
+    between its clusters and its trained run being the overhang; and total
+    installed compute from the world shares (`_pc_wc_ratio`). Solid lines
+    are these settings, dashed the same with no compute levers. A table
+    gives the readings at the pacing date and at the crossing.
+    """
+    rp = _pc_ratio_paths(ci)
+    if rp is None:
+        return
+    today, pause_d = ci['today'], ci['pause_d']
+    t_p, t_x, cross, end_d = rp['t_p'], rp['t_x'], rp['cross'], rp['end_d']
+    _path, _us, _us_cap, series = rp['path'], rp['us'], rp['us_cap'], rp['series']
+    g_us, pace = rp['g_us'], rp['pace']
+    windowed = bool(ci.get('windowed'))
+    paused = pace <= 0 and not windowed
+    paced = pace < 1 or windowed
     # Like the tab's other charts, the axis runs to *Project through*.
     end = ci.get('horizon') or (today + timedelta(days=t_x * 365.25))
     t_end = max((end - today).days / 365.25, t_x)
     ts = np.linspace(0.0, t_end, 80)
     dates = [today + timedelta(days=float(t) * 365.25) for t in ts]
-    t_cross_d = today + timedelta(days=t_x * 365.25)
+    t_cross_d = end_d
     levers = bool(ci.get('levers'))
 
     def _marks(fig):
@@ -17214,7 +17240,7 @@ def _pc_render_compute_ratios(ci, span):
 
     c_p = (f"{'Pause' if paused else 'Pacing starts'}, {pause_d:%b %Y}"
            if paced else f"{pause_d:%b %Y}")
-    _xl = (ci.get('cross_label') or t_cross_d) if cross else end_d
+    _xl = end_d
     c_x = (f"China catches up, {_xl:%b %Y}" if cross
            else f"End-{_xl:%Y}, China not caught up")
     c_b = f"{_xl:%b %Y}, no compute levers"
@@ -17424,12 +17450,10 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     sample, how far a paced US climbs from the pacing date to the crossing
     (None or 0 when paused): China must close that too, so the months to
     close the gap at a rate use the rate net of the US's average climb.
-    Returns the median span in years from the pause to the crossing, None
-    when it draws nothing.
     """
     ok = np.isfinite(years)
     if ok.sum() < 100 or t_pause is None:
-        return None
+        return
     t_cross = np.where(ok, np.maximum(years - cn_extra - 1e-6, 0.0), np.nan)
     # Compute splits in two when the sim carried a domestic-only shadow: what
     # domestic clusters alone would have contributed, and the rest. The split
@@ -17656,7 +17680,6 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         _fn_caption(" ".join(legend + (["Rates under these settings."]
                                        if notes else [])),
                     *([("these settings", " ".join(notes))] if notes else []))
-    return span
 
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
@@ -18505,14 +18528,16 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
           "the sidebar"
         + (", and gets automated coding and RSI at the ECI the US did, sped up "
            "as the sidebar's *China's takeoff* setting says." if tk else "."))
-    _card1 = ((f"China reaches paused US frontier "
-               f"(pause start {d_pause_v:%b %Y}, ECI ~{lvl50:.0f})")
-              if _paused else
-              (f"China catches the paced US (from {d_pause_v:%b %Y} at "
-               f"{pace:.0%}, ECI ~{lvl50:.0f} then)"))
-    if pace_wins:
-        _card1 += (f", plus {len(pace_wins)} pacing window"
-                   + ("s" if len(pace_wins) > 1 else ""))
+    _card1 = ("China reaches paused US frontier" if _paused
+              else "China catches the paced US")
+    # The pacing settings ride the first card's hover, ahead of its clock.
+    _setup = ((f"The US pauses in {d_pause_v:%b %Y} at ECI ~{lvl50:.0f}"
+               if _paused else
+               f"The US runs at {pace:.0%} of its pace from {d_pause_v:%b %Y}, "
+               f"at ECI ~{lvl50:.0f} then")
+              + (f", plus {len(pace_wins)} pacing window"
+                 + ("s" if len(pace_wins) > 1 else "") if pace_wins else "")
+              + ". ")
     if crossed:
         d10, d50, d90 = (_pdate(q) for q in (10, 50, 90))
         # Milestone offsets came from the top of the function; the pause is
@@ -18533,7 +18558,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # Drawn under the milestone table, above *Why this US-China gap?*.
         _cards = [
             (_card1, f"{v50:%b %Y}",
-             f"{v10:%b %Y} – {f'{v90:%b %Y}' if v90 else _past} (80%)", _clock),
+             f"{v10:%b %Y} – {f'{v90:%b %Y}' if v90 else _past} (80%)",
+             _setup + _clock),
             ("Time for China to surpass", f"~{_pc_span(s50)}",
              f"{_pc_span(s10)} – "
              + (_pc_span(s90) if np.isfinite(s90) else _past) + " (80%)",
@@ -18545,8 +18571,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                     / 30.44, 0.0)
         _cards = [
             (_card1, f"After {_yr_end}", f"{share_x:.0%} of samples by {_yr_end}",
-             f"Fewer than half the samples see China reach {_bar} by the end "
-             f"of {_yr_end}. " + _clock),
+             _setup + f"Fewer than half the samples see China reach {_bar} "
+             f"by the end of {_yr_end}. " + _clock),
             ("Time for China to surpass", f"> {_pc_span(_left, 0)}",
              "pace the US harder or widen Project through", _method)]
     _run_note = None
@@ -18970,60 +18996,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             "China (median, 80%)": _ms_cell(dc),
             "Gap": _ms_gap(du[1], dc[1]),
         })
-    st.warning("**Assumes ~SL5 secure weights - if not, China could catch up "
-               "quickly by stealing US models.**", icon="\u26a0\ufe0f")
-    st.table(_ms_rows)
-    m1, m2 = st.columns(2)
-    for _col, (_lab, _val, _dlt, _hlp) in zip((m1, m2), _cards):
-        _col.metric(_lab, _val, _dlt, delta_color="off", help=_hlp)
-    if _run_note:
-        _fn_caption(*_run_note)
-
-    # ── Why this US-China gap? The same samples, decomposed by rate term. ──
-    _notes = []
-    if comp_shadow is not None:
-        _notes.append(
-            "The two compute rows split China's cluster growth into what "
-            "its domestic buildout alone would have delivered and what "
-            "access to clusters abroad adds on top — the same "
-            "domestic-only counterfactual the remote-access checkbox "
-            "applies, which is why ticking it zeroes that row.")
-    if stop_leak:
-        _notes.append(
-            f"The methods leak is cut {leak_cut}% "
-            + ("today" if d_leak <= today else f"{d_leak:%b %Y}")
-            + f"; diffusion fades over ~{leak_absorb:g} yr to "
-            f"{1 - leak_cut / 100:.0%} of its rate.")
-    if stop_dist:
-        _notes.append(
-            "Distillation is cut "
-            + ("today" if d_dist <= today else f"{d_dist:%b %Y}")
-            + (", so its row counts only what it closed before then."
-               if dist_keep == 0 else
-               f" to {dist_keep:.0%} of its rate, so its row shrinks."))
-    if comp_dead is not None:
-        _notes.append(
-            f"Compute contributes nothing between "
-            f"{anchor_d + timedelta(days=_cd_med[0] * 365.25):%b %Y} and "
-            f"{anchor_d + timedelta(days=_cd_med[1] * 365.25):%b %Y} "
-            f"(median) while the ~{_dl_med:.1f} OOM setback is regrown.")
-    elif stop_remote:
-        _notes.append("Compute runs at the domestic pace only.")
-    if dom_slow_pct or _supply:
-        _notes.append(
-            f"China's own clusters grow {dom_slow_pct}% slower than the "
-            "catalogued domestic pace"
-            + (f" ({_supply_txt})" if _supply else "")
-            + ", which lowers both compute rows.")
-    _notes = [_asm_dist, _asm_comp] + _notes
-    _notes.append(f"Every row is scaled by the pace band "
-                  f"(×{pace_lo:.2f}–{pace_hi:.2f}), the reality check "
-                  "against China's own observed frontier slope.")
-    if 'level' in chan:
-        _notes.append(
-            f"Each path also carries ±{_cc_frontier_level_sd(cn_fr):.1f} "
-            "ECI of release-step scatter, which closes no gap on average and "
-            "is left out of the rows.")
     # Compute levels at the pause (the state-of-play reading) and the paces
     # they grow at after it, with these levers and with none, for the
     # breakdown's ratio table.
@@ -19074,11 +19046,80 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # The crossing card's date, so the table's column names it alike.
         'cross_label': v50,
     }
+    # Third card: the compute gap left when China catches up (or by the end
+    # of *Project through*), off the ratio table's own paths.
+    _lead = _pc_run_lead(compute_info)
+    if _lead is not None:
+        _r, _rd, _rx = _lead
+        _cards.append((
+            "US compute lead at the crossing" if _rx
+            else f"US compute lead, end-{_rd:%Y}",
+            f"{_r:.1f}\u00d7" if _r < 10 else f"{_r:,.0f}\u00d7",
+            f"largest run, {_rd:%b %Y}",
+            "The largest run the US trains over the largest China can use, "
+            + ("at the median crossing date" if _rx else
+               f"at the end of {_rd:%Y}, since China has not caught up by then")
+            + "; China needs less compute than the US to match it, since it "
+              "also gains through distillation, diffusion and its own "
+              "innovation. The table under *Compute: largest run* gives "
+              "both sides' levels."))
+    for _col, (_lab, _val, _dlt, _hlp) in zip(st.columns(len(_cards)), _cards):
+        _col.metric(_lab, _val, _dlt, delta_color="off", help=_hlp)
+    if _run_note:
+        _fn_caption(*_run_note)
+    st.warning("**Assumes ~SL5 secure weights - if not, China could catch up "
+               "quickly by stealing US models.**", icon="\u26a0\ufe0f")
+    st.table(_ms_rows)
+
+    # ── Why this US-China gap? The same samples, decomposed by rate term. ──
+    _notes = []
+    if comp_shadow is not None:
+        _notes.append(
+            "The two compute rows split China's cluster growth into what "
+            "its domestic buildout alone would have delivered and what "
+            "access to clusters abroad adds on top — the same "
+            "domestic-only counterfactual the remote-access checkbox "
+            "applies, which is why ticking it zeroes that row.")
+    if stop_leak:
+        _notes.append(
+            f"The methods leak is cut {leak_cut}% "
+            + ("today" if d_leak <= today else f"{d_leak:%b %Y}")
+            + f"; diffusion fades over ~{leak_absorb:g} yr to "
+            f"{1 - leak_cut / 100:.0%} of its rate.")
+    if stop_dist:
+        _notes.append(
+            "Distillation is cut "
+            + ("today" if d_dist <= today else f"{d_dist:%b %Y}")
+            + (", so its row counts only what it closed before then."
+               if dist_keep == 0 else
+               f" to {dist_keep:.0%} of its rate, so its row shrinks."))
+    if comp_dead is not None:
+        _notes.append(
+            f"Compute contributes nothing between "
+            f"{anchor_d + timedelta(days=_cd_med[0] * 365.25):%b %Y} and "
+            f"{anchor_d + timedelta(days=_cd_med[1] * 365.25):%b %Y} "
+            f"(median) while the ~{_dl_med:.1f} OOM setback is regrown.")
+    elif stop_remote:
+        _notes.append("Compute runs at the domestic pace only.")
+    if dom_slow_pct or _supply:
+        _notes.append(
+            f"China's own clusters grow {dom_slow_pct}% slower than the "
+            "catalogued domestic pace"
+            + (f" ({_supply_txt})" if _supply else "")
+            + ", which lowers both compute rows.")
+    _notes = [_asm_dist, _asm_comp] + _notes
+    _notes.append(f"Every row is scaled by the pace band "
+                  f"(×{pace_lo:.2f}–{pace_hi:.2f}), the reality check "
+                  "against China's own observed frontier slope.")
+    if 'level' in chan:
+        _notes.append(
+            f"Each path also carries ±{_cc_frontier_level_sd(cn_fr):.1f} "
+            "ECI of release-step scatter, which closes no gap on average and "
+            "is left out of the rows.")
     # The compute ratios and mix stand without a crossing: they then run to
     # *Project through* (`test_compute_ratios_show_without_a_crossing`).
-    span = None
     if crossed:
-        span = _pc_render_why(
+        _pc_render_why(
             chan, grid0, traj0, target0, years, years_base,
             cn_gain=cn_gain, cn_extra=cn_extra, cn_run_mo=cn_run_mo,
             us_run_mo=us_run_mo, anchor_name=anchor_name, anchor_d=anchor_d,
@@ -19090,7 +19131,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             dist_stop_t=kw.get('t_dist_stop') if dist_keep == 0 else None,
             remote_stop_t=t_cut_r if stop_remote else None,
             comp_dead=_cd_med, pause_date=d_pause_v)
-    _pc_render_compute_ratios(compute_info, span)
+    _pc_render_compute_ratios(compute_info)
     _pc_render_compute_mix(compute_info)
 
 

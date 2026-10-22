@@ -1601,7 +1601,7 @@ wait** (unlike the CC 161 section — a queue delays both sides alike); dates fo
 sidebar's *Date points at* in lockstep (US events run-finished + `shift − run`, ECI
 release dates + `shift − run − 30d`), so the US–China gap is milestone-invariant; the
 chart (actual points included) rides the same clock, x-axis titled by milestone.
-The crossing cards sit under the milestone table; the panel ends with `_pc_render_why()`, *Why this US-China gap?*: each source's ECI/yr at the pause,
+The three crossing cards (date, time to surpass, and the US compute lead at the crossing, `_pc_run_lead`, the ratio table's own largest-run reading; `test_crossing_cards_sit_above_the_milestone_table`) sit above the SL5 warning and the milestone table, the pacing settings in the first card's hover; the panel ends with `_pc_render_why()`, *Why this US-China gap?*: each source's ECI/yr at the pause,
 its average from the pause to the crossing, and at the crossing (`_pc_rate_at`), then a row
 turning each total into months to close the gap; the average's months are the actual
 catch-up (before the card's one-month release lag). Each source's average is its own median post-pause ECI over

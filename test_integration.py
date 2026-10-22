@@ -1741,6 +1741,11 @@ class TestDataCentersParty:
 # Pacing tab
 # ===========================================================================
 
+def _card_bar(m):
+    """The US bar's ECI, from the crossing card's hover."""
+    return float(re.search(r"at ECI ~([\d.]+)", m.proto.help).group(1))
+
+
 class TestPacingTab:
     """The Pacing tab: renders with its defaults, follows the threshold, and
     resets."""
@@ -1804,6 +1809,37 @@ class TestPacingTab:
         assert any(c == f"End-{end}, China not caught up" for c in tbl.columns)
         # No pacing, so the pacing date is a bare date, not "Pacing starts".
         assert not any("Pacing starts" in c for c in tbl.columns)
+        # The third card quotes the table's end-column ratio.
+        lead = next(m for m in at.metric if "US compute lead" in str(m.label))
+        row = tbl[tbl["Compares"].str.contains("all China can use")].iloc[0]
+        cell = row[f"End-{end}, China not caught up"]
+        assert cell.endswith("US " + lead.value)
+
+    def test_crossing_cards_sit_above_the_milestone_table(self):
+        """Crossing date, time to surpass and the US compute lead at the
+        crossing, all three above the milestone table; the first card's
+        title leaves the pacing settings to its hover."""
+        at = self._app()
+        labels = [str(m.label) for m in at.metric]
+        assert labels[-3:] == ["China reaches paused US frontier",
+                               "Time for China to surpass",
+                               "US compute lead at the crossing"]
+        tbl = next(x.value for x in at.table if "Compares" in x.value.columns)
+        cross = next(c for c in tbl.columns if c.startswith("China catches up"))
+        row = tbl[tbl["Compares"].str.contains("all China can use")].iloc[0]
+        assert row[cross].endswith("US " + at.metric[-1].value)
+        # Order on the page: the cards, then the warning, then the table.
+        def walk(node):
+            for c in getattr(node, "children", {}).values():
+                yield c
+                yield from walk(c)
+
+        body = [e for e in walk(at.main)
+                if type(e).__name__ in ("Metric", "Warning", "Table")]
+        ms = next(i for i, e in enumerate(body) if type(e).__name__ == "Table"
+                  and "Milestone" in e.value.columns)
+        assert [type(e).__name__ for e in body[ms - 4:ms]] == [
+            "Metric", "Metric", "Metric", "Warning"]
         assert any(md.value == "##### China's compute by source"
                    for md in at.markdown)
 
@@ -2318,9 +2354,8 @@ class TestPacingTab:
         for _, row in t.iterrows():
             assert _hrs(row["METR horizon (p80)"]) < _hrs(row["METR horizon (p50)"]), row
         # The bar the crossing metric quotes is the US row of this table.
-        lab = next(str(m.label) for m in at.metric
-                   if "paused US frontier" in str(m.label))
-        assert abs(float(lab.split("ECI")[-1].strip(" ~)"))
+        m = next(m for m in at.metric if "paused US frontier" in str(m.label))
+        assert abs(_card_bar(m)
                    - float(us["Frontier ECI"].split()[0].lstrip("~"))) <= 1
 
     def test_run_length_moves_the_compute_not_the_pause_date(self):
@@ -2330,9 +2365,9 @@ class TestPacingTab:
         at = self._app()
 
         def _pause_month(at):
-            lab = next(str(m.label) for m in at.metric
+            hlp = next(m.proto.help for m in at.metric
                        if "paused US frontier" in str(m.label))
-            return lab.split("pause start ")[1].split(",")[0]
+            return hlp.split("The US pauses in ")[1].split(" at ECI")[0]
 
         def _us_ops(at):
             return float(self._state(at).iloc[0][
@@ -2393,9 +2428,8 @@ class TestPacingTab:
         at = self._app()
 
         def _bar(at):
-            lab = next(str(m.label) for m in at.metric
-                       if "paused US frontier" in str(m.label))
-            return float(lab.split("ECI")[-1].strip(" ~)"))
+            return _card_bar(next(m for m in at.metric
+                                  if "paused US frontier" in str(m.label)))
 
         def _cross(at):
             return datetime.strptime(str(next(
@@ -2433,8 +2467,7 @@ class TestPacingTab:
 
         def _cross(at, word):
             m = next(m for m in at.metric if word in str(m.label))
-            return datetime.strptime(str(m.value), "%b %Y"), \
-                float(str(m.label).split("ECI")[-1].split()[0].strip(" ~)"))
+            return datetime.strptime(str(m.value), "%b %Y"), _card_bar(m)
 
         at.select_slider(key="pc_pace").set_value(0).run()
         paused, paused_bar = _cross(at, "paused US frontier")
@@ -2456,7 +2489,7 @@ class TestPacingTab:
         def card():
             m = next(m for m in at.metric if "US" in str(m.label)
                      and ("paced" in str(m.label) or "paused" in str(m.label)))
-            return str(m.label), str(m.value)
+            return str(m.label) + " " + m.proto.help, str(m.value)
 
         label, paused = card()
         assert "paused US frontier" in label
@@ -2483,8 +2516,8 @@ class TestPacingTab:
             return [(str(m.label), str(m.value), str(m.delta)) for m in at.metric]
 
         def bar():
-            m = next(m for m in at.metric if "paced US" in str(m.label))
-            return float(str(m.label).split("ECI")[-1].split()[0].strip(" ~)"))
+            return _card_bar(next(m for m in at.metric
+                                  if "paced US" in str(m.label)))
 
         before, bar0 = cards(), bar()
         start = at.select_slider(key="pc_pause_mo").value
@@ -2496,7 +2529,7 @@ class TestPacingTab:
         _assert_no_error(at, "Pacing / pause window")
         assert bar() < bar0
         assert "1 pacing window" in next(
-            str(m.label) for m in at.metric if "paced US" in str(m.label))
+            m.proto.help for m in at.metric if "paced US" in str(m.label))
         at.select_slider(key="pc_win1_end").set_value(0).run()
         assert any("is ignored" in c.value for c in at.caption)
         assert bar() == bar0
