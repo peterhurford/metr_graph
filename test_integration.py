@@ -1855,20 +1855,26 @@ class TestPacingTab:
         assert p["China, projected"]["y"][-1] < free[-1] - 5
 
     def test_the_pacing_date_and_model_access_grey_out_with_no_pacing(self):
-        """With no pacing nothing starts on the pacing date, so it and the
-        model-access lever are disabled, and the lever set anyway (from a
-        URL) changes nothing."""
+        """With no pacing nothing starts on the pacing date: it greys out at
+        today, the state of play reads today, the model-access lever is
+        disabled and ignored even when set, and the chosen date returns with
+        pacing."""
+        import visualize_projection as vp
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
-        assert at.select_slider(key="pc_pause_mo").disabled
+        date = next(w for w in at.select_slider if w.label == "Pacing starts on")
+        assert date.disabled and date.key != "pc_pause_mo"
         assert at.checkbox(key="pc_withhold").disabled
+        assert any("Today" in t.value.columns for t in at.table)
         before = [(str(m.label), str(m.value)) for m in at.metric]
         at.session_state["pc_withhold"] = True
         at.run()
         assert [(str(m.label), str(m.value)) for m in at.metric] == before
         at.select_slider(key="pc_pace").set_value(50).run()
         assert not at.select_slider(key="pc_pause_mo").disabled
+        assert at.select_slider(key="pc_pause_mo").value == \
+            vp._PC_DEFAULTS["pc_pause_mo"]
         assert not at.checkbox(key="pc_withhold").disabled
 
     def test_compute_ratios_show_without_a_crossing(self):
@@ -2616,6 +2622,8 @@ class TestPacingTab:
             return _card_bar(next(m for m in at.metric
                                   if "paced US" in str(m.label)))
 
+        # Lightly paced, so the pacing date is live (no pacing reads today).
+        at.select_slider(key="pc_pace").set_value(95).run()
         before, bar0 = cards(), bar()
         start = at.select_slider(key="pc_pause_mo").value
         at.selectbox(key="pc_win_n").set_value(1).run()
@@ -2802,8 +2810,7 @@ class TestPacingTab:
             "Operator (who owns the building)").run()
         [b for b in at.button if b.key == "pc_reset"][0].click().run()
         _assert_no_error(at, "Pacing / reset")
-        assert at.select_slider(key="pc_pause_mo").value == \
-            _pc_pause_default_mo()
+        assert at.session_state["pc_pause_mo"] == _pc_pause_default_mo()
         assert at.radio(key="pc_party").value == "Tenant (who trains there)"
         assert at.selectbox(key="pc_pool").value == \
             "Nearby + announced fabric"

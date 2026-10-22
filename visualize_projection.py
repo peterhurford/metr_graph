@@ -18548,7 +18548,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         c = caps.get(label)
         return {
             ("At pause start" if pace <= 0 and not pace_wins
-             else "At pacing start"): label,
+             else "Today" if _no_pace else "At pacing start"): label,
             "Largest trainable run (capacity)": (
                 f"{_log_op(c[1])} log OP ({_log_op(c[0])}–{_log_op(c[2])})"
                 if c else "—"),
@@ -19406,19 +19406,29 @@ def render_pacing():
                  "arrive later too.")
         st.caption("100% = no pacing \u00b7 0% = pause \u00b7 in between, "
                    "the share of its ECI growth the US keeps")
-        # With no pacing (and no pacing windows) nothing starts on the date.
+        # With no pacing (and no pacing windows) nothing starts on the date,
+        # so the snapshot and the race read today, shown on a greyed stand-in;
+        # the chosen date stays in state (and the URL) for when pacing returns.
         _no_pace = pace_pct == 100 and not _pc_pace_windows(_today)
-        pause_mo = st.select_slider(
-            "Pacing starts on" if pace_pct else "US pauses on",
-            options=_months,
-            value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
-            format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
-            disabled=_no_pace,
-            help="From this date the US grows at the pace above. It also "
+        _help = ("From this date the US grows at the pace above. It also "
                  "sets the compute and capability each side has then, the "
                  "date the model-access lever bites, and the bar "
-                 "the *Compute Thresholds* race runs to. Greyed out with no "
-                 "pacing.")
+                 "the *Compute Thresholds* race runs to. With no pacing it is "
+                 "greyed out at today, and those read today.")
+        if _no_pace:
+            st.session_state["pc_pause_mo"] = st.session_state.get(
+                "pc_pause_mo", _PC_DEFAULTS["pc_pause_mo"])
+            st.select_slider(
+                "Pacing starts on", options=[0], value=0, disabled=True,
+                format_func=lambda m: f"{_today:%b %Y}", help=_help)
+            pause_mo = 0
+        else:
+            pause_mo = st.select_slider(
+                "Pacing starts on" if pace_pct else "US pauses on",
+                options=_months,
+                value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
+                format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
+                help=_help)
     pause_d = _pc_add_months(_today, pause_mo)
     caps = _pc_capacity_at(
         [(_DC_CTY_US, 'country', _us_steps_raw, tuple(_us_names)),

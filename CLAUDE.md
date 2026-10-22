@@ -1534,7 +1534,10 @@ uncertain, the date is chosen). The control is a `select_slider` over
 months-from-today with `format_func` labelling each position with the date
 (`_pc_add_months`, whole calendar months so no label repeats): it reads as a date
 picker while the stored value stays an int, which round-trips through the URL and
-can never go stale the way the scenario cut-off *labels* can. The default is
+can never go stale the way the scenario cut-off *labels* can. With no pacing (pace 100%, no windows) a greyed
+stand-in shows today, which the snapshot and race then read, and `pc_withhold` is disabled
+and ignored; `pc_pause_mo` stays in state for when pacing returns
+(`test_the_pacing_date_and_model_access_grey_out_with_no_pacing`). The default is
 `_pc_pause_default_mo()`, the offset to `_PC_PAUSE_DEFAULT_YM` (Jul 2027) rather
 than a hardcoded month count, so the reset restores a *date*. The pause is on the
 **run-finished** clock; the displayed date carries `timing_label`'s
