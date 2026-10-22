@@ -4274,15 +4274,17 @@ class TestChinaComputeSources:
         p = vp._cn_src_projection(d)
         assert list(p["flow"]) == [str(y) for y in vp._CN_SRC_PROJ_YEARS]
         duv = vp.load_duv_production(vp._duv_mtime())
-        us = {y: m for y, _l, m, _h in duv["us"]}
         cap = {y: m * 1e6 for y, _l, m, _h in duv["continue_trend"]}
         f27 = d["flow"]["2027"]
         run = {k: d["stock"]["2027"][k][0] for k in f27}
         for y in vp._CN_SRC_PROJ_YEARS:
             f = p["flow"][str(y)]
             assert f["legal"][0] == f27["legal"][0]
-            assert f["smuggled"][0] == pytest.approx(
-                f27["smuggled"][0] * us[y] / us[2027])
+            # Same smuggled chip count, each chip better, 2027's range.
+            g = vp._CN_SRC_SMUGGLED_CHIP_GROWTH ** (y - 2027)
+            for i in range(3):
+                assert f["smuggled"][i] == pytest.approx(
+                    f27["smuggled"][i] * g)
             assert f["domestic"][0] <= cap[y]
             assert f["domestic"][1] <= f["domestic"][0] <= f["domestic"][2]
             for k in f:

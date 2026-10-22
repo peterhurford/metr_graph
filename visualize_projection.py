@@ -10673,6 +10673,11 @@ _CN_SRC_OFFSHORE_GW = {2026: 1.45, 2027: 2.45, 2028: 2.8, 2029: 2.9,
 # H100e per MW of newly leased capacity grows with compute per watt (~1.3-1.6
 # x/yr on the catalogue's US sites).
 _CN_SRC_DENSITY_GROWTH = 1.4
+# Past 2027 the smuggled chip count holds at IFP's 2027 level, since larger
+# flows are easier to catch, while each chip improves at Epoch's 16-bit ML
+# hardware trend (37%/yr, doubling every 2.2 years; epoch.ai/data-insights/
+# peak-performance-hardware-on-different-precisions).
+_CN_SRC_SMUGGLED_CHIP_GROWTH = 1.37
 
 
 def _cn_src_mtime():
@@ -10699,16 +10704,18 @@ def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH):
 
     From the last stored year: domestic output grows at `growth` (its range
     at ÷/× `_DUV_CN_OUTPUT_SPREAD`), capped at the CTS lithography ceiling on
-    today's allocation; legal sales hold flat; smuggling scales with US chip
-    output (CTS); remote access adds SemiAnalysis's new offshore power at a
-    density rising `_CN_SRC_DENSITY_GROWTH` a year. Only domestic carries a
+    today's allocation; legal sales hold flat; smuggling keeps its chip
+    count, so its H100e grow `_CN_SRC_SMUGGLED_CHIP_GROWTH` a year, with
+    the last stored year's relative range; remote access adds
+    SemiAnalysis's new offshore power at a density rising
+    `_CN_SRC_DENSITY_GROWTH` a year. Only domestic and smuggling carry a
     range; the rest are central.
     """
     duv = load_duv_production(_duv_mtime())
-    us = {y: p50 for y, _lo, p50, _hi in duv["us"]}
     cap = {y: p50 * 1e6 for y, _lo, p50, _hi in duv["continue_trend"]}
     base = int(list(data["flow"])[-1])
     f0 = {k: v[0] for k, v in data["flow"][str(base)].items()}
+    smug = data["flow"][str(base)]["smuggled"][:3]
     s0 = {k: v[:3] for k, v in data["stock"][str(base)].items()}
     gw = _CN_SRC_OFFSHORE_GW
     dom = [f0["domestic"]] * 3
@@ -10720,7 +10727,8 @@ def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH):
         dom = [min(d * g, cap[y]) for d, g in zip(dom, rates)]
         f = {"domestic": tuple(dom),
              "legal": (f0["legal"],) * 3,
-             "smuggled": (f0["smuggled"] * us[y] / us[base],) * 3,
+             "smuggled": tuple(x * _CN_SRC_SMUGGLED_CHIP_GROWTH ** (y - base)
+                               for x in smug),
              "remote": (f0["remote"] * (gw[y] - gw[y - 1])
                         / (gw[base] - gw[base - 1])
                         * _CN_SRC_DENSITY_GROWTH ** (y - base),) * 3}
@@ -14921,8 +14929,11 @@ def _cn_src_proj_note():
     return (f"Past 2027: Huawei and Cambricon output grows \u00d7{g:g}/yr "
             f"(\u00d7{g / sp:.1f}\u2013{g * sp:.1f}, the lithography "
             "section's rate), capped at CTS's lithography ceiling on today's "
-            "allocation; legal sales hold at 2027's; smuggling grows with US "
-            "chip output (CTS); remote access adds SemiAnalysis's new "
+            "allocation; legal sales hold at 2027's; smuggled chips hold at "
+            "2027's count, each "
+            f"\u00d7{_CN_SRC_SMUGGLED_CHIP_GROWTH:g}/yr more powerful (Epoch's "
+            "hardware trend), since larger flows are easier to catch; remote "
+            "access adds SemiAnalysis's new "
             "offshore leasing (2.45 GW in 2027 to ~3 GW in 2030) at "
             f"\u00d7{_CN_SRC_DENSITY_GROWTH:g}/yr more H100e per MW.")
 
