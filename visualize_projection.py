@@ -17019,7 +17019,8 @@ def _pc_render_compute_mix(ci):
 
 
 def _pc_render_compute_ratios(ci, span):
-    """How far ahead the US is in compute, today to the crossing.
+    """How far ahead the US is in compute, today to the crossing, or to
+    *Project through* when `span` is None (China does not catch up).
 
     Largest trainable run (cluster capacity, `_pc_capacity_at`) for China's
     usable run and its domestic clusters, against two US lines: its clusters,
@@ -17032,10 +17033,15 @@ def _pc_render_compute_ratios(ci, span):
     the readings at the pause and at the crossing.
     """
     us, now = ci.get('us'), ci.get('now') or {}
-    if not us or span <= 0:
-        return
     today, pause_d = ci['today'], ci['pause_d']
     t_p = max((pause_d - today).days / 365.25, 0.0)
+    cross = span is not None
+    # Without a crossing, end on the last day of *Project through*.
+    end_d = ci['horizon'].replace(month=12, day=31)
+    if not cross:
+        span = (end_d - today).days / 365.25 - t_p
+    if not us or span <= 0:
+        return
     t_x = t_p + span
 
     def _lv(cap):
@@ -17092,8 +17098,9 @@ def _pc_render_compute_ratios(ci, span):
     levers = bool(ci.get('levers'))
 
     def _marks(fig):
-        for x, txt in ((pause_d, "US pauses" if paused else "US pacing starts"),
-                       (t_cross_d, "China crosses")):
+        for x, txt in (*([(pause_d, "US pauses" if paused
+                           else "US pacing starts")] if paced else []),
+                       *([(t_cross_d, "China crosses")] if cross else [])):
             fig.add_vline(x=x, line=dict(color='#999999', width=1, dash='dot'))
             fig.add_annotation(x=x, yref='paper', y=1.0, text=txt,
                                showarrow=False, yanchor='bottom',
@@ -17205,9 +17212,11 @@ def _pc_render_compute_ratios(ci, span):
         return (f"{us_v:,.0f}M vs {cn_v:,.0f}M H100e \u2192 "
                 f"{_ratio(us_v / cn_v)}")
 
-    c_p = f"{'Pause' if paused else 'Pacing starts'}, {pause_d:%b %Y}"
-    _xl = ci.get('cross_label') or t_cross_d
-    c_x = f"China catches up, {_xl:%b %Y}"
+    c_p = (f"{'Pause' if paused else 'Pacing starts'}, {pause_d:%b %Y}"
+           if paced else f"{pause_d:%b %Y}")
+    _xl = (ci.get('cross_label') or t_cross_d) if cross else end_d
+    c_x = (f"China catches up, {_xl:%b %Y}" if cross
+           else f"End-{_xl:%Y}, China not caught up")
     c_b = f"{_xl:%b %Y}, no compute levers"
     rows = []
     for (name, _c, cur, base), label in zip(series, (
@@ -17394,7 +17403,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    anchor_d, anchor_eci, horizon_year, notes=(),
                    t_pause=None, pause_label=None, surpass_mo=None,
                    withhold=False, dist_stop_t=None, remote_stop_t=None,
-                   comp_dead=None, compute_info=None, pause_date=None,
+                   comp_dead=None, pause_date=None,
                    us_gain=None, paced=False):
     """Bottom-of-panel breakdown: why China's catch-up takes the months it does.
 
@@ -17415,10 +17424,12 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     sample, how far a paced US climbs from the pacing date to the crossing
     (None or 0 when paused): China must close that too, so the months to
     close the gap at a rate use the rate net of the US's average climb.
+    Returns the median span in years from the pause to the crossing, None
+    when it draws nothing.
     """
     ok = np.isfinite(years)
     if ok.sum() < 100 or t_pause is None:
-        return
+        return None
     t_cross = np.where(ok, np.maximum(years - cn_extra - 1e-6, 0.0), np.nan)
     # Compute splits in two when the sim carried a domestic-only shadow: what
     # domestic clusters alone would have contributed, and the rest. The split
@@ -17645,9 +17656,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         _fn_caption(" ".join(legend + (["Rates under these settings."]
                                        if notes else [])),
                     *([("these settings", " ".join(notes))] if notes else []))
-    if compute_info:
-        _pc_render_compute_ratios(compute_info, span)
-        _pc_render_compute_mix(compute_info)
+    return span
 
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
@@ -19065,21 +19074,24 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # The crossing card's date, so the table's column names it alike.
         'cross_label': v50,
     }
-    if not crossed:
-        return
-    _pc_render_why(
-        chan, grid0, traj0, target0, years, years_base,
-        cn_gain=cn_gain, cn_extra=cn_extra, cn_run_mo=cn_run_mo,
-        us_run_mo=us_run_mo, anchor_name=anchor_name, anchor_d=anchor_d,
-        anchor_eci=anchor_eci,
-        horizon_year=(horizon.year if horizon is not None else _PC_HORIZON.year),
-        notes=_notes, t_pause=t_pause_s, pause_label=f"{d_pause_v:%b %Y}",
-        us_gain=us_cross_s - level_s, paced=not _paused,
-        surpass_mo=s50, withhold=bool(withhold),
-        dist_stop_t=kw.get('t_dist_stop') if dist_keep == 0 else None,
-        remote_stop_t=t_cut_r if stop_remote else None,
-        comp_dead=_cd_med, compute_info=compute_info,
-        pause_date=d_pause_v)
+    # The compute ratios and mix stand without a crossing: they then run to
+    # *Project through* (`test_compute_ratios_show_without_a_crossing`).
+    span = None
+    if crossed:
+        span = _pc_render_why(
+            chan, grid0, traj0, target0, years, years_base,
+            cn_gain=cn_gain, cn_extra=cn_extra, cn_run_mo=cn_run_mo,
+            us_run_mo=us_run_mo, anchor_name=anchor_name, anchor_d=anchor_d,
+            anchor_eci=anchor_eci,
+            horizon_year=(horizon.year if horizon is not None else _PC_HORIZON.year),
+            notes=_notes, t_pause=t_pause_s, pause_label=f"{d_pause_v:%b %Y}",
+            us_gain=us_cross_s - level_s, paced=not _paused,
+            surpass_mo=s50, withhold=bool(withhold),
+            dist_stop_t=kw.get('t_dist_stop') if dist_keep == 0 else None,
+            remote_stop_t=t_cut_r if stop_remote else None,
+            comp_dead=_cd_med, pause_date=d_pause_v)
+    _pc_render_compute_ratios(compute_info, span)
+    _pc_render_compute_mix(compute_info)
 
 
 def render_pacing():

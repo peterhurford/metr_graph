@@ -1791,6 +1791,22 @@ class TestPacingTab:
         at.run()
         assert cards() == china
 
+    def test_compute_ratios_show_without_a_crossing(self):
+        """At the defaults (no pacing) China does not catch up by *Project
+        through*, yet the compute ratios and mix still draw, to that year."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        _assert_no_error(at, "Pacing / defaults")
+        assert not any("China catches up" in md.value for md in at.markdown)
+        tbl = next(x.value for x in at.table if "Compares" in x.value.columns)
+        end = at.session_state["pc_end_year"]
+        assert any(c == f"End-{end}, China not caught up" for c in tbl.columns)
+        # No pacing, so the pacing date is a bare date, not "Pacing starts".
+        assert not any("Pacing starts" in c for c in tbl.columns)
+        assert any(md.value == "##### China's compute by source"
+                   for md in at.markdown)
+
     def test_compute_ratios_show_what_the_compute_levers_cost_china(self):
         """The ratio table under the breakdown: the US is frozen, China closes
         the compute gap by the crossing, and the DUV bans leave the US
@@ -2698,10 +2714,9 @@ class TestTodayForwardMode:
                 out.extend(x for x in tr.get("customdata") or [] if isinstance(x, str))
         return out
 
-    # Tabs where every chart is a projection, so every chart goes forward.
-    # Pacing at its default (no pacing) has no crossing, so the breakdown's
-    # two compute charts, which need one, are not drawn.
-    _ALL_FORWARD = {"Pacing": 2}
+    # Tabs whose dated charts all go forward: {tab: (forward, all charts)}.
+    # Pacing's other chart is China's compute mix, bars by calendar year.
+    _ALL_FORWARD = {"Pacing": (4, 5)}
 
     def _starts_today(self, spec):
         rng = spec["layout"].get("xaxis", {}).get("range")
@@ -2721,7 +2736,7 @@ class TestTodayForwardMode:
         fwd = [sp for sp in specs if self._starts_today(sp)]
         assert fwd, tab
         if tab in self._ALL_FORWARD:
-            assert len(fwd) == len(specs) == self._ALL_FORWARD[tab], tab
+            assert (len(fwd), len(specs)) == self._ALL_FORWARD[tab], tab
         for sp in fwd:
             hovers = self._hover_strings(sp)
             assert any("from today" in h or h == "today" for h in hovers), tab

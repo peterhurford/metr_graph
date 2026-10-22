@@ -1611,7 +1611,7 @@ the span; the medians fall short of the median run's gap, and an *Other* row
 split (`comp_shadow`, a domestic-only counterfactual) has no rate of its own, so the
 measured compute rate shows once, on the first compute row
 (`test_why_states_the_gap_and_the_slowing_rate`, `test_why_breakdown_tracks_the_sliders`).
-Under it, `_pc_render_compute_ratios()` (*largest run, trained and trainable*: US clusters keep growing at `g_us` while its largest trained run grows at `pace` of that, frozen if paused; the gap is an overhang row) charts and tabulates how far ahead the US is
+Under it, drawn with or without a crossing (`test_compute_ratios_show_without_a_crossing`), `_pc_render_compute_ratios()` (*largest run, trained and trainable*: US clusters keep growing at `g_us` while its largest trained run grows at `pace` of that, frozen if paused; the gap is an overhang row) charts and tabulates how far ahead the US is
 (US ÷ China, log axis, to *Project through*): largest trainable run (cluster capacity,
 `_pc_capacity_at`, read for today and the pause off one projection via `also=`) for China's
 usable run and its domestic clusters, against a US run frozen at the pause; and total
@@ -1620,7 +1620,7 @@ total, 31.7M H100e by June 2026 (`_WC_WORLD_H100E`, grown by `_wc_world_h100e`; 
 installing through the pause and the DUV/domestic levers slowing China's. Dashed lines and a
 last table column give the same date with no compute levers. The table (`Compares` column)
 gives one row per comparison, each cell both values then the ratio, columns dated by the
-pacing start and the crossing card's date; no caption sits under it. Capacity is not the China
+pacing start and the crossing card's date (end of *Project through* when China does not catch up; no pacing, a bare date); no caption sits under it. Capacity is not the China
 tab's ~50× *actual-run* gap (`test_compute_ratios_show_what_the_compute_levers_cost_china`). Under it, `_pc_render_compute_mix()` stacks China's installed compute by source
 (the China tab's mix) under these levers, `_cn_src_with_policy`, against the no-lever
 total (`test_compute_mix_shows_what_the_chip_levers_remove`).
