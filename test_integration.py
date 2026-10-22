@@ -1785,7 +1785,7 @@ class TestPacingTab:
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
-        at.select_slider(key="pc_pace").set_value(0)
+        at.select_slider(key="pc_pace").set_value(0).run()
         at.checkbox(key="pc_withhold").check()
         at.checkbox(key="pc_stop_leak").check().run()
         at.slider(key="pc_leak_cut").set_value(100).run()
@@ -1853,6 +1853,23 @@ class TestPacingTab:
         assert p["US, no pacing"]["line"]["dash"] == "dot"
         assert p["China if the US kept going"]["y"] == pytest.approx(free)
         assert p["China, projected"]["y"][-1] < free[-1] - 5
+
+    def test_the_pacing_date_and_model_access_grey_out_with_no_pacing(self):
+        """With no pacing nothing starts on the pacing date, so it and the
+        model-access lever are disabled, and the lever set anyway (from a
+        URL) changes nothing."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        assert at.select_slider(key="pc_pause_mo").disabled
+        assert at.checkbox(key="pc_withhold").disabled
+        before = [(str(m.label), str(m.value)) for m in at.metric]
+        at.session_state["pc_withhold"] = True
+        at.run()
+        assert [(str(m.label), str(m.value)) for m in at.metric] == before
+        at.select_slider(key="pc_pace").set_value(50).run()
+        assert not at.select_slider(key="pc_pause_mo").disabled
+        assert not at.checkbox(key="pc_withhold").disabled
 
     def test_compute_ratios_show_without_a_crossing(self):
         """At the defaults (no pacing) China does not catch up by *Project

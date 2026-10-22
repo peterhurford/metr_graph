@@ -17838,16 +17838,18 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     d_pause_v = pause_d + off_us
     if levers_box is None:
         levers_box = st.sidebar.container()
+    _no_pace = pace >= 1 and not _pc_pace_windows(today)
     with levers_box:
         withhold = st.checkbox(
             "US does not give access to strongest models from pacing start",
             key="pc_withhold",
-            value=_PC_DEFAULTS["pc_withhold"],
+            value=_PC_DEFAULTS["pc_withhold"], disabled=_no_pace,
             help="A release freeze: once the run that ends at the pacing date "
                  "starts, the US ships nothing new to the public, so the best "
                  "queryable teacher is the last generation released before "
                  "then: one run's climb (plus the ship lag) below the bar. Off: "
-                 "the US keeps serving its frontier, paced or paused.")
+                 "the US keeps serving its frontier, paced or paused. Greyed "
+                 "out, and off, with no pacing.") and not _no_pace
         _lvl = _cc_cn_level_offset(load_eci_compute(mtime=_eci_mtime()))
         stop_dist = st.checkbox(
             "Cut Chinese distillation as of today", key="pc_stop_dist",
@@ -19068,8 +19070,18 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              'China, projected': 6, 'China if the US kept going': 7,
              'China, 80% range': 8, 'automated coder': 9, 'RSI': 10,
              '80% crossing window': 11, 'Median crossing': 12}
+    # With one dotted line but not the other, a blank key holds the missing
+    # one's slot, so each country keeps its own legend row.
+    _cf = {'US, no pacing', 'China if the US kept going'}
+    _have = _cf & {t.name for t in fig.data}
+    if len(_have) == 1:
+        (_miss,) = _cf - _have
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None], mode='lines', name=' ', hoverinfo='skip',
+            line=dict(width=0), legendrank=_rank[_miss] * 10))
     for _tr in fig.data:
-        _tr.legendrank = _rank.get(_tr.name, 99) * 10
+        if _tr.name != ' ':
+            _tr.legendrank = _rank.get(_tr.name, 99) * 10
     st.plotly_chart(_tf(fig), width="stretch")
 
     # Milestone dates for both sides, on the chart's own dating (the US's
@@ -19394,15 +19406,19 @@ def render_pacing():
                  "arrive later too.")
         st.caption("100% = no pacing \u00b7 0% = pause \u00b7 in between, "
                    "the share of its ECI growth the US keeps")
+        # With no pacing (and no pacing windows) nothing starts on the date.
+        _no_pace = pace_pct == 100 and not _pc_pace_windows(_today)
         pause_mo = st.select_slider(
             "Pacing starts on" if pace_pct else "US pauses on",
             options=_months,
             value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
             format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
+            disabled=_no_pace,
             help="From this date the US grows at the pace above. It also "
                  "sets the compute and capability each side has then, the "
                  "date the model-access lever bites, and the bar "
-                 "the *Compute Thresholds* race runs to.")
+                 "the *Compute Thresholds* race runs to. Greyed out with no "
+                 "pacing.")
     pause_d = _pc_add_months(_today, pause_mo)
     caps = _pc_capacity_at(
         [(_DC_CTY_US, 'country', _us_steps_raw, tuple(_us_names)),
