@@ -353,6 +353,21 @@ pace directly; each draw keeps its activity spread around it. Rebase each draw b
 The simulator records ongoing production separately from delivery-window rates, which
 remain available for internal diagnostics and the validated milestone definitions.
 
+### Trained-to-release lags
+
+`us_ship_lag` (70 days) and `cn_ship_lag` (21), `_SHIP_LAG_DEFAULTS`, are app-wide sidebar
+settings (`_ship_lag_inputs`: US on Takeoff, both on Pacing), read by `_ship_lag` and
+reassigned at dispatch so a tab switch keeps them. Takeoff and Pacing date *trained* models.
+Takeoff's ECI paths start at the latest US release plus the US lag of the fitted climb
+(`_tk_eci_scale(lead_years=…)`; `eci["released"]` keeps the release for the yearly chart;
+`test_today_is_the_trained_frontier_a_ship_lag_past_the_release`), and release-dated
+milestone cards are pulled back over 0.7–1.3× the US lag (`_pc_report_lag_days`). On Pacing
+a China release at t races the US as of t less China's lag (`us_path_cn`); the bar, the
+milestone table and the time to surpass are trained against trained on every clock, while
+on *Model release* each side's dates add its own lag (the race's too, by site country), so
+China's sit 49 days nearer the US's (`test_pause_dates_follow_timing_in_lockstep`,
+`test_a_longer_us_release_lag_raises_the_trained_bar`).
+
 ### Section deep links
 
 `?to=<heading anchor>` scrolls to a section; a bare `#fragment` cannot. Community Cloud
@@ -1398,7 +1413,7 @@ study and TasteVal's prediction fit — publicly benchmarked or run on shipped m
 velocity and both R&D-automation cards (AL4 and AL5) are internal
 measurements, driven by work on models the lab has internal access to
 before release. So `_pc_report_lag()` pulls the five back
-by `_PC_REPORT_LAG_DAYS` (sampled over the range so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other six
+by `_pc_report_lag_days()` (0.7–1.3× the US trained-to-release lag, sampled so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other six
 are already on that clock and must not be shifted twice.
 
 A checkbox (`rsi_notyet`, default on, in the blend's *Set your own weights*
@@ -1418,7 +1433,7 @@ fully-crossed component drops out. A companion number input (`rsi_notyet_ramp`,
 default 90d, 0 = off) extends the update into the near future as a soft
 likelihood, not a wider hard cut: a sample t days out is kept w.p. t/N inside
 the window — the closer a crossing, the more visible its run-up would already
-be. On the release clock an active window grows by `_PC_REPORT_LAG_DAYS[0]`
+be. On the release clock an active window grows by that range's lower bound
 via `_pc_ramp_for()` — a model shipping that soon finished training a
 report lag earlier — and the fine print quotes the window actually applied. Survival stays the expected likelihood, so the weight × survival mixing is
 unchanged. Assumes a crossing would be known by now — weaker for the internal
@@ -1520,7 +1535,7 @@ can never go stale the way the scenario cut-off *labels* can. The default is
 `_pc_pause_default_mo()`, the offset to `_PC_PAUSE_DEFAULT_YM` (Jul 2027) rather
 than a hardcoded month count, so the reset restores a *date*. The pause is on the
 **run-finished** clock; the displayed date carries `timing_label`'s
-offset, which is what keeps the US–China gap milestone-invariant. The US climb pace
+offset (each side's own release lag on *Model release*). The US climb pace
 still comes from the **sidebar-pooled US series**, so the networking selector moves
 the bar, scaled by the China tab's US calibration (`_cc_rate_calibration`). Just above *Compute Thresholds* sits the *state of play* table (the panel hands its rows back through `state_out`), off
 that same `_pc_capacity_at()` reading (the race's own `_pc_projection` at the pause
@@ -1535,10 +1550,9 @@ past which the bridge reads in centuries) and China's lag in months, taken off t
 same US line the chart draws. It renders **before** the crossing bail, so a
 projection range too narrow for a catch-up still describes the pause. A caption sensitivity reruns China's compute term
 at the catalogued China-accessible pace (sites abroad) vs the export-control band.
-The bar is the best model the US has *trained* by the pause: the released-frontier
-climb (measured from us_best's release date, not the China-anchored grid) plus
-`_PC_SHIP_LAG_DAYS` (the realized trained→shipped lag, GPT-5.5 Pro / Mythos card)
-of extra climb. The policy levers below (and their *Advanced* expander) draw in the sidebar, under *Policy levers* above *Compute settings*, through the `levers_box` slot `render_pacing` makes. The US level the distillation gap starts from is the US trend at China's
+The bar is the best model the US has *trained* by the pause: the Takeoff path (already
+trained), or without one the released-frontier climb (from us_best's release date) plus
+the US trained-to-release lag of extra climb. The policy levers below (and their *Advanced* expander) draw in the sidebar, under *Policy levers* above *Compute settings*, through the `levers_box` slot `render_pacing` makes. The US level the distillation gap starts from is the US trend at China's
 anchor date (`us_anchor_cn`), not the US's later best. Three scenario checkboxes plus a slowdown slider: `pc_withhold` (default off; label says "from pacing start") — a US
 *release freeze from pause-run start*: nothing ships once the final run begins, so
 distillation's teacher is the released frontier as of run start (`dist_teacher`, ~one
@@ -1598,8 +1612,8 @@ not the pacing date) (`test_methods_toggle_keeps_diffusion_running`). Each lever
 words (distillation teacher, cut dates, compute band) sits in the "these settings"
 hover under the table. The panel adds **no release-queue
 wait** (unlike the CC 161 section — a queue delays both sides alike); dates follow the
-sidebar's *Date points at* in lockstep (US events run-finished + `shift − run`, ECI
-release dates + `shift − run − 30d`), so the US–China gap is milestone-invariant; the
+sidebar's *Date points at* (`off_us`, `off_us_rel`, `off_cn`; see *Trained-to-release
+lags*); the
 chart (actual points included) rides the same clock, x-axis titled by milestone.
 The three crossing cards (date, time to surpass, and the US compute lead at the crossing, `_pc_run_lead`, the ratio table's own largest-run reading; `test_crossing_cards_sit_above_the_milestone_table`) sit above the SL5 warning and the milestone table, the pacing settings in the first card's hover; the panel ends with `_pc_render_why()`, *Why this US-China gap?*: each source's ECI/yr at the pause,
 its average from the pause to the crossing, and at the crossing (`_pc_rate_at`), then a row

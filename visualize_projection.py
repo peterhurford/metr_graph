@@ -15504,6 +15504,7 @@ def _all_tracked():
         (_CC_RESET_KEYS, _CC_DEFAULTS),
         (_PC_RESET_KEYS, _PC_DEFAULTS),
         ([_TODAY_FWD_KEY], _TODAY_FWD_DEFAULTS),
+        (list(_SHIP_LAG_DEFAULTS), _SHIP_LAG_DEFAULTS),
     ]:
         keys.extend(ks)
         defaults.update(ds)
@@ -15611,35 +15612,73 @@ _PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
 # The Pacing tab adds a third attribution: entities are countries, with China
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
-# Four of the milestones are dated off *released, publicly benchmarked* models
-# — METR horizons, ECI scores, RLI scores. The other two are not: CoBench and
-# the staff survey are internal evaluations, and Anthropic reports them for
-# models it has not shipped. So when the tab's *Date points at* is anything but
-# "Model release", the four have to come back by the report lag to sit on the
-# same clock as everything else on the page; the other two already do.
-# Sampled over the range rather than fixed, so the spread lands in the CI.
-_PC_REPORT_LAG_DAYS = (30.0, 60.0)
+# How long a lab's best *trained* model leads its best *released* one: run
+# finished to public release, prep plus queue. US labs hold models longer
+# (GPT-5.5 Pro's run finished ~Feb 2026 and shipped Apr 23; Mythos Preview
+# ran restricted first); Chinese labs, mostly open-weight, ship soon after
+# the run ends. App-wide sidebar settings, drawn on Takeoff and Pacing
+# (`_ship_lag_inputs`); every date there is on trained models.
+_SHIP_LAG_DEFAULTS = {"us_ship_lag": 70, "cn_ship_lag": 21}
+_SHIP_LAG_MAX = 365
+
+
+def _ship_lag(country):
+    """Days the `country` ('us' or 'cn') trained frontier leads its released one."""
+    key = f"{country}_ship_lag"
+    return float(st.session_state.get(key, _SHIP_LAG_DEFAULTS[key]))
+
+
+def _ship_lag_inputs(parent, china=True):
+    """The sidebar's lag settings; shared keys, so Takeoff and Pacing agree."""
+    for key, label, help_ in (
+            ("us_ship_lag", "US trained-to-release lag (days)",
+             "How long the US's best trained model leads its best released "
+             "one. Dates on Takeoff and Pacing are for trained models, so "
+             "release-dated evidence is pulled back by this. Default 70: "
+             "GPT-5.5 Pro took ~60 days, and holdbacks are growing."),
+            ("cn_ship_lag", "China trained-to-release lag (days)",
+             "The same for China's labs, which mostly ship open weights soon "
+             "after a run ends. Default 21.")):
+        if key == "cn_ship_lag" and not china:
+            continue
+        _ss_number_input(parent, label, key, _SHIP_LAG_DEFAULTS[key],
+                         min_value=0, max_value=_SHIP_LAG_MAX, step=7, help=help_)
+
+
+# Several milestones are dated off *released, publicly benchmarked* models
+# — METR horizons, RLI scores, the detour study. The rest are internal
+# evaluations, and Anthropic reports them for models it has not shipped. So
+# when the tab's *Date points at* is anything but "Model release", the
+# released ones come back by the US trained-to-release lag to sit on the same
+# clock as everything else on the page. Sampled over this fraction of the lag
+# rather than fixed, so the spread lands in the CI.
+_PC_REPORT_LAG_SPREAD = (0.7, 1.3)
 _PC_TIMING_RELEASE = "Model release"
 
 
-def _pc_report_lag(days_to, release_dated, timing_label, n=None):
+def _pc_report_lag_days(us_lag=None):
+    """(low, high) days a release-dated milestone is pulled back."""
+    lag = _SHIP_LAG_DEFAULTS["us_ship_lag"] if us_lag is None else us_lag
+    return tuple(lag * f for f in _PC_REPORT_LAG_SPREAD)
+
+
+def _pc_report_lag(days_to, release_dated, timing_label, n=None, us_lag=None):
     """Pull a release-dated milestone back onto the run-finished clock."""
     if not release_dated or timing_label == _PC_TIMING_RELEASE:
         return days_to
-    lo, hi = _PC_REPORT_LAG_DAYS
+    lo, hi = _pc_report_lag_days(us_lag)
     return days_to - np.random.uniform(lo, hi, n or len(days_to))
 
 
-def _pc_ramp_for(timing_label, ramp_days):
+def _pc_ramp_for(timing_label, ramp_days, us_lag=None):
     """The near-term discount window actually applied.
 
     On the release clock a crossing t days out must already have finished
     training ~a report lag earlier, so an active window extends by the lag's
-    lower bound (`_PC_REPORT_LAG_DAYS[0]`). A window set to 0 stays 0 — off
-    is off.
+    lower bound. A window set to 0 stays 0 — off is off.
     """
     if ramp_days > 0 and timing_label == _PC_TIMING_RELEASE:
-        return ramp_days + _PC_REPORT_LAG_DAYS[0]
+        return ramp_days + _pc_report_lag_days(us_lag)[0]
     return ramp_days
 
 
@@ -16209,7 +16248,7 @@ def _pc_card_rows(n):
     return [n // n_rows + (i < n % n_rows) for i in range(n_rows)]
 
 
-def _pc_clock_note(release_dated, timing_label):
+def _pc_clock_note(release_dated, timing_label, us_lag=None):
     """The clock sentence appended to a milestone card's hover.
 
     Which clock a card is on is a per-card fact (`_pc_report_lag`), so it
@@ -16220,9 +16259,9 @@ def _pc_clock_note(release_dated, timing_label):
         return " Dates are model releases."
     if not release_dated:
         return " An internal evaluation, already on this clock."
-    return (" Dated off released models, so pulled back "
-            f"{_PC_REPORT_LAG_DAYS[0] / 30:.0f}\u2013"
-            f"{_PC_REPORT_LAG_DAYS[1] / 30:.0f} months onto the "
+    lo, hi = _pc_report_lag_days(us_lag)
+    return (f" Dated off released models, so pulled back {lo:.0f}\u2013{hi:.0f} "
+            "days (around the US trained-to-release lag) onto the "
             f"\u201c{timing_label.lower()}\u201d clock.")
 
 
@@ -16252,14 +16291,15 @@ def _tk_seed():
 
 @st.cache_data(show_spinner=False, max_entries=24)
 def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_key,
-                             seed=None):
+                             seed=None, us_lag=None):
     """Shared milestone draws, from `seed`; the data key invalidates cache on
     source changes."""
     with _seeded_rng(seed):
-        return _pc_milestone_draws(timing_label, today, condition, ramp_days, n)
+        return _pc_milestone_draws(timing_label, today, condition, ramp_days, n,
+                                   us_lag)
 
 
-def _pc_milestone_draws(timing_label, today, condition, ramp_days, n):
+def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=None):
     """Shared milestone draws (`_pc_milestone_components` caches them).
 
     Both RSI and Takeoff consume these exact arrays. The date is normalized to
@@ -16381,12 +16421,13 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n):
                  "what an experiment will return about as well as rerunning it "
                  "would. A card only, outside the projection: predicting "
                  "results is not coding, nor a definition of the threshold."))
-    _notes = {slug: note + _pc_clock_note(rel, timing_label)
+    _notes = {slug: note + _pc_clock_note(rel, timing_label, us_lag)
               for slug, _l, r, rel, note in _cap if r is not None}
-    _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label, n=n))
+    _cap = [(slug, lab, r[0], _pc_report_lag(r[1], rel, timing_label, n=n,
+                                             us_lag=us_lag))
             for slug, lab, r, rel, _n in _cap if r is not None]
     survival, _cap_raw = None, None
-    ramp_days = _pc_ramp_for(timing_label, ramp_days)
+    ramp_days = _pc_ramp_for(timing_label, ramp_days, us_lag)
     if condition:
         _cap_raw = _cap
         _cap, survival = _pc_condition_on_today(_cap, today,
@@ -16399,7 +16440,7 @@ def _pc_rsi_components(today, timing_label, condition, ramp_days):
                      load_rsi_code(), load_rsi_experiments(), rsi_dir_frontier_all,
                      _OPENAI_REVENUE, _ANTHROPIC_REVENUE))
     return _pc_milestone_components(timing_label, today, condition, ramp_days,
-                                    N_SAMPLES, data_key, _tk_seed())
+                                    N_SAMPLES, data_key, _tk_seed(), _ship_lag("us"))
 
 
 def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
@@ -17278,7 +17319,7 @@ def _pc_render_compute_ratios(ci):
 
 def _pc_takeoff_us(today):
     """The Takeoff tab's run, as the Pacing tab reads it: {'day', 'years',
-    'paths' (draws x months, ECI of the released US frontier from `day`),
+    'paths' (draws x months, ECI of the trained US frontier from `day`),
     'ppy', 'coder', 'rsi' (each draw's ECI at its automated-coding and RSI
     dates, NaN if never)}, or None when Takeoff cannot run. Seeded, so it
     neither depends on nor shifts this tab's draws."""
@@ -17745,8 +17786,15 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     """
     # Lockstep milestone offsets (see docstring).
     shift = _dc_timing_shift(timing_label, run_days)
-    off_us = timedelta(days=shift - run_days)
-    off_cn = timedelta(days=shift - run_days - _CC_RUN_COMPLETION_LAG.days)
+    us_lag_d, cn_lag_d = _ship_lag("us"), _ship_lag("cn")
+
+    def _to_ms(lag):
+        """Days from a run finishing to the sidebar's milestone; a release
+        comes each side's own trained-to-release lag later."""
+        return lag if timing_label == _PC_TIMING_RELEASE else shift - run_days
+    off_us = timedelta(days=_to_ms(us_lag_d))              # US trained events
+    off_us_rel = off_us - timedelta(days=us_lag_d)         # US release dates
+    off_cn = timedelta(days=_to_ms(cn_lag_d) - cn_lag_d)   # China release dates
     d_pause_v = pause_d + off_us
     if levers_box is None:
         levers_box = st.sidebar.container()
@@ -18185,18 +18233,21 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                                else t_pause_s[:, None], pace, pace_wins)
     # The bar is the best model the US has *trained* by the pause — the
     # 1e28 flagship itself. The released frontier trails the trained one by
-    # the realized ship lag (_PC_SHIP_LAG_DAYS), and the climb is measured
+    # the US trained-to-release lag (sidebar), and the climb is measured
     # from us_best's own release date (the time grid is anchored on China's
     # last release, ~a month later — omitting that offset understated the
     # released level too). Per sample, so pace uncertainty widens both the
     # date and the bar.
-    _us_dt = ((anchor_d - us_best[0]).days + _PC_SHIP_LAG_DAYS) / 365.25
-    _ship = _PC_SHIP_LAG_DAYS / 365.25
+    _us_dt = ((anchor_d - us_best[0]).days + us_lag_d) / 365.25
+    _ship = us_lag_d / 365.25
+    # China's sim runs on its release dates: a model released at t finished
+    # training `_cn_ship` earlier, so it races (and distills from) the US as
+    # of then. Every crossing is trained against trained.
+    _cn_ship = cn_lag_d / 365.25
     # The US path is the Takeoff tab's: each sample follows one of its
-    # scenarios' ECI paths (released frontier, years from today), so
-    # automated coding and RSI speed the US up exactly as they do there. The
-    # trained frontier leads it by the ship lag. Without a Takeoff run, the
-    # compute-derived straight climb stands in.
+    # scenarios' ECI paths (trained frontier, years from today), so
+    # automated coding and RSI speed the US up exactly as they do there.
+    # Without a Takeoff run, the compute-derived straight climb stands in.
     tk = _pc_takeoff_us(today)
     _t_day = ((tk['day'] if tk else today) - anchor_d).days / 365.25
     _draw = (np.arange(n_s) % len(tk['paths'])) if tk else None
@@ -18207,7 +18258,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         t = np.asarray(t, dtype=float)
         if tk is None:
             return us_best[1] + us_rate_s[:, None] * (t + _us_dt)
-        return _pc_tk_interp(tk, _draw, t - _t_day + _ship)
+        return _pc_tk_interp(tk, _draw, t - _t_day)
 
     # China gets automated coding and RSI at the ECI the US got them: each
     # sample's rate is multiplied by the speed-up its Takeoff scenario shows
@@ -18240,6 +18291,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         trained = _us_trained_unpaced(_us_clock(t))
         released = np.minimum(_us_trained_unpaced(_us_clock(t - _ship)), trained)
         return trained, released
+
+    def us_path_cn(grid):
+        """`us_path` as a China release at `grid` meets it: the US as of
+        that model's training run finishing."""
+        return us_path(np.asarray(grid, dtype=float) - _cn_ship)
     # Three-channel algorithmic engine: distillation decays with the gap,
     # diffusion over ~a year after the leak is cut (leaked stock absorbed),
     # innovation never. The checkboxes tighten two channels: distillation
@@ -18388,7 +18444,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               dist_keep=dist_keep if stop_dist else 0.0,
               dist_teacher=teacher_s if withhold else None,
               # Release-step scatter, as on the China tab's catch-up panel.
-              us_path=us_path, speedup=cn_speedup,
+              us_path=us_path_cn, speedup=cn_speedup,
               speedup_follow=(tk_follow, tk['ppy'] if tk else 0.0),
               speedup_scale=_cn_sp_scale,
               comp_cut=(lambda t: a_partial * _g_dom_ref * _sup(t)),
@@ -18414,7 +18470,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # at s meets the US bar at s + cn_extra.
         target0 = level_s - cn_gain
         years = _pc_cross_years(
-            traj, grid_yrs, us_path(grid_yrs + cn_extra)[0] - cn_gain) + cn_extra
+            traj, grid_yrs, us_path_cn(grid_yrs + cn_extra)[0] - cn_gain) + cn_extra
         traj = traj + cn_gain
         grid_yrs = grid_yrs + cn_extra
     # ── State of play at pause start: what each side has when the music
@@ -18506,19 +18562,24 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _clock = {
         "Data center construction":
             f"Dates are training-run starts (cluster online); a {_mo}-month "
-            f"run finishes {_mo} months later and a release ~1 month after.",
+            "run finishes that much later.",
         "Training run finished":
-            "Dates are training-run finishes; a release follows ~1 month later.",
+            "Dates are training-run finishes.",
         "Model release":
-            f"Dates are model releases ({_mo}-month run + ~1 month prep).",
-    }[timing_label] + (" Both countries' dates move together with the sidebar's "
-                       "*Date points at*, so the gap never changes.")
+            f"Dates are model releases: the US {us_lag_d:.0f} days after a run "
+            f"finishes, China {cn_lag_d:.0f}, so China's dates sit "
+            f"{us_lag_d - cn_lag_d:.0f} days nearer the US's than on trained "
+            "models.",
+    }[timing_label] + (" The crossing compares trained models (the trained-to-"
+                       "release lags are in the sidebar), and the time to "
+                       "surpass is trained against trained on every setting.")
     # How the two paths are built, on the months card's hover.
     _method = (
         ("The US follows the Takeoff tab's scenarios, one ECI path per sample, "
          "run at the paced share of its speed from the pacing date, so "
          "automated coding and RSI speed it up as they do there; the bar is "
-         "the trained model, a ship lag ahead of the released frontier. "
+         f"the trained model, {us_lag_d:.0f} days ahead of the released "
+         "frontier. "
          if tk else
          f"The US climbs ~{us_rate:.0f} ECI/yr, from its compute growth. ")
         + "China runs on its own innovation "
@@ -18542,16 +18603,16 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         d10, d50, d90 = (_pdate(q) for q in (10, 50, 90))
         # Milestone offsets came from the top of the function; the pause is
         # naturally a run-finished date and China's ECI data are release
-        # dates, so both display at the sidebar's milestone and their gap
-        # never depends on the setting.
+        # dates, so both display at the sidebar's milestone. On the release
+        # clock each side adds its own lag, so the calendar gap there is
+        # shorter than the trained gap the second card quotes.
         v10, v50 = d10 + off_cn, d50 + off_cn
         v90 = d90 + off_cn if d90 is not None else None
-        # Months from the pause to the crossing on a common milestone,
-        # matched per sample so both uncertainties propagate. The
-        # release-prep lag nets out of the gap.
+        # Months from the pause to the crossing, trained against trained
+        # whatever the sidebar's clock, matched per sample so both
+        # uncertainties propagate: China's release lag nets out.
         _floor = np.maximum(t_pause_s * 365.25, (today - anchor_d).days)
-        _delta_mo = ((yr_all * 365.25 - _floor)
-                     - _CC_RUN_COMPLETION_LAG.days) / 30.44
+        _delta_mo = ((yr_all * 365.25 - _floor) - cn_lag_d) / 30.44
         s10, s50, s90 = (float(np.percentile(_delta_mo, p))
                          for p in (10, 50, 90))
         _past = f"past {_yr_end}"
@@ -18650,13 +18711,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _us_obs = _cc_frontier_eci_slope(us_fr, _CC_CALIB_SINCE)
     _cn_obs = ch['obs'] if ch else _cc_frontier_eci_slope(cn_fr, _CC_CALIB_SINCE)
     # The US bar at each sample's crossing (it moves unless paused).
-    us_tr_grid, us_rel_grid = us_path(grid_yrs)
+    us_tr_grid = us_path(grid_yrs)[0]
     # When the paced US reaches automated coding and RSI: the median of each
     # sample's first month at the ECI its Takeoff scenario had there (never
     # counts as later), {name: (years from China's anchor, median ECI)}.
     # Per sample, the years (from China's anchor; inf = never in the window)
-    # each side first reaches each milestone's ECI: the US on its paced
-    # released frontier, China on its path. Coder and RSI are the levels the
+    # each side first reaches each milestone's ECI, both on trained models:
+    # the US on its paced trained frontier, China on its release-dated path
+    # (its marks and dates come back by its lag). Coder and RSI are the levels the
     # paired Takeoff scenario had at them; ultraintelligence is the Takeoff
     # tab's fixed ECI. {name: (level per sample, US years, China years)}.
     ms_levels = {}
@@ -18669,7 +18731,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         _l = np.nan_to_num(_lvl, nan=np.inf)
         _yu, _yc = (np.nan_to_num(_pc_cross_years(p_, grid_yrs - grid_yrs[0], _l)
                                   + grid_yrs[0], nan=np.inf)
-                    for p_ in (us_rel_grid, traj))
+                    for p_ in (us_tr_grid, traj))
         ms_years[_ms_name] = (_lvl, _yu, _yc)
     # Medians for the chart's marks (coder and RSI only).
     us_ms, cn_ms = {}, {}
@@ -18682,7 +18744,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             if np.isfinite(_ym):
                 _out[_ms_name] = (_ym, float(np.nanmedian(_lvl)))
     us_cross_s = _pc_at_years(us_tr_grid, grid_yrs - grid_yrs[0],
-                              years - grid_yrs[0])
+                              years - grid_yrs[0] - _cn_ship)
     cross50 = (float(np.nanmedian(us_cross_s)) if crossed else lvl50)
     _y50 = float(np.nanmedian(years)) if crossed else float('nan')
     _cn_avg = ((cross50 - anchor_eci) / _y50
@@ -18698,7 +18760,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _dc_add_projection_band(fig, today + off_cn, x_end)
     # US: actual frontier, then the climb to the bar, flat once it pauses.
     fig.add_trace(go.Scatter(
-        x=[d + off_cn for d, s, n in us_fr], y=[s for d, s, n in us_fr],
+        x=[d + off_us_rel for d, s, n in us_fr], y=[s for d, s, n in us_fr],
         mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
         marker=dict(size=4, color='#1F77B4', line=dict(color='white', width=0.5)),
         text=[_hover(d, s, n) + _trend_note(_us_obs) for d, s, n in us_fr],
@@ -18707,7 +18769,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # projection) and the bar the plan holds from the pacing date (solid dark
     # blue, as China's projection is dark red). Both are medians of the per-sample bar China is crossed
     # against, dated as the pause is, monthly so a hover answers anywhere.
-    t0_us = max(us_best[0], anchor_d) + off_cn
+    t0_us = max(us_best[0] + off_us_rel, anchor_d + off_us)
     _tp50 = float(np.median(t_pause_s))
 
     def _date_of(t):
@@ -18731,7 +18793,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                           + _per_yr(_climb) + '</extra>'))
     # The US's own spread, 10th-90th percentile, from today on.
     _bk = [i for i, t in enumerate(grid_yrs)
-           if _date_of(t) >= today + off_cn and _date_of(t) <= x_end]
+           if _date_of(t) >= today + off_us and _date_of(t) <= x_end]
     if tk and len(_bk) > 1:
         _bx = [_date_of(grid_yrs[i]) for i in _bk]
         _blo = [float(np.percentile(us_tr_grid[:, i], 10)) for i in _bk]
@@ -18808,7 +18870,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                            bgcolor='rgba(255,255,255,0.8)',
                            text=_txt,
                            font=dict(size=11, color=_PC_PACE_COLOR))
-    # The US's automated coder and RSI, each where the paced released
+    # The US's automated coder and RSI, each where the paced trained
     # frontier reaches the ECI that sample's Takeoff scenario had at it.
     # Marks carry no on-chart text, which collided wherever the two sides'
     # milestones bunch up: the hover and the table under the chart say it.
@@ -18957,7 +19019,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     st.plotly_chart(_tf(fig), width="stretch")
 
     # Milestone dates for both sides, on the chart's own dating (the US's
-    # marks on the pacing clock, China's on its release-dated grid).
+    # marks on the pacing clock, China's on its release-dated grid brought
+    # back to training by `off_cn`), so both are trained models.
     def _ms_dates(yrs, to_date):
         """10th, 50th, 90th percentile dates; None past the chart's end."""
         q = [float(np.percentile(yrs, p)) for p in (10, 50, 90)]
@@ -19186,7 +19249,9 @@ def render_pacing():
                     key="pc_timing",
                     help="Same milestones as the Data Centers tab: capacity online, "
                          "+ one run (the chosen length) for training finished, "
-                         "+ 30 days more for a release.")
+                         "+ each side's trained-to-release lag (below) for a "
+                         "release.")
+                _ship_lag_inputs(st)
                 if st.session_state.get("pc_pool") not in _DC_NETWORK_OPTIONS:
                     st.session_state.pop("pc_pool", None)
                 net_label = st.selectbox(
@@ -19218,6 +19283,8 @@ def render_pacing():
         if st.button("Reset", key="pc_reset"):
             for k in _PC_RESET_KEYS:
                 st.session_state.pop(k, None)
+            for k in _SHIP_LAG_DEFAULTS:
+                st.session_state.pop(k, None)    # redrawn at the default
             st.session_state.update(_PC_DEFAULTS)
             st.rerun()
 
@@ -19304,8 +19371,15 @@ def render_pacing():
 
     # ── Entities and projections ──
     series_all = series_unshifted
+    def _site_shift(n):
+        """A release comes each side's own trained-to-release lag after the
+        run: China's for mainland sites and the ones abroad its labs use."""
+        if timing_label != _PC_TIMING_RELEASE:
+            return shift_days
+        cn = country_of.get(n) == _DC_CTY_CN or n in _DC_CN_ACCESS_ABROAD
+        return run_days + _ship_lag("cn" if cn else "us")
     if shift_days:
-        series_all = {n: {**v, 'pts': [(d + timedelta(days=shift_days), val)
+        series_all = {n: {**v, 'pts': [(d + timedelta(days=_site_shift(n)), val)
                                        for d, val in v['pts']]}
                       for n, v in series_all.items()}
     hidden = _dc_hidden_companies(dc_view, now=_today)
@@ -19473,8 +19547,9 @@ def render_pacing():
         _when = (f"Dates include the {run_days // 30}-month run: when a "
                  "model of this scale first finishes training.")
     else:
-        _when = (f"Dates include the {run_days // 30}-month run plus "
-                 "30 days of release prep.")
+        _when = (f"Dates include the {run_days // 30}-month run plus the "
+                 f"trained-to-release lag: {_ship_lag('us'):.0f} days for US "
+                 f"and other sites, {_ship_lag('cn'):.0f} for China's.")
     _fn_caption(
         "<i>Plan crosses</i> reads the catalogue at face value; the projection "
         f"adds slip and a trend. {_when} Source: [Epoch AI, Frontier Data "
@@ -20111,6 +20186,7 @@ _TK_R_REF_PARALLEL = takeoff.DEFAULTS["parallelization"]
 
 def _tk_reset():
     st.session_state.update(_TK_DEFAULTS)
+    st.session_state["us_ship_lag"] = _SHIP_LAG_DEFAULTS["us_ship_lag"]
     st.session_state.pop("_tk_fit_message", None)
 
 
@@ -20495,15 +20571,18 @@ def _tk_dist_fig(rsi, ultra, gap, today, view_end, sim_end):
     return fig
 
 
-def _tk_eci_scale(params, hist=None):
+def _tk_eci_scale(params, hist=None, lead_years=0.0):
     """(US-best frontier rows, today's ECI, its fitted points a year, today's
-    modeled capability growth): ECI = now + ppy / base_rate * capability."""
+    modeled capability growth): ECI = now + ppy / base_rate * capability.
+
+    `now` is the best *trained* model: the latest release plus `lead_years`
+    (the US trained-to-release lag) of the fitted climb."""
     frontier = _eci_entity_data("US best")[1]
     days = np.array([(m['date'] - frontier[0]['date']).days for m in frontier], dtype=float)
     ppy = fit_line(days, np.array([m['eci_score'] for m in frontier]))[1] * 365.25
     base_rate = (np.log(2) * 12 / params["software_months"]
                  + (hist if hist is not None else np.log(params["compute_growth"])))
-    return frontier, frontier[-1]['eci_score'], ppy, base_rate
+    return frontier, frontier[-1]['eci_score'] + ppy * lead_years, ppy, base_rate
 
 
 def _tk_eci_rates(params, hist=None):
@@ -20535,17 +20614,19 @@ def _tk_eci_rates(params, hist=None):
 
 
 def _tk_eci(result, params):
-    """Each scenario's capability path read as ECI, anchored on the US frontier.
+    """Each scenario's capability path read as ECI, anchored on the US frontier
+    as trained (`result['eci_lead']` years of climb past the latest release).
 
     Today's modeled capability growth (software doubling plus compute growth)
     is mapped to the ECI tab's own fitted frontier rate, crediting compute and
     algorithms at `result['eci_rates']` (`_tk_eci_rates`), so a scenario growing
     faster than today shows as faster ECI growth, floored at today's trend
-    continued for `_TK_ECI_FLOOR_YEARS`. Returns {'now', 'ppy',
-    'paths' (draws x months), 'at_rsi' (per draw, NaN if not reached),
-    'frontier' (US-best frontier rows)}.
+    continued for `_TK_ECI_FLOOR_YEARS`. Returns {'now' (trained), 'released'
+    (the latest release's score), 'ppy', 'paths' (draws x months), 'at_rsi'
+    (per draw, NaN if not reached), 'frontier' (US-best frontier rows)}.
     """
-    frontier, now, ppy, base_rate = _tk_eci_scale(params, result.get("hist_compute"))
+    frontier, now, ppy, base_rate = _tk_eci_scale(params, result.get("hist_compute"),
+                                                  result.get("eci_lead", 0.0))
     wp = result["workflow_progress"]
     years = wp["years"]
     w_compute, w_software = result["eci_rates"]["compute"], result["eci_rates"]["software"]
@@ -20566,8 +20647,9 @@ def _tk_eci(result, params):
     idx = np.clip(np.searchsorted(years, rsi, side="right") - 1, 0, len(years) - 1)
     at_rsi = np.where(np.isfinite(rsi) & (rsi <= years[-1]),
                       paths[np.arange(len(rsi)), idx], np.nan)
-    return {"now": now, "ppy": ppy, "paths": paths, "at_rsi": at_rsi, "model": model,
-            "frontier": frontier, "ultra": _tk_first_reach(paths, years, _TK_ULTRA_ECI)}
+    return {"now": now, "released": frontier[-1]['eci_score'], "ppy": ppy,
+            "paths": paths, "at_rsi": at_rsi, "model": model, "frontier": frontier,
+            "ultra": _tk_first_reach(paths, years, _TK_ULTRA_ECI)}
 
 
 # Years from today during which projected ECI is floored at today's trend, and
@@ -20614,7 +20696,8 @@ def _tk_eci_fig(result, today, eci, markers=()):
     fig.add_trace(go.Scatter(
         x=x, y=q[:, 1], mode="lines", name="Projected ECI",
         line=dict(color="#c0392b", width=2.5),
-        hovertemplate="%{x|%b %Y}<br>ECI %{y:.0f}<extra>Median</extra>"))
+        hovertemplate="%{x|%b %Y}<br>ECI %{y:.0f}<extra>Median, best trained "
+                      "model</extra>"))
     fig.add_trace(go.Scatter(
         x=x, y=eci["now"] + eci["ppy"] * years, mode="lines",
         name="Today's trend continued", line=dict(color="#7f8c8d", width=1.5, dash="dash"),
@@ -20689,7 +20772,10 @@ def _tk_yearly_progress(result, eci, today, last_year):
         out.append((last_full, np.full(n, (hi - lo) / unit), "measured"))
     if hi is not None:
         rest, _ = at(datetime(today.year + 1, 1, 1))
-        out.append((today.year, (eci["now"] - hi + rest - paths[:, 0]) / unit, "partly"))
+        # Released gain to today, then the trained path's gain after it.
+        out.append((today.year, (eci.get("released", eci["now"]) - hi + rest
+                                 - paths[:, 0]) / unit,
+                    "partly"))
     for year in range(today.year + 1, last_year + 1):
         start, _ = at(datetime(year, 1, 1))
         end, t_end = at(datetime(year + 1, 1, 1))
@@ -21195,7 +21281,8 @@ def _tk_run(today, progress=None):
     compute_rates, hist_compute = dc if dc else (None, None)
     # A model at ultraintelligence has automated coding whatever the RSI projection's
     # date says, so RSI no longer waits on a late inherited date past it.
-    _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute)
+    eci_lead = _ship_lag("us") / 365.25
+    _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute, eci_lead)
     eci_rates = _tk_eci_rates(params, hist_compute)
     coding_level = _TK_ULTRA_ECI - eci_now          # in ECI points, through eci_rates
     coding_weights = (eci_rates["compute"], eci_rates["software"])
@@ -21231,6 +21318,7 @@ def _tk_run(today, progress=None):
     # series' own historical fit when its projection is in use.
     result["hist_compute"] = hist_compute
     result["eci_rates"] = eci_rates
+    result["eci_lead"] = eci_lead
     rsi = result["events"]["RSI"]
     eci = _tk_eci(result, params)
     return {"params": params, "result": result, "eci": eci, "eci_base": eci_base,
@@ -21300,6 +21388,7 @@ def _render_takeoff(loading):
         st.button("Reset to defaults", key="tk_reset", on_click=_tk_reset)
         st.caption("Coding automation comes from the automated coder projection; "
                    "its settings are in the RSI evidence section.")
+        _ship_lag_inputs(st, china=False)
         with st.expander("What decides ultraintelligence", expanded=True):
             st.caption("Across a plausible range, r moves the ultraintelligence date "
                        "\u22125 to +6 months, judgment \u22123 to +2, parallelization not at "
@@ -21732,8 +21821,10 @@ def _render_takeoff(loading):
                  "people." if params["rsi_autopilot"] else
                  "with autopilot off they keep falling at their own pace."))
         _card(c, f"Ultraintelligence: ECI {_TK_ULTRA_ECI:g}", eci["ultra"],
-              f"First month a scenario's ECI reaches {_TK_ULTRA_ECI:g} (today's frontier: "
-              f"{eci['now']:.0f}).")
+              f"First month a scenario's best trained model reaches ECI {_TK_ULTRA_ECI:g}. "
+              f"Today's trained frontier is ~{eci['now']:.0f}: the latest US release "
+              f"({eci['released']:.0f}) plus {_ship_lag('us'):.0f} days of the trend, "
+              "the US trained-to-release lag.")
         a, b, c = st.columns(3)
         _gap_card(a, "Coding automation \u2192 RSI", result["coding_at"], rsi,
                   "Time from each scenario's coding-automation date (the automated coder projection's, or the "
@@ -22059,6 +22150,11 @@ _APP_SEED = 0
 
 if not os.environ.get("_VP_TESTING"):
     _hydrate_session_from_url()
+    # The lag widgets draw on two tabs only; reassigning keeps their values
+    # (and the URL's) when another tab's run would drop an undrawn widget's key.
+    for _k in _SHIP_LAG_DEFAULTS:
+        if _k in st.session_state:
+            st.session_state[_k] = st.session_state[_k]
     st.session_state["_vp_booted"] = True
     if _BOOT_BAR is not None:
         _BOOT_BAR.empty()

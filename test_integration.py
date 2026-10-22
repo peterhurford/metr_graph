@@ -2310,12 +2310,34 @@ class TestPacingTab:
         self._paired(at.selectbox(key="pc_timing").set_value("Model release"))
         _assert_no_error(at, "Pacing / pause on release clock")
         d_rel, s_rel = _cross_date(at), _surpass_mo(at)
-        # 2-mo run + 30d prep ≈ 3 months later, ± a month's rounding.
+        # 2-mo run + China's 21-day release lag ≈ 3 months later, ± a
+        # month's rounding.
         diff_mo = ((d_rel.year - d_con.year) * 12 + d_rel.month - d_con.month)
         assert 1 <= diff_mo <= 5
+        # Time to surpass is trained against trained on every clock.
         assert abs(s_rel - s_con) <= 1
         clock = next(m.help for m in at.metric if "paused US frontier" in str(m.label))
         assert "Dates are model releases" in clock
+        assert "China's dates sit 49 days nearer" in clock
+
+    def test_a_longer_us_release_lag_raises_the_trained_bar(self):
+        """The bar is the best model the US has trained by the pause: the
+        Takeoff path, anchored a US trained-to-release lag past the latest
+        release, so a longer lag lifts it and China crosses no sooner."""
+        at = self._app()
+
+        def _card(at):
+            return next(m for m in at.metric
+                        if "paused US frontier" in str(m.label))
+        base = _card(at)
+        bar0 = _card_bar(base)
+        self._paired(at.number_input(key="us_ship_lag").set_value(140))
+        _assert_no_error(at, "Pacing / 140-day US release lag")
+        later = _card(at)
+        assert _card_bar(later) > bar0
+        assert "140 days ahead of the released" in next(
+            m.help for m in at.metric
+            if "Time for China to surpass" in str(m.label))
 
     def test_race_bar_is_the_state_of_play_us_run(self):
         """The race below runs to the US row's largest training run, at the

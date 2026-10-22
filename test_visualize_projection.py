@@ -4995,8 +4995,9 @@ class TestPacing:
         """METR/ECI/RLI are dated off released, benchmarked models; CoBench and
         the staff survey are internal and already on the run-finished clock."""
         days = np.full(20000, 500.0)
-        lo, hi = vp._PC_REPORT_LAG_DAYS
-        shifted = vp._pc_report_lag(days, True, "Training run finished")
+        lo, hi = vp._pc_report_lag_days(70.0)
+        assert (lo, hi) == (49.0, 91.0)
+        shifted = vp._pc_report_lag(days, True, "Training run finished", us_lag=70.0)
         assert (shifted <= 500 - lo).all() and (shifted >= 500 - hi).all()
         assert abs(shifted.mean() - (500 - (lo + hi) / 2)) < 1.0
         # Internal milestones never move, and nothing moves on the release clock.
@@ -5135,7 +5136,7 @@ class TestPacing:
         discount window grows by the lag's lower bound; a window turned off
         stays off."""
         assert vp._pc_ramp_for(vp._PC_TIMING_RELEASE, 90.0) == \
-            90.0 + vp._PC_REPORT_LAG_DAYS[0]
+            90.0 + vp._pc_report_lag_days()[0]
         assert vp._pc_ramp_for("Training run finished", 90.0) == 90.0
         assert vp._pc_ramp_for(vp._PC_TIMING_RELEASE, 0.0) == 0.0
 
@@ -5775,6 +5776,15 @@ class TestTakeoffEciRates:
         r = vp._tk_eci_rates(tk.DEFAULTS, hist)
         assert r["compute"] * hist + r["software"] * software == pytest.approx(ppy)
         assert r["algo_ppy"] == pytest.approx(r["software"] * software)
+
+    def test_today_is_the_trained_frontier_a_ship_lag_past_the_release(self):
+        """The paths start at the best trained model: the latest release plus
+        the US trained-to-release lag of the fitted climb."""
+        import takeoff_model as tk
+        frontier, released, ppy, _ = vp._tk_eci_scale(tk.DEFAULTS)
+        _, trained, _, _ = vp._tk_eci_scale(tk.DEFAULTS, lead_years=70 / 365.25)
+        assert released == frontier[-1]['eci_score']
+        assert trained - released == pytest.approx(ppy * 70 / 365.25)
 
     def test_compute_rate_is_the_frontier_grade_exchange_rate(self):
         import takeoff_model as tk
