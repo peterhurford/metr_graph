@@ -1621,7 +1621,7 @@ wait** (unlike the CC 161 section — a queue delays both sides alike); dates fo
 sidebar's *Date points at* (`off_us`, `off_us_rel`, `off_cn`; see *Trained-to-release
 lags*); the
 chart (actual points included) rides the same clock, x-axis titled by milestone.
-The three crossing cards (date, time to surpass, and the US lead in total installed compute at the crossing or the horizon's end, `_pc_compute_lead`, the ratio table's own installed reading, so only the chip levers and the crossing date move it; `test_crossing_cards_sit_above_the_milestone_table`) sit above the SL5 warning and the milestone table, the pacing settings in the first card's hover; the panel ends with `_pc_render_why()`, *Why this US-China gap?*: each source's ECI/yr at the pause,
+The three crossing cards (date, time to surpass, and the US lead in total installed compute at the crossing or the horizon's end, `_pc_compute_lead`, the ratio table's own installed reading: mainland plus the compute mix's remote stock abroad (`_pc_cn_abroad`), so only the chip and remote-access levers and the crossing date move it, `test_compute_lead_counts_china_abroad_until_remote_access_is_cut`; `test_crossing_cards_sit_above_the_milestone_table`) sit above the SL5 warning and the milestone table, the pacing settings in the first card's hover; the panel ends with `_pc_render_why()`, *Why this US-China gap?*: each source's ECI/yr at the pause,
 its average from the pause to the crossing, and at the crossing (`_pc_rate_at`), then a row
 turning each total into months to close the gap; the average's months are the actual
 catch-up (before the card's one-month release lag). Each source's average is its own median post-pause ECI over

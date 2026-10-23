@@ -4742,6 +4742,18 @@ class TestDcCtyPlanSlip:
 class TestPacing:
     """The Pacing tab: threshold menu, crossing math, and the entity roster."""
 
+    def test_compute_lead_counts_china_abroad_until_remote_access_is_cut(self):
+        """China's installed compute includes the compute mix's remote stock
+        abroad, which a remote cut removes from its date on."""
+        today = datetime(2026, 10, 23)
+        ab = vp._pc_cn_abroad(today, {}, [0.0, 2.0])
+        assert (ab > 0.2).all()
+        cut = {"remote_cut": today + timedelta(days=365)}
+        ab_cut = vp._pc_cn_abroad(today, cut, [0.5, 1.0, 2.0])
+        assert ab_cut[0] > 0.2 and ab_cut[1] == ab_cut[2] == 0.0
+        assert vp._pc_wc_ratio(2.0) / vp._pc_wc_ratio(2.0, abroad=ab[1]) \
+            == pytest.approx(1.0 + ab[1])
+
     def test_race_bar_is_the_us_median_run_at_the_pause(self):
         caps = {vp._DC_CTY_US: (1e26, 3e26, 9e26),
                 vp._DC_CTY_CN_ACCESS: (1e25, 2e25, 4e25)}
