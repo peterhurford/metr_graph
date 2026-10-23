@@ -159,6 +159,19 @@ class TestEciTab:
             drift.append(ys[-1] - ys[0])
         assert drift[0] * drift[1] <= 0, drift
 
+    def test_projection_carries_the_trend_on_without_a_kink(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "ECI")
+        _assert_no_error(at, "ECI default")
+        spec = json.loads(at.get("plotly_chart")[0].proto.spec)
+
+        def slope(prefix):
+            t = next(t for t in spec["data"] if t.get("name", "").startswith(prefix))
+            x = [datetime.fromisoformat(v[:19]) for v in (t["x"][0], t["x"][-1])]
+            return (t["y"][-1] - t["y"][0]) / (x[1] - x[0]).days
+        assert slope("Projection") == pytest.approx(slope("OLS trend"), rel=1e-3)
+
     def test_a_model_is_named_once_and_close_edge_labels_stack(self):
         at = _fresh_app()
         at.run()

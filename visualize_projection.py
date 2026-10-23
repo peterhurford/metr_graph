@@ -379,6 +379,22 @@ def _log_lognormal_from_ci(lo, hi, n):
     return np.exp(log_x)
 
 
+def _split_from_ci(lo, hi, center, n, dist="Lognormal"):
+    """Sample with median `center` (clipped into [lo, hi]) and 80% CI [lo, hi]:
+    a two-piece normal in the `dist` space (Normal, Lognormal or Log-log), each
+    side's spread set by its own edge, so a fit off the CI's midpoint stays the
+    median rather than being pulled to it."""
+    fwd, inv = {"Normal": (lambda x: x, lambda y: y),
+                "Lognormal": (np.log, np.exp),
+                "Log-log": (lambda x: np.log(np.log(x)), lambda y: np.exp(np.exp(y)))}[dist]
+    y_lo, y_hi = fwd(lo), fwd(hi)
+    y_c = min(max(fwd(center), y_lo), y_hi)
+    z = np.random.normal(0.0, 1.0, n)
+    y = y_c + z * np.where(z < 0, y_c - y_lo, y_hi - y_c) / 1.282
+    out = inv(y)
+    return np.maximum(out, lo / 10) if dist == "Normal" else out
+
+
 def _ss_number_input(parent, label, key, default, **kwargs):
     """number_input with session_state-driven default.
 
@@ -976,6 +992,9 @@ _RLI_RAW = [
     # Added 2026-10-07: Scale only (isNew, createdAt 2026-10-07T21:54Z); not yet in the CAIS API.
     # Date is Epoch's catalogued release. New frontier point, above GPT-6 Astra.
     {"name": "Opus 5.5",        "date": "2026-09-22", "rli_score": 21.25},
+    # Added 2026-10-23: Scale only, as "Gemini Argon 4" (isNew, createdAt 2026-10-22T22:16Z); not yet in
+    # the CAIS API. Date is Epoch's catalogued release of Gemini 4 Argon. Below the frontier.
+    {"name": "Gemini 4 Argon",  "date": "2026-09-30", "rli_score": 17.08},
     # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
     # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
@@ -1025,6 +1044,7 @@ _RLI_RAW = [
     # Opus 5 still have no score on either surface.
     # Rechecked 2026-10-21: no new model or changed score; Scale's newest createdAt is still Opus 5.5 (10-07).
     # Rechecked 2026-10-22: no new model or changed score on either surface.
+    # Rechecked 2026-10-23: Gemini 4 Argon above is the only change.
 ]
 
 
@@ -4192,22 +4212,28 @@ def _eci_tab_reset_keys(p):
 
 _ECI_MIN_GAIN_WINDOWS = 6
 
-_ECI_PPY_HELP = ("80% interval on the yearly gain. Default: the smallest and largest "
-                 "ECI the frontier gained over any year it covers (half to twice "
+_ECI_PPY_HELP = ("80% interval on the yearly gain; the projection's median stays the fit's "
+                 "rate, held inside it. Default: the slowest and fastest "
+                 "yearly ECI gain on record, release to release (half to twice "
                  "the fit when fewer than six year-long windows are on record, or on a "
                  "piecewise fit's last segment).")
 
 
 def _eci_yearly_gain_range(frontier):
-    """The smallest and largest ECI gain over any year of `frontier`, one window
-    from each frontier model on to a year before the last, read off the step
-    frontier: the linear rate CI's default. None under `_ECI_MIN_GAIN_WINDOWS`,
-    where a few overlapping years pin the band too tight."""
+    """The slowest and fastest yearly ECI gain on record: the linear rate CI's
+    default. One window from each frontier model a year or more before the last,
+    running to the first frontier release at least a year on and scaled to a
+    year, so no window ends partway between releases and reads the wait for the
+    next one as a slow year. None under `_ECI_MIN_GAIN_WINDOWS`, where a few
+    overlapping years pin the band too tight."""
     pts = [(m['date'], m['eci_score']) for m in frontier]
     if len(pts) < 2:
         return None
-    gains = [_ecg_frontier_score_at_date(pts, d + timedelta(days=365)) - sc
-             for d, sc in pts if d + timedelta(days=365) <= pts[-1][0]]
+    gains = []
+    for d, sc in pts:
+        end = next(((de, se) for de, se in pts if de >= d + timedelta(days=365)), None)
+        if end is not None:
+            gains.append((end[1] - sc) * 365.25 / (end[0] - d).days)
     if len(gains) < _ECI_MIN_GAIN_WINDOWS or min(gains) <= 0 or min(gains) == max(gains):
         return None
     return max(0.5, round(min(gains), 1)), round(max(gains), 1)
@@ -4508,13 +4534,14 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         _eci_eff_dpp_lo = eci_custom_dpp_lo
         _eci_eff_dpp_hi = eci_custom_dpp_hi
 
+        # The fan's median rate is the fit's, so the projection carries the trend
+        # line on without a kink; the CI only sets the spread either side.
         n_eci = N_SAMPLES
-        if eci_custom_dpp_dist == "Log-log":
-            eci_proj_dpp = _log_lognormal_from_ci(_eci_eff_dpp_lo, _eci_eff_dpp_hi, n_eci)
-        elif eci_custom_dpp_dist == "Lognormal":
-            eci_proj_dpp = _lognormal_from_ci(_eci_eff_dpp_lo, _eci_eff_dpp_hi, n_eci)
-        else:
-            eci_proj_dpp = _normal_from_ci(_eci_eff_dpp_lo, _eci_eff_dpp_hi, n_eci)
+        _eci_center_dpp = (1.0 / _eci_params[1] if _eci_params[1] > 0
+                           else np.sqrt(_eci_eff_dpp_lo * _eci_eff_dpp_hi))
+        _eci_center_dpp = min(max(_eci_center_dpp, _eci_eff_dpp_lo), _eci_eff_dpp_hi)
+        eci_proj_dpp = _split_from_ci(_eci_eff_dpp_lo, _eci_eff_dpp_hi, _eci_center_dpp,
+                                      n_eci, eci_custom_dpp_dist)
 
         # Position samples centered on OLS-fitted position
         if eci_custom_pos_dist == "Lognormal":
@@ -4655,7 +4682,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                         hovertext=hover_seg, hoverinfo='text',
                     ))
                     # Projected portion: user DPP slope from last data point
-                    _user_dpp_center = np.sqrt(eci_custom_dpp_lo * eci_custom_dpp_hi)
+                    _user_dpp_center = _eci_center_dpp
                     _user_ppy_center = 365.25 / _user_dpp_center
                     _user_slope = 1.0 / _user_dpp_center
                     _ols_val_at_last = seg_params[0] + seg_params[1] * d_last
@@ -4693,7 +4720,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                 hovertext=hover_seg, hoverinfo='text',
             ))
             # Projected portion: user DPP slope from last data point
-            _user_dpp_center = np.sqrt(eci_custom_dpp_lo * eci_custom_dpp_hi)
+            _user_dpp_center = _eci_center_dpp
             _user_ppy_center = 365.25 / _user_dpp_center
             _user_slope = 1.0 / _user_dpp_center
             _ols_val_at_last = eci_ols_params[0] + eci_ols_params[1] * d_last
@@ -8159,6 +8186,7 @@ _OPENAI_REVENUE = [
     # (as of 09-30) and a $30B July row; press line only, so this series is unchanged.
     # Rechecked 2026-10-21: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
     # Rechecked 2026-10-22: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
+    # Rechecked 2026-10-23: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -8267,6 +8295,7 @@ _ANTHROPIC_REVENUE = [
     # third-party estimate.
     # Rechecked 2026-10-21: still no run rate on anthropic.com/news or EDGAR; Epoch's newest row unchanged.
     # Rechecked 2026-10-22: still none (10-21 LTBT post states no run rate; no public S-1).
+    # Rechecked 2026-10-23: still none (10-22 posts state no run rate); Epoch's newest row unchanged.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -10192,14 +10221,15 @@ def _eci_trend_rate(trend_fr):
 
 def _eci_ref_rate(label):
     """The reference's ECI a month as its own default projection's median: the
-    geometric midpoint of its rate CI, or the fit where that CI is half to twice
-    it. The subject's band is centred the same way, so A against B and B against
-    A drift in opposite directions."""
+    fit, held inside its rate CI. The subject's band is centred the same way, so
+    A against B and B against A drift in opposite directions."""
     fr = _eci_entity_data(label)[1]
+    rate = _eci_trend_rate(fr)
     gains = _eci_yearly_gain_range(fr)
     if gains is None:
-        return _eci_trend_rate(fr)
-    return float(np.sqrt(gains[0] * gains[1])) * _ECI_MONTH_S / (365.25 * 86400)
+        return rate
+    per_month = _ECI_MONTH_S / (365.25 * 86400)
+    return float(min(max(rate, gains[0] * per_month), gains[1] * per_month))
 
 
 def _eci_gap_now(ref_fr, hist, today, rate):

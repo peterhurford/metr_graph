@@ -1064,14 +1064,22 @@ class TestEciGap:
         assert gap[1] == pytest.approx([5, 11, 17], abs=0.1)
         assert gap[2] == pytest.approx([5, -1, -7], abs=0.1)
 
+    def test_split_sampler_keeps_the_fit_as_median_and_the_ci_as_edges(self):
+        np.random.seed(0)
+        for dist in ("Normal", "Lognormal", "Log-log"):
+            x = vp._split_from_ci(20.0, 30.0, 22.0, 200_000, dist)
+            assert np.percentile(x, [10, 50, 90]) == pytest.approx([20, 22, 30], rel=0.01)
+        x = vp._split_from_ci(20.0, 30.0, 40.0, 200_000)  # a fit outside is held inside
+        assert np.median(x) == pytest.approx(30, rel=0.01)
+
     def test_rate_ci_defaults_to_the_slowest_and_fastest_year_on_record(self, monkeypatch):
         d = lambda y, m: datetime(y, m, 1)
         fr = [{"date": d(2025, 1), "eci_score": 100.0},
               {"date": d(2025, 7), "eci_score": 104.0},
               {"date": d(2026, 1), "eci_score": 115.0},
               {"date": d(2027, 1), "eci_score": 121.0}]
-        # Read off the steps: Jan 25 -> Jan 26 +15; Jul 25 -> Jul 26 (still
-        # at 115) +11; Jan 26 -> Jan 27 +6.
+        # Release to release, per year: Jan 25 -> Jan 26 +15; Jul 25 -> Jan 27
+        # +17 over 18 months, ~11.3; Jan 26 -> Jan 27 +6.
         # Under six windows the record is too thin to bound the rate.
         assert vp._eci_yearly_gain_range(fr) is None
         monkeypatch.setattr(vp, "_ECI_MIN_GAIN_WINDOWS", 3)
