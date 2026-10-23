@@ -1261,6 +1261,79 @@ _TASTEVAL_PREDICT_TARGET = 90.0
 _TASTEVAL_PREDICT_PUBLISHED = "2026-10-06"
 _TASTEVAL_PREDICT_DATES = ("2029-10-15", "2030-10-15", "2031-12-15")
 
+# The paper's sigmoid itself, read from the vector path Figure 7 draws
+# (mase_release.svg): MASE falls from the last-score baseline to the noise
+# floor as a logistic in release date, half the gap closed at the midpoint.
+# A logistic through the path's 200 points leaves under 0.001 in log-odds and
+# closes 90% of the gap within a month of the printed October 2030.
+_TASTEVAL_PREDICT_BASELINE = 0.608
+_TASTEVAL_PREDICT_FLOOR = 0.211
+_TASTEVAL_PREDICT_MID = "2026-07-09"
+_TASTEVAL_PREDICT_RATE = 0.509            # logistic rate, per year
+
+# Table 2 (Appendix H.3): each model's compute multiplier and 95% CI at its
+# main setting (the highest reasoning available, GPT-5.2 at "high"); Opus 5's
+# Super-Think, medium and low rows are left out. Dates are Epoch's release
+# dates, except the two models Epoch does not catalogue. `fitted` is the
+# paper's frontier set, GPT-4 to Opus 5.5: the Kimis and GLM 5.3 are drawn
+# but not fitted, and the two models that predate it or trail it sit outside.
+_TASTEVAL_BREAK = "2025-12-11"            # GPT-5.2, the Chow scan's break
+_TASTEVAL_RAW = [
+    # name, release date, multiplier, 95% CI low, high, setting, fitted
+    ("GPT-4 (Jun 2023)",       "2023-06-13", 0.03, 0.01, 0.08, "gpt-4-0613", True),
+    ("GPT-3.5 Turbo Instruct", "2023-09-18", 0.01, 0.00, 0.04, "gpt-3.5-turbo-instruct", False),
+    ("GPT-4o (May 2024)",      "2024-05-13", 0.06, 0.02, 0.23, "gpt-4o-2024-05-13", True),
+    ("Llama 3.1 70B",          "2024-07-23", 0.01, 0.00, 0.03, "", False),
+    ("o1",                     "2024-12-17", 0.07, 0.03, 0.14, "high", True),
+    ("o3",                     "2025-04-16", 0.08, 0.04, 0.16, "high", True),
+    ("GPT-5",                  "2025-08-07", 0.12, 0.06, 0.21, "high", True),
+    ("Claude Opus 4.5",        "2025-11-24", 0.12, 0.05, 0.24, "24k thinking budget", True),
+    ("GPT-5.2",                "2025-12-11", 0.28, 0.16, 0.54, "high", True),
+    ("Kimi K2.5",              "2026-01-27", 0.09, 0.04, 0.19, "max, 96k output", False),
+    ("Claude Opus 4.6",        "2026-02-05", 0.40, 0.24, 0.85, "max", True),
+    ("GPT-5.4",                "2026-03-05", 0.21, 0.12, 0.37, "xhigh", True),
+    ("Claude Opus 4.7",        "2026-04-16", 0.50, 0.27, 0.95, "max", True),
+    ("GPT-5.5",                "2026-04-23", 0.47, 0.24, 1.11, "xhigh", True),
+    ("Claude Opus 4.8",        "2026-05-28", 0.84, 0.45, 1.78, "max", True),
+    ("GPT-5.6 Sol",            "2026-07-09", 0.59, 0.31, 1.09, "max", True),
+    ("Kimi K3",                "2026-07-16", 0.45, 0.31, 0.71, "reasoning on", False),
+    ("Claude Opus 5",          "2026-07-24", 1.29, 0.69, 2.33, "max", True),
+    ("GLM-5.3",                "2026-08-14", 0.59, 0.33, 1.49, "max", False),
+    ("Claude Fable 5.1",       "2026-09-01", 1.72, 0.75, 3.70, "max", True),
+    ("GPT-6 Astra",            "2026-09-03", 1.60, 0.77, 3.02, "max", True),
+    ("Claude Opus 5.5",        "2026-09-22", 2.30, 1.15, 4.37, "max", True),
+]
+
+
+def load_tasteval():
+    """TasteVal's compute multipliers, oldest first."""
+    return [{"name": n, "date": datetime.strptime(d, '%Y-%m-%d'), "mult": m,
+             "lo": lo, "hi": hi, "setting": s, "fitted": f}
+            for n, d, m, lo, hi, s, f in _TASTEVAL_RAW]
+
+
+def _tasteval_fit(rows):
+    """The paper's two log-linear trends in release date, split at GPT-5.2,
+    which opens the later one. [(first date, last date, intercept, log2
+    multiplier per year)], years counted from the break."""
+    brk = datetime.strptime(_TASTEVAL_BREAK, '%Y-%m-%d')
+    out = []
+    for seg in ([r for r in rows if r['fitted'] and r['date'] < brk],
+                [r for r in rows if r['fitted'] and r['date'] >= brk]):
+        yrs = np.array([(r['date'] - brk).days / 365.25 for r in seg])
+        icpt, slope = fit_line(yrs, np.log2([r['mult'] for r in seg]))
+        out.append((seg[0]['date'], seg[-1]['date'], float(icpt), float(slope)))
+    return out
+
+
+def _tasteval_predict_mase(dates):
+    """Figure 7's sigmoid: the MASE the paper's fit gives a model released on
+    each date."""
+    mid = datetime.strptime(_TASTEVAL_PREDICT_MID, '%Y-%m-%d')
+    yrs = np.array([(d - mid).days / 365.25 for d in dates])
+    gap = _TASTEVAL_PREDICT_BASELINE - _TASTEVAL_PREDICT_FLOOR
+    return _TASTEVAL_PREDICT_BASELINE - gap / (1 + np.exp(-_TASTEVAL_PREDICT_RATE * yrs))
+
 
 @st.cache_data
 def load_rsi_direction():
@@ -6522,6 +6595,7 @@ def render_rsi(end_year):
     _render_rsi_code(rsi_end_year)
     _render_rsi_experiments(rsi_end_year)
     _render_rsi_direction(rsi_end_year)
+    _render_rsi_tasteval(rsi_end_year)
 
     st.markdown("---")
     # The conditioning controls render inside the blend's weights expander,
@@ -7437,7 +7511,182 @@ def _render_rsi_direction(end_year):
          "the study says a model gets there."))
 
 
-# ── UK Cyber (AISI narrow cyber tasks) ───────────────────────────────────
+def _render_rsi_tasteval(end_year):
+    """TasteVal: how much compute a model's experiment choices save against
+    expert researchers', then how well it predicts an experiment's result.
+    Neither enters the automated-coder blend; both feed Takeoff's judgment
+    elasticity and the prediction card. Charted as published, with no fan:
+    the multiplier's bar (the experts) is already passed, and the prediction
+    curve is the paper's own."""
+    st.subheader("Research taste (TasteVal)")
+    _fn_line(
+        "Research also means picking which experiment to run. TasteVal has a "
+        "model design the experiments on eight AI R&D tasks while a fixed "
+        "coder runs them, and asks how much compute it needs to match "
+        "expert researchers.",
+        ("how much compute it needs to match expert researchers",
+         "The compute multiplier: the GPU hours the best of two or more "
+         "human experts needed to reach a score, over the hours the model "
+         "needed, on one H100 with a 40-hour budget. 2× means the model's "
+         "choices got there on half the compute. Serial compute only, and "
+         "tasks built to be quick to score, so the paper says the level may "
+         "overstate frontier R&D."))
+
+    rows = load_tasteval()
+    segs = _tasteval_fit(rows)
+    brk = datetime.strptime(_TASTEVAL_BREAK, '%Y-%m-%d')
+    fig = go.Figure()
+    for d0, d1, icpt, slope in segs:
+        days = np.arange(0, (d1 - d0).days + 1, 7, dtype=float)
+        dates = [d0 + timedelta(days=int(d)) for d in days]
+        ys = 2 ** (icpt + slope * np.array([(d - brk).days / 365.25 for d in dates]))
+        fig.add_trace(go.Scatter(
+            x=dates, y=ys.tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5),
+            name=f"{'Before' if d0 < brk else 'From'} GPT-5.2: "
+                 f"2x every {12 / slope:.1f} mo",
+            hoverinfo='skip'))
+    for fitted, name in ((True, "Frontier models (fitted)"),
+                         (False, "Not fitted")):
+        pts = [r for r in rows if r['fitted'] == fitted]
+        # A CI that rounds to 0.00 is drawn to the axis floor, not to log(0).
+        lo = [max(r['lo'], 0.005) for r in pts]
+        fig.add_trace(go.Scatter(
+            x=[r['date'] for r in pts], y=[r['mult'] for r in pts],
+            mode='markers', name=name,
+            marker=dict(color='#4F8DFD' if fitted else '#aaaaaa', size=11,
+                        symbol='circle' if fitted else 'circle-open',
+                        line=dict(color='white' if fitted else '#777777', width=2)),
+            error_y=dict(type='data', symmetric=False,
+                         array=[r['hi'] - r['mult'] for r in pts],
+                         arrayminus=[r['mult'] - l for r, l in zip(pts, lo)],
+                         color='rgba(79,141,253,0.4)' if fitted else 'rgba(0,0,0,0.2)',
+                         thickness=1.2, width=3),
+            hovertext=[f"{r['name']}" + (f" ({r['setting']})" if r['setting'] else "")
+                       + f"<br>{r['date'].strftime('%b %d, %Y')}"
+                       f"<br>Compute multiplier: {r['mult']:.2f}×"
+                       f" (95% CI {r['lo']:.2f}–{r['hi']:.2f})"
+                       for r in pts],
+            hoverinfo='text'))
+    # Only the leader is named: the models just past 1× ship within weeks of
+    # each other and their labels collide.
+    top = max(rows, key=lambda r: r['mult'])
+    fig.add_annotation(x=top['date'], y=np.log10(top['mult']),
+                       text=top['name'].replace('Claude ', ''),
+                       showarrow=False, xanchor='right', xshift=-8,
+                       font=dict(size=10, color='#1a1a2e'))
+    fig.add_hline(y=1.0, line=dict(color='#e74c3c', width=1.5, dash='dash'))
+    # By hand, not `annotation_text`: on a log axis plotly reads an
+    # annotation's y as the exponent.
+    fig.add_annotation(
+        xref='x domain', x=0.01, y=0.0, yanchor='bottom', xanchor='left',
+        text="1× — the best human expert", showarrow=False,
+        font=dict(size=11, color='#e74c3c'))
+    _add_today_vline(fig)
+    x_end = max(datetime.now(), rows[-1]['date']) + timedelta(days=45)
+    fig.update_layout(
+        height=480, margin=dict(l=50, r=60, t=50, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(title="Release date",
+                   range=[rows[0]['date'] - timedelta(days=45), x_end],
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        yaxis=dict(title="Compute multiplier vs. experts (×)", type='log',
+                   range=[np.log10(0.004), np.log10(6)],
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        hovermode='closest',
+        legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
+                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+        plot_bgcolor='white', paper_bgcolor='white')
+    st.plotly_chart(fig, width="stretch")
+
+    _fn_caption(
+        "Opus 5.5 passed the experts at 2.3×, and the multiplier has doubled "
+        "every 3 months since GPT-5.2. Source: "
+        f"[P-Zero Research, *TasteVal*]({_TASTEVAL_SOURCE_URL}), Table 2.",
+        ("every 3 months since GPT-5.2",
+         "The paper's Chow scan puts a break at GPT-5.2 (14 months a doubling "
+         "before it). Read against capability that is 15.7 then 4.6 ECI "
+         "points a doubling, and Takeoff's judgment elasticity carries both "
+         "regimes, since a steady trend in final scores reproduces the break "
+         "as models near the experts' flattening curve. At a 5-hour budget "
+         "the doubling stretches to ~7 months."),
+        ("Table 2",
+         "Each model at its main setting, the highest reasoning available "
+         "(GPT-5.2 at high). Grey points are the paper's non-frontier models "
+         "(the Kimis and GLM-5.3) and two baselines outside its fit; dates "
+         "are Epoch's release dates."))
+
+    pred_end = datetime(end_year, 12, 31)
+    first = datetime(2024, 4, 9)               # GPT-4 Turbo, the paper's first
+    last = rows[-1]['date']
+    grid = [first + timedelta(days=int(d))
+            for d in _fan_days((pred_end - first).days)]
+    mase = _tasteval_predict_mase(grid)
+    bar = (_TASTEVAL_PREDICT_BASELINE - _TASTEVAL_PREDICT_TARGET / 100
+           * (_TASTEVAL_PREDICT_BASELINE - _TASTEVAL_PREDICT_FLOOR))
+    fig = go.Figure()
+    for past, dash, name in ((True, 'solid', "The paper's fit"),
+                             (False, 'dash', "Its extrapolation")):
+        idx = [i for i, d in enumerate(grid) if (d <= last) == past]
+        if past and idx and idx[-1] + 1 < len(grid):
+            idx.append(idx[-1] + 1)     # meet the dashed half
+        fig.add_trace(go.Scatter(
+            x=[grid[i] for i in idx], y=[float(mase[i]) for i in idx],
+            mode='lines', name=name,
+            line=dict(color='#2c3e50', width=2.5, dash=dash),
+            hovertext=[f"{grid[i].strftime('%b %Y')}<br>MASE {mase[i]:.3f}"
+                       for i in idx],
+            hoverinfo='text'))
+    for y, color, label in ((_TASTEVAL_PREDICT_BASELINE, '#6b7280',
+                             f"{_TASTEVAL_PREDICT_BASELINE} — predict the run's last score"),
+                            (_TASTEVAL_PREDICT_FLOOR, '#5b9bd5',
+                             f"{_TASTEVAL_PREDICT_FLOOR} — replication noise floor"),
+                            (bar, '#e74c3c',
+                             f"{_TASTEVAL_PREDICT_TARGET:.0f}% of the gap closed")):
+        fig.add_hline(y=y, line=dict(color=color, width=1.5, dash='dash'),
+                      annotation_text=label, annotation_position="top left",
+                      annotation_font=dict(size=11, color=color))
+    _add_today_vline(fig)
+    fig.update_layout(
+        height=420, margin=dict(l=50, r=60, t=50, b=40),
+        font=dict(color='#1a1a2e'),
+        xaxis=dict(title="Release date",
+                   range=[first - timedelta(days=45), pred_end],
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        yaxis=dict(title="Prediction error (MASE)", range=[0.15, 0.65],
+                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+        hovermode='closest',
+        legend=dict(yanchor='top', y=0.98, xanchor='right', x=0.98,
+                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+        plot_bgcolor='white', paper_bgcolor='white')
+    st.plotly_chart(fig, width="stretch")
+
+    _fn_caption(
+        "Predicting an experiment's score before running it: models have "
+        "closed half the gap from a naive guess to the noise floor. The curve "
+        "is the paper's own sigmoid, read off its figure.",
+        ("Predicting an experiment's score",
+         "Given the task, the experiment's description and the run's earlier "
+         "results, predict its validation score. 1,173 experiments from 120 "
+         "runs, scored by mean absolute scaled error: lower is better, 0.608 "
+         "is what guessing the last score gets, 0.211 the floor set by "
+         "re-running experiments with fresh seeds."),
+        ("read off its figure",
+         "The paper prints the curve's end points (0.608, 0.211) and its "
+         f"{_TASTEVAL_PREDICT_TARGET:.0f}% date, but not its midpoint or "
+         "rate. Those are read from the line its Figure 7 draws (fit through "
+         "GPT-4 Turbo to Opus 5.5, R² 0.85): mid-2026, 0.51 a year. That "
+         "read lands within a month of the printed October 2030. Its "
+         f"{_TASTEVAL_PREDICT_TARGET:.0f}% crossing is the milestone card "
+         "below, which, like this chart, sits outside the automated-coder "
+         "projection: predicting results is research skill, not coding."))
+
+
+# ── UK Cyber (AISI narrow cyber tasks)───────────────────────────────────
 
 _UKC_RESET_KEYS = [
     "ukc_proj_basis", "ukc_custom_dt_lo", "ukc_custom_dt_hi",

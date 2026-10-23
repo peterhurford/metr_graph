@@ -3097,6 +3097,53 @@ class TestRsiMilestoneCards:
         assert early < med < late
 
 
+class TestTasteVal:
+    """TasteVal's section: Table 2 transcribed, Figure 7's sigmoid read off
+    its vector path."""
+
+    def test_table_reproduces_the_papers_quoted_values(self):
+        rows = {r['name']: r for r in vp.load_tasteval()}
+        assert (rows["Claude Opus 5.5"]['mult'], rows["Claude Opus 5.5"]['lo'],
+                rows["Claude Opus 5.5"]['hi']) == (2.30, 1.15, 4.37)
+        assert rows["o1"]['mult'] == 0.07
+        assert {n for n, r in rows.items() if not r['fitted']} == {
+            "Kimi K2.5", "Kimi K3", "GLM-5.3", "GPT-3.5 Turbo Instruct",
+            "Llama 3.1 70B"}
+
+    def test_fit_reproduces_the_papers_doubling_times(self):
+        """The calibration guard on the transcription and the frontier set:
+        14.0 months a doubling before GPT-5.2, 3.0 from it."""
+        (_, _, _, before), (_, _, _, after) = vp._tasteval_fit(vp.load_tasteval())
+        assert abs(12 / before - 14.0) < 1.0
+        assert abs(12 / after - 3.0) < 0.15
+
+    def test_dates_are_epochs_release_dates(self):
+        with open(os.path.join(os.path.dirname(vp.__file__),
+                               "epoch_capabilities_index.csv")) as f:
+            epoch = {r['Model version']: r['Release date'] for r in csv.DictReader(f)}
+        missing = []
+        for r in vp.load_tasteval():
+            if r['name'] in epoch:
+                assert epoch[r['name']] == r['date'].strftime('%Y-%m-%d'), r['name']
+            else:
+                missing.append(r['name'])
+        assert missing == ["GPT-3.5 Turbo Instruct", "Llama 3.1 70B"]
+
+    def test_prediction_curve_crosses_where_the_paper_prints(self):
+        """The sigmoid closes 90% of the gap within a month of the card's
+        October 2030, and half of it before the paper went up."""
+        days = [datetime(2026, 1, 1) + timedelta(days=k) for k in range(2500)]
+        mase = vp._tasteval_predict_mase(days)
+        gap = vp._TASTEVAL_PREDICT_BASELINE - vp._TASTEVAL_PREDICT_FLOOR
+        bar = vp._TASTEVAL_PREDICT_BASELINE - vp._TASTEVAL_PREDICT_TARGET / 100 * gap
+        crossed = next(d for d, m in zip(days, mase) if m <= bar)
+        printed = datetime.strptime(vp._TASTEVAL_PREDICT_DATES[1], '%Y-%m-%d')
+        assert abs((crossed - printed).days) < 31
+        half = next(d for d, m in zip(days, mase)
+                    if m <= vp._TASTEVAL_PREDICT_BASELINE - gap / 2)
+        assert half < datetime.strptime(vp._TASTEVAL_PREDICT_PUBLISHED, '%Y-%m-%d')
+
+
 class TestUkCyberTlo:
     """Cyber range "The Last Ones" -- AISI's long-horizon cyber measure.
 

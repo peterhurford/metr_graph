@@ -1029,6 +1029,30 @@ class TestRsiTab:
                 if s.get("y0") == s.get("y1") == vp._RSI_AL5_TARGET]
         assert len(bars) == 1
 
+    def test_tasteval_section_charts_without_dating(self):
+        """TasteVal closes the evidence: the multiplier against the 1× expert
+        line, then the paper's prediction curve against its card's bar, with
+        no fan and no row in the automated-coder projection."""
+        import json
+        import visualize_projection as vp
+        at = self._rsi_app()
+        subs = [str(h.value) for h in at.subheader]
+        assert subs.index("Research direction") + 1 == subs.index(
+            "Research taste (TasteVal)")
+        figures = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+        mult = next(f for f in figures if any(
+            t.get("name") == "Frontier models (fitted)" for t in f["data"]))
+        assert mult["layout"]["yaxis"]["type"] == "log"
+        assert any(s.get("y0") == s.get("y1") == 1.0 for s in mult["layout"]["shapes"])
+        assert not any("CI" in (t.get("name") or "") for t in mult["data"])
+        pred = next(f for f in figures if any(
+            t.get("name") == "The paper's fit" for t in f["data"]))
+        bar = vp._TASTEVAL_PREDICT_BASELINE - vp._TASTEVAL_PREDICT_TARGET / 100 * (
+            vp._TASTEVAL_PREDICT_BASELINE - vp._TASTEVAL_PREDICT_FLOOR)
+        assert any(abs(s.get("y0", 0) - bar) < 1e-9 for s in pred["layout"]["shapes"])
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns)
+        assert not t["Milestone"].str.contains("TasteVal").any()
+
     def test_the_rsi_tab_has_one_automation_chart(self):
         """The ladder diagnostic and the standalone AL5 chart were folded in;
         if a third reappears the tab is drifting back apart."""
