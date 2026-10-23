@@ -13858,7 +13858,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         dist_teacher=None, channels=None, comp_shadow=None,
                         level_sd=0.0, level_ramp_yrs=0.5, us_path=None,
                         speedup=None, speedup_follow=(0.0, 0.0),
-                        speedup_scale=None, comp_cut=None):
+                        speedup_scale=None, comp_cut=None, diff_flow=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -13874,7 +13874,9 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     per-sample), the leaked stock being absorbed, down to `diff_keep` of its
     rate (0, the default, stops it). With `pure_lo=None` or
     `t_pause=None`, diffusion never decays and the law reduces to the
-    two-channel model. `t_dist_stop` (years, scalar) cuts the distillation
+    two-channel model. `diff_flow(t)`, if given, multiplies diffusion at
+    year `t`, on top of any `t_pause` ramp (the Pacing tab's paced-US leak).
+    `t_dist_stop` (years, scalar) cuts the distillation
     channel abruptly at that time — an enforcement action (API-level
     controls), unlike absorption, so no ramp — leaving the other channels
     untouched; None keeps the gap-decay law alone. `dist_keep` is the
@@ -13988,6 +13990,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                    diff_keep + (1.0 - diff_keep) * np.clip(
                        1.0 - (grid[i - 1] - tp) / max(diff_absorb_yrs, 1e-9),
                        0.0, 1.0))
+        if diff_flow is not None:
+            d_avail = d_avail * diff_flow(grid[i - 1])
         d_on = (1.0 if (t_dist_stop is None or grid[i - 1] < t_dist_stop)
                 else dist_keep)
         comp_t = (comp if comp_slow is None or grid[i - 1] < comp_slow[0]
@@ -17832,7 +17836,9 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         why = []
         if "Diffusion" in dry:
             why.append("diffusion, China has absorbed the US methods that "
-                       "leaked before the cut")
+                       "leaked before the " + ("cut" if st.session_state.get(
+                           "pc_stop_leak", _PC_DEFAULTS["pc_stop_leak"])
+                           else "pause"))
         if "Distillation" in dry:
             why.append("distillation, China has caught "
                        + ("the last model the US released before withholding "
@@ -18112,11 +18118,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 "Years to absorb what already leaked", 0.0, 3.0,
                 value=float(_PC_DEFAULTS["pc_leak_absorb"]), step=0.25,
                 format="%.2g yr", key="pc_leak_absorb",
-                disabled=not stop_leak,
-                help="After the leak is cut, diffusion fades linearly over "
-                     "this long to the share left, as China works through "
-                     "the methods it already has. 0 stops it at once. Needs "
-                     "the leak checkbox above.")
+                disabled=not stop_leak and _no_pace,
+                help="After the leak is cut, or once the US slows, diffusion "
+                     "fades linearly over this long to the share left, as "
+                     "China works through the methods it already has; a "
+                     "paced US leaks new ones at its pace. 0 stops it at "
+                     "once.")
             remote_when = st.select_slider(
                 "Remote access cut off", options=_opts,
                 value=_PC_DEFAULTS["pc_remote_when"], key="pc_remote_when",
@@ -18415,6 +18422,22 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         released = np.minimum(_us_trained_unpaced(_us_clock(t - _ship)), trained)
         return trained, released
 
+    # Diffusion at year t is the methods that reached China over the
+    # absorption window before it: each moment's US pace (a paced US makes
+    # fewer new ones) times the share the leak lets through, averaged over
+    # the window. One window for both, so a pause and a leak cut never
+    # stack into a faster drop than either alone.
+    _t_leak = (max((d_leak - anchor_d).days, 0) / 365.25 if stop_leak
+               else np.inf)
+    _leak_keep = 1.0 - leak_cut / 100.0
+
+    def _diff_flow(t):
+        a = max(leak_absorb, 1.0 / 12.0)
+        clk = lambda x: float(_pc_paced_clock(
+            x - _cn_ship, float(t_pause_s[0]), pace, pace_wins))
+        lo, cut = t - a, min(max(_t_leak, t - a), t)
+        return ((clk(cut) - clk(lo)) + _leak_keep * (clk(t) - clk(cut))) / a
+
     def us_path_cn(grid):
         """`us_path` as a China release at `grid` meets it: the US as of
         that model's training run finishing."""
@@ -18558,9 +18581,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               g_hi=g_hi_eff, algo_lo=a_lo, algo_mid=a_mid,
               algo_hi=a_hi, pace_lo=pace_lo, pace_hi=pace_hi,
               n=n_s, comp_dead=comp_dead,
-              t_pause=(max((d_leak - anchor_d).days, 0) / 365.25
-                       if stop_leak else None),
-              diff_keep=1.0 - leak_cut / 100.0, diff_absorb_yrs=leak_absorb,
               comp_slow=comp_slow,
               t_dist_stop=(max((d_dist - anchor_d).days, 0) / 365.25
                            if stop_dist else None),
@@ -18569,7 +18589,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               # Release-step scatter, as on the China tab's catch-up panel.
               us_path=us_path_cn, speedup=cn_speedup,
               speedup_follow=(tk_follow, tk['ppy'] if tk else 0.0),
-              speedup_scale=_cn_sp_scale,
+              speedup_scale=_cn_sp_scale, diff_flow=_diff_flow,
               comp_cut=(lambda t: a_partial * _g_dom_ref * _sup(t)),
               level_sd=_cc_frontier_level_sd(cn_fr),
               level_ramp_yrs=(_cc_release_gap_days(
@@ -18601,7 +18621,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
            'g_lo': _CC_CN_COMPUTE_LO, 'g_hi': _CC_CN_COMPUTE_HI,
            'comp_dead': None, 'comp_slow': None, 't_pause': None,
            't_dist_stop': None, 'dist_teacher': None,
-           'speedup_scale': None, 'comp_cut': None})
+           'speedup_scale': None, 'comp_cut': None, 'diff_flow': None})
     np.random.set_state(_rng1)
     # The run-length trade-off, read off the *same* sampled paths so the
     # comparison is paired (no MC noise between the two answers): the bar

@@ -1986,9 +1986,11 @@ class TestPacingTab:
         assert "China, no compute levers" in names
 
     def test_methods_toggle_keeps_diffusion_running(self):
-        """With the leak only half cut, diffusion keeps part of its rate and
-        China crosses sooner; uncut, it runs at full rate, sooner still."""
+        """At quarter pace, with the leak only half cut, diffusion keeps part of
+        its rate and China crosses sooner; uncut, it runs at the US's pace,
+        sooner still."""
         at = self._app()
+        at.select_slider(key="pc_pace").set_value(25).run()
 
         def surpass(at):
             m = next(m for m in at.metric
@@ -2018,6 +2020,18 @@ class TestPacingTab:
         row = diffusion(at)
         assert "leak not cut" in row["Source"]
         assert float(row["China ECI/yr at US/China cross"]) > half_rate
+
+    def test_a_pause_dries_up_diffusion_without_the_leak_lever(self):
+        """A paused US leaks no new methods: with the leak lever off,
+        diffusion still dries up after the pause."""
+        at = self._app()
+        self._paired(at.checkbox(key="pc_stop_leak").uncheck())
+        t = next(x.value for x in at.table if "Source" in x.value.columns)
+        row = t[t["Source"].str.startswith("Diffusion")].iloc[0]
+        assert "leak not cut" in row["Source"]
+        assert row["China ECI/yr at US/China cross"] == "Dried up"
+        legend = " ".join(str(c.value) for c in at.caption)
+        assert "leaked before the pause" in legend
 
     def test_why_states_the_gap_and_the_slowing_rate(self):
         """The breakdown says how much gap is left at the pause and how fast
