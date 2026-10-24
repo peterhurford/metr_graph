@@ -1045,6 +1045,7 @@ _RLI_RAW = [
     # Rechecked 2026-10-21: no new model or changed score; Scale's newest createdAt is still Opus 5.5 (10-07).
     # Rechecked 2026-10-22: no new model or changed score on either surface.
     # Rechecked 2026-10-23: Gemini 4 Argon above is the only change.
+    # Rechecked 2026-10-24: no new model or changed score; Gemini 4 Argon still absent from the CAIS API.
 ]
 
 
@@ -8436,6 +8437,7 @@ _OPENAI_REVENUE = [
     # Rechecked 2026-10-21: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
     # Rechecked 2026-10-22: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
     # Rechecked 2026-10-23: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
+    # Rechecked 2026-10-24: no TickerTrends blog post since 10-14; Epoch's OpenAI rows unchanged.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -8545,6 +8547,7 @@ _ANTHROPIC_REVENUE = [
     # Rechecked 2026-10-21: still no run rate on anthropic.com/news or EDGAR; Epoch's newest row unchanged.
     # Rechecked 2026-10-22: still none (10-21 LTBT post states no run rate; no public S-1).
     # Rechecked 2026-10-23: still none (10-22 posts state no run rate); Epoch's newest row unchanged.
+    # Rechecked 2026-10-24: still none, no public S-1. Excluded: Crunchbase News's ~$67B (10-22), Q3 revenue x4.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -8650,6 +8653,8 @@ _CN_REVENUE = {
              "company's reported revenue run rate for August”."),
             # Not added (checked 2026-10-16): Bloomberg (2026-10-06) calls $1B the "current"
             # ARR, people familiar -- no new level or as-of, likely the August figure restated.
+            # Excluded (checked 2026-10-24): Nomura's ~$1.2B ARR for September (via ChainCatcher,
+            # 2026-10-10), a broker's estimate, not the company or people familiar.
         ],
     },
     "DeepSeek": {
