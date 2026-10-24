@@ -105,7 +105,7 @@ test_visualize_projection.py   unit tests against a fake Streamlit module
 test_integration.py            integration tests through Streamlit's AppTest runtime
 conftest.py               test-speed setup (see below)
 CLAUDE.md                 the design record — read this before changing anything non-trivial
-.claude/commands/update-data.md   the data-refresh recipe
+.claude/commands/update_data.md   the data-refresh recipe
 *.csv, *.yaml             the data feeds
 ```
 
@@ -155,7 +155,7 @@ one, re-run it before chasing it.
 
 ## Data
 
-Local data files and hardcoded tables supply the indicators. `.claude/commands/update-data.md` has
+Local data files and hardcoded tables supply the indicators. `.claude/commands/update_data.md` has
 the full refresh recipe, including the AISI cyber data that is deliberately *not* ingested.
 
 | File / table | Source | Type |

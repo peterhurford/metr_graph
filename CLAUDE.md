@@ -410,7 +410,7 @@ has no main-column headings, so it has no section to link to.
 
 ### Data Sources and How to Update
 
-Six external feeds; the rest are derived. `.claude/commands/update-data.md` has the full
+Six external feeds; the rest are derived. `.claude/commands/update_data.md` has the full
 recipe, including the AISI cyber data deliberately *not* ingested.
 
 | File / table | Source | How to refresh |
