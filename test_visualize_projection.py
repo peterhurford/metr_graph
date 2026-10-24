@@ -4436,7 +4436,8 @@ class TestChinaComputeSources:
         none = vp._cn_src_supply_cut(today, today, {})
         assert none(0.5) == 0.0 and none(3.0) == 0.0
         path = vp._duv_cut_path(range(2027, 2031), True, 0.15,
-                                vp._DUV_CN_OUTPUT_GROWTH)
+                                vp._DUV_CN_OUTPUT_GROWTH, wafer=0.0,
+                                wafer_now=0.0)
         assert path["2027"] < 0.02 < path["2030"]
         cut = vp._cn_src_supply_cut(today, today, dict(dom_cut_path=path))
         assert cut(0.5) < cut(3.5)
@@ -4523,15 +4524,16 @@ class TestDuvProduction:
         assert cuts == sorted(cuts) and cuts[-1] > cuts[0] + 0.05
 
     def test_servicing_ban_waits_for_the_fleet_to_fall_to_hbm_output(self):
-        """HBM, not lithography, limits China's output, so a shrinking fleet
-        costs nothing until it falls below that output; then the cut rises
-        with the decay rate."""
+        """HBM-limited output loses nothing to a shrinking fleet until it
+        falls below that output; then the cut rises with the decay rate."""
         t0 = datetime(2026, 10, 1)
         near = vp._duv_policy_cut(t0, datetime(2028, 12, 31),
-                                  ban_imports=False, decay=0.15)
+                                  ban_imports=False, decay=0.15, wafer=0.0,
+                                  wafer_now=0.0)
         assert near < 0.01
         t1 = datetime(2035, 12, 31)
-        cuts = [vp._duv_policy_cut(t0, t1, ban_imports=False, decay=d)
+        cuts = [vp._duv_policy_cut(t0, t1, ban_imports=False, decay=d,
+                                   wafer=0.0, wafer_now=0.0)
                 for d in (0.05, 0.15, 0.30)]
         assert cuts[0] < cuts[1] < cuts[2] <= 1.0 and cuts[1] > 0.05
         # Stacking the import ban on top never helps China.
@@ -4539,6 +4541,32 @@ class TestDuvProduction:
         svc = vp._duv_policy_cut(t0, datetime(2035, 12, 31),
                                  ban_imports=False, decay=0.15)
         assert both >= svc
+
+    def test_wafer_bound_output_shrinks_with_the_fleet_at_once(self):
+        """The wafer-bound share loses output from 2027, before the eroded
+        ceiling reaches the HBM-limited rest; all of it bound gives the
+        decay itself, and no servicing ban gives no cut."""
+        g = vp._DUV_CN_OUTPUT_GROWTH
+        path = {w: vp._duv_cut_path((2027, 2028), False, 0.15, g,
+                                    wafer=w, wafer_now=w)
+                for w in (0.0, 0.3, 1.0)}
+        assert path[0.0]["2028"] < 0.01 < path[0.3]["2028"] < path[1.0]["2028"]
+        # Fully wafer-bound: output falls 15%/yr against its own growth.
+        assert path[1.0]["2028"] == pytest.approx(0.40, abs=0.05)
+        assert vp._duv_cut_path((2028,), False, 0.0, 1.6, wafer=1.0) == {}
+
+    def test_wafer_bound_share_rises_to_the_slider_by_its_year(self):
+        """The share runs from today's to the slider's by _DUV_WAFER_BY and
+        holds; a higher end share cuts more once the ramp is done."""
+        now = vp._DUV_WAFER_SHARE_NOW
+        assert vp._duv_wafer_share(vp._DUV_WAFER_FROM, 0.5) == now
+        assert vp._duv_wafer_share(vp._DUV_WAFER_BY, 0.5) == 0.5
+        assert vp._duv_wafer_share(2033.0, 0.5) == 0.5
+        assert now < vp._duv_wafer_share(2027.5, 0.5) < 0.5
+        g = vp._DUV_CN_OUTPUT_GROWTH
+        flat = vp._duv_cut_path((2029,), False, 0.15, g, wafer=now)
+        rise = vp._duv_cut_path((2029,), False, 0.15, g, wafer=0.5)
+        assert rise["2029"] > flat["2029"] + 0.03
 
     def test_realized_start_is_the_reports_ifp_range(self):
         """The 2026 grid centres on IFP's domestic output, the same 2026

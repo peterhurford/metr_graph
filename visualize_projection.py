@@ -10898,6 +10898,16 @@ _DUV_CN_OUTPUT_GROWTH_RANGE = (1.2, 5.0)
 # a judgment, exposed as a slider: see CHINA_COMPUTE_JUDGMENTS.md §5.
 _DUV_SERVICE_DECAY_PCT = 15
 _DUV_SERVICE_DECAY_MAX = 50
+# Share of China's AI chip output limited by advanced-node (7nm) wafer
+# capacity rather than HBM, which the eroding fleet cuts at once: CTS names
+# the non-HBM Ascend 950PR as wafer-bound. It runs in a straight line from
+# _DUV_WAFER_SHARE_NOW at _DUV_WAFER_FROM to the slider's share
+# (`pc_duv_wafer`, default _DUV_WAFER_SHARE_PCT) at _DUV_WAFER_BY, held after,
+# as China's own HBM eases that limit. Both shares are judgments: see
+# CHINA_COMPUTE_JUDGMENTS.md §5.
+_DUV_WAFER_SHARE_NOW = 0.30
+_DUV_WAFER_SHARE_PCT = 50
+_DUV_WAFER_FROM, _DUV_WAFER_BY = 2026.5, 2028.5
 
 
 def _duv_mtime():
@@ -11117,7 +11127,9 @@ def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
     return {"flow": out_f, "stock": out_s}
 
 
-def _duv_cut_path(years, ban_imports, decay, growth):
+def _duv_cut_path(years, ban_imports, decay, growth,
+                  wafer=_DUV_WAFER_SHARE_PCT / 100.0,
+                  wafer_now=_DUV_WAFER_SHARE_NOW):
     """{year: share of that year's chip-output growth the DUVi policies
     remove} (`_duv_policy_cut` over each calendar year), so a cut that only
     binds in the 2030s costs China nothing earlier."""
@@ -11125,7 +11137,8 @@ def _duv_cut_path(years, ban_imports, decay, growth):
         return {}
     return {str(y): _duv_policy_cut(datetime(y, 1, 1), datetime(y + 1, 1, 1),
                                     ban_imports=ban_imports, decay=decay,
-                                    growth=growth) or 0.0
+                                    growth=growth, wafer=wafer,
+                                    wafer_now=wafer_now) or 0.0
             for y in years}
 
 
@@ -11222,20 +11235,35 @@ def _duv_realized_grid(n=15, growth=_DUV_CN_OUTPUT_GROWTH):
                          growth * _DUV_CN_OUTPUT_SPREAD)]
 
 
-def _duv_log_output(t, lv0, lg, rows, decay=0.0):
+def _duv_wafer_share(t, wafer, wafer_now=_DUV_WAFER_SHARE_NOW):
+    """Wafer-bound share of China's AI chip output at year `t`: `wafer_now`
+    to `wafer` in a straight line over _DUV_WAFER_FROM.._DUV_WAFER_BY."""
+    f = min(max((t - _DUV_WAFER_FROM) / (_DUV_WAFER_BY - _DUV_WAFER_FROM),
+                0.0), 1.0)
+    return wafer_now + (wafer - wafer_now) * f
+
+
+def _duv_log_output(t, lv0, lg, rows, decay=0.0, wafer=0.0, wafer_now=0.0):
     """log10 China output at year `t`: its own trend, capped by what its
     lithography fleet can print, that fleet shrinking `decay`/yr without
-    servicing. The trend is HBM-limited, so lost scanners cost output only
-    once the shrunken fleet falls below it."""
+    servicing. The wafer-bound share of the trend (`_duv_wafer_share`)
+    shrinks with the fleet at once; the rest is HBM-limited, so lost
+    scanners cost it output only once the shrunken fleet falls below it."""
     cap = _duv_log_p50(rows, t)
+    trend = lv0 + lg * (t - 2026.5)
     if decay > 0:
-        cap += np.log10(1.0 - decay) * max(t - _DUV_POLICY_YEAR, 0.0)
-    return min(lv0 + lg * (t - 2026.5), cap)
+        left = (1.0 - decay) ** max(t - _DUV_POLICY_YEAR, 0.0)
+        cap += np.log10(left)
+        w = _duv_wafer_share(t, wafer, wafer_now)
+        trend += np.log10(1.0 - w + w * left)
+    return min(trend, cap)
 
 
 def _duv_policy_cut(start, end, ban_imports=True, decay=0.0,
                     alloc=_DUV_BAN_ALLOC, data=None,
-                    growth=_DUV_CN_OUTPUT_GROWTH):
+                    growth=_DUV_CN_OUTPUT_GROWTH,
+                    wafer=_DUV_WAFER_SHARE_PCT / 100.0,
+                    wafer_now=_DUV_WAFER_SHARE_NOW):
     """Share of China's chip-output growth the DUVi policies remove, start→end.
 
     1 − (OOM/yr under the policy) / (OOM/yr with imports and servicing
@@ -11243,8 +11271,9 @@ def _duv_policy_cut(start, end, ban_imports=True, decay=0.0,
     trend capped by the report's ceiling, so an import ban bites only once
     the banned ceiling binds, which today's low output puts years out.
     `decay` (fraction/yr) is the servicing ban: it erodes the fleet, so it
-    lowers the ceiling from 2027 and bites once that eroded ceiling falls to
-    China's HBM-limited output. None when the window is empty.
+    lowers the ceiling from 2027, cuts the wafer-bound share of output
+    (`wafer_now` rising to `wafer` by _DUV_WAFER_BY) at once, and the HBM-limited rest once that eroded
+    ceiling falls to it. None when the window is empty.
     """
     data = data or load_duv_production(_duv_mtime())
     t0, t1 = _duv_frac_year(start), _duv_frac_year(end)
@@ -11258,8 +11287,9 @@ def _duv_policy_cut(start, end, ban_imports=True, decay=0.0,
     for lv0, lg in _duv_realized_grid(growth=growth):
         g_c = (_duv_log_output(t1, lv0, lg, cont)
                - _duv_log_output(t0, lv0, lg, cont)) / (t1 - t0)
-        g_p = (_duv_log_output(t1, lv0, lg, pol, decay)
-               - _duv_log_output(t0, lv0, lg, pol, decay)) / (t1 - t0)
+        g_p = (_duv_log_output(t1, lv0, lg, pol, decay, wafer, wafer_now)
+               - _duv_log_output(t0, lv0, lg, pol, decay, wafer, wafer_now)
+               ) / (t1 - t0)
         if g_c > 0:
             cuts.append(min(max(1.0 - g_p / g_c, 0.0), 1.0))
     return float(np.mean(cuts)) if cuts else None
@@ -16063,7 +16093,8 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_pause_mo", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
                   "pc_cut_smuggling", "pc_stop_legal", "pc_dist_cut",
-                  "pc_duv_service", "pc_duv_decay", "pc_duv_growth",
+                  "pc_duv_service", "pc_duv_decay", "pc_duv_wafer",
+                  "pc_duv_growth",
                   "pc_dist_when", "pc_remote_when", "pc_smug_when",
                   "pc_legal_when", "pc_hbm", "pc_hbm_when", "pc_payoff",
                   "pc_cn_run",
@@ -16156,6 +16187,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_dist_cut": 95,
                 "pc_duv_service": False,
                 "pc_duv_decay": _DUV_SERVICE_DECAY_PCT,
+                "pc_duv_wafer": _DUV_WAFER_SHARE_PCT,
                 "pc_duv_growth": _DUV_CN_OUTPUT_GROWTH,
                 "pc_dist_when": _PC_WHEN_NOW,
                 "pc_remote_when": _PC_WHEN_NOW,
@@ -18238,15 +18270,22 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  f"{_duv_end.year}. That cut comes off China's domestic compute "
                  "growth, compounding with the other chip levers. See the "
                  "China tab's lithography chart.")
+        _ss = st.session_state
+        _svc_path = _duv_cut_path(
+            (2028,), False,
+            _ss.get("pc_duv_decay", _PC_DEFAULTS["pc_duv_decay"]) / 100.0,
+            _ss.get("pc_duv_growth", _PC_DEFAULTS["pc_duv_growth"]),
+            _ss.get("pc_duv_wafer", _PC_DEFAULTS["pc_duv_wafer"]) / 100.0)
         duv_service = st.checkbox(
             "Ban servicing of DUVi at China's advanced fabs from 2027",
             key="pc_duv_service",
             help="No foreign servicing, spare parts or field upgrades for the "
                  "scanners making China's AI chips, so that fleet erodes at the "
-                 "rate set under *Advanced*. HBM, not lithography, limits "
-                 "China's output today, so the shrinking fleet costs output "
-                 "only once it falls below what HBM supply allows: little "
-                 "before 2030 at the default rate.")
+                 "rate set under *Advanced*. The output bound by 7nm wafer "
+                 "capacity shrinks with it at once; the HBM-limited rest only "
+                 "once the fleet falls below what HBM supply allows. At these "
+                 f"settings: **{_svc_path['2028']:.0%}** less chip-output "
+                 "growth in 2028.")
         _cut_end = horizon if horizon is not None else _PC_HORIZON
         # The cut-off dates sit under Advanced, below this help text, so
         # read them a rerun early, as the DUVi growth rate is.
@@ -18428,6 +18467,22 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                      "assume China self-services and cannibalizes its legacy "
                      "fleet for parts; high ones that lasers and stages go down "
                      "without foreign consumables. Needs the checkbox above.")
+            duv_wafer = st.slider(
+                "Share of China's AI chip output limited by 7nm wafers, "
+                f"{int(_DUV_WAFER_BY)}", 0,
+                100, value=_PC_DEFAULTS["pc_duv_wafer"], step=5,
+                format="%d%%", key="pc_duv_wafer", disabled=not duv_service,
+                help="The rest is limited by HBM supply. This share is bound "
+                     "by advanced-fab wafer capacity (CTS names the non-HBM "
+                     "Ascend 950PR), so every scanner those fabs lose costs it "
+                     "output at once; the HBM-limited rest loses output only "
+                     "once the shrunken fleet falls below it. It runs from "
+                     f"{_DUV_WAFER_SHARE_NOW:.0%} in mid-"
+                     f"{int(_DUV_WAFER_FROM)} to this share in mid-"
+                     f"{int(_DUV_WAFER_BY)}, held after, as China's own HBM "
+                     "eases that limit. Both shares are judgments: no source "
+                     "splits China's output this way. Needs the checkbox "
+                     "above.")
             duv_growth = st.slider(
                 "Growth of China's AI chip output (\u00d7/yr, median)",
                 *_DUV_CN_OUTPUT_GROWTH_RANGE,
@@ -18479,7 +18534,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # The DUVi policies and the slider are independent levers: they compound.
     duv_cut = (_duv_policy_cut(today, _duv_end, ban_imports=duv_ban,
                                decay=(duv_decay / 100.0 if duv_service
-                                      else 0.0), growth=duv_growth) or 0.0)
+                                      else 0.0), growth=duv_growth,
+                               wafer=duv_wafer / 100.0) or 0.0)
     d_smug = _pc_when_date(smug_when, today)
     d_legal = _pc_when_date(legal_when, today)
     smug_cut = _cn_src_channel_cut(d_smug, _cut_end,
@@ -18711,7 +18767,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # year by year, so a cut that binds in the 2030s costs nothing sooner.
     _duv_path = _duv_cut_path(
         range(today.year, 2031), duv_ban,
-        duv_decay / 100.0 if duv_service else 0.0, duv_growth)
+        duv_decay / 100.0 if duv_service else 0.0, duv_growth,
+        duv_wafer / 100.0)
     _mix = dict(smug_cut=cut_smuggling / 100.0, smug_start=d_smug,
                 stop_legal=bool(stop_legal), legal_start=d_legal,
                 remote_cut=d_remote if stop_remote else None,

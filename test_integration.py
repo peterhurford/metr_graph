@@ -2246,6 +2246,7 @@ class TestPacingTab:
         assert at.checkbox(key="pc_duv_ban").value is False
         assert at.checkbox(key="pc_duv_service").value is False
         assert at.slider(key="pc_duv_decay").disabled
+        assert at.slider(key="pc_duv_wafer").disabled
         assert at.slider(key="pc_duv_growth").disabled
 
         def _slowed(at, names):
@@ -2271,6 +2272,12 @@ class TestPacingTab:
         assert imp < both / 2 and both < 100
         at.slider(key="pc_duv_decay").set_value(40).run()
         assert _slowed(at, "import and servicing bans") > both
+        at.slider(key="pc_duv_decay").set_value(15).run()
+        # Output bound by 7nm wafers shrinks with the fleet at once.
+        at.slider(key="pc_duv_wafer").set_value(0).run()
+        assert _slowed(at, "import and servicing bans") < both
+        at.slider(key="pc_duv_wafer").set_value(
+            50).run()
 
         at.slider(key="pc_duv_decay").set_value(15).run()
         at.slider(key="pc_dom_slow").set_value(50).run()

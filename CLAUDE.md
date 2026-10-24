@@ -1283,14 +1283,20 @@ things are load-bearing:
    its own constant rather than `_WC_GROWTH`, and Pacing exposes it as `pc_duv_growth`
    (`test_faster_output_growth_reaches_the_ceiling_sooner`). Don't revert to the
    ceiling-to-ceiling ratio; it charged the ban ~24% for a limit China hasn't reached.
-3. **A servicing ban erodes the fleet, and bites once it falls below HBM-limited output.**
-   `pc_duv_service` lowers the ceiling by (1 − `pc_duv_decay`) per year from
-   `_DUV_POLICY_YEAR`; China's own trend is HBM-limited, so the cut starts only where the
-   eroded ceiling crosses it (`test_servicing_ban_waits_for_the_fleet_to_fall_to_hbm_output`):
-   ~3% to 2031 alone at 15%/yr, ~9% with the import ban. The rate (`_DUV_SERVICE_DECAY_PCT`, default 15%) is a judgment the
-   report does not give; it sits under the pause panel's *Advanced* beside
-   `pc_duv_growth`, and
-   `CHINA_COMPUTE_JUDGMENTS.md` §5 records it.
+3. **A servicing ban erodes the fleet: wafer-bound output at once, HBM-bound output once
+   the fleet falls below it.** `pc_duv_service` lowers the ceiling by (1 − `pc_duv_decay`)
+   per year from `_DUV_POLICY_YEAR`. The wafer-bound share of China's trend (output bound by
+   7nm wafer capacity, like the non-HBM Ascend 950PR) shrinks by the same factor at once
+   (`test_wafer_bound_output_shrinks_with_the_fleet_at_once`); it runs from
+   `_DUV_WAFER_SHARE_NOW` (30%) in mid-2026 to `pc_duv_wafer` (`_DUV_WAFER_SHARE_PCT`,
+   default 50%) in mid-2028, held after, as China's own HBM eases that limit
+   (`_duv_wafer_share`, `test_wafer_bound_share_rises_to_the_slider_by_its_year`). The
+   HBM-limited rest is cut only where the eroded ceiling crosses it
+   (`test_servicing_ban_waits_for_the_fleet_to_fall_to_hbm_output`). At the defaults: ~21%
+   less chip-output growth in 2028, ~18% to 2031 alone, ~23% with the import ban. The
+   rate (`_DUV_SERVICE_DECAY_PCT`, 15%) and both shares are judgments the report does
+   not give; they sit under the pause panel's *Advanced* beside `pc_duv_growth`, and
+   `CHINA_COMPUTE_JUDGMENTS.md` §5 records them.
 
 On the Pacing tab the chip-supply levers (DUVi, HBM, smuggling, legal sales) act year by
 year: `_duv_cut_path` gives each calendar year's DUVi cut, the compute mix
