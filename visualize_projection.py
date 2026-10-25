@@ -1046,6 +1046,8 @@ _RLI_RAW = [
     # Rechecked 2026-10-22: no new model or changed score on either surface.
     # Rechecked 2026-10-23: Gemini 4 Argon above is the only change.
     # Rechecked 2026-10-24: no new model or changed score; Gemini 4 Argon still absent from the CAIS API.
+    # Rechecked 2026-10-25: no new model or changed score. The CAIS API now carries Gemini 3.7 Flash (5.00),
+    # closing that asymmetry; Gemini 4 Argon is still Scale-only.
 ]
 
 
@@ -8438,6 +8440,7 @@ _OPENAI_REVENUE = [
     # Rechecked 2026-10-22: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
     # Rechecked 2026-10-23: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
     # Rechecked 2026-10-24: no TickerTrends blog post since 10-14; Epoch's OpenAI rows unchanged.
+    # Rechecked 2026-10-25: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -8548,6 +8551,7 @@ _ANTHROPIC_REVENUE = [
     # Rechecked 2026-10-22: still none (10-21 LTBT post states no run rate; no public S-1).
     # Rechecked 2026-10-23: still none (10-22 posts state no run rate); Epoch's newest row unchanged.
     # Rechecked 2026-10-24: still none, no public S-1. Excluded: Crunchbase News's ~$67B (10-22), Q3 revenue x4.
+    # Rechecked 2026-10-25: still none (no anthropic.com/news post since 10-22, no public S-1).
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
