@@ -14146,7 +14146,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         dist_teacher=None, channels=None, comp_shadow=None,
                         level_sd=0.0, level_ramp_yrs=0.5, us_path=None,
                         speedup=None, speedup_follow=(0.0, 0.0),
-                        speedup_scale=None, comp_cut=None, diff_flow=None):
+                        speedup_scale=None, comp_cut=None, diff_flow=None,
+                        dist_sched=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
 
         rate = pace · (a_partial·g + pure + diff·D(t)
@@ -14168,7 +14169,9 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     channel abruptly at that time — an enforcement action (API-level
     controls), unlike absorption, so no ramp — leaving the other channels
     untouched; None keeps the gap-decay law alone. `dist_keep` is the
-    share of the channel left after the cut (0, the default, stops it). `comp_dead` (start, end)
+    share of the channel left after the cut (0, the default, stops it).
+    `dist_sched(t)`, if given, multiplies the channel at year `t` on top of
+    the cut (defenses that tighten over time). `comp_dead` (start, end)
     in years zeroes the compute term inside that window — a level setback:
     capacity lost at `start` must be regrown (the window's length = lost
     OOM / regrowth pace) before further growth adds capability again.
@@ -14282,6 +14285,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
             d_avail = d_avail * diff_flow(grid[i - 1])
         d_on = (1.0 if (t_dist_stop is None or grid[i - 1] < t_dist_stop)
                 else dist_keep)
+        if dist_sched is not None:
+            d_on = d_on * dist_sched(grid[i - 1])
         comp_t = (comp if comp_slow is None or grid[i - 1] < comp_slow[0]
                   else comp_slow[1])
         cut_t = comp_cut(grid[i - 1]) if comp_cut is not None else 0.0
@@ -16109,6 +16114,8 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_cn_run",
                   "pc_stop_leak", "pc_leak_cut", "pc_leak_when", "pc_leak_absorb",
                   "pc_pace", "pc_tk_follow",
+                  "pc_sec_sched", "pc_sec_when", "pc_sec_sprint",
+                  "pc_sec_halve", "pc_sec_on",
                   "pc_win_n"] + \
                  [f"pc_win{i}_{f}" for i in range(1, _PC_WIN_MAX + 1)
                   for f in ("pace", "start", "end")] + \
@@ -16147,6 +16154,24 @@ def _pc_dist_keep(cut_pct, per_oom=_PC_DIST_PER_OOM):
     if cut_pct >= 100:
         return 0.0
     return max(0.0, 1.0 - per_oom * float(np.log10(100.0 / (100.0 - cut_pct))))
+
+
+# Defenses that tighten over time: from their start a sprint removes
+# `pc_sec_sprint`% of a channel over _PC_SEC_SPRINT_YRS, then what is left
+# halves every `pc_sec_halve` years.
+_PC_SEC_SPRINT_YRS = 0.5
+_PC_SEC_ON_OPTIONS = ["Distillation and the leak", "Distillation only",
+                      "The leak only"]
+
+
+def _pc_sec_keep(t, start, sprint, halve):
+    """Share of a channel the defense schedule leaves at year `t`: 1 before
+    `start`, falling linearly by `sprint` over the sprint, then halving every
+    `halve` years (inf: never)."""
+    t = np.asarray(t, dtype=float)
+    ramp = np.clip((t - start) / _PC_SEC_SPRINT_YRS, 0.0, 1.0)
+    after = np.maximum(t - start - _PC_SEC_SPRINT_YRS, 0.0)
+    return (1.0 - sprint * ramp) * 0.5 ** (after / halve)
 
 
 def _pc_dist_cut_label(cut_pct):
@@ -16207,6 +16232,9 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_leak_when": _PC_WHEN_NOW,
                 "pc_leak_absorb": _CC_DIFF_ABSORB_YRS,
                 "pc_tk_follow": 0.8,
+                "pc_sec_sched": False, "pc_sec_when": _PC_WHEN_NOW,
+                "pc_sec_sprint": 50, "pc_sec_halve": 1.0,
+                "pc_sec_on": "Distillation and the leak",
                 "pc_win_n": 0,
                 **{k: v for i in range(1, _PC_WIN_MAX + 1) for k, v in (
                     (f"pc_win{i}_pace", 50),
@@ -18354,6 +18382,17 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             help="100% stops diffusion once the leaked stock is absorbed; "
                  "lower keeps that share of the channel. Needs the checkbox "
                  "above.")
+        sec_sched = st.checkbox(
+            "Defenses tighten over time", key="pc_sec_sched",
+            help="Security against distillation and the methods leak improves "
+                 "on a schedule rather than in one cut: from today (or the "
+                 "date under *Advanced*) a six-month sprint removes "
+                 f"{_ss.get('pc_sec_sprint', _PC_DEFAULTS['pc_sec_sprint'])}% "
+                 "of each channel, then what is left halves every "
+                 f"{_ss.get('pc_sec_halve', _PC_DEFAULTS['pc_sec_halve']):g} "
+                 "yr. It stacks on the cuts above. The schedule is the same "
+                 "whatever the US does, so it flatters pacing if faster AI "
+                 "would speed up security work. Set under *Advanced*.")
         with (advanced_box if advanced_box is not None
               else st.expander("Advanced")):
             st.markdown("**Pacing windows**")
@@ -18394,7 +18433,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             st.markdown("**When the controls bite**")
             _opts = _pc_when_options(today)
             for _k in ("pc_dist_when", "pc_leak_when", "pc_remote_when",
-                       "pc_smug_when", "pc_legal_when", "pc_hbm_when"):
+                       "pc_smug_when", "pc_legal_when", "pc_hbm_when",
+                       "pc_sec_when"):
                 if st.session_state.get(_k, _PC_WHEN_NOW) not in _opts:
                     st.session_state.pop(_k, None)
             dist_when = st.select_slider(
@@ -18449,6 +18489,36 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             st.caption("All default to *Now*, which is what the levers on "
                        "their own mean. Moving a slider right buys China more "
                        "time on that channel before it closes.")
+            st.divider()
+            st.markdown("**Defenses that tighten over time**")
+            sec_when = st.select_slider(
+                "Defenses start", options=_opts,
+                value=_PC_DEFAULTS["pc_sec_when"], key="pc_sec_when",
+                disabled=not sec_sched,
+                help="When the sprint begins. Needs the checkbox above.")
+            sec_sprint = st.slider(
+                "Removed by the six-month sprint", 0, 90,
+                value=_PC_DEFAULTS["pc_sec_sprint"], step=5, format="%d%%",
+                key="pc_sec_sprint", disabled=not sec_sched,
+                help="Share of each channel the first six months of work "
+                     "remove. 50% is the ambitious case: half gone six "
+                     "months in.")
+            sec_halve = st.slider(
+                "Then what is left halves every", 0.5, 5.0,
+                value=float(_PC_DEFAULTS["pc_sec_halve"]), step=0.5,
+                format="%.2g yr", key="pc_sec_halve", disabled=not sec_sched,
+                help="After the sprint, the channel halves this often. 1 yr "
+                     "is the ambitious case; slower security work is a "
+                     "longer halving time.")
+            if st.session_state.get("pc_sec_on") not in _PC_SEC_ON_OPTIONS:
+                st.session_state.pop("pc_sec_on", None)
+            sec_on = st.selectbox(
+                "Defenses apply to", _PC_SEC_ON_OPTIONS,
+                index=_PC_SEC_ON_OPTIONS.index(_PC_DEFAULTS["pc_sec_on"]),
+                key="pc_sec_on", disabled=not sec_sched,
+                help="Distillation defenses (API controls, output monitoring) "
+                     "can't reach ideas that diffuse through papers and "
+                     "vendors, so the two can be set apart.")
             st.divider()
             st.markdown("**Any other slowdown of China's buildout**")
             dom_slow_user = st.slider(
@@ -18572,6 +18642,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _supply_txt = ", ".join(f"{c:.0%} from {n}" for n, c in _supply)
     d_dist = _pc_when_date(dist_when, today)
     d_leak = _pc_when_date(leak_when, today)
+    d_sec = _pc_when_date(sec_when, today)
+    sec_dist = sec_sched and sec_on != "The leak only"
+    sec_leak = sec_sched and sec_on != "Distillation only"
     d_remote = _pc_when_date(remote_when, today)
     cc_rows = load_eci_compute(mtime=_eci_mtime())
     eci_all = load_eci_frontier(mtime=_eci_mtime())
@@ -18744,13 +18817,26 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _t_leak = (max((d_leak - anchor_d).days, 0) / 365.25 if stop_leak
                else np.inf)
     _leak_keep = 1.0 - leak_cut / 100.0
+    _t_sec = max((d_sec - anchor_d).days, 0) / 365.25
+
+    def _sec(t):
+        return _pc_sec_keep(t, _t_sec, sec_sprint / 100.0, sec_halve)
 
     def _diff_flow(t):
         a = max(leak_absorb, 1.0 / 12.0)
         clk = lambda x: float(_pc_paced_clock(
             x - _cn_ship, float(t_pause_s[0]), pace, pace_wins))
-        lo, cut = t - a, min(max(_t_leak, t - a), t)
-        return ((clk(cut) - clk(lo)) + _leak_keep * (clk(t) - clk(cut))) / a
+        if not sec_leak:
+            lo, cut = t - a, min(max(_t_leak, t - a), t)
+            return ((clk(cut) - clk(lo))
+                    + _leak_keep * (clk(t) - clk(cut))) / a
+        # The schedule varies within the window: each month's leak passes
+        # at that month's share.
+        e = np.linspace(t - a, t, max(int(round(a * 12)), 1) + 1)
+        c = np.array([clk(x) for x in e])
+        mid = 0.5 * (e[1:] + e[:-1])
+        w = np.where(mid >= _t_leak, _leak_keep, 1.0) * _sec(mid)
+        return float(np.sum(np.diff(c) * w)) / a
 
     def us_path_cn(grid):
         """`us_path` as a China release at `grid` meets it: the US as of
@@ -18905,6 +18991,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               us_path=us_path_cn, speedup=cn_speedup,
               speedup_follow=(tk_follow, tk['ppy'] if tk else 0.0),
               speedup_scale=_cn_sp_scale, diff_flow=_diff_flow,
+              dist_sched=_sec if sec_dist else None,
               comp_cut=(lambda t: a_partial * _g_dom_ref * _sup(t)),
               level_sd=_cc_frontier_level_sd(cn_fr),
               level_ramp_yrs=(_cc_release_gap_days(
@@ -18936,7 +19023,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
            'g_lo': _CC_CN_COMPUTE_LO, 'g_hi': _CC_CN_COMPUTE_HI,
            'comp_dead': None, 'comp_slow': None, 't_pause': None,
            't_dist_stop': None, 'dist_teacher': None,
-           'speedup_scale': None, 'comp_cut': None, 'diff_flow': None})
+           'speedup_scale': None, 'comp_cut': None, 'diff_flow': None,
+           'dist_sched': None})
     np.random.set_state(_rng1)
     # The run-length trade-off, read off the *same* sampled paths so the
     # comparison is paired (no MC noise between the two answers): the bar
@@ -19172,6 +19260,15 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     else:
         _asm_dist = ("Distillation: the paused frontier itself stays "
                      "queryable, fading only as China closes the gap.")
+    if sec_sched:
+        _sec_what = {"Distillation only": "distillation",
+                     "The leak only": "the methods leak"}.get(
+                         sec_on, "distillation and the methods leak")
+        _asm_dist += (f" Defenses tighten from "
+                      + ("today" if d_sec <= today else f"{d_sec:%b %Y}")
+                      + f": a six-month sprint removes {sec_sprint}% of "
+                      f"{_sec_what}, then what is left halves every "
+                      f"{sec_halve:g} yr (checkbox).")
 
     # ── The race, in ECI: US climbs to the bar and freezes; China's fan
     # catches up and crosses. The whole chart rides the sidebar milestone:

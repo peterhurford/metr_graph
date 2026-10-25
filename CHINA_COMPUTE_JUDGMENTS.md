@@ -116,6 +116,14 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 - **Effect (Pacing, no pacing, default payoff):** China's lag rises from 5.0 / 4.9 / 7.5 months (coder / RSI / ultraintelligence) at ×1.68 to ~6.5 / 6.8 / 10.2. At ×2.64: 8.1 / 9.0 / 13.4.
 - **Revisit when:** new Chinese frontier runs are disclosed, a catalogue refresh moves the China fits, or late disclosure of 2025–26 runs changes the record.
 
+### 9. Defenses that tighten over time (`pc_sec_sched`, `_pc_sec_keep`)
+
+- **Value:** off by default. When on, from `pc_sec_when` a sprint removes `pc_sec_sprint` (default 50%) of distillation and the methods leak over six months, then what is left halves every `pc_sec_halve` (default 1 yr). It multiplies the step cuts, and `pc_sec_on` can restrict it to one channel.
+- **Why these defaults:** the ambitious schedule in a draft pacing analysis we reviewed (Oct 2026), so its result can be reproduced here. It is a judgment with no measured security track record behind it. Distillation defenses can't reach ideas that spread through papers and vendors, so the leak half is the more optimistic one.
+- **It is the same whatever the US does,** which flatters pacing if a racing US's more capable AIs would speed up security work.
+- **Effect (2,000 draws, US at 45% pace from Jan 2027, through 2035):** at ultraintelligence China goes from 9 months ahead to 6 months behind (2 months behind at a 2-yr halving); with no pacing, from 1.3 to 3.3 yr behind. With a US pause today, China reaches the paused frontier in Dec 2027 instead of Nov 2027.
+- **Revisit when:** labs publish measured distillation-defense results over time, or a security standard (SL4/SL5) is adopted with a timetable.
+
 ## Checked and deliberately left alone
 
 - **Catalogue coverage.** It holds ~0.94 GW of IT power in China at end-2026, against SemiAnalysis's 24 GW national fleet (~4%; the US is ~25%). That is irrelevant to largest-site views as long as the largest sites are present.

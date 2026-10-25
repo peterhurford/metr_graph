@@ -2045,6 +2045,29 @@ class TestPacingTab:
         assert "leak not cut" in row["Source"]
         assert float(row["China ECI/yr at US/China cross"]) > half_rate
 
+    def test_defenses_that_tighten_only_ever_slow_china(self):
+        """At quarter pace with no other lever, the defense schedule delays
+        China's catch-up, a faster halving delays it more, and the settings
+        hover says so."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        at.selectbox(key="pc_end_year").set_value(2035).run()
+        at.select_slider(key="pc_pace").set_value(25).run()
+
+        def surpass(at):
+            m = next(m for m in at.metric
+                     if "Time for China to surpass" in str(m.label))
+            return _span_mo(m.value)
+        base = surpass(self._paired(at))
+        self._paired(at.checkbox(key="pc_sec_sched").check())
+        _assert_no_error(at, "Pacing / defenses tighten")
+        on = surpass(at)
+        assert any("Defenses tighten from today" in str(c.value)
+                   for c in at.caption)
+        self._paired(at.slider(key="pc_sec_halve").set_value(0.5))
+        assert base < on <= surpass(at)
+
     def test_a_pause_dries_up_diffusion_without_the_leak_lever(self):
         """A paused US leaks no new methods: with the leak lever off,
         diffusion still dries up after the pause."""

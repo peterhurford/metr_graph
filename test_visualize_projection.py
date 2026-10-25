@@ -2279,6 +2279,26 @@ class TestCcCnCrossingSim:
         y_far, _, _ = vp._cc_cn_crossing_sim(150.0, 160.0, **lever, **common)
         assert abs(np.nanmedian(y_far) - np.nanmedian(y_none)) < 0.06
 
+    def test_defense_schedule_only_ever_slows_china(self):
+        """A schedule that keeps the whole channel reproduces no schedule
+        exactly, and a faster one never brings the crossing sooner."""
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
+                      us_anchor=165.0, us_rate=25.0)
+
+        def run(sched):
+            np.random.seed(0)
+            return vp._cc_cn_crossing_sim(150.0, 160.0, dist_sched=sched,
+                                          **common)[0]
+        none = run(None)
+        np.testing.assert_array_equal(run(lambda t: 1.0), none)
+        slow = run(lambda t: vp._pc_sec_keep(t, 0.0, 0.5, 2.0))
+        fast = run(lambda t: vp._pc_sec_keep(t, 0.0, 0.5, 0.5))
+        assert (np.nan_to_num(slow, nan=99) >= np.nan_to_num(none, nan=99)
+                - 1e-12).all()
+        assert (np.nan_to_num(fast, nan=99) >= np.nan_to_num(slow, nan=99)
+                - 1e-12).all()
+        assert np.nanmedian(fast) > np.nanmedian(none)
+
     def test_comp_slow_only_bites_after_its_cut(self):
         """comp_slow drops the compute term from t_cut on: cutting at t=0 is
         the same as sampling the slow band throughout, and a cut past the
@@ -4369,6 +4389,17 @@ class TestChinaComputeSources:
         assert [k(c) for c in opts] == sorted((k(c) for c in opts),
                                               reverse=True)
         assert vp._pc_dist_cut_label(99) == "99% \u00b7 keeps 50% (30\u201360%)"
+
+    def test_defenses_sprint_then_halve(self):
+        """The schedule leaves the whole channel before its start, removes
+        the sprint's share over six months, then halves every period; an
+        infinite halving time holds it at the sprint's level."""
+        k = vp._pc_sec_keep
+        np.testing.assert_allclose(k([-1.0, 0.0, 0.25, 0.5, 1.5, 2.5],
+                                     0.0, 0.5, 1.0),
+                                   [1.0, 1.0, 0.75, 0.5, 0.25, 0.125])
+        assert k(9.0, 1.0, 0.0, np.inf) == 1.0
+        assert k(9.0, 1.0, 0.5, np.inf) == 0.5
 
     def test_channel_cut_grows_with_the_cut_and_vanishes_without_one(self):
         """Stopping a channel removes a share of China's in-China compute

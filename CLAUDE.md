@@ -1631,7 +1631,11 @@ methods leak (diffusion) from today or `pc_leak_when` (*Advanced*): the channel 
 each year it is the US's pace times the share the leak lets through, averaged over that
 same absorption window (`_diff_flow`, passed as `diff_flow`), so a pause dries it up
 with the lever off, and the two never stack
-(`test_a_pause_dries_up_diffusion_without_the_leak_lever`). Each lever's state in
+(`test_a_pause_dries_up_diffusion_without_the_leak_lever`). `pc_sec_sched` (*Defenses tighten over time*, default off) multiplies
+distillation and the leak by `_pc_sec_keep`: a six-month sprint removes `pc_sec_sprint`% (50),
+then the rest halves every `pc_sec_halve` years (1); `pc_sec_on` limits it to one channel.
+`_diff_flow` integrates it month by month over the absorption window
+(`test_defenses_that_tighten_only_ever_slow_china`; judgment in `CHINA_COMPUTE_JUDGMENTS.md` §9). Each lever's state in
 words (distillation teacher, cut dates, compute band) sits in the "these settings"
 hover under the table. The panel adds **no release-queue
 wait** (unlike the CC 161 section — a queue delays both sides alike); dates follow the
