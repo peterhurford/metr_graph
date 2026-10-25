@@ -2299,6 +2299,42 @@ class TestCcCnCrossingSim:
                 - 1e-12).all()
         assert np.nanmedian(fast) > np.nanmedian(none)
 
+    def test_theft_only_ever_helps_china(self):
+        """Software theft with nothing compromised and no reallocation is
+        no theft at all; real theft, of software or weights, never brings
+        the crossing later, and a weight theft at the start lifts China to
+        the US level at once."""
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
+                      us_anchor=165.0, us_rate=25.0)
+
+        def run(**kw):
+            np.random.seed(0)
+            return vp._cc_cn_crossing_sim(150.0, 160.0, **kw, **common)
+        none = run()[0]
+        np.testing.assert_array_equal(
+            run(theft_soft=(0.0, 0.0, 5.0, 0.0, 0.5))[0], none)
+        later = lambda a, b: (np.nan_to_num(a, nan=99)
+                              <= np.nan_to_num(b, nan=99) + 1e-12).all()
+        soft = run(theft_soft=(0.5, 1.0, 5.0, 4.0, 0.5))[0]
+        assert later(soft, none) and np.nanmedian(soft) < np.nanmedian(none)
+        assert later(run(theft_weights=(1.0, False))[0], none)
+        _, grid, traj = run(theft_weights=(0.0, False))
+        assert (traj[:, 1] >= 165.0 - 1e-9).all()
+
+    def test_theft_lands_in_its_own_channel(self):
+        """The theft row is what the jumps and the copying add, so the
+        channels still sum to the path."""
+        chan = {}
+        np.random.seed(0)
+        _, grid, traj = vp._cc_cn_crossing_sim(
+            150.0, 160.0, channels=chan, theft_soft=(0.5, 1.0, 5.0, 4.0, 0.5),
+            theft_weights=(2.0, False),
+            **dict(self.KW, inno_lo=8.0, inno_hi=10.0, us_anchor=165.0,
+                   us_rate=25.0))
+        total = sum(chan[k] for k in chan if k != 'compute_domestic')
+        np.testing.assert_allclose(total, traj - 150.0, atol=1e-9)
+        assert (chan['theft'][:, -1] > 0).all()
+
     def test_comp_slow_only_bites_after_its_cut(self):
         """comp_slow drops the compute term from t_cut on: cutting at t=0 is
         the same as sampling the slow band throughout, and a cut past the

@@ -124,6 +124,17 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 - **Effect (2,000 draws, US at 45% pace from Jan 2027, through 2035):** at ultraintelligence China goes from 9 months ahead to 6 months behind (2 months behind at a 2-yr halving); with no pacing, from 1.3 to 3.3 yr behind. With a US pause today, China reaches the paused frontier in Dec 2027 instead of Nov 2027.
 - **Revisit when:** labs publish measured distillation-defense results over time, or a security standard (SL4/SL5) is adopted with a timetable.
 
+### 10. Software and weight theft (`pc_theft_soft`, `pc_theft_weights`)
+
+- **Value:** both off by default; nothing measures China's current theft. Software theft compromises `pc_theft_share` (default 100%) of US research from `pc_theft_when`. Weight theft takes the best US trained model at `pc_wt_when`, once or every month.
+- **Software theft, three parts:**
+  - a one-off jump of that share of the ECI gap compute does not explain (today's largest runs, US against all China can use, ~0.8 OOM at the catch-up's exchange rate, so the stealable gap is a few points);
+  - a one-off lift for moving research compute into training (default 2.5x, all of Takeoff's 40/20/40 training/agents/experiments split; a draft pacing analysis assumes ~10x);
+  - copying: on the stolen share China moves at the faster of its own algorithmic rate and the US's ECI/yr times the US software share of its growth (`b_algo` over the build-up rate), so copying a paused US never slows China.
+- **Not covered:** the defense schedule (§9) does not reach theft; the US does not respond by shifting its own compute to training.
+- **Effect (1,000 draws, through 2035):** racing, China at ultraintelligence goes from 1.2 yr behind to 1 month ahead with software theft today. With a US pause today, China reaches the frozen frontier in Mar 2027 instead of Nov 2027; a one-time weight theft, in Nov 2026. With no pacing, a one-time weight theft today narrows the ultraintelligence lag from 1.2 yr to 9 months.
+- **Revisit when:** evidence on Chinese exfiltration of US code or weights, or on Chinese labs' training share of compute.
+
 ## Checked and deliberately left alone
 
 - **Catalogue coverage.** It holds ~0.94 GW of IT power in China at end-2026, against SemiAnalysis's 24 GW national fleet (~4%; the US is ~25%). That is irrelevant to largest-site views as long as the largest sites are present.

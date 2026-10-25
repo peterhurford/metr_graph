@@ -1623,8 +1623,15 @@ until the cut and `comp_slow=(t_cut, a_partial·g_domestic)` takes over after, w
 the setback is sized at the cut date (today's OOM gap widened by `(g_mid − g_dom)`
 per year of lead), so a later cut costs more to regrow but is never worse for China
 overall. Cutting *at* today keeps the old global band cap instead. Above the milestone table under the chart
-sits an `st.warning` that it assumes ~SL5 secure weights (theft would put China at
-the bar). A policy lever, `pc_stop_leak` (default off), stops `pc_leak_cut`% (default 90) of the
+sits an `st.warning` that it assumes ~SL5 secure weights, shown while `pc_theft_weights` is
+off. Two theft levers (default off) land in a *Theft* breakdown row: `pc_theft_weights` lifts
+China to the US trained level at `pc_wt_when`, once or monthly (`pc_wt_mode`); `pc_theft_soft`
+jumps China by `pc_theft_share` of the gap today's ~0.8 OOM run gap does not explain, plus
+`a_partial`·log10 of the training compute `pc_theft_realloc` (2.5x, `_PC_THEFT_REALLOC`)
+frees, then on the stolen share moves at the faster of its own algorithmic channels and the
+US's ECI/yr times its software share (`theft_soft`/`theft_weights` in the sim;
+`test_theft_only_ever_helps_china`, `test_theft_lands_in_its_own_channel`; §10 of
+`CHINA_COMPUTE_JUDGMENTS.md`). A policy lever, `pc_stop_leak` (default off), stops `pc_leak_cut`% (default 90) of the
 methods leak (diffusion) from today or `pc_leak_when` (*Advanced*): the channel fades over
 `pc_leak_absorb` years (*Advanced*, default `_CC_DIFF_ABSORB_YRS`) to the share left
 (`test_methods_toggle_keeps_diffusion_running`). Diffusion also follows the US pace: at

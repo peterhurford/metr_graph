@@ -2068,6 +2068,30 @@ class TestPacingTab:
         self._paired(at.slider(key="pc_sec_halve").set_value(0.5))
         assert base < on <= surpass(at)
 
+    def test_theft_levers_speed_china_and_lift_the_sl5_caveat(self):
+        """With the US paused, stolen software brings China's catch-up
+        sooner with its own breakdown row; stolen weights today leave only
+        the US's climb to its Jul 2027 pause, and drop the secure-weights
+        warning."""
+        at = self._app()
+
+        def surpass(at):
+            m = next(m for m in at.metric
+                     if "Time for China to surpass" in str(m.label))
+            return _span_mo(m.value)
+        base = surpass(self._paired(at))
+        assert any("SL5" in str(w.value) for w in at.warning)
+        self._paired(at.checkbox(key="pc_theft_soft").check())
+        _assert_no_error(at, "Pacing / software theft")
+        assert surpass(at) < base
+        src = next(x.value for x in at.table if "Source" in x.value.columns)
+        assert src["Source"].str.startswith("Theft").any()
+        at.checkbox(key="pc_theft_soft").uncheck().run()
+        self._paired(at.checkbox(key="pc_theft_weights").check())
+        _assert_no_error(at, "Pacing / weight theft")
+        assert surpass(at) < base
+        assert not any("SL5" in str(w.value) for w in at.warning)
+
     def test_a_pause_dries_up_diffusion_without_the_leak_lever(self):
         """A paused US leaks no new methods: with the leak lever off,
         diffusion still dries up after the pause."""
