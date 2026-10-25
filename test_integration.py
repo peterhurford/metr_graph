@@ -2092,6 +2092,22 @@ class TestPacingTab:
         assert surpass(at) < base
         assert not any("SL5" in str(w.value) for w in at.warning)
 
+    def test_defenses_can_cover_software_theft(self):
+        """With the US paused and its software stolen, defenses that also
+        cover theft hold China back longer than ones that don't."""
+        at = self._app()
+
+        def surpass(at):
+            m = next(m for m in at.metric
+                     if "Time for China to surpass" in str(m.label))
+            return _span_mo(m.value)
+        at.checkbox(key="pc_theft_soft").check().run()
+        at.checkbox(key="pc_sec_sched").check().run()
+        covered = surpass(self._paired(at))
+        _assert_no_error(at, "Pacing / defenses cover theft")
+        self._paired(at.checkbox(key="pc_sec_theft").uncheck())
+        assert surpass(at) < covered
+
     def test_a_pause_dries_up_diffusion_without_the_leak_lever(self):
         """A paused US leaks no new methods: with the leak lever off,
         diffusion still dries up after the pause."""

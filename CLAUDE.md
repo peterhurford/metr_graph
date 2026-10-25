@@ -1629,8 +1629,9 @@ China to the US trained level at `pc_wt_when`, once or monthly (`pc_wt_mode`); `
 jumps China by `pc_theft_share` of the gap today's ~0.8 OOM run gap does not explain, plus
 `a_partial`·log10 of the training compute `pc_theft_realloc` (2.5x, `_PC_THEFT_REALLOC`)
 frees, then on the stolen share moves at the faster of its own algorithmic channels and the
-US's ECI/yr times its software share (`theft_soft`/`theft_weights` in the sim;
-`test_theft_only_ever_helps_china`, `test_theft_lands_in_its_own_channel`; §10 of
+US's ECI/yr times its software share, that share scaled by the defense schedule when
+`pc_sec_theft` (default on) (`theft_soft`/`theft_weights` in the sim;
+`test_theft_only_ever_helps_china`, `test_theft_lands_in_its_own_channel`, `test_defenses_shrink_software_theft`; §10 of
 `CHINA_COMPUTE_JUDGMENTS.md`). A policy lever, `pc_stop_leak` (default off), stops `pc_leak_cut`% (default 90) of the
 methods leak (diffusion) from today or `pc_leak_when` (*Advanced*): the channel fades over
 `pc_leak_absorb` years (*Advanced*, default `_CC_DIFF_ABSORB_YRS`) to the share left

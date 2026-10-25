@@ -2321,6 +2321,25 @@ class TestCcCnCrossingSim:
         _, grid, traj = run(theft_weights=(0.0, False))
         assert (traj[:, 1] >= 165.0 - 1e-9).all()
 
+    def test_defenses_shrink_software_theft(self):
+        """A schedule that keeps everything is no schedule; tightening one
+        never brings the crossing sooner and does slow a thief."""
+        common = dict(self.KW, inno_lo=8.0, inno_hi=10.0,
+                      us_anchor=165.0, us_rate=25.0)
+        theft = (0.5, 1.0, 5.0, 4.0, 0.5)
+
+        def run(*sched):
+            np.random.seed(0)
+            return vp._cc_cn_crossing_sim(150.0, 160.0,
+                                          theft_soft=theft + sched,
+                                          **common)[0]
+        bare = run()
+        np.testing.assert_array_equal(run(lambda t: 1.0), bare)
+        held = run(lambda t: vp._pc_sec_keep(t, 0.0, 0.5, 0.5))
+        assert (np.nan_to_num(held, nan=99)
+                >= np.nan_to_num(bare, nan=99) - 1e-12).all()
+        assert np.nanmedian(held) > np.nanmedian(bare)
+
     def test_theft_lands_in_its_own_channel(self):
         """The theft row is what the jumps and the copying add, so the
         channels still sum to the path."""

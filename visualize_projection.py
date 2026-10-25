@@ -14180,7 +14180,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     stolen share x it moves at the faster of its own innovation, diffusion
     and distillation and the US's ECI/yr times `soft_share` (scalar or
     per-sample, the US's software share of its growth), so theft never
-    slows China. `theft_weights`
+    slows China. An optional sixth element `sched(t)` scales the share
+    compromised, and the reallocation lift, as defenses tighten. `theft_weights`
     (t, ongoing) lifts China to the US trained level at `t`, and every month
     after if `ongoing`. Both land in a `theft` channel. `comp_dead` (start, end)
     in years zeroes the compute term inside that window — a level setback:
@@ -14314,10 +14315,12 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         if thefts:
             us_now = us_tr[:, i - 1] if us_tr is not None else us_level
         if theft_soft is not None and grid[i - 1] >= theft_soft[0]:
-            ts_x = theft_soft[1]
+            ts_k = (theft_soft[5](grid[i - 1]) if len(theft_soft) > 5
+                    else 1.0)
+            ts_x = theft_soft[1] * ts_k
             if not soft_done:
                 jump = jump + ts_x * np.maximum(
-                    us_now - e - theft_soft[2], 0.0) + theft_soft[3]
+                    us_now - e - theft_soft[2], 0.0) + ts_k * theft_soft[3]
                 soft_done = True
             if us_tr is not None:
                 us_d = (us_tr[:, i] - us_tr[:, i - 1]) / dt
@@ -16155,7 +16158,7 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_stop_leak", "pc_leak_cut", "pc_leak_when", "pc_leak_absorb",
                   "pc_pace", "pc_tk_follow",
                   "pc_sec_sched", "pc_sec_when", "pc_sec_sprint",
-                  "pc_sec_halve", "pc_sec_on",
+                  "pc_sec_halve", "pc_sec_on", "pc_sec_theft",
                   "pc_theft_soft", "pc_theft_when", "pc_theft_share",
                   "pc_theft_realloc", "pc_theft_weights", "pc_wt_when",
                   "pc_wt_mode",
@@ -16286,6 +16289,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_sec_sched": False, "pc_sec_when": _PC_WHEN_NOW,
                 "pc_sec_sprint": 50, "pc_sec_halve": 1.0,
                 "pc_sec_on": "Distillation and the leak",
+                "pc_sec_theft": True,
                 "pc_theft_soft": False, "pc_theft_when": _PC_WHEN_NOW,
                 "pc_theft_share": 100,
                 "pc_theft_realloc": _PC_THEFT_REALLOC,
@@ -18632,6 +18636,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 help="Distillation defenses (API controls, output monitoring) "
                      "can't reach ideas that diffuse through papers and "
                      "vendors, so the two can be set apart.")
+            sec_theft = st.checkbox(
+                "Defenses also shrink software theft", key="pc_sec_theft",
+                value=_PC_DEFAULTS["pc_sec_theft"], disabled=not sec_sched,
+                help="Compartments and insider controls tighten on the same "
+                     "schedule, so the share of US research China copies "
+                     "falls with it. Only bites with the software-theft "
+                     "lever on; weight theft is untouched.")
             st.divider()
             st.markdown("**Any other slowdown of China's buildout**")
             dom_slow_user = st.slider(
@@ -18988,6 +18999,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                        a_partial * float(np.log10(1.0 + _x * (theft_realloc
                                                               - 1.0))),
                        np.clip(_soft, 0.0, 1.0))
+        if sec_sched and sec_theft:
+            _theft_soft = _theft_soft + (_sec,)
     if theft_weights:
         _theft_wt = (max((d_wt - anchor_d).days, 0) / 365.25,
                      wt_mode == "Ongoing")
@@ -19878,7 +19891,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             + f": it closes that share of the gap compute does not explain "
             f"(today's runs differ ~{theft_gap_oom:.1f} OOM), trains on "
             f"{theft_realloc:g}x the compute, and copies that share of US "
-            "software progress; the theft row counts all of it.")
+            "software progress"
+            + (", the share shrinking as defenses tighten"
+               if sec_sched and sec_theft else "")
+            + "; the theft row counts all of it.")
     if theft_weights:
         _notes.append(
             "China steals the best US model "

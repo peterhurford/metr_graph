@@ -131,7 +131,8 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
   - a one-off jump of that share of the ECI gap compute does not explain (today's largest runs, US against all China can use, ~0.8 OOM at the catch-up's exchange rate, so the stealable gap is a few points);
   - a one-off lift for moving research compute into training (default 2.5x, all of Takeoff's 40/20/40 training/agents/experiments split; a draft pacing analysis assumes ~10x);
   - copying: on the stolen share China moves at the faster of its own algorithmic rate and the US's ECI/yr times the US software share of its growth (`b_algo` over the build-up rate), so copying a paused US never slows China.
-- **Not covered:** the defense schedule (§9) does not reach theft; the US does not respond by shifting its own compute to training.
+- **Defenses:** with §9's schedule on and `pc_sec_theft` (default on), the share compromised and the reallocation lift shrink on the same schedule. Racing with software theft, China at ultraintelligence goes from 1 month ahead to 1.3 yr behind; at 45% US pace, 3 months ahead (1,000 draws). Weight theft is untouched.
+- **Not covered:** the US does not respond by shifting its own compute to training.
 - **Effect (1,000 draws, through 2035):** racing, China at ultraintelligence goes from 1.2 yr behind to 1 month ahead with software theft today. With a US pause today, China reaches the frozen frontier in Mar 2027 instead of Nov 2027; a one-time weight theft, in Nov 2026. With no pacing, a one-time weight theft today narrows the ultraintelligence lag from 1.2 yr to 9 months.
 - **Revisit when:** evidence on Chinese exfiltration of US code or weights, or on Chinese labs' training share of compute.
 
