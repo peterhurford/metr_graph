@@ -35,7 +35,12 @@ Three things are load-bearing:
    `?tab=…&to=…` URL of the outer page, and intercepts the click as an in-page scroll —
    Streamlit's own icon offers the `#fragment` form. Sidebar headings are left alone. The
    arrival scroll polls for the heading (the page streams in) and re-settles briefly (Plotly
-   resizes after insert), stopping on the reader's first scroll.
+   resizes after insert), stopping on the reader's first scroll. Its watcher is installed
+   once per page and outlives tab switches, so it reads the tab from `window.__vpAnchorTab`,
+   which each run sets (`test_links_follow_the_tab_after_a_switch`).
+
+A heading carries no live number: its text is its anchor, so the link would change with the
+data.
 
 `TestAnchorSlug` and `TestSectionDeepLinks` guard it; the latter also holds every heading
 inside the whitelist, since the icon hands out a link the app must then accept. The METR tab
