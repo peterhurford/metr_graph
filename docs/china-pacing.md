@@ -366,24 +366,27 @@ the setback is sized at the cut date (today's OOM gap widened by `(g_mid − g_d
 per year of lead), so a later cut costs more to regrow but is never worse for China
 overall. Cutting *at* today keeps the old global band cap instead. Above the milestone table under the chart
 sits an `st.warning` that it assumes ~SL5 secure weights, shown while `pc_theft_weights` is
-off. Two theft levers (default off) land in a *Theft* breakdown row: `pc_theft_weights` lifts
-China to the US trained level at `pc_wt_when`, once or monthly (`pc_wt_mode`); `pc_theft_soft`
-jumps China by `pc_theft_share` of the gap today's ~0.8 OOM run gap does not explain, plus
-`a_partial`·log10 of the training compute `pc_theft_realloc` (2.5x, `_PC_THEFT_REALLOC`)
-frees, then on the stolen share moves at the faster of its own algorithmic channels and the
-US's ECI/yr times its software share, that share scaled by the defense schedule when
-`pc_sec_theft` (default on) (`theft_soft`/`theft_weights` in the sim;
-`test_theft_only_ever_helps_china`, `test_theft_lands_in_its_own_channel`, `test_defenses_shrink_software_theft`; §10 of
-`CHINA_COMPUTE_JUDGMENTS.md`). A policy lever, `pc_stop_leak` (default off), stops `pc_leak_cut`% (default 90) of the
-methods leak (diffusion) from today or `pc_leak_when` (*Advanced*): the channel fades over
-`pc_leak_absorb` years (*Advanced*, default `_CC_DIFF_ABSORB_YRS`) to the share left
-(`test_methods_toggle_keeps_diffusion_running`). Diffusion also follows the US pace: at
+off. *US software reaching China* is one channel, `diffusion`, its breakdown row *US software,
+leaked or stolen*, cut two ways (both sliders default 0). `pc_theft_share` is the share of US
+research stolen from `pc_theft_when`: China jumps by that share of the gap today's ~0.8 OOM run
+gap does not explain, plus `a_partial`·log10 of the training compute `pc_theft_realloc` (2.5x,
+`_PC_THEFT_REALLOC`) frees, then on the stolen share moves at the faster of its own algorithmic
+channels and the US's ECI/yr times its software share (`theft_soft` in the sim). `pc_leak_cut`
+stops that share of the open leak (papers, talent; ~31% of US software progress today, stashed
+as `_pc_leak_share` for its help) from `pc_leak_when`, fading over `pc_leak_absorb` years
+(default `_CC_DIFF_ABSORB_YRS`) to the share left (`test_methods_toggle_keeps_diffusion_running`).
+The leak runs on the share not stolen, so it greys out at 100% stolen
+(`test_theft_levers_speed_china_and_lift_the_sl5_caveat`, `test_theft_only_ever_helps_china`,
+`test_stolen_software_lands_with_the_leak`). `pc_theft_weights` lifts China to the US trained level
+at `pc_wt_when`, once or monthly (`pc_wt_mode`), in its own *Theft* row; §10 of
+`CHINA_COMPUTE_JUDGMENTS.md`. The leak also follows the US pace: at
 each year it is the US's pace times the share the leak lets through, averaged over that
 same absorption window (`_diff_flow`, passed as `diff_flow`), so a pause dries it up
 with the lever off, and the two never stack
 (`test_a_pause_dries_up_diffusion_without_the_leak_lever`). `pc_sec_sched` (*Defenses tighten over time*, default off) multiplies
-distillation and the leak by `_pc_sec_keep`: a six-month sprint removes `pc_sec_sprint`% (50),
-then the rest halves every `pc_sec_halve` years (1); `pc_sec_on` limits it to one channel.
+distillation, the leak and the share stolen by `_pc_sec_keep`: a six-month sprint removes `pc_sec_sprint`% (50),
+then the rest halves every `pc_sec_halve` years (1); `pc_sec_on` limits it to distillation or US software
+(`test_defenses_can_cover_software_theft`).
 `_diff_flow` integrates it month by month over the absorption window
 (`test_defenses_that_tighten_only_ever_slow_china`; judgment in `CHINA_COMPUTE_JUDGMENTS.md` §9). Each lever's state in
 words (distillation teacher, cut dates, compute band) sits in the "these settings"

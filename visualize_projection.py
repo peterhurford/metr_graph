@@ -14183,7 +14183,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     slows China. An optional sixth element `sched(t)` scales the share
     compromised, and the reallocation lift, as defenses tighten. `theft_weights`
     (t, ongoing) lifts China to the US trained level at `t`, and every month
-    after if `ongoing`. Both land in a `theft` channel. `comp_dead` (start, end)
+    after if `ongoing`. Stolen software lands in the `diffusion` channel,
+    with the leak; stolen weights in a `theft` channel. `comp_dead` (start, end)
     in years zeroes the compute term inside that window — a level setback:
     capacity lost at `start` must be regrown (the window's length = lost
     OOM / regrowth pace) before further growth adds capability again.
@@ -14272,7 +14273,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     if channels is not None:
         for _k in (_CC_CHANNELS + (('compute_domestic',) if shadow else ())
                    + (('speedup',) if speedup is not None else ())
-                   + (('theft',) if thefts else ())):
+                   + (('theft',) if theft_weights is not None else ())):
             channels[_k] = np.zeros((n, steps + 1))
     soft_done = wt_done = False
     e = np.full(n, float(anchor_eci))
@@ -14311,7 +14312,7 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                          & (grid[i - 1] < np.asarray(comp_dead[1])), 0.0, 1.0))
         parts = (pace * comp_t * c_on, pace * pure, pace * diffu * d_avail,
                  pace * dist * d_on * np.minimum(1.0, gap / gap0))
-        jump = steal = 0.0
+        jump = steal = soft_jump = 0.0
         if thefts:
             us_now = us_tr[:, i - 1] if us_tr is not None else us_level
         if theft_soft is not None and grid[i - 1] >= theft_soft[0]:
@@ -14319,8 +14320,9 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                     else 1.0)
             ts_x = theft_soft[1] * ts_k
             if not soft_done:
-                jump = jump + ts_x * np.maximum(
+                soft_jump = ts_x * np.maximum(
                     us_now - e - theft_soft[2], 0.0) + ts_k * theft_soft[3]
+                jump = jump + soft_jump
                 soft_done = True
             if us_tr is not None:
                 us_d = (us_tr[:, i] - us_tr[:, i - 1]) / dt
@@ -14340,9 +14342,12 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
         if channels is not None:
             for _k, _p in zip(_CC_CHANNELS, parts):
                 channels[_k][:, i] = channels[_k][:, i - 1] + _p * dt
-            if thefts:
+            # Stolen software lands with the leak, one US-software channel;
+            # stolen weights keep their own.
+            channels['diffusion'][:, i] += steal * dt + soft_jump
+            if theft_weights is not None:
                 channels['theft'][:, i] = (channels['theft'][:, i - 1]
-                                           + steal * dt + jump)
+                                           + jump - soft_jump)
         if speedup is not None:
             fw, fbase = speedup_follow
             extra = (speedup(e) - 1.0) * (fw * fbase + (1.0 - fw) * rate)
@@ -16156,11 +16161,11 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_dist_when", "pc_remote_when", "pc_smug_when",
                   "pc_legal_when", "pc_hbm", "pc_hbm_when", "pc_payoff",
                   "pc_cn_run",
-                  "pc_stop_leak", "pc_leak_cut", "pc_leak_when", "pc_leak_absorb",
+                  "pc_leak_cut", "pc_leak_when", "pc_leak_absorb",
                   "pc_pace", "pc_tk_follow",
                   "pc_sec_sched", "pc_sec_when", "pc_sec_sprint",
-                  "pc_sec_halve", "pc_sec_on", "pc_sec_theft",
-                  "pc_theft_soft", "pc_theft_when", "pc_theft_share",
+                  "pc_sec_halve", "pc_sec_on",
+                  "pc_theft_when", "pc_theft_share",
                   "pc_theft_realloc", "pc_theft_weights", "pc_wt_when",
                   "pc_wt_mode",
                   "pc_win_n"] + \
@@ -16207,8 +16212,8 @@ def _pc_dist_keep(cut_pct, per_oom=_PC_DIST_PER_OOM):
 # `pc_sec_sprint`% of a channel over _PC_SEC_SPRINT_YRS, then what is left
 # halves every `pc_sec_halve` years.
 _PC_SEC_SPRINT_YRS = 0.5
-_PC_SEC_ON_OPTIONS = ["Distillation and the leak", "Distillation only",
-                      "The leak only"]
+_PC_SEC_ON_OPTIONS = ["Distillation and US software", "Distillation only",
+                      "US software only"]
 
 
 # A thief with the US's software no longer runs its own experiments on the
@@ -16283,16 +16288,14 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_smug_when": _PC_WHEN_NOW, "pc_legal_when": _PC_WHEN_NOW,
                 "pc_hbm": False, "pc_hbm_when": _PC_WHEN_NOW,
                 "pc_payoff": "Average of the two",
-                "pc_cn_run": 2, "pc_stop_leak": False, "pc_leak_cut": 90,
+                "pc_cn_run": 2, "pc_leak_cut": 0,
                 "pc_leak_when": _PC_WHEN_NOW,
                 "pc_leak_absorb": _CC_DIFF_ABSORB_YRS,
                 "pc_tk_follow": 0.8,
                 "pc_sec_sched": False, "pc_sec_when": _PC_WHEN_NOW,
                 "pc_sec_sprint": 50, "pc_sec_halve": 1.0,
-                "pc_sec_on": "Distillation and the leak",
-                "pc_sec_theft": True,
-                "pc_theft_soft": False, "pc_theft_when": _PC_WHEN_NOW,
-                "pc_theft_share": 100,
+                "pc_sec_on": "Distillation and US software",
+                "pc_theft_when": _PC_WHEN_NOW, "pc_theft_share": 0,
                 "pc_theft_realloc": _PC_THEFT_REALLOC,
                 "pc_theft_weights": False, "pc_wt_when": _PC_WHEN_NOW,
                 "pc_wt_mode": "Once",
@@ -17419,11 +17422,11 @@ _PC_CHANNEL_LABELS = {
     'compute_domestic': "Compute, domestic clusters",
     'compute_abroad': "Compute, clusters abroad",
     'innovation': "Innovation, China's own (never stops)",
-    'diffusion': "Diffusion, leaked US methods",
+    'diffusion': "US software, leaked or stolen",
     'distillation': "Distillation, learning from US models (stops near the "
                     "teacher)",
     'speedup': "AI speed-up, China's own automated coder and RSI",
-    'theft': "Theft, stolen US software and weights",
+    'theft': "Theft, stolen US model weights",
 }
 
 
@@ -18066,9 +18069,13 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         else:
             label = _PC_CHANNEL_LABELS[k]
             if k == 'diffusion':
-                label += (" (leak cut)" if st.session_state.get(
-                    "pc_stop_leak", _PC_DEFAULTS["pc_stop_leak"])
-                    else " (leak not cut)")
+                _cut = st.session_state.get("pc_leak_cut",
+                                            _PC_DEFAULTS["pc_leak_cut"])
+                _stolen = st.session_state.get(
+                    "pc_theft_share", _PC_DEFAULTS["pc_theft_share"])
+                _leak = f"cut {_cut}%" if _cut else "not cut"
+                label += (f" ({_stolen}% stolen, leak of the rest {_leak})"
+                          if _stolen else f" (leak {_leak})")
             r = rates.get(k, (None, None))
             if split and k in ('compute_domestic', 'compute_abroad'):
                 # The split is a counterfactual with no rate of its own: the
@@ -18214,10 +18221,10 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         dry = {row["Source"].split(",")[0] for row in rows
                if "Dried up" in row.values()}
         why = []
-        if "Diffusion" in dry:
-            why.append("diffusion, China has absorbed the US methods that "
+        if "US software" in dry:
+            why.append("US software, China has absorbed the US methods that "
                        "leaked before the " + ("cut" if st.session_state.get(
-                           "pc_stop_leak", _PC_DEFAULTS["pc_stop_leak"])
+                           "pc_leak_cut", _PC_DEFAULTS["pc_leak_cut"])
                            else "pause"))
         if "Distillation" in dry:
             why.append("distillation, China has caught "
@@ -18427,26 +18434,39 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # read it a rerun early, as the DUVi growth rate is.
         _absorb = float(st.session_state.get(
             "pc_leak_absorb", _PC_DEFAULTS["pc_leak_absorb"]))
-        stop_leak = st.checkbox(
-            "Stop leak of US methods to China", key="pc_stop_leak",
-            value=_PC_DEFAULTS["pc_stop_leak"],
-            help="Papers, talent moving, espionage: every way US research "
-                 "methods reach Chinese labs, the diffusion channel. From "
-                 "today (or the date under *Advanced*) the share set below "
-                 "stops; China absorbs what already leaked over "
-                 f"~{_absorb:g} yr (set under *Advanced*), after which "
-                 "diffusion runs "
-                 "at the share left. Off: diffusion runs at full rate.")
+        st.markdown("**US software reaching China**")
+        _s0 = st.session_state.get("_pc_leak_share")
+        theft_share = st.slider(
+            "Share of US research stolen", 0, 100,
+            value=_PC_DEFAULTS["pc_theft_share"], step=10, format="%d%%",
+            key="pc_theft_share",
+            help="Covert theft of the US labs' code and data, from today or "
+                 "the date under *Advanced*. On this share China gets US "
+                 "software progress at once rather than through the leak: it "
+                 "jumps by that share of the ECI gap compute does not "
+                 "explain, moves its research compute into training, then "
+                 "keeps pace with US software there. Compartments limit what "
+                 "one compromised person or device gives away. 0%: US "
+                 "software stays secure.")
+        theft_soft = theft_share > 0
         leak_cut = st.slider(
-            "Share of the leak stopped", 0, 100,
+            "Open leak stopped", 0, 100,
             value=_PC_DEFAULTS["pc_leak_cut"], step=5, format="%d%%",
-            key="pc_leak_cut", disabled=not stop_leak,
-            help="100% stops diffusion once the leaked stock is absorbed; "
-                 "lower keeps that share of the channel. Needs the checkbox "
-                 "above.")
+            key="pc_leak_cut", disabled=theft_share >= 100,
+            help="Papers, talent moving, conferences: the open ways US "
+                 "methods reach Chinese labs"
+                 + (f", about {_s0:.0%} of US software progress today"
+                    if _s0 else "")
+                 + ". It runs on the share not stolen, so at 100% stolen "
+                 "there is nothing left to stop. From today (or the date "
+                 "under *Advanced*) this share of it stops; China absorbs "
+                 f"what already leaked over ~{_absorb:g} yr (set under "
+                 "*Advanced*). 0%: the leak runs at full rate.")
+        stop_leak = leak_cut > 0
         sec_sched = st.checkbox(
             "Defenses tighten over time", key="pc_sec_sched",
-            help="Security against distillation and the methods leak improves "
+            help="Security against distillation and US software reaching "
+                 "China (the leak and theft alike) improves "
                  "on a schedule rather than in one cut: from today (or the "
                  "date under *Advanced*) a six-month sprint removes "
                  f"{_ss.get('pc_sec_sprint', _PC_DEFAULTS['pc_sec_sprint'])}% "
@@ -18455,15 +18475,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "yr. It stacks on the cuts above. The schedule is the same "
                  "whatever the US does, so it flatters pacing if faster AI "
                  "would speed up security work. Set under *Advanced*.")
-        theft_soft = st.checkbox(
-            "China steals US software (algorithms and data)",
-            key="pc_theft_soft",
-            help="Ongoing theft of the US labs' code and data, from today or "
-                 "the date under *Advanced*. China jumps by the part of its "
-                 "ECI gap that compute does not explain, moves its research "
-                 "compute into training, and from then copies the US's "
-                 "software progress on the stolen share of its research. "
-                 "Off, the model assumes US software stays secure.")
         theft_weights = st.checkbox(
             "China steals US model weights", key="pc_theft_weights",
             help="China lifts its frontier to the best model the US has "
@@ -18525,9 +18536,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 "Methods leak cut off", options=_opts,
                 value=_PC_DEFAULTS["pc_leak_when"], key="pc_leak_when",
                 disabled=not stop_leak,
-                help="Until this date diffusion runs at full rate; after it "
+                help="Until this date the leak runs at full rate; after it "
                      "the leaked stock is absorbed over the time set below. "
-                     "Needs the checkbox above.")
+                     "Needs the leak slider above.")
             leak_absorb = st.slider(
                 "Years to absorb what already leaked", 0.0, 3.0,
                 value=float(_PC_DEFAULTS["pc_leak_absorb"]), step=0.25,
@@ -18575,15 +18586,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 "Software theft starts", options=_opts,
                 value=_PC_DEFAULTS["pc_theft_when"], key="pc_theft_when",
                 disabled=not theft_soft,
-                help="Needs the software-theft checkbox above.")
-            theft_share = st.slider(
-                "Share of US research compromised", 10, 100,
-                value=_PC_DEFAULTS["pc_theft_share"], step=10, format="%d%%",
-                key="pc_theft_share", disabled=not theft_soft,
-                help="Labs that split research into compartments limit what "
-                     "one compromised person or device gives away. China "
-                     "copies this share of US software progress and keeps "
-                     "the rest of its own.")
+                help="Needs the theft slider above.")
             theft_realloc = st.slider(
                 "Training compute after moving research compute", 1.0, 10.0,
                 value=float(_PC_DEFAULTS["pc_theft_realloc"]), step=0.5,
@@ -18636,14 +18639,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 key="pc_sec_on", disabled=not sec_sched,
                 help="Distillation defenses (API controls, output monitoring) "
                      "can't reach ideas that diffuse through papers and "
-                     "vendors, so the two can be set apart.")
-            sec_theft = st.checkbox(
-                "Defenses also shrink software theft", key="pc_sec_theft",
-                value=_PC_DEFAULTS["pc_sec_theft"], disabled=not sec_sched,
-                help="Compartments and insider controls tighten on the same "
-                     "schedule, so the share of US research China copies "
-                     "falls with it. Only bites with the software-theft "
-                     "lever on; weight theft is untouched.")
+                     "vendors, so the two can be set apart. On US software "
+                     "they shrink the leak and the share stolen alike; "
+                     "weight theft is untouched.")
             st.divider()
             st.markdown("**Any other slowdown of China's buildout**")
             dom_slow_user = st.slider(
@@ -18770,7 +18768,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     d_sec = _pc_when_date(sec_when, today)
     d_theft = _pc_when_date(theft_when, today)
     d_wt = _pc_when_date(wt_when, today)
-    sec_dist = sec_sched and sec_on != "The leak only"
+    sec_dist = sec_sched and sec_on != "US software only"
     sec_leak = sec_sched and sec_on != "Distillation only"
     d_remote = _pc_when_date(remote_when, today)
     cc_rows = load_eci_compute(mtime=_eci_mtime())
@@ -18991,16 +18989,17 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     theft_gap_oom = (float(np.log10(_us_c[1] / _cn_c[1]))
                      if _us_c and _cn_c and _cn_c[1] > 0 else 0.0)
     _theft_soft = _theft_wt = None
+    _soft = np.clip(b_algo / np.maximum(b_algo + a_partial * g_s, 1e-9)
+                    if g_s is not None else b_algo / max(us_rate, 1e-9),
+                    0.0, 1.0)
     if theft_soft:
         _x = theft_share / 100.0
-        _soft = (b_algo / np.maximum(b_algo + a_partial * g_s, 1e-9)
-                 if g_s is not None else b_algo / max(us_rate, 1e-9))
         _theft_soft = (max((d_theft - anchor_d).days, 0) / 365.25, _x,
                        a_partial * max(theft_gap_oom, 0.0),
                        a_partial * float(np.log10(1.0 + _x * (theft_realloc
                                                               - 1.0))),
-                       np.clip(_soft, 0.0, 1.0))
-        if sec_sched and sec_theft:
+                       _soft)
+        if sec_leak:
             _theft_soft = _theft_soft + (_sec,)
     if theft_weights:
         _theft_wt = (max((d_wt - anchor_d).days, 0) / 365.25,
@@ -19115,6 +19114,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # whole band takes the cut — the conservative reading of the lever.
         g_lo_eff, g_hi_eff = g_lo_eff * dom_keep, g_hi_eff * dom_keep
     pure = ch['pure'] if ch else _cc_pure_innovation_band(cc_rows)
+    # The leak's share of US software progress, for the leak slider's help
+    # (drawn above, so it reads this a rerun late).
+    if pure:
+        st.session_state["_pc_leak_share"] = float(
+            (0.5 * (inno[0] + inno[1]) - 0.5 * (pure[0] + pure[1]))
+            / max(float(np.median(_soft * us_rate_s)), 1e-9))
     # The US level the distillation gap sees is the trend's value at China's
     # anchor date, not the US's later best (the bar's climb already counts
     # from us_best's own date via _us_dt).
@@ -19412,8 +19417,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                      "queryable, fading only as China closes the gap.")
     if sec_sched:
         _sec_what = {"Distillation only": "distillation",
-                     "The leak only": "the methods leak"}.get(
-                         sec_on, "distillation and the methods leak")
+                     "US software only": "US software reaching China"}.get(
+                         sec_on, "distillation and US software reaching "
+                                 "China")
         _asm_dist += (f" Defenses tighten from "
                       + ("today" if d_sec <= today else f"{d_sec:%b %Y}")
                       + f": a six-month sprint removes {sec_sprint}% of "
@@ -19894,8 +19900,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             f"{theft_realloc:g}x the compute, and copies that share of US "
             "software progress"
             + (", the share shrinking as defenses tighten"
-               if sec_sched and sec_theft else "")
-            + "; the theft row counts all of it.")
+               if sec_leak else "")
+            + "; the US-software row counts it with the leak.")
     if theft_weights:
         _notes.append(
             "China steals the best US model "

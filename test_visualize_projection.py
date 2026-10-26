@@ -2340,19 +2340,28 @@ class TestCcCnCrossingSim:
                 >= np.nan_to_num(bare, nan=99) - 1e-12).all()
         assert np.nanmedian(held) > np.nanmedian(bare)
 
-    def test_theft_lands_in_its_own_channel(self):
-        """The theft row is what the jumps and the copying add, so the
-        channels still sum to the path."""
-        chan = {}
-        np.random.seed(0)
-        _, grid, traj = vp._cc_cn_crossing_sim(
-            150.0, 160.0, channels=chan, theft_soft=(0.5, 1.0, 5.0, 4.0, 0.5),
-            theft_weights=(2.0, False),
-            **dict(self.KW, inno_lo=8.0, inno_hi=10.0, us_anchor=165.0,
-                   us_rate=25.0))
-        total = sum(chan[k] for k in chan if k != 'compute_domestic')
-        np.testing.assert_allclose(total, traj - 150.0, atol=1e-9)
-        assert (chan['theft'][:, -1] > 0).all()
+    def test_stolen_software_lands_with_the_leak(self):
+        """Stolen software adds to the diffusion channel, one US-software
+        row; stolen weights get a theft channel only when on; the channels
+        still sum to the path."""
+        kw = dict(self.KW, inno_lo=8.0, inno_hi=10.0, us_anchor=165.0,
+                  us_rate=25.0)
+        soft = (0.5, 1.0, 5.0, 4.0, 0.5)
+        runs = {}
+        for name, extra in (("none", {}), ("soft", {"theft_soft": soft}),
+                            ("both", {"theft_soft": soft,
+                                      "theft_weights": (2.0, False)})):
+            chan = {}
+            np.random.seed(0)
+            _, _, traj = vp._cc_cn_crossing_sim(150.0, 160.0, channels=chan,
+                                                **extra, **kw)
+            total = sum(chan[k] for k in chan if k != 'compute_domestic')
+            np.testing.assert_allclose(total, traj - 150.0, atol=1e-9)
+            runs[name] = chan
+        assert 'theft' not in runs["soft"]
+        assert (runs["soft"]['diffusion'][:, -1]
+                > runs["none"]['diffusion'][:, -1]).all()
+        assert (runs["both"]['theft'][:, -1] > 0).all()
 
     def test_comp_slow_only_bites_after_its_cut(self):
         """comp_slow drops the compute term from t_cut on: cutting at t=0 is

@@ -118,20 +118,20 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 
 ### 9. Defenses that tighten over time (`pc_sec_sched`, `_pc_sec_keep`)
 
-- **Value:** off by default. When on, from `pc_sec_when` a sprint removes `pc_sec_sprint` (default 50%) of distillation and the methods leak over six months, then what is left halves every `pc_sec_halve` (default 1 yr). It multiplies the step cuts, and `pc_sec_on` can restrict it to one channel.
+- **Value:** off by default. When on, from `pc_sec_when` a sprint removes `pc_sec_sprint` (default 50%) of distillation and US software reaching China (the leak and the share stolen) over six months, then what is left halves every `pc_sec_halve` (default 1 yr). It multiplies the step cuts, and `pc_sec_on` can restrict it to one channel.
 - **Why these defaults:** the ambitious schedule in a draft pacing analysis we reviewed (Oct 2026), so its result can be reproduced here. It is a judgment with no measured security track record behind it. Distillation defenses can't reach ideas that spread through papers and vendors, so the leak half is the more optimistic one.
 - **It is the same whatever the US does,** which flatters pacing if a racing US's more capable AIs would speed up security work.
 - **Effect (2,000 draws, US at 45% pace from Jan 2027, through 2035):** at ultraintelligence China goes from 9 months ahead to 6 months behind (2 months behind at a 2-yr halving); with no pacing, from 1.3 to 3.3 yr behind. With a US pause today, China reaches the paused frontier in Dec 2027 instead of Nov 2027.
 - **Revisit when:** labs publish measured distillation-defense results over time, or a security standard (SL4/SL5) is adopted with a timetable.
 
-### 10. Software and weight theft (`pc_theft_soft`, `pc_theft_weights`)
+### 10. Software and weight theft (`pc_theft_share`, `pc_theft_weights`)
 
-- **Value:** both off by default; nothing measures China's current theft. Software theft compromises `pc_theft_share` (default 100%) of US research from `pc_theft_when`. Weight theft takes the best US trained model at `pc_wt_when`, once or every month.
+- **Value:** both off by default; nothing measures China's current theft. Software theft compromises `pc_theft_share` (default 0%) of US research from `pc_theft_when`; it and the open leak are one channel, the leak running on the share not stolen. Weight theft takes the best US trained model at `pc_wt_when`, once or every month.
 - **Software theft, three parts:**
   - a one-off jump of that share of the ECI gap compute does not explain (today's largest runs, US against all China can use, ~0.8 OOM at the catch-up's exchange rate, so the stealable gap is a few points);
   - a one-off lift for moving research compute into training (default 2.5x, all of Takeoff's 40/20/40 training/agents/experiments split; a draft pacing analysis assumes ~10x);
   - copying: on the stolen share China moves at the faster of its own algorithmic rate and the US's ECI/yr times the US software share of its growth (`b_algo` over the build-up rate), so copying a paused US never slows China.
-- **Defenses:** with §9's schedule on and `pc_sec_theft` (default on), the share compromised and the reallocation lift shrink on the same schedule. Racing with software theft, China at ultraintelligence goes from 1 month ahead to 1.3 yr behind; at 45% US pace, 3 months ahead (1,000 draws). Weight theft is untouched.
+- **Defenses:** with §9's schedule on and covering US software, the share compromised and the reallocation lift shrink on the same schedule. Racing with software theft, China at ultraintelligence goes from 1 month ahead to 1.3 yr behind; at 45% US pace, 3 months ahead (1,000 draws). Weight theft is untouched.
 - **Not covered:** the US does not respond by shifting its own compute to training.
 - **Effect (1,000 draws, through 2035):** racing, China at ultraintelligence goes from 1.2 yr behind to 1 month ahead with software theft today. With a US pause today, China reaches the frozen frontier in Mar 2027 instead of Nov 2027; a one-time weight theft, in Nov 2026. With no pacing, a one-time weight theft today narrows the ultraintelligence lag from 1.2 yr to 9 months.
 - **Revisit when:** evidence on Chinese exfiltration of US code or weights, or on Chinese labs' training share of compute.

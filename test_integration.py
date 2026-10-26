@@ -1823,8 +1823,7 @@ class TestPacingTab:
         at.run()
         _switch_tab(at, "Pacing")
         at.select_slider(key="pc_pace").set_value(0).run()
-        at.checkbox(key="pc_withhold").check()
-        at.checkbox(key="pc_stop_leak").check().run()
+        at.checkbox(key="pc_withhold").check().run()
         at.slider(key="pc_leak_cut").set_value(100).run()
         return at
 
@@ -2023,7 +2022,7 @@ class TestPacingTab:
 
         def diffusion(at):
             t = next(x.value for x in at.table if "Source" in x.value.columns)
-            return t[t["Source"].str.startswith("Diffusion")].iloc[0]
+            return t[t["Source"].str.startswith("US software")].iloc[0]
 
         base = surpass(self._paired(at))
         assert diffusion(at)["China ECI/yr at US/China cross"] == "Dried up"
@@ -2032,15 +2031,14 @@ class TestPacingTab:
         half, half_rate = surpass(at), float(
             diffusion(at)["China ECI/yr at US/China cross"])
         assert half < base
-        self._paired(at.checkbox(key="pc_stop_leak").uncheck())
+        self._paired(at.slider(key="pc_leak_cut").set_value(0))
         _assert_no_error(at, "Pacing / methods leak not cut")
         assert surpass(at) <= half
-        at.checkbox(key="pc_stop_leak").check().run()
         at.slider(key="pc_leak_cut").set_value(100).run()
         self._paired(at.slider(key="pc_leak_absorb").set_value(2.0))
         _assert_no_error(at, "Pacing / methods leak absorbed slowly")
         assert half < surpass(at) <= base
-        self._paired(at.checkbox(key="pc_stop_leak").uncheck())
+        self._paired(at.slider(key="pc_leak_cut").set_value(0))
         row = diffusion(at)
         assert "leak not cut" in row["Source"]
         assert float(row["China ECI/yr at US/China cross"]) > half_rate
@@ -2070,9 +2068,10 @@ class TestPacingTab:
 
     def test_theft_levers_speed_china_and_lift_the_sl5_caveat(self):
         """With the US paused, stolen software brings China's catch-up
-        sooner with its own breakdown row; stolen weights today leave only
-        the US's climb to its Jul 2027 pause, and drop the secure-weights
-        warning."""
+        sooner, counted in the US-software row with the leak, whose slider
+        greys out at 100% stolen; stolen weights today leave only the US's
+        climb to its Jul 2027 pause, get their own row, and drop the
+        secure-weights warning."""
         at = self._app()
 
         def surpass(at):
@@ -2081,40 +2080,46 @@ class TestPacingTab:
             return _span_mo(m.value)
         base = surpass(self._paired(at))
         assert any("SL5" in str(w.value) for w in at.warning)
-        self._paired(at.checkbox(key="pc_theft_soft").check())
+        self._paired(at.slider(key="pc_theft_share").set_value(100))
         _assert_no_error(at, "Pacing / software theft")
         assert surpass(at) < base
+        assert at.slider(key="pc_leak_cut").disabled
         src = next(x.value for x in at.table if "Source" in x.value.columns)
-        assert src["Source"].str.startswith("Theft").any()
-        at.checkbox(key="pc_theft_soft").uncheck().run()
+        assert src["Source"].str.contains("100% stolen").any()
+        assert not src["Source"].str.startswith("Theft").any()
+        at.slider(key="pc_theft_share").set_value(0).run()
         self._paired(at.checkbox(key="pc_theft_weights").check())
         _assert_no_error(at, "Pacing / weight theft")
         assert surpass(at) < base
+        src = next(x.value for x in at.table if "Source" in x.value.columns)
+        assert src["Source"].str.startswith("Theft").any()
         assert not any("SL5" in str(w.value) for w in at.warning)
 
     def test_defenses_can_cover_software_theft(self):
         """With the US paused and its software stolen, defenses that also
-        cover theft hold China back longer than ones that don't."""
+        cover US software hold China back longer than distillation-only
+        ones."""
         at = self._app()
 
         def surpass(at):
             m = next(m for m in at.metric
                      if "Time for China to surpass" in str(m.label))
             return _span_mo(m.value)
-        at.checkbox(key="pc_theft_soft").check().run()
+        at.slider(key="pc_theft_share").set_value(100).run()
         at.checkbox(key="pc_sec_sched").check().run()
         covered = surpass(self._paired(at))
         _assert_no_error(at, "Pacing / defenses cover theft")
-        self._paired(at.checkbox(key="pc_sec_theft").uncheck())
+        self._paired(at.selectbox(key="pc_sec_on").set_value(
+            "Distillation only"))
         assert surpass(at) < covered
 
     def test_a_pause_dries_up_diffusion_without_the_leak_lever(self):
         """A paused US leaks no new methods: with the leak lever off,
         diffusion still dries up after the pause."""
         at = self._app()
-        self._paired(at.checkbox(key="pc_stop_leak").uncheck())
+        self._paired(at.slider(key="pc_leak_cut").set_value(0))
         t = next(x.value for x in at.table if "Source" in x.value.columns)
-        row = t[t["Source"].str.startswith("Diffusion")].iloc[0]
+        row = t[t["Source"].str.startswith("US software")].iloc[0]
         assert "leak not cut" in row["Source"]
         assert row["China ECI/yr at US/China cross"] == "Dried up"
         legend = " ".join(str(c.value) for c in at.caption)
@@ -2146,7 +2151,7 @@ class TestPacingTab:
         # up; the stop lever relabels it as stopped, from the pause on.
         dist = why[why["Source"].str.startswith("Distillation")].iloc[0]
         assert dist["China ECI/yr at US/China cross"] == "Dried up"
-        diff = why[why["Source"].str.startswith("Diffusion")].iloc[0]
+        diff = why[why["Source"].str.startswith("US software")].iloc[0]
         assert diff["China ECI/yr at US/China cross"] == "Dried up"
         at.checkbox(key="pc_stop_dist").check().run()
         at.select_slider(key="pc_dist_cut").set_value(100).run()
@@ -2167,7 +2172,7 @@ class TestPacingTab:
         cross = why[why["Source"] == "Crossover date"].iloc[0]
         assert cross["China ECI/yr at US/China cross"] == ""
         assert re.match(r"[A-Z][a-z]{2} \d{4}$", cross["Overall China ECI/yr"])
-        assert rate["Diffusion"][1] < rate["Diffusion"][0]
+        assert rate["US software"][1] < rate["US software"][0]
         assert rate["Innovation"][1] == pytest.approx(rate["Innovation"][0],
                                                       abs=0.2)
 
@@ -2190,7 +2195,7 @@ class TestPacingTab:
         md = " ".join(str(m.value) for m in at.markdown)
         assert "**Assumes**" not in md
         assert any("SL5 secure weights" in str(w.value) for w in at.warning)
-        assert at.checkbox(key="pc_stop_leak").value is True
+        assert at.slider(key="pc_leak_cut").value == 100
         # The clock line follows the sidebar default (run finished).
         clock = next(m.help for m in at.metric if "paused US frontier" in str(m.label))
         assert "Dates are training-run finishes" in clock
@@ -2402,7 +2407,7 @@ class TestPacingTab:
         at = self._app()
 
         _KEYS = {"domestic": "Compute, domestic", "abroad": "Compute, clusters abroad",
-                 "innovation": "Innovation", "diffusion": "Diffusion",
+                 "innovation": "Innovation", "diffusion": "US software",
                  "distillation": "Distillation", "run": "Longer training",
                  "speedup": "AI speed-up", "other": "Other:",
                  "total": "Total"}
@@ -2679,8 +2684,8 @@ class TestPacingTab:
         at.run()
         _switch_tab(at, "Pacing")
         assert at.checkbox(key="pc_withhold").value is False
-        assert at.checkbox(key="pc_stop_leak").value is False
-        assert at.slider(key="pc_leak_cut").value == 90
+        assert at.slider(key="pc_leak_cut").value == 0
+        assert at.slider(key="pc_theft_share").value == 0
         pace = at.select_slider(key="pc_pace")
         assert pace.value == 100 and pace.options[0] == "100% \u00b7 no pacing"
         assert pace.options[-1] == "0% \u00b7 pause"
