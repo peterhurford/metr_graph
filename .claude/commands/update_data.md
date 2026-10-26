@@ -22,7 +22,7 @@ Four downloadable feeds, three hardcoded tables, and hand-read or digitized figu
 | `_RLI_RAW` (in `visualize_projection.py`) | hardcoded | Scale Labs RLI leaderboard `labs.scale.com/leaderboard/rli` / `remotelabor.ai` |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (in `visualize_projection.py`) | hardcoded | Press reports (The Information, Reuters, Bloomberg, CNBC, etc.) |
 | `_CN_REVENUE` (in `visualize_projection.py`): MiniMax, Zhipu, Alibaba, Moonshot, DeepSeek | hardcoded | Results calls and filings (HKEX for MiniMax 0100 / Zhipu 2513, Alibaba 6-K and earnings call) and press (The Information, Bloomberg, 36Kr, LatePost). See *Chinese labs* below |
-| RSI tables (`_RSI_RAW`, `_RSI_SURVEY`, `_RSI_DIR_RAW`, `_RSI_CODE_RAW`, `openai_experiment_velocity.csv`) | hand-read figures | Sources in CLAUDE.md *Data Sources*. Check new Anthropic system cards for CoBench and survey rounds — but see *CoBench: check comparability first* below. A card's problem set differs from the Risk Report's, so a score goes in via a rescale, never raw |
+| RSI tables (`_RSI_RAW`, `_RSI_SURVEY`, `_RSI_DIR_RAW`, `_RSI_CODE_RAW`, `openai_experiment_velocity.csv`) | hand-read figures | Sources in `docs/data-sources.md`. Check new Anthropic system cards for CoBench and survey rounds — but see *CoBench: check comparability first* below. A card's problem set differs from the Risk Report's, so a score goes in via a rescale, never raw |
 | `aisi_cyber_narrow.csv` (UK Cyber) | **digitized figure — verify, don't download** | AISI blog post, [open-weight cyber gap](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) |
 | `aisi_cyber_tlo.csv` (UK Cyber cross-check) | **digitized figure + quoted prose** | Same post's Figure 2, plus the [UK AISI/CAISI Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) |
 | `cts_duv_production.csv` (China tab, Pausing DUVi lever) | **transcribed from the page's chart script** | CTS, [*DUV Immersion Lithography*](https://techstatecraft.org/duv), Table 45. The values sit base64-encoded in the `<script>` after Figure 1 (`const US = …`, `CHINA = {continue, banned}`); decode and diff. A one-off report: expect "already current" unless CTS re-versions it |
@@ -89,7 +89,7 @@ AISI publishes **no numbers** for this figure — `aisi_cyber_narrow.csv` was di
 1. Scrape the figure `<img src>` values from the post (CDN filenames are content-hashed, so don't hardcode them; look for `fig1-narrow.png` and `fig2-ranges.png`).
 2. Download `fig1-narrow.png` and confirm the recorded calibration still holds: horizontal gridlines at **row 547 (=100%)** and **row 1760 (=0%)** on the 2840×2160 image, with x-ticks Aug2024=601.5px / Feb2025=1010.0px / Aug2025=1411.0px / Feb2026=1819.5px (0.45080 days/px).
 3. Confirm each CSV row's `(date, success_rate)` still lands on its marker: convert to pixel coords and check the pixel matches that model's colour. If all rows hit and the model count is unchanged, **the figure is unchanged and the CSV is current** — say so and stop. Do not re-digitize.
-4. Only if the figure changed or gained markers: re-digitize, then re-run the two calibration guards (`test_digitized_dates_match_known_releases`, `test_optimistic_bracket_reproduces_aisi_published_lags`). Those must still pass — see CLAUDE.md for why `lag_lo` is the AISI-compatible bound.
+4. Only if the figure changed or gained markers: re-digitize, then re-run the two calibration guards (`test_digitized_dates_match_known_releases`, `test_optimistic_bracket_reproduces_aisi_published_lags`). Those must still pass — see `docs/tabs.md` (*UK Cyber tab caveats*) for why `lag_lo` is the AISI-compatible bound.
 
 Hand-editing a row is fine **only** if AISI states a number in prose. Never transcribe a value from a press summary of the post.
 
@@ -131,7 +131,7 @@ The NIST mirror serves figures at full resolution if you strip the `styles/<pres
      charted roster, failing `test_current_roster_is_what_the_tab_says_it_is`. Expect that test
      and the ECI frontier guards to move on a refresh, and retarget them deliberately.
    - Run the orphan check after overwriting: `set(timelines['Data center']) - set(metadata['Name'])`
-     must be empty (see CLAUDE.md *Timeline rows with no metadata row*).
+     must be empty (see `docs/data-sources.md` *Timeline rows with no metadata row*).
    - Overwrite the file. Clean up the temp file.
 
 4. **Apply hardcoded tables (RLI, revenue, `_CN_REVENUE`).** Hand-edit new rows in `visualize_projection.py`. Keep each table's existing sort order and formatting/alignment. For revenue and any low-confidence / third-party-estimate figure that materially bends a projection, ASK the user before adding it rather than deciding unilaterally. When you exclude a figure for a reason (forecast, wrong unit, wrong source class), leave a short comment in the table saying so — otherwise the next run re-litigates it.
@@ -154,4 +154,4 @@ The NIST mirror serves figures at full resolution if you strip the `styles/<pres
 - Diff before overwriting; never silently drop curated rows.
 - **New data on a new metric is not a refresh.** If a source starts publishing a measure the app doesn't model (a second benchmark, a different scale, an Elo series), report it and offer — do not invent a schema and start filling it in mid-refresh.
 - Don't commit or push unless the user asks.
-- If the tab/data-source structure has changed since this command was written, trust the code (`grep '^def render_'`, the loaders, and the hardcoded `_*_RAW` tables) over this list, and flag the drift so CLAUDE.md and this command can be updated.
+- If the tab/data-source structure has changed since this command was written, trust the code (`grep '^def render_'`, the loaders, and the hardcoded `_*_RAW` tables) over this list, and flag the drift so CLAUDE.md, `docs/` and this command can be updated.

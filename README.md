@@ -104,7 +104,7 @@ visualize_projection.py   the whole app — loaders, engine, all eleven render f
 test_visualize_projection.py   unit tests against a fake Streamlit module
 test_integration.py            integration tests through Streamlit's AppTest runtime
 conftest.py               test-speed setup (see below)
-CLAUDE.md                 the design record — read this before changing anything non-trivial
+CLAUDE.md, docs/          the design record (CLAUDE.md indexes docs/) — read before changing anything non-trivial
 .claude/commands/update_data.md   the data-refresh recipe
 *.csv, *.yaml             the data feeds
 ```
@@ -190,7 +190,7 @@ then run the tests.
 
 ## Contributing
 
-**Read `CLAUDE.md` first.** It is the design record: for every non-obvious choice in the app
+**Read `CLAUDE.md` first**, then the `docs/` file it names for the area you are changing. Together they are the design record: for every non-obvious choice in the app
 it says what the choice is, what the wrong-looking alternative was, and which test holds the
 line. Most surprising-looking code in this repo is deliberate and documented there.
 

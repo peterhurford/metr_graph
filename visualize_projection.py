@@ -47,7 +47,7 @@ PROJ_DISCLAIMER = " These are projections assuming current progress continues, t
 N_SAMPLES = int(os.environ.get("_VP_SAMPLES", "5000"))
 
 # Tighten default Streamlit padding, and style the inline hover footnotes
-# `_fn()` emits (see "Caveats belong on the thing they qualify" in CLAUDE.md).
+# `_fn()` emits (see "Caveats belong on the thing they qualify" in docs/conventions.md).
 # The bubble is dark in both themes on purpose: it floats above the page, so
 # one colour reads correctly against either background and there is no
 # Streamlit variable that tracks the user's theme reliably.
