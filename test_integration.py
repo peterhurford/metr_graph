@@ -3080,6 +3080,16 @@ class TestSectionDeepLinks:
             _assert_no_error(at, f"anchor script / {tab}")
             assert f'var TAB = "{slug}";' in self._script(at), tab
 
+    def test_links_follow_the_tab_after_a_switch(self):
+        """A tab switch keeps the page, so the watcher installed on the first
+        tab must read each run's tab, not its own closure's, or every heading
+        on the new tab hands out a link to the old one."""
+        s = self._script(self._app(tab="revenue"))
+        assert "window.__vpAnchorTab = TAB;" in s
+        share = s[s.index("function shareUrl"):s.index("function relabel")]
+        assert "window.__vpAnchorTab" in share and "TAB" not in share
+        assert "a[data-vp-anchor]" in s
+
     def test_to_scrolls_and_is_consumed(self):
         for tab, slug in self._SLUGS.items():
             at = self._app(tab=tab, to=slug)

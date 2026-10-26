@@ -20341,6 +20341,8 @@ def _render_anchor_links(scroll_to, tab_slug):
         (function () {
           var TAB = "%s";
           var TO = "%s";
+          // The watcher below outlives this run, so it reads the tab from here.
+          window.__vpAnchorTab = TAB;
 
           function root() {
             return document.querySelector('[data-testid="stMain"]') || document.body;
@@ -20355,22 +20357,30 @@ def _render_anchor_links(scroll_to, tab_slug):
             var u;
             try { u = new URL(loc.href); } catch (e) { u = new URL(window.location.href); }
             u.hash = "";
-            if (TAB) { u.searchParams.set("tab", TAB); }
+            var tab = window.__vpAnchorTab;
+            if (tab) { u.searchParams.set("tab", tab); }
             u.searchParams.set("to", id);
             return u.toString();
           }
           function relabel() {
-            var sel = "h1 a[href^='#'], h2 a[href^='#'], h3 a[href^='#'], " +
-                      "h4 a[href^='#'], h5 a[href^='#'], h6 a[href^='#']";
+            // Links already rewritten are rewritten again: a tab switch keeps
+            // the page, and React may hand an old link a new heading's `#id`.
+            var sel = ["h1", "h2", "h3", "h4", "h5", "h6"].map(function (h) {
+              return h + " a[href^='#'], " + h + " a[data-vp-anchor]";
+            }).join(", ");
             root().querySelectorAll(sel).forEach(function (a) {
-              var id = decodeURIComponent(a.getAttribute("href").slice(1));
+              var href = a.getAttribute("href") || "";
+              var id = href.charAt(0) === "#"
+                       ? decodeURIComponent(href.slice(1)) : a.dataset.vpAnchor;
               if (!id) { return; }
-              a.href = shareUrl(id);
-              if (a.dataset.vpAnchor) { return; }
-              a.dataset.vpAnchor = "1";
+              var url = shareUrl(id);
+              if (a.href !== url) { a.href = url; }
+              var bound = a.dataset.vpAnchor !== undefined;
+              a.dataset.vpAnchor = id;
+              if (bound) { return; }
               a.addEventListener("click", function (ev) {
                 ev.preventDefault();
-                var el = find(id);
+                var el = find(a.dataset.vpAnchor);
                 if (el) { el.scrollIntoView({block: "start"}); }
               });
             });
