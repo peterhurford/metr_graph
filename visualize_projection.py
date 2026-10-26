@@ -15690,10 +15690,11 @@ def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
     share_mid = _phys_share(g_algo_mid)
     share_lo = _phys_share(g_algo_hi)                 # algo-favorable
 
+    # No live number in the heading: its anchor is a shareable `?to=` link.
     st.markdown(
-        f"#### ~{obs_slope:.0f} ECI/yr  =  physical compute  +  algorithmic "
-        "efficiency  →  effective compute")
+        "#### Physical compute  +  algorithmic efficiency  →  effective compute")
     st.caption(
+        f"The frontier climbs ~{obs_slope:.0f} ECI/yr. "
         "The two views above (compute-constant and ECI-constant) disagree by ~2× "
         "due to regression dilution, so each engine below is given as a range.")
     phys_lo, phys_hi = obs_slope * share_lo, obs_slope * share_hi
