@@ -56,6 +56,7 @@ to CoBench 2.1". Add a row only when a card reports a score on a set the series 
 The two revenue series follow different conventions on purpose, and mixing them creates a fake growth spike:
 
 - **Anthropic is company-disclosed only.** Third-party trackers (TickerTrends, YipitData) run well above disclosures — TickerTrends put April 2026 at $35.6B where Anthropic itself disclosed $30B. Do not append a tracker estimate to this series without asking.
+  **Check EDGAR every run** (Anthropic, PBC, CIK 0002130357) for an S-1/A or 424B prospectus: the 2026-10-26 S-1 left "Run-Rate Revenue was $ as of October 31, 2026" blank. A filled-in figure is a company disclosure: add it dated 2026-10-31, and drop this paragraph's EDGAR note once it is in.
 - **OpenAI is TickerTrends-derived** from `2025-12-31` (21.4) onward, and runs far above the press line (~$25B as of Feb 2026 per The Information / Sacra / Epoch). Keep continuing that one series rather than splicing in a press figure.
 - Always classify a candidate figure before using it: company disclosure / press report / third-party alt-data estimate / **forecast**. Forecasts and guidance ("expected to exceed $50B by end of July") are never observations. Quarterly or annual revenue is the wrong unit — these tables are annualized run-rate only.
 

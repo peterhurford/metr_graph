@@ -10,11 +10,11 @@ GPT-6 Sol,163.73,2026-09-22,OpenAI,United States of America,API access,,Confiden
 Claude Fable 5,163.42,2026-06-09,Anthropic,United States of America,API access,,Confident,Claude Fable 5,,Claude Fable 5
 GPT-5.5 Pro,162.91,2026-04-23,OpenAI,United States of America,API access,,Likely,GPT-5.5 Pro,,GPT-5.5 Pro
 GPT-5.6 Sol,162.79,2026-07-09,OpenAI,United States of America,API access,,Confident,GPT-5.6 Sol,,GPT-5.6 Sol
-Muse Wonder,161.85,2026-10-12,Meta AI,United States of America,API access,,,Muse Wonder,,Muse Wonder
+Muse Wonder,161.85,2026-10-12,Meta AI,United States of America,API access,,Confident,Muse Wonder,,Muse Wonder
 GPT-5.6 Terra,160.09,2026-07-09,OpenAI,United States of America,API access,,Confident,GPT-5.6 Terra,,GPT-5.6 Terra
 GPT-5.5,159.68,2026-04-23,OpenAI,United States of America,API access,,Likely,GPT-5.5,,GPT-5.5
 GPT-5.4 Pro,159.57,2026-03-05,OpenAI,United States of America,API access,,Likely,GPT-5.4 Pro,,GPT-5.4 Pro
-Claude Haiku 5.5,159.32,2026-10-07,Anthropic,United States of America,API access,,,Claude Haiku 5.5,,Claude Haiku 5.5
+Claude Haiku 5.5,159.32,2026-10-07,Anthropic,United States of America,API access,,Confident,Claude Haiku 5.5,,Claude Haiku 5.5
 Claude Opus 4.8,159.01,2026-05-28,Anthropic,United States of America,API access,,Confident,Claude Opus 4.8,,Claude Opus 4.8
 Gemini 3.7 Flash,157.97,2026-08-13,Google DeepMind,United States of America,API access,,Confident,Gemini 3.7 Flash,,Gemini 3.7 Flash
 Kimi K3,157.86,2026-07-16,Moonshot,China,Open weights (non-commercial),2.0001e+25,Speculative,Kimi K3,,Kimi K3
@@ -32,7 +32,7 @@ GPT-5.2 Pro,156.33,2025-12-11,OpenAI,United States of America,API access,,Likely
 GLM-5.3,155.99,2026-08-14,Z.ai (Zhipu AI),China,Open weights (restricted use),,Confident,GLM-5.3,,GLM-5.3
 DeepSeek V4.1 Flash,155.93,2026-09-09,DeepSeek,China,Open weights (unrestricted),4.32e+24,Likely,DeepSeek V4.1 Flash,,DeepSeek V4.1 Flash
 Claude Opus 4.6,155.66,2026-02-05,Anthropic,United States of America,API access,,Likely,Claude Opus 4.6,,Claude Opus 4.6
-DeepSeek V4 Pro 0813,155.64,2026-08-13,DeepSeek,China,Open weights (unrestricted),9.702e+24,Likely,DeepSeek V4 Pro 0813,,DeepSeek V4 Pro 0813
+DeepSeek V4 Pro 0813,155.64,2026-08-13,DeepSeek,China,Open weights (unrestricted),9.702e+24,Confident,DeepSeek V4 Pro 0813,,DeepSeek V4 Pro 0813
 Gemini 3.1 Pro,155.34,2026-02-19,Google DeepMind,United States of America,API access,,Likely,Gemini 3.1 Pro,,Gemini 3.1 Pro
 Muse Spark Open,155.11,2026-10-15,Meta AI,United States of America,Open weights (restricted use),,Confident,Muse Spark Open,,Muse Spark Open
 Qwen3.8 Max (0902),155.08,2026-09-01,Alibaba,China,API access,,,Qwen3.8 Max (0902),,Qwen3.8 Max (0902)

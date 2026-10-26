@@ -173,6 +173,10 @@ Google Midlothian,143580.85118746842,103,3.901846,Google #confident,,"- [Site Ma
 Google Storey County,133906.01313794847,161,6.0990020000000005,Google #confident,Google DeepMind #speculative,"- [Air quality permit application listing emergency generators and a small ""R&D"" fuel cell plant](https://ndep-onbase.nv.gov/api/Document/AeFo%C3%89pjclbkomJ7CWpPryLOjA6FQT9HFrkSuMWbMXTpKCzSR%C3%81W1f8zzFhGhik1iZCcNSpuTRRqNXD1inrrpBxtA%3D/) (via [Aterio](https://www.aterio.io/))
 - [Google data center page](https://datacenters.google/locations/storey-county-nevada/)
 ",https://docs.google.com/spreadsheets/d/1LrjkAu7XNz9VjMLjKm9rZyhaFAwDQfJUpeC1XKE2JR8/edit?usp=sharing,,"TPU v5e,TPU v4,TPU v6e,TPU v5p","TPU v5e,TPU v4,TPU v6e,TPU v5p",,,,United States,
+Meta Los Lunas,133906.01313794847,118,4.470076,Meta #confident,Meta #confident,"- [Meta fact sheet](https://datacenters.atmeta.com/wp-content/uploads/2025/02/Meta_s-Los-Lunas-Data-Center.pdf)
+- [Air quality permit for expansion](https://drive.google.com/file/d/1TxuazhSkiaHCd5FGKh_Syc_RsrzfV7Wd/view?usp=drive_link)
+- [Construction contractor page for the site](https://fortisconstruction.com/project/meta-los-lunas-campus/)
+",https://docs.google.com/spreadsheets/d/1mhkRkn27J1JmPrRvXejn_eSQr33e1_yfQ1fsKMa4Bis/edit?usp=drive_link,,B300,B300,,,,United States,"4250 Messenger Lp, Los Lunas, NM 87031"
 Google Lancaster,130368.8731682668,137,5.189834,Google #confident,,"- [DCD article discussing the announcement of this site](https://www.datacenterdynamics.com/en/news/google-to-build-two-more-data-centers-in-columbus-ohio/)
 ",https://docs.google.com/spreadsheets/d/1idRHPUAUAVqBbAT4GNXj-2JtVA_kM89GwZkLifLNj3E/edit?usp=sharing,,"TPU v5e,TPU v6e","TPU v5e,TPU v6e",,,,United States,"105 Whiley Rd, Lancaster, OH 43130"
 Meta-QTS Hillsboro 2,123839,180,6.818759999999999,Meta #likely,Meta #likely,"- [QTS Hillsboro 2 data center announcement](https://q.com/data-centers/hillsboro-2/)
@@ -202,10 +206,6 @@ Google Papillion,100555.83628094998,237,8.978034,Google #confident,Google DeepMi
 Meta Gallatin,99545.22486104093,87,3.2957339999999995,Meta #confident,Meta #confident,"- [Meta fact sheet](https://datacenters.atmeta.com/wp-content/uploads/2025/02/Meta_s-Gallatin-Data-Center.pdf)
 - [Campus extension announcement](https://www.gallatingetsit.com/newsroom/meta-approved-for-another-data-center-on-gallatin-campus)
 ",https://docs.google.com/spreadsheets/d/11d5_1ctrhEaeCqinR2l_YwvltGLDpMRm4_lcfS5bfV0/edit?usp=drive_link,,B300,B300,,,,United States,"1 Meta Lp, Gallatin, TN 37066"
-Meta Los Lunas,99545.22486104093,87,3.2957339999999995,Meta #confident,Meta #confident,"- [Meta fact sheet](https://datacenters.atmeta.com/wp-content/uploads/2025/02/Meta_s-Los-Lunas-Data-Center.pdf)
-- [Air quality permit for expansion](https://drive.google.com/file/d/1TxuazhSkiaHCd5FGKh_Syc_RsrzfV7Wd/view?usp=drive_link)
-- [Construction contractor page for the site](https://fortisconstruction.com/project/meta-los-lunas-campus/)
-",https://docs.google.com/spreadsheets/d/1mhkRkn27J1JmPrRvXejn_eSQr33e1_yfQ1fsKMa4Bis/edit?usp=drive_link,,B300,B300,,,,United States,"4250 Messenger Lp, Los Lunas, NM 87031"
 CoreWeave Ellendale ND,93481.55634158666,68,2.5759760000000003,CoreWeave #confident,OpenAI #speculative,"- [Applied Digital Announces 250MW AI Data Center Lease With CoreWeave](https://ir.applieddigital.com/news-events/press-releases/detail/123/applied-digital-announces-250mw-ai-data-center-lease-with)
 - [SEC 8k Filing with Applied Digital](https://ir.applieddigital.com/sec-filings/all-sec-filings/content/0001641172-25-013199/form8-k.htm)
 - [Applied Digital Delivers Second Building at Polaris Forge 1](https://ir.applieddigital.com/news-events/press-releases/detail/157/applied-digital-delivers-second-building-at-polaris-forge-1)

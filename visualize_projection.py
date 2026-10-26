@@ -1006,9 +1006,8 @@ _RLI_RAW = [
     # (2026)" with no link; contradicted by all three primary surfaces (Scale 15.80,
     # CAIS blog 15.8, dashboard.safe.ai 15.83). Treated as an error, not a revision.
     # Two standing discrepancies, deliberately left as-is:
-    #   * Scale renders Fable 5 as 15.80, the CAIS dashboard as 15.83. We keep 15.83 --
-    #     the benchmark's denominator is 240 projects and 38/240 = 15.833%, so 15.80
-    #     is a rounding artifact. A "16.1%" figure also circulates (secondary reporting
+    #   * Fable 5 is 15.83 on both Scale and the CAIS dashboard (Scale showed 15.80/15.8
+    #     until 2026-10); 38/240 = 15.833%. A "16.1%" figure also circulates (secondary reporting
     #     attributes it to CAIS and to scoring 218 of 240 jobs, 22 being unscorable);
     #     that denominator is not stated on either canonical surface, so we keep the
     #     dashboard's 15.83 -- remotelabor.ai designates the dashboard as canonical.
@@ -1032,7 +1031,6 @@ _RLI_RAW = [
     # API exactly, and safe.ai/blog is still 2026-07-01. Mythos 5.1, Opus 5, Gemini 3.8 Flash, Grok 4.6,
     # DeepSeek V4 Pro, Qwen 3.8 Max, GLM-5.3 and Kimi K3 still have no RLI score on either surface.
     # Naming note, not a change: upstream renders Manus 1.6 as "Manus 1.6 Max"; score 2.92 unchanged.
-    # Scale shows Fable 5 as 15.8 where the API gives 15.83 -- page-payload truncation, not a revision.
     # Neither surface alone is a complete roster: Grok 4 is in the CAIS API but absent from Scale, while
     # Gemini 3.7 Flash is on Scale but absent from the API. Check both.
     # Rechecked 2026-09-29: no new model and no changed score on either surface; Scale's newest createdAt
@@ -1048,6 +1046,7 @@ _RLI_RAW = [
     # Rechecked 2026-10-24: no new model or changed score; Gemini 4 Argon still absent from the CAIS API.
     # Rechecked 2026-10-25: no new model or changed score. The CAIS API now carries Gemini 3.7 Flash (5.00),
     # closing that asymmetry; Gemini 4 Argon is still Scale-only.
+    # Rechecked 2026-10-26: no new model or changed score; Scale's newest createdAt is still Gemini 4 Argon.
 ]
 
 
@@ -8436,11 +8435,7 @@ _OPENAI_REVENUE = [
     # no OpenAI total.
     # Rechecked 2026-10-18: no TickerTrends post since. Epoch has replaced its $70B row with the FT's $50B
     # (as of 09-30) and a $30B July row; press line only, so this series is unchanged.
-    # Rechecked 2026-10-21: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
-    # Rechecked 2026-10-22: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
-    # Rechecked 2026-10-23: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
-    # Rechecked 2026-10-24: no TickerTrends blog post since 10-14; Epoch's OpenAI rows unchanged.
-    # Rechecked 2026-10-25: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
+    # Rechecked daily 2026-10-21 to 10-26: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -8547,11 +8542,13 @@ _ANTHROPIC_REVENUE = [
     # Rechecked 2026-10-18: still no run rate; anthropic.com/news since 10-16 (10-15 independent evaluators,
     # 10-18 public benefit fund) states none. Excluded: SemiAnalysis's ~$74B Q3 run rate (via the FT), a
     # third-party estimate.
-    # Rechecked 2026-10-21: still no run rate on anthropic.com/news or EDGAR; Epoch's newest row unchanged.
-    # Rechecked 2026-10-22: still none (10-21 LTBT post states no run rate; no public S-1).
-    # Rechecked 2026-10-23: still none (10-22 posts state no run rate); Epoch's newest row unchanged.
-    # Rechecked 2026-10-24: still none, no public S-1. Excluded: Crunchbase News's ~$67B (10-22), Q3 revenue x4.
-    # Rechecked 2026-10-25: still none (no anthropic.com/news post since 10-22, no public S-1).
+    # Rechecked daily 2026-10-21 to 10-25: no run rate on anthropic.com/news or EDGAR; Epoch's newest row
+    # unchanged. Excluded: Crunchbase News's ~$67B (10-22), Q3 revenue x4.
+    # Rechecked 2026-10-26: the public S-1 is filed (EDGAR CIK 0002130357, accession 0001628280-26-067168).
+    # It defines Run-Rate Revenue (trailing 28-day consumption fees x13 + monthly subscription fees x12) but
+    # leaves the figure blank: "our Run-Rate Revenue was $ as of October 31, 2026". An S-1/A should fill it
+    # in; that is a company-disclosed point and belongs here, dated 2026-10-31. Excluded: H1 2026 revenue
+    # of $16.3B (period revenue); Q3 revenue is also still blank.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
