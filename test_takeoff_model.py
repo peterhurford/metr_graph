@@ -31,6 +31,18 @@ def test_workflow_trajectory_observes_deployments_and_keeps_all_draws():
     assert np.all(never["human_quantiles"][-1] < never["human_quantiles"][0])
 
 
+def test_all_stage_quantiles_are_of_the_weighted_draws():
+    """One draw: the all-stage band is the stages at their weights exactly.
+    Many: still ordered, and a quantile of a sum, so not the sum of quantiles."""
+    one = tk.simulate(dict(years=2, **tk.POINT_ESTIMATE), n=1,
+                      onset_years=np.array([0.0]))["workflow_progress"]
+    np.testing.assert_allclose(one["overall_human_quantiles"],
+                               one["human_quantiles"] @ tk.WORKFLOW_WEIGHTS)
+    many = tk.simulate(dict(years=2), n=200)["workflow_progress"]["overall_human_quantiles"]
+    assert many.shape == (len(one["years"]), 3)
+    assert (np.diff(many, axis=1) >= -1e-12).all()
+
+
 def test_seeded_draws_and_rng_isolation():
     before = np.random.get_state()
     a = tk.simulate(n=100)

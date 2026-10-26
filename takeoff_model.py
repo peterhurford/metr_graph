@@ -1084,8 +1084,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             hours[events["RSI"] <= workflow_grid[j] + 1e-12] = 0.0
         return hours
 
-    human_quantiles = [np.quantile(humans_at(j), [.1, .5, .9], axis=0)
-                       for j in range(len(workflow_grid))]
+    # Per stage, and all stages at their weights: quantiles of the weighted sum,
+    # not the weighted sum of quantiles.
+    human_quantiles, overall_human_quantiles = [], []
+    for j in range(len(workflow_grid)):
+        hours = humans_at(j)
+        human_quantiles.append(np.quantile(hours, [.1, .5, .9], axis=0))
+        overall_human_quantiles.append(np.quantile(hours @ WORKFLOW_WEIGHTS, [.1, .5, .9]))
     # A trailing rate needs a complete measurement window. In particular,
     # there is no observed 1x rate at t=0 to connect to early batch deliveries.
     rate_history = np.full_like(validated_history, np.nan)
@@ -1127,6 +1132,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         "workflow_progress": {
             "years": workflow_grid,
             "human_quantiles": np.array(human_quantiles),
+            "overall_human_quantiles": np.array(overall_human_quantiles),
             "capability_log": capability_history,
             "rate_quantiles": finite_quantiles(rate_history),
             "cumulative_quantiles": np.quantile(

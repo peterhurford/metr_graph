@@ -51,6 +51,20 @@ reading any number. Two rules follow, and they are what keep a null result out o
 `_RSI_SUBSTITUTION_BAR` (85%) is unaffected — the Opus 5.5 card expects it "to carry over
 to CoBench 2.1". Add a row only when a card reports a score on a set the series already uses.
 
+### Epoch end-to-end evals: watch, not yet ingested
+
+Two single-round Epoch evals are known and deliberately not in the app (decided 2026-10-26).
+Check each run for a **second round**; that, not the first, is the trigger to pitch a chart.
+
+- **Epoch Automation Reports** ([benchmark](https://epoch.ai/benchmarks/epoch-automation-reports),
+  2026-10-08): 11 Epoch tasks, rubric % of an Epoch employee's standard, one run, one grader.
+  Round 1 averages: Fable 5.1 65, GPT-6 Astra 65, Grok 4.6 59, Qwen 3.8 Max 53, Kimi K3 52,
+  Gemini 3.8 Flash 42. Epoch says it will add models as they ship.
+- **InnovationEval** ([report](https://epoch.ai/publications/innovationeval), 2026-10-07):
+  rediscover SDPO unsupervised. Only GPT-5.6 Sol, uncontaminated, made real progress (~35%
+  short-answer, ~15% coding of SDPO's gain); Fable 5.1 and GPT-6 Astra memorized the paper.
+  A new round needs a new target method, so a second SDPO round is not a trend.
+
 ### Revenue: source-type discipline
 
 The two revenue series follow different conventions on purpose, and mixing them creates a fake growth spike:

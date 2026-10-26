@@ -6080,15 +6080,24 @@ class TestTakeoffHumanSpeedup:
         slow, fast = vp._tk_human_calibration(1.4), vp._tk_human_calibration(2.5)
         assert fast["tk_human_direction"] < slow["tk_human_direction"]
 
-    def test_staff_survey_note_reads_the_ladder_at_the_surveys_month(self):
-        # August is the ladder's latest month; the curve starts from fitted rungs,
-        # so it lands within a couple of points of that month's reading.
-        row = vp.load_rsi_automation()[-1]
-        note = vp._tk_staff_survey_note(vp._TK_AL_HUMAN_HOURS)
-        reading = 100 * (1 - vp._tk_ladder_human_share(row))
-        m = re.search(r"51% vs (\d+)% in August 2026", note)
-        assert m and abs(int(m.group(1)) - reading) <= 2
-        assert "80% vs" in note and "95% vs" in note
+    def test_staff_survey_table_reads_the_index_then_the_run(self):
+        """Section 6: a survey date before today is the automation index's
+        month, measured; later ones are the run's all-stage band, flipped from
+        human to AI share."""
+        result = {"workflow_progress": {
+            "years": np.array([0.0, 10.0]),
+            "overall_human_quantiles": np.array([[0.2, 0.4, 0.6], [0.2, 0.4, 0.6]])}}
+        rows = vp._tk_staff_survey_rows(result, datetime(2026, 10, 26))
+        august = min(vp.load_rsi_automation(),
+                     key=lambda r: abs((r['date'] - datetime(2026, 8, 15)).days))
+        assert rows[0]["model_range"] is None
+        assert rows[0]["model"] == pytest.approx(
+            100 * (1 - vp._tk_ladder_human_share(august, vp._tk_al_hours_now())))
+        for r in rows[1:]:
+            assert r["model"] == pytest.approx(60)
+            assert r["model_range"] == pytest.approx((40, 80))
+        assert [(r["staff"], r["staff_range"]) for r in rows] == [
+            (51, (28, 80)), (80, (51, 95)), (95, (80, 100))]
 
 
 class TestStaffAl5Check:
@@ -6108,7 +6117,7 @@ class TestStaffAl5Check:
     def test_a_later_share_needs_a_longer_gap_and_the_card_says_so(self):
         gaps = [g for _l, _s, g, _d in vp._tk_staff_al5_check()["survey"]]
         assert gaps == sorted(gaps)
-        assert "Cross-check: Anthropic's staff" in vp._tk_staff_al5_note()
+        assert "Cross-check: Anthropic Staff" in vp._tk_staff_al5_note()
 
 
 class TestTakeoffDirectionCurve:
