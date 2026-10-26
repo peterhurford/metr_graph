@@ -18947,8 +18947,28 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     def _sec(t):
         return _pc_sec_keep(t, _t_sec, sec_sprint / 100.0, sec_halve)
 
+    # With a Takeoff path the leak follows the US's own ECI/yr, AI speed-up
+    # included, against the trend it was measured on (the path runs back at
+    # that trend before today, so a window wholly in the past passes 1).
+    _eci_memo = {}
+
+    def _us_eci_cn(x):
+        k = round(x * 12.0)
+        if k not in _eci_memo:
+            _eci_memo[k] = _us_trained_unpaced(_us_clock(
+                np.full((n_s, 1), k / 12.0 - _cn_ship)))[:, 0] / tk['ppy']
+        return _eci_memo[k]
+
     def _diff_flow(t):
         a = max(leak_absorb, 1.0 / 12.0)
+        if tk is not None:
+            e = np.linspace(t - a, t, max(int(round(a * 12)), 1) + 1)
+            c = np.array([_us_eci_cn(x) for x in e])
+            mid = 0.5 * (e[1:] + e[:-1])
+            w = (np.where(mid >= _t_leak, _leak_keep, 1.0)
+                 * (_sec(mid) if sec_leak else 1.0))
+            return np.maximum(np.sum(np.diff(c, axis=0) * w[:, None], axis=0)
+                              / a, 0.0)
         clk = lambda x: float(_pc_paced_clock(
             x - _cn_ship, float(t_pause_s[0]), pace, pace_wins))
         if not sec_leak:
@@ -19167,6 +19187,15 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _rng1 = np.random.get_state()
     np.random.set_state(_rng0)
 
+    def _diff_free(t):
+        # The leak with the US unpaced and uncut: its own pace, no lever.
+        if tk is None:
+            return 1.0
+        a = max(leak_absorb, 1.0 / 12.0)
+        x = np.array([[t - a - _cn_ship, t - _cn_ship]])
+        v = _us_trained_unpaced(np.broadcast_to(x, (n_s, 2)))
+        return np.maximum((v[:, 1] - v[:, 0]) / (a * tk['ppy']), 0.0)
+
     def _us_path_free(grid):
         t = np.broadcast_to(np.asarray(grid, dtype=float) - _cn_ship,
                             (n_s, len(grid)))
@@ -19178,7 +19207,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
            'g_lo': _CC_CN_COMPUTE_LO, 'g_hi': _CC_CN_COMPUTE_HI,
            'comp_dead': None, 'comp_slow': None, 't_pause': None,
            't_dist_stop': None, 'dist_teacher': None,
-           'speedup_scale': None, 'comp_cut': None, 'diff_flow': None,
+           'speedup_scale': None, 'comp_cut': None, 'diff_flow': _diff_free,
            'dist_sched': None, 'theft_soft': None, 'theft_weights': None})
     np.random.set_state(_rng1)
     # The run-length trade-off, read off the *same* sampled paths so the

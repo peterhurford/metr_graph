@@ -2113,6 +2113,22 @@ class TestPacingTab:
             "Distillation only"))
         assert surpass(at) < covered
 
+    def test_the_leak_follows_the_us_ai_speed_up(self):
+        """At 45% pace from Jan 2027 the leak at the crossing runs above 45%
+        of its rate at pacing start: it follows the paced US's ECI/yr, which
+        Takeoff's AI speed-up raises, not today's pace alone."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        at.selectbox(key="pc_end_year").set_value(2035).run()
+        at.select_slider(key="pc_pace").set_value(45).run()
+        self._paired(at.select_slider(key="pc_pause_mo").set_value(3))
+        t = next(x.value for x in at.table if "Source" in x.value.columns)
+        row = t[t["Source"].str.startswith("US software")].iloc[0]
+        start = float(row["China ECI/yr at US pacing start"])
+        cross = float(row["China ECI/yr at US/China cross"])
+        assert cross > 1.2 * 0.45 * start
+
     def test_a_pause_dries_up_diffusion_without_the_leak_lever(self):
         """A paused US leaks no new methods: with the leak lever off,
         diffusion still dries up after the pause."""

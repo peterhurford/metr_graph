@@ -379,10 +379,12 @@ The leak runs on the share not stolen, so it greys out at 100% stolen
 (`test_theft_levers_speed_china_and_lift_the_sl5_caveat`, `test_theft_only_ever_helps_china`,
 `test_stolen_software_lands_with_the_leak`). `pc_theft_weights` lifts China to the US trained level
 at `pc_wt_when`, once or monthly (`pc_wt_mode`), in its own *Theft* row; §10 of
-`CHINA_COMPUTE_JUDGMENTS.md`. The leak also follows the US pace: at
-each year it is the US's pace times the share the leak lets through, averaged over that
-same absorption window (`_diff_flow`, passed as `diff_flow`), so a pause dries it up
-with the lever off, and the two never stack
+`CHINA_COMPUTE_JUDGMENTS.md`. The leak also follows the US: at each
+year it is the paced US's ECI/yr on the Takeoff path (AI speed-up included) over today's
+trend, times the share the leak lets through, averaged over that same absorption window
+(`_diff_flow`, passed as `diff_flow`; the pace alone without a Takeoff run), so a pause
+dries it up with the lever off, the two never stack, and a speeding US leaks faster
+(`test_the_leak_follows_the_us_ai_speed_up`)
 (`test_a_pause_dries_up_diffusion_without_the_leak_lever`). `pc_sec_sched` (*Defenses tighten over time*, default off) multiplies
 distillation, the leak and the share stolen by `_pc_sec_keep`: a six-month sprint removes `pc_sec_sprint`% (50),
 then the rest halves every `pc_sec_halve` years (1); `pc_sec_on` limits it to distillation or US software
