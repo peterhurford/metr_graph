@@ -25,7 +25,7 @@
 #   4. GLM-5.2 11.0 == Opus 4.5 11.0; [A] states GLM-5.2 "reaches as far as Opus 4.5".
 #   Derived lags also reproduce [A]'s prose: GLM-5.2 6.7mo ("less than 7 months"), DeepSeek-V4-Pro
 #   6.8mo ("7 months before it").
-# LAST VERIFIED 2026-10-27 (md5 re-checked): figure byte-identical -- the CDN still serves etag 62f53079...fb13,
+# LAST VERIFIED 2026-10-28 (md5 re-checked): figure byte-identical -- the CDN still serves etag 62f53079...bf13e,
 #   content-length 1047349, last-modified 2026-07-17 11:30:14 GMT, and the downloaded PNG's md5 equals
 #   that etag. No AISI post since 07-23 carries range scores (list in aisi_cyber_narrow.csv). CAISI's
 #   2026-09-17 GLM-5.3 assessment contains no cyber-range or TLO measure at all -- see the note in
@@ -34,7 +34,7 @@
 # 2026-09-03 CHECK (figure-unchanged, not a re-digitization): re-fetched fig2-ranges.png
 #   from the post's current CDN URL (.../6a5a1245efc070dccfb1d56d_fig2-ranges.png). Webflow content-hashes
 #   the filename, so the unchanged URL is itself evidence the asset was not re-uploaded; CDN headers still
-#   report last-modified 2026-07-17 11:30:14 GMT, content-length 1047349, etag 62f53079...fb13.
+#   report last-modified 2026-07-17 11:30:14 GMT, content-length 1047349, etag 62f53079...bf13e.
 #   Pixel-verified anyway: still 3500x2160. The y-axis tick marks left of the axis (probe at x=247; at
 #   x=249 the tick tips are too faint to threshold cleanly, so use 247) sit at 17 evenly spaced rows
 #   running 498.0 -> 1714.5 at 75.5-76.5px apart, i.e. exactly the recorded 498/1715 calibration at

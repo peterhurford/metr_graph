@@ -986,14 +986,14 @@ _RLI_RAW = [
     # Flash: released 08-13, createdAt 08-24).
     {"name": "Fable 5.1",       "date": "2026-09-01", "rli_score": 17.92},
     {"name": "GPT-6 Astra",     "date": "2026-09-03", "rli_score": 20.83},
-    # Added 2026-10-04: Scale only (isNew, createdAt 2026-10-01T01:17Z); not yet in the CAIS API.
+    # Added 2026-10-04 from Scale (createdAt 2026-10-01T01:17Z); the CAIS API agrees as of 2026-10-28.
     # Date is Epoch's catalogued release. Below the frontier.
     {"name": "Gemini 3.8 Flash", "date": "2026-09-02", "rli_score": 5.83},
-    # Added 2026-10-07: Scale only (isNew, createdAt 2026-10-07T21:54Z); not yet in the CAIS API.
+    # Added 2026-10-07 from Scale (createdAt 2026-10-07T21:54Z); the CAIS API agrees as of 2026-10-28.
     # Date is Epoch's catalogued release. New frontier point, above GPT-6 Astra.
     {"name": "Opus 5.5",        "date": "2026-09-22", "rli_score": 21.25},
     # Added 2026-10-23: Scale only, as "Gemini Argon 4" (isNew, createdAt 2026-10-22T22:16Z); not yet in
-    # the CAIS API. Date is Epoch's catalogued release of Gemini 4 Argon. Below the frontier.
+    # the CAIS API (rechecked 2026-10-28). Date is Epoch's catalogued release of Gemini 4 Argon. Below the frontier.
     {"name": "Gemini 4 Argon",  "date": "2026-09-30", "rli_score": 17.08},
     # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
@@ -8435,7 +8435,7 @@ _OPENAI_REVENUE = [
     # no OpenAI total.
     # Rechecked 2026-10-18: no TickerTrends post since. Epoch has replaced its $70B row with the FT's $50B
     # (as of 09-30) and a $30B July row; press line only, so this series is unchanged.
-    # Rechecked daily 2026-10-21 to 10-27: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
+    # Rechecked daily 2026-10-21 to 10-28: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -8549,8 +8549,8 @@ _ANTHROPIC_REVENUE = [
     # leaves the figure blank: "our Run-Rate Revenue was $ as of October 31, 2026". An S-1/A should fill it
     # in; that is a company-disclosed point and belongs here, dated 2026-10-31. Excluded: H1 2026 revenue
     # of $16.3B (period revenue); Q3 revenue is also still blank.
-    # Rechecked 2026-10-27: no S-1/A or 424B on EDGAR yet, so the figure is still blank; anthropic.com/news
-    # (10-27 drug development, GSA) states no run rate.
+    # Rechecked 2026-10-27 and 10-28: no S-1/A or 424B on EDGAR yet, so the figure is still blank;
+    # anthropic.com/news (10-27 drug development, GSA) states no run rate.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
