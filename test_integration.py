@@ -1274,6 +1274,37 @@ class TestTakeoffTab:
         assert not at.get("progress")
         assert at.session_state["_vp_booted"]
 
+    def test_ultraintelligence_threshold_moves_the_card_chart_and_explainer(self):
+        """`tk_ultra_eci` relabels the card and the ECI chart's line, lifts the
+        chart's view with it, never brings ultraintelligence sooner, and shows
+        in the explainer; the default leaves the card at ECI 250."""
+        at = self._app()
+
+        def ultra(at):
+            card = next(m for m in at.metric if m.label.startswith("Ultraintelligence: ECI"))
+            eci = next(json.loads(c.proto.spec) for c in _tk_charts(at)
+                       if any("Ultraintelligence: ECI" in a.get("text", "")
+                              for a in json.loads(c.proto.spec)["layout"].get("annotations", [])))
+            return card, eci
+        card, eci = ultra(at)
+        assert card.label == "Ultraintelligence: ECI 250"
+        assert eci["layout"]["yaxis"]["range"][1] == 300
+        explainer = next(e for e in at.expander if "ultraintelligence" in e.label)
+        assert "I. J. Good" in explainer.markdown[0].value
+        default_when = datetime.strptime(card.value, "%b %Y")
+        at.number_input(key="tk_ultra_eci").set_value(300.0).run()
+        _assert_no_error(at, "Takeoff / ultraintelligence at ECI 300")
+        card, eci = ultra(at)
+        assert card.label == "Ultraintelligence: ECI 300"
+        assert eci["layout"]["yaxis"]["range"][1] == 350
+        assert eci["layout"]["shapes"][-1]["y0"] == 300
+        try:
+            assert datetime.strptime(card.value, "%b %Y") >= default_when
+        except ValueError:
+            assert card.value.startswith(("After", "after", "Beyond", "\u2014")), card.value
+        explainer = next(e for e in at.expander if "ultraintelligence" in e.label)
+        assert "This view uses ECI 300" in explainer.markdown[0].value
+
     def test_takeoff_refreshes_an_old_imported_model(self, monkeypatch):
         import takeoff_model as tk
 
@@ -2840,6 +2871,17 @@ class TestPacingTab:
         assert mo > 0 and coder["Gap"] == f"China {mo} mo later"
         assert coder["US (median, 80%)"][:3] in (
             "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split())
+
+    def test_milestone_table_follows_the_takeoff_threshold(self):
+        """Takeoff's ultraintelligence threshold sets the Pacing milestone's ECI
+        and the chart's top."""
+        at = _fresh_app()
+        at.run()
+        at.session_state["tk_ultra_eci"] = 300.0
+        _switch_tab(at, "Pacing")
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns
+                 and "Gap" in x.value.columns)
+        assert t["At ECI"].iloc[2] == "~300"
 
     def test_renders_with_headline_and_table(self):
         at = self._app()

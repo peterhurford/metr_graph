@@ -91,7 +91,7 @@ it over the evidence window before research judgment is fitted. `judgment_cap` (
 none) caps AI research judgment at a multiple of today's
 (`test_a_judgment_cap_only_ever_slows_research`); AI Futures caps taste near 4× the best
 human, which maps to a larger, unmeasured number here. Coding counts as automated at the
-inherited date or once a deployed model reaches ECI 250 (`coding_capability`, from
+inherited date or once a deployed model reaches the ultraintelligence threshold (`coding_capability`, from
 `_tk_eci_scale`), returned as `coding_at` with `onset` left exact
 (`test_a_model_at_the_coding_capability_has_automated_coding`). Research acceleration
 has its own chart and 2×/5× first-crossing events (internal; no card shows them). `_tk_eci` reads each draw's capability
@@ -103,7 +103,7 @@ rate, which lands near that tab's own fixed-compute fits (`TestTakeoffEciRates`)
 for both also fits the history but credits the algorithm-driven takeoff less: it put
 ultraintelligence 7 months later. The coding test uses the same reading
 (`simulate(coding_weights=…)`). The path is floored at that trend for `_TK_ECI_FLOOR_YEARS`
-(the shipping lag), the lift then fading over `_TK_ECI_FLOOR_FADE_YEARS` so no line steps down; `_TK_ECI_VIEW_MAX` caps the chart's view.
+(the shipping lag), the lift then fading over `_TK_ECI_FLOOR_FADE_YEARS` so no line steps down; the chart's view stops `_TK_ECI_VIEW_PAST_ULTRA` above the threshold.
 v7 adds a CES labor-compute mean (`substitution`), Amdahl labor gains as the human share
 falls (`ai_speed`), non-AI input growth holding the frozen-AI pace (`baseline_inputs`), a
 steady-state pipeline, and an `r` control (`tk_returns`) from which the app sets
@@ -154,7 +154,16 @@ can fall or rise as AI improves; the b card's hover gives b at 100× when it is 
 that runs away numerically counts as reaching RSI then (under a human floor above the bar,
 never): its capability has passed any coding milestone
 (`test_a_runaway_reaches_rsi_unless_the_floor_blocks_it`). Ultraintelligence is the first
-month a draw's ECI reaches `_TK_ULTRA_ECI` (250). ECI at RSI is fixed by construction:
+month a draw's ECI reaches `tk_ultra_eci` (*Ultraintelligence threshold*, default
+`_TK_ULTRA_ECI` = 250, read by `_tk_ultra_eci`, which falls back to 250 outside
+`_TK_ULTRA_RANGE`; `_tk_run` passes it to `_tk_eci` as `ultra_level`, which every card,
+chart and caption reads, and Pacing's milestone takes it from there). Raising it moves RSI's
+late tail through the coding shortcut, not its median
+(`test_ultraintelligence_threshold_moves_the_card_chart_and_explainer`). The explainer under
+the cards (`_tk_ultra_explainer`) counts in GPT-4-to-GPT-6-Astra jumps (`_TK_ULTRA_JUMP`); its
+METR comparison is a one-off fit of log p80 horizon on ECI over the models in both datasets
+(~1,000 work-years at 250 using all 20, ~20 using the 13 at ECI 140+), static text to refit
+when either dataset moves. ECI at RSI is fixed by construction:
 human hours depend only on capability, so RSI is a capability threshold.
 Under the three headline cards, a row gives coding → RSI and RSI → ultraintelligence
 (`_tk_gap`, the FOOM readout) with 80%/90% intervals, over draws reaching the first by the

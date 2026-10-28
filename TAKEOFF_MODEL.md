@@ -201,8 +201,8 @@ frontier's fitted 15.7 points a year. Both rates fit that history; algorithms ea
 because compute explains only about 3 of the 15.7 points (the tab's own pooled fit puts
 algorithms at 12 points a year, close to the 12.6 left over). One rate for both, 17.6 points
 per 10x, also fits the history but credits the mostly algorithmic takeoff less: it put
-ultraintelligence 7 months later. Coding counts as automated once a model reaches ECI 250 under the same reading.
-Ultraintelligence is defined as an ECI level on this chart.
+ultraintelligence 7 months later. Coding counts as automated once a model reaches the ultraintelligence threshold under the same reading.
+Ultraintelligence is defined as an ECI level on this chart: 250 by default, adjustable in the sidebar.
 
 ## Parameter uncertainty
 

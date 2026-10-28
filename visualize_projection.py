@@ -16755,6 +16755,15 @@ def _seeded_rng(seed):
         np.random.set_state(state)
 
 
+def _tk_ultra_eci():
+    """The ECI level that counts as ultraintelligence (`tk_ultra_eci`), the
+    default when unset or out of range."""
+    value = st.session_state.get("tk_ultra_eci", _TK_ULTRA_ECI)
+    lo, hi = _TK_ULTRA_RANGE
+    return float(value) if isinstance(value, (int, float)) and np.isfinite(value) \
+        and lo <= value <= hi else _TK_ULTRA_ECI
+
+
 def _tk_seed():
     """The Takeoff tab's one seed, shared by the simulator and the coding
     dates it inherits."""
@@ -17843,11 +17852,11 @@ def _pc_takeoff_us(today):
                                 side="right") - 1, 0, len(years) - 1)
     coder = np.where(np.isfinite(ca) & (ca <= years[-1]), paths[rows, k], np.nan)
     return {"day": day, "years": years, "paths": paths, "ppy": eci["ppy"],
-            "coder": coder, "rsi": eci["at_rsi"]}
+            "coder": coder, "rsi": eci["at_rsi"], "ultra": eci["ultra_level"]}
 
 
-# Top of the Pacing chart's ECI axis.
-_PC_ECI_VIEW_MAX = 260
+# Top of the Pacing chart's ECI axis, past the ultraintelligence threshold.
+_PC_ECI_VIEW_PAST_ULTRA = 10
 
 # Chart marks for each side's milestones.
 _PC_MS_SYMBOL = {"automated coder": "star", "RSI": "hexagram"}
@@ -19479,12 +19488,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # the US on its paced trained frontier, China on its release-dated path
     # (its marks and dates come back by its lag). Coder and RSI are the levels the
     # paired Takeoff scenario had at them; ultraintelligence is the Takeoff
-    # tab's fixed ECI. {name: (level per sample, US years, China years)}.
+    # tab's threshold (`tk_ultra_eci`). {name: (level per sample, US years, China years)}.
     ms_levels = {}
     if tk is not None:
         ms_levels["automated coder"] = tk["coder"][_draw]
         ms_levels["RSI"] = tk["rsi"][_draw]
-    ms_levels["ultraintelligence"] = np.full(n_s, _TK_ULTRA_ECI)
+    ms_levels["ultraintelligence"] = np.full(n_s, tk["ultra"] if tk is not None
+                                             else _tk_ultra_eci())
     ms_years = {}
     for _ms_name, _lvl in ms_levels.items():
         _l = np.nan_to_num(_lvl, nan=np.inf)
@@ -19742,9 +19752,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                "Training run finished": "Training runs finish",
                "Model release": "Model releases"}[timing_label]
     # A Takeoff runaway puts the bands in the hundreds, so the view stops at
-    # `_PC_ECI_VIEW_MAX`, just above ultraintelligence (`_TK_ULTRA_ECI`).
+    # `_PC_ECI_VIEW_PAST_ULTRA` above ultraintelligence (`_tk_ultra_eci`).
     _lows = [sc for d, sc, _n in us_fr + cn_fr if d >= datetime(2024, 1, 1)]
-    _y_rng = [min(_lows or [anchor_eci]) - 5, _PC_ECI_VIEW_MAX]
+    _y_rng = [min(_lows or [anchor_eci]) - 5, _tk_ultra_eci() + _PC_ECI_VIEW_PAST_ULTRA]
     fig.update_layout(
         height=540, plot_bgcolor='white', paper_bgcolor='white',
         margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
@@ -20465,6 +20475,10 @@ _TK_NOT_WIDGETS = ("onset_low", "onset_high", "years", "compute_slow_years")
 # Compute growth slows from the end of this year (the edge of Epoch's
 # feasibility analysis); `tk_compute_slowdown` sets by how much.
 _TK_COMPUTE_SLOW_YEAR = 2030
+# Ultraintelligence, as an ECI level each scenario's capability path must reach:
+# the default of `tk_ultra_eci`, and the range its input accepts.
+_TK_ULTRA_ECI = 250.0
+_TK_ULTRA_RANGE = (180.0, 500.0)
 _TK_DEFAULTS = {"tk_" + k: v for k, v in takeoff.DEFAULTS.items()
                 if k not in _TK_NOT_WIDGETS}
 _TK_DEFAULTS.update({
@@ -20474,7 +20488,7 @@ _TK_DEFAULTS.update({
     "tk_pace_today": 1.7, "tk_returns": 1.0, "tk_dc_compute": True,
     "tk_coding_pairing": 0.9,
     "tk_wf_humans": 10_000,
-    "tk_wf_copies": 50_000, "tk_wf_power": 10.0,
+    "tk_wf_copies": 50_000, "tk_wf_power": 10.0, "tk_ultra_eci": _TK_ULTRA_ECI,
 })
 _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
 _TK_DEFAULTS["tk_serial_speedup"] = bool(takeoff.DEFAULTS["serial_speedup"])
@@ -21330,7 +21344,7 @@ def _tk_density(samples, edges):
     return counts / len(samples) / np.diff(edges)
 
 
-def _tk_dist_fig(rsi, ultra, gap, today, view_end, sim_end):
+def _tk_dist_fig(rsi, ultra, gap, today, view_end, sim_end, ultra_level=_TK_ULTRA_ECI):
     """Section 4: density (top) and cumulative share (bottom) of the RSI and
     ultraintelligence dates (left, calendar, cropped to the chart year) and of
     the RSI-to-ultraintelligence gap (right, among draws reaching RSI by
@@ -21388,7 +21402,7 @@ def _tk_dist_fig(rsi, ultra, gap, today, view_end, sim_end):
     fig.update_yaxes(range=[0, 100], row=2, col=2)
     fig.update_xaxes(range=[today, view_end], col=1)
     fig.update_xaxes(range=[g_edges[0], g_edges[-1]], col=2)
-    fig.update_xaxes(title_text=f"Time from RSI to ECI {_TK_ULTRA_ECI:g}", row=2, col=2)
+    fig.update_xaxes(title_text=f"Time from RSI to ECI {ultra_level:g}", row=2, col=2)
     fig.update_layout(height=560, margin=dict(l=55, r=20, t=40, b=40),
                       legend=dict(orientation="h", y=-0.12))
     return fig
@@ -21436,7 +21450,7 @@ def _tk_eci_rates(params, hist=None):
             "pooled_b_time": pooled['b_time'] if pooled else None}
 
 
-def _tk_eci(result, params):
+def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
     """Each scenario's capability path read as ECI, anchored on the US frontier
     as trained (`result['eci_lead']` years of climb past the latest release).
 
@@ -21446,7 +21460,9 @@ def _tk_eci(result, params):
     faster than today shows as faster ECI growth, floored at today's trend
     continued for `_TK_ECI_FLOOR_YEARS`. Returns {'now' (trained), 'released'
     (the latest release's score), 'ppy', 'paths' (draws x months), 'at_rsi'
-    (per draw, NaN if not reached), 'frontier' (US-best frontier rows)}.
+    (per draw, NaN if not reached), 'frontier' (US-best frontier rows),
+    'ultra' (per draw, the first year its path reaches ECI `ultra`),
+    'ultra_level' (`ultra`)}.
     """
     frontier, now, ppy, base_rate = _tk_eci_scale(params, result.get("hist_compute"),
                                                   result.get("eci_lead", 0.0))
@@ -21472,7 +21488,7 @@ def _tk_eci(result, params):
                       paths[np.arange(len(rsi)), idx], np.nan)
     return {"now": now, "released": frontier[-1]['eci_score'], "ppy": ppy,
             "paths": paths, "at_rsi": at_rsi, "model": model, "frontier": frontier,
-            "ultra": _tk_first_reach(paths, years, _TK_ULTRA_ECI)}
+            "ultra": _tk_first_reach(paths, years, ultra), "ultra_level": ultra}
 
 
 # Years from today during which projected ECI is floored at today's trend, and
@@ -21480,8 +21496,32 @@ def _tk_eci(result, params):
 _TK_ECI_FLOOR_YEARS = 1.0
 _TK_ECI_FLOOR_FADE_YEARS = 1.0
 
-# Ultraintelligence, as an ECI level each scenario's capability path must reach.
-_TK_ULTRA_ECI = 250.0
+# GPT-4 (Mar 2023) to GPT-6 Astra on Epoch's ECI, the "jump" the explainer counts in.
+_TK_ULTRA_JUMP = ("GPT-4", 125.7, "GPT-6 Astra", 168.8)
+
+
+def _tk_ultra_explainer(level):
+    """The *What "ultraintelligence" means* expander's text, at threshold `level`."""
+    lo_name, lo, hi_name, hi = _TK_ULTRA_JUMP
+    jump = hi - lo
+    setting = ("" if level == _TK_ULTRA_ECI else
+               f" This view uses ECI {level:g}, about {(level - hi) / jump:.1f} such jumps "
+               f"past {hi_name}.")
+    return (
+        "Ultraintelligence is I. J. Good's 1965 term for \"a machine that can far surpass "
+        "all the intellectual activities of any man however clever.\" We use it because "
+        "\"superintelligence\" is now used in different ways. Here it means a model whose "
+        f"ECI reaches {level:g}.\n\n"
+        f"The default, {_TK_ULTRA_ECI:g}, is a judgment call, not something measured. One "
+        f"way to read it: {lo_name} scored {lo:.1f} and {hi_name} scores {hi:.1f}, a jump of "
+        f"{jump:.0f} points. Two more jumps of that size reach about {hi + 2 * jump:.0f}. "
+        "People who think it takes more jumps should set it higher, under *Ultraintelligence "
+        f"threshold* in the sidebar.{setting}\n\n"
+        "For scale: a straight line through METR's 80%-success time horizon against ECI, "
+        "for the 20 models scored on both, puts ECI 250 at tasks that take a person about "
+        "1,000 work-years; fitting only the 13 at ECI 140 or above gives about 20. Either "
+        "way that is beyond any one person's career, and it extrapolates from horizons now "
+        "measured in hours.")
 
 
 def _tk_first_reach(paths, years, level):
@@ -21492,8 +21532,8 @@ def _tk_first_reach(paths, years, level):
 
 # Past RSI some scenarios' efficiency compounds without limit, and ECI (linear
 # in log effective compute) runs into the thousands; the chart's view stops
-# here so the range an ultraintelligence bar would sit in stays readable.
-_TK_ECI_VIEW_MAX = 300
+# this far past the ultraintelligence threshold so the range around it stays readable.
+_TK_ECI_VIEW_PAST_ULTRA = 50
 
 
 def _tk_eci_fig(result, today, eci, markers=()):
@@ -21531,14 +21571,15 @@ def _tk_eci_fig(result, today, eci, markers=()):
         fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper",
                            text=label, showarrow=False, xanchor="left",
                            font=dict(size=11, color="#888"))
-    fig.add_hline(y=_TK_ULTRA_ECI, line_dash="dash", line_color="#c0392b", line_width=1,
-                  annotation_text=f"Ultraintelligence: ECI {_TK_ULTRA_ECI:g}",
+    fig.add_hline(y=eci["ultra_level"], line_dash="dash", line_color="#c0392b", line_width=1,
+                  annotation_text=f"Ultraintelligence: ECI {eci['ultra_level']:g}",
                   annotation_position="top left", annotation_font_color="#c0392b")
     fig.update_layout(
         height=420, margin=dict(l=55, r=20, t=30, b=40),
         xaxis=dict(range=[past[0]['date'] if past else x[0], x[-1]]),
         yaxis=dict(title="ECI (Epoch Capabilities Index)",
-                   range=[min(m['eci_score'] for m in past) - 10, _TK_ECI_VIEW_MAX]),
+                   range=[min(m['eci_score'] for m in past) - 10,
+                          eci["ultra_level"] + _TK_ECI_VIEW_PAST_ULTRA]),
         legend=dict(orientation="h", y=-0.12), hovermode="x")
     return fig
 
@@ -22107,7 +22148,8 @@ def _tk_run(today, progress=None):
     eci_lead = _ship_lag("us") / 365.25
     _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute, eci_lead)
     eci_rates = _tk_eci_rates(params, hist_compute)
-    coding_level = _TK_ULTRA_ECI - eci_now          # in ECI points, through eci_rates
+    ultra = _tk_ultra_eci()
+    coding_level = ultra - eci_now          # in ECI points, through eci_rates
     coding_weights = (eci_rates["compute"], eci_rates["software"])
     # Research hours follow the automation index's own projection, each stage
     # at its own hours per level and each scenario with its own AL4->AL5 gap.
@@ -22143,7 +22185,7 @@ def _tk_run(today, progress=None):
     result["eci_rates"] = eci_rates
     result["eci_lead"] = eci_lead
     rsi = result["events"]["RSI"]
-    eci = _tk_eci(result, params)
+    eci = _tk_eci(result, params, ultra)
     return {"params": params, "result": result, "eci": eci, "eci_base": eci_base,
             "experiment_starts": experiment_starts, "pace_today": pace_today,
             "pace_yield": pace_yield}
@@ -22213,6 +22255,12 @@ def _render_takeoff(loading):
                    "its settings are in the RSI evidence section.")
         _ship_lag_inputs(st, china=False)
         with st.expander("What decides ultraintelligence", expanded=True):
+            number("Ultraintelligence threshold (ECI)", "ultra_eci", *_TK_ULTRA_RANGE, 5.0,
+                   "The ECI level that counts as ultraintelligence. Default 250 is about two "
+                   "more GPT-4-to-GPT-6-sized jumps (43 points each) past today's frontier; "
+                   "each extra jump is about +43. A model at this level also counts as "
+                   "having automated coding, so moving it can move RSI too. The Pacing "
+                   "tab's ultraintelligence milestone uses the same level.")
             st.caption("Across a plausible range, r moves the ultraintelligence date "
                        "\u22125 to +6 months, judgment \u22123 to +2, parallelization not at "
                        "all; \u03c1, more AI copies, the scale-dependent share, faster cycles "
@@ -22643,19 +22691,19 @@ def _render_takeoff(loading):
               + ("on autopilot (the default) those are dropped, so from RSI on no stage needs "
                  "people." if params["rsi_autopilot"] else
                  "with autopilot off they keep falling at their own pace."))
-        _card(c, f"Ultraintelligence: ECI {_TK_ULTRA_ECI:g}", eci["ultra"],
-              f"First month a scenario's best trained model reaches ECI {_TK_ULTRA_ECI:g}. "
+        _card(c, f"Ultraintelligence: ECI {eci['ultra_level']:g}", eci["ultra"],
+              f"First month a scenario's best trained model reaches ECI {eci['ultra_level']:g}. "
               f"Today's trained frontier is ~{eci['now']:.0f}: the latest US release "
               f"({eci['released']:.0f}) plus {_ship_lag('us'):.0f} days of the trend, "
               "the US trained-to-release lag.")
         a, b, c = st.columns(3)
         _gap_card(a, "Coding automation \u2192 RSI", result["coding_at"], rsi,
                   "Time from each scenario's coding-automation date (the automated coder projection's, or the "
-                  f"month its ECI reaches {_TK_ULTRA_ECI:g} if sooner) to its RSI date.")
+                  f"month its ECI reaches {eci['ultra_level']:g} if sooner) to its RSI date.")
         _gap_card(b, "RSI \u2192 ultraintelligence", rsi, eci["ultra"],
                   "How fast the takeoff is: time from each scenario's RSI date to its "
-                  f"ECI reaching {_TK_ULTRA_ECI:g}. A model that reaches ECI "
-                  f"{_TK_ULTRA_ECI:g} counts as having automated coding, so RSI never waits on "
+                  f"ECI reaching {eci['ultra_level']:g}. A model that reaches ECI "
+                  f"{eci['ultra_level']:g} counts as having automated coding, so RSI never waits on "
                   "a later coding date from the automated coder projection.")
         # In years of 2025-level ECI progress, the yearly chart's unit: 2025's
         # own gain, as a rate of log effective compute through the ECI mapping.
@@ -22686,6 +22734,9 @@ def _render_takeoff(loading):
                 _tk_ci(c, level, "first year").caption(
                     f"{level}% CI: {_yrs(takeoff.quantile(burst, lo))}"
                           f" – {_yrs(takeoff.quantile(burst, hi))}")
+        with st.expander(f"What “ultraintelligence” means, and why ECI "
+                         f"{_TK_ULTRA_ECI:g}"):
+            st.markdown(_tk_ultra_explainer(eci["ultra_level"]))
         _tk_loading(bar, 3)
         medians = [(label, takeoff.quantile(samples, 0.5, horizon))
                    for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
@@ -22890,7 +22941,8 @@ def _render_takeoff(loading):
          f"each is worth about {_tk_copy_worth_today(result, wf_humans, wf_copies):.2f} of a "
          f"person. Each grows in worth as (ECI / today's)^{wf_power:g}: about "
          f"{(200 / eci['now']) ** wf_power:.0f}\u00d7 at ECI 200, about "
-         f"{(250 / eci['now']) ** wf_power:.0f}\u00d7 at 250. All set under Advanced. That "
+         f"{(eci['ultra_level'] / eci['now']) ** wf_power:.0f}\u00d7 at "
+         f"{eci['ultra_level']:g}. All set under Advanced. That "
          "power is a stated judgment, not a fit; the model's research speed comes from its "
          "own labor equations, not from this chart."))
     st.plotly_chart(_tf(_tk_to(_tk_workforce_fig(result, today, eci, markers), view_end)),
@@ -22959,7 +23011,7 @@ def _render_takeoff(loading):
          f"{end_date:%Y}; one not reaching ultraintelligence by then stays in the "
          "denominator."))
     st.plotly_chart(_tf(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_end,
-                                     end_date)), width="stretch")
+                                     end_date, eci["ultra_level"])), width="stretch")
 
     st.subheader("6. Against Anthropic Staff")
     survey = _tk_staff_survey_rows(result, today)

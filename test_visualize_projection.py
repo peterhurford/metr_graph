@@ -5934,6 +5934,30 @@ class TestMilestoneCardLayout:
         assert vp._pc_card_rows(11) == [4, 4, 3]
 
 
+class TestTakeoffUltraThreshold:
+    """`_tk_ultra_eci` reads `tk_ultra_eci`, falling back to 250 when it is
+    unset, malformed or outside the input's range (a stale URL on Pacing,
+    where the Takeoff widget never clamps it)."""
+
+    def test_reads_the_setting_and_falls_back_to_the_default(self):
+        state = vp.st.session_state
+        try:
+            state.pop("tk_ultra_eci", None)
+            assert vp._tk_ultra_eci() == 250.0
+            state["tk_ultra_eci"] = 340
+            assert vp._tk_ultra_eci() == 340.0
+            for bad in (90.0, 10_000.0, float("nan"), "abc"):
+                state["tk_ultra_eci"] = bad
+                assert vp._tk_ultra_eci() == 250.0, bad
+        finally:
+            state.pop("tk_ultra_eci", None)
+
+    def test_explainer_counts_jumps_and_names_a_non_default_setting(self):
+        text = vp._tk_ultra_explainer(250.0)
+        assert "about 255" in text and "This view uses" not in text
+        assert "This view uses ECI 341, about 4.0 such jumps" in vp._tk_ultra_explainer(341.0)
+
+
 class TestTakeoffYearlyProgress:
     """Years of 2025-level ECI progress per calendar year: ECI gained over the
     points the frontier gained in 2025, +inf once a draw has run away; last

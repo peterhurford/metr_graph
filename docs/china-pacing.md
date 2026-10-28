@@ -276,8 +276,8 @@ China's whole rate by it at China's current ECI, the extra kept as its own `spee
 no-lever path, to the Takeoff parallelization exponent (`tk_parallelization`, 0.5), since
 AI researchers run on compute (`_cn_src_compute_ratio`, `speedup_scale`;
 `test_less_compute_shrinks_only_the_speedup_channel`). Under the chart a table dates automated coder, RSI and
-ultraintelligence (`_TK_ULTRA_ECI`) for both sides from `ms_years`, the same per-sample first
-crossings the chart's marks take medians of (`test_milestone_table_dates_both_sides`)
+ultraintelligence (Takeoff's `tk_ultra_eci`, via `_pc_takeoff_us`'s `ultra`) for both sides from `ms_years`, the same per-sample first
+crossings the chart's marks take medians of (`test_milestone_table_dates_both_sides`, `test_milestone_table_follows_the_takeoff_threshold`); the chart's top sits `_PC_ECI_VIEW_PAST_ULTRA` above that level
 (`test_speedup_multiplies_chinas_rate_and_is_its_own_channel`). It is capability-indexed and
 unpaced: pacing slows the US, not what AI at a given ECI does for research. `pc_pause_mo` and
 the `_pc_capacity_at()` reading it implies are rendered by `render_pacing()`, not
