@@ -8435,7 +8435,7 @@ _OPENAI_REVENUE = [
     # no OpenAI total.
     # Rechecked 2026-10-18: no TickerTrends post since. Epoch has replaced its $70B row with the FT's $50B
     # (as of 09-30) and a $30B July row; press line only, so this series is unchanged.
-    # Rechecked daily 2026-10-21 to 10-26: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
+    # Rechecked daily 2026-10-21 to 10-27: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -8549,6 +8549,8 @@ _ANTHROPIC_REVENUE = [
     # leaves the figure blank: "our Run-Rate Revenue was $ as of October 31, 2026". An S-1/A should fill it
     # in; that is a company-disclosed point and belongs here, dated 2026-10-31. Excluded: H1 2026 revenue
     # of $16.3B (period revenue); Q3 revenue is also still blank.
+    # Rechecked 2026-10-27: no S-1/A or 424B on EDGAR yet, so the figure is still blank; anthropic.com/news
+    # (10-27 drug development, GSA) states no run rate.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
