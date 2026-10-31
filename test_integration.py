@@ -1944,6 +1944,26 @@ class TestPacingTab:
         assert p["China if the US kept going"]["y"] == pytest.approx(free)
         assert p["China, projected"]["y"][-1] < free[-1] - 5
 
+    def test_the_us_climb_starts_on_the_last_us_release(self):
+        """The dashed US climb joins the actual line, with no blank stretch
+        before the sim's first month (China's anchor)."""
+        import json
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        for el in at.get("plotly_chart"):
+            data = json.loads(el.proto.spec)["data"]
+            names = [t.get("name") for t in data]
+            if "China, projected" in names:
+                break
+        else:
+            raise AssertionError("no pause chart")
+        actual = data[names.index("US (actual)")]
+        climb = data[names.index("US, projected")]
+        assert climb["x"][0] == actual["x"][-1]
+        assert climb["y"][0] == pytest.approx(actual["y"][-1])
+        assert climb["y"][1] >= climb["y"][0]
+
     def test_the_pacing_date_and_model_access_grey_out_with_no_pacing(self):
         """With no pacing nothing starts on the pacing date: it greys out at
         today, the state of play reads today, the model-access lever is

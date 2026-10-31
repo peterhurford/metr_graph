@@ -19581,7 +19581,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # the path from it, both medians of the per-sample bar China is crossed
     # against, dated as the pause is, monthly so a hover answers anywhere.
     # The no-pacing counterfactual is dotted, drawn only where pacing bites.
+    # The sim's months start at China's anchor (`t0_us`); the climb is drawn
+    # from the last US release to them, so it joins the actual line.
     t0_us = max(us_best[0] + off_us_rel, anchor_d + off_us)
+    _us_last = (us_fr[-1][0] + off_us_rel, us_fr[-1][1])
     _tp50 = float(np.median(t_pause_s))
 
     def _date_of(t):
@@ -19590,11 +19593,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _ck = [i for i, t in enumerate(grid_yrs)
            if t < _tp50 and _date_of(t) > t0_us]
     if d_pause_v > t0_us:
-        _cx = [t0_us] + [_date_of(grid_yrs[i]) for i in _ck] + [d_pause_v]
-        _cy = ([us_best[1]] + [float(np.median(us_tr_grid[:, i])) for i in _ck]
+        _cx = ([_us_last[0]] + [_date_of(grid_yrs[i]) for i in _ck]
+               + [d_pause_v])
+        _cy = ([_us_last[1]] + [float(np.median(us_tr_grid[:, i])) for i in _ck]
                + [lvl50])
-        _climb = ((lvl50 - us_best[1])
-                  / max((d_pause_v - t0_us).days / 365.25, 1e-6))
+        _climb = ((lvl50 - _us_last[1])
+                  / max((d_pause_v - _us_last[0]).days / 365.25, 1e-6))
         fig.add_trace(go.Scatter(
             x=_cx, y=_cy, mode='lines',
             line=dict(color='#1450A3', width=2.5, dash='dash'),

@@ -434,7 +434,7 @@ the race table by its columns (`TestPacingTab._entities`), never by position.
 China
 races the paused frontier in an ECI chart (US kink + fan + crossing diamond); the
 paused stock stays distillable while a gap remains, then China runs on its
-indigenous band plus its export-control-bound compute term. Projections are dashed; the dotted *US, no pacing* and *China if the US kept going*
+indigenous band plus its export-control-bound compute term. The dashed US climb is drawn from the last US release, not the sim's first month at China's anchor, so it joins the actual line (`test_the_us_climb_starts_on_the_last_us_release`). Projections are dashed; the dotted *US, no pacing* and *China if the US kept going*
 are the counterfactuals, drawn only where the settings move a country off them, China's
 from the same sim and draws with the US unpaced and every lever off
 (`test_the_dotted_lines_show_only_what_the_settings_changed`). A *Project through*
