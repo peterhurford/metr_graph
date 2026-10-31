@@ -17,6 +17,10 @@ Microsoft Fairwater Atlanta,768768.7220818596,636,24.092952,Microsoft #confident
 - [Bloomberg article](https://www.bloomberg.com/news/features/2024-12-08/georgia-s-blackstone-backed-qts-data-center-hits-resistance-over-ai-power-needs)
 
 ",https://docs.google.com/spreadsheets/d/1XeruHu2ES3UsSrsAU3HSMkk5zwzFOQzxQE9pQ_fuEUw/edit?usp=sharing,Microsoft AI WAN #confident,B200,B200,,,Georgia Power,United States,"1435 Hwy 54 W, Fayetteville, GA 30214"
+OpenAI Stargate Abilene,764022.233451238,618,23.411075999999998,Oracle #confident,OpenAI #confident,"- [Crusoe 2024 Impact Report, with details on Abilene](https://drive.google.com/file/d/1oHWA9vmpvFOh-LvDy5fgq_wq5ITuxd1r/view?usp=sharing)
+- [Air Permit Application for buildings 1-2, featuring blueprints on p.157](https://drive.google.com/file/d/1FgfX6hqojlBtqNXJHjzJmnwWAMx4_M0b/view?usp=sharing)
+- [Mortensen’s profile of the project, with details of substations](https://www.mortenson.com/projects/abilene-data-center-development)
+",https://docs.google.com/spreadsheets/d/1M5VPpNDGTPgssU1x3xQJKv33EIa7-wgpDIFM8uzpodQ/edit?usp=sharing,Stargate #confident,"B200,B300","B200,B300","Softbank,OpenAI,Oracle",Mortenson,American Electric Power,United States,"5502 Spinks Rd, Abilene, TX 79601"
 Google Pryor (North),636685.1945426983,368,13.940576,Google #confident,Google DeepMind #speculative,"- [Google announces expansion of Pryor facility](https://blog.google/inside-google/company-announcements/google-american-innovation-oklahoma/)
 - [Google 2025 Environmental Report](https://sustainability.google/reports/google-2025-environmental-report/) with PUE and water use on pp.109-110
 - [News of a 9 exaflop TPUv4 cluster in the Pryor data center, launched in 2022](https://techcrunch.com/2022/05/11/google-launches-a-9-exaflop-cluster-of-cloud-tpu-v4-pods-into-public-preview/)
@@ -30,10 +34,6 @@ Meta Prometheus,536343.0015159171,471,17.842422,Meta #confident,Meta #confident,
 - [New Albany Business Park land use map](https://drive.google.com/file/d/1Wb_BBVOnhu5UCQ8Q5d6iRIG9K_vigD8A/view?usp=sharing)
 - [Letter on Socrates South Power Generation Project](https://drive.google.com/file/d/1OMbFbdNGPmfSkwVWqOAK-5pOufiKQBu1/view?usp=sharing)
 ",https://docs.google.com/spreadsheets/d/1LOiioZUG696TC3nOAXROvhJBhhN7to-r6KR05Hd0qCk/edit?usp=sharing,Prometheus #confident,B300,B300,,,"Williams,American Electric Power",United States,"1 Community Cir, New Albany, OH 43054"
-OpenAI Stargate Abilene,509348.15563415864,421,15.948322,Oracle #confident,OpenAI #confident,"- [Crusoe 2024 Impact Report, with details on Abilene](https://drive.google.com/file/d/1oHWA9vmpvFOh-LvDy5fgq_wq5ITuxd1r/view?usp=sharing)
-- [Air Permit Application for buildings 1-2, featuring blueprints on p.157](https://drive.google.com/file/d/1FgfX6hqojlBtqNXJHjzJmnwWAMx4_M0b/view?usp=sharing)
-- [Mortensen’s profile of the project, with details of substations](https://www.mortenson.com/projects/abilene-data-center-development)
-",https://docs.google.com/spreadsheets/d/197BW-5tHutOzJ_LTv990eCO_M8nUXT2t1nl--UfMIUk/edit?usp=sharing,Stargate #confident,"B200,B300","B200,B300","Softbank,OpenAI,Oracle",Mortenson,American Electric Power,United States,"5502 Spinks Rd, Abilene, TX 79601"
 DayOne Kempas,480638.7064173825,421.691664,15.974523615648,,,"- [News of Phase 2 operation](https://www.moomoo.com/news/post/41886329/support-ai-computing-deployment-gds-holdings-nusajaya-technology-park-datacenter?level=1&data_ticket=1778269491837872)
 - [Archived DayOne website - ""120 MW in operation"" in Johor](https://web.archive.org/web/20241231165420/https://dayonedc.com/)
 - [Archived DayOne website - 390 MW ""in service"" in Johor](https://web.archive.org/web/20260314134756/https://dayonedc.com/market/johor)
@@ -163,6 +163,10 @@ Microsoft Project Osmium,155634.15866599293,190,7.19758,Microsoft #confident,Ope
 - [MISO Announcement reporting power for newest buildings, likely an overestimate](https://cdn.misoenergy.org/NEW%20LOAD%20ANNOUNCEMENTS%20IN%20MISO%20REGIONS%2012062024684954.pdf)
 - [Microsoft article on data centers in Iowa used by OpenAI](https://news.microsoft.com/source/features/ai/west-des-moines-iowa-ai-supercomputer/?msockid=23bbdd21a02166402e27c929a1a567ce)
 ",https://docs.google.com/spreadsheets/d/1GxpxdT_2dcvnvdmi2dybQfiwb0-XhzWf65i3QVI0FEA/edit?usp=sharing,,"A100,H100,B200","A100,H100,B200",,,,United States,"5855 SW Kerry St, Cumming, IA 50061"
+YTL Johor,153532.0869125821,113,4.280666,,,"- [Official YTL page for the campus](https://ytldatacenters.com/locations/malaysia/)
+- [YTL press release on the use of GB200's](https://www.ytlpowerinternational.com/press-releases/ytl-creates-one-of-the-worlds-most-advanced-supercomputers-powered-by-nvidia-grace-blackwell-based-dgx-cloud/)
+- [Aerial footage including the campus](https://www.youtube.com/watch?v=HODHjDbFt10)
+",https://docs.google.com/spreadsheets/d/18PuiVirfUfF5O0syOPNGkf-qtNg2viKbaW3v9r5cBBY/edit?gid=2010365208#gid=2010365208,,"B200,B300","B200,B300,Rubin",,,,Malaysia,"YTL Green Data Centers, Kulai, Johor, Malaysia"
 Meta Eagle Mountain,151354.21930267813,133,5.038306,Meta #confident,Meta #confident,"- [Expansion announcement by Meta ](https://www.facebook.com/EagleMountainDataCenter/posts/517902967007646)
 - [Report on Williams Company gas-fired plant under construction adjacent to data cente](https://ukozvhzgrcnkcatjqfoo.supabase.co/storage/v1/object/public/03-00-air-construction/2026.02.05_Eagle%20Mountain%20Power%20Plant_Application_32a5238b.pdf)r
 
@@ -188,7 +192,7 @@ Google Waltham Cross,123799.89893885801,88,3.3336159999999997,Google #confident,
 - [Planning application description (CPRE Hertfordshire)](https://www.cpreherts.org.uk/resources/land-at-maxwells-farm-west-great-cambridge-road-cheshunt-hertfordshire/)
 
 ",https://docs.google.com/spreadsheets/d/1vXTZsF2JXQCSUH20Gx6_kumpzQLuoVebrndE2lHmGTM/edit?usp=sharing,,TPU v6e,TPU v6e,,,"Shell Energy Europe,Engie",United Kingdom,"Land at Maxwell's Farm West, Great Cambridge Road, Cheshunt, EN8 8XH"
-VNET Bayin Ulanqab,122789.28751894896,221,8.371922,VNET #confident,ByteDance #speculative,"- [Official VNET resource page for data centers](https://web.archive.org/web/20260619185141/https://www.vnet.com/resource.html)
+VNET Bayin Ulanqab,122789.28751894896,221,8.371922,ByteDance #speculative,ByteDance #speculative,"- [Official VNET resource page for data centers](https://web.archive.org/web/20260619185141/https://www.vnet.com/resource.html)
 - [Analyst report by Zhongtai Securities, citing 1-GW capacity goals](https://web.archive.org/web/20260619185224/https://stcn.com/article/detail/2241162.html)
 - [Interview with VP Gavin Shen: campus will be AI-driven](https://web.archive.org/web/2/https://www.insidermonkey.com/blog/vnet-group-inc-nasdaqvnet-q3-2024-earnings-call-transcript-1395031/)
 - [ByteDance-VNET 500 MW data center deal (China-wide)](https://www.datacenterdynamics.com/en/news/tiktok-owner-bytedance-signs-500mw-vnet-china-data-center-deal/)
@@ -403,11 +407,12 @@ OpenAI Stargate UAE,0,0,0,G42 #likely,OpenAI #confident,"- [News update with tim
 OpenAI Stargate Wisconsin,0,0,0,Oracle #confident,OpenAI #confident,"- [Data center page on Vantage website](https://vantage-dc.com/data-center-locations/north-america/port-washington-wisconsin)
 - [Environmental Analysis Summary](https://drive.google.com/file/d/1ft2ZzqAYZtsTqMwyML4eo_EFYuclVxE6/view?usp=sharing)
 ",https://docs.google.com/spreadsheets/d/1fjTxXhhaiFa7x1YBAAa7d2CcUrnSLGNJYOTd6o3xd04/edit?usp=sharing,Stargate #confident,,,,,,United States,
-QTS Cedar Rapids,0,0,0,,,"- [MISO new load announcements](https://cdn.misoenergy.org/NEW%20LOAD%20ANNOUNCEMENTS%20IN%20MISO%20REGIONS%2012062024684954.pdf), including 616 MW in Cedar Rapids for a ""Shell Corp"" called SNA LLC.
+QTS Cedar Rapids,0,0,0,Meta #speculative,Meta #speculative,"- [MISO new load announcements](https://cdn.misoenergy.org/NEW%20LOAD%20ANNOUNCEMENTS%20IN%20MISO%20REGIONS%2012062024684954.pdf), including 616 MW in Cedar Rapids for a ""Shell Corp"" called SNA LLC.
 - [Article by The Gazette](https://www.thegazette.com/business/fast-start-to-cedar-rapids-data-center-projects/) featuring a rendering of Building 2 and 3.
 - [Article by Corridor Business Journal ](https://corridorbusiness.com/scope-of-qts-data-project-in-cedar-rapids-continuing-to-grow/)featuring a rendering of Buildings 1-3.
 - [Post by GLD Commercial ](https://www.gldcommercial.com/google-and-qts-data/)featuring a map with land assigned to QTS in Big Cedar Industrial Center.
-",https://docs.google.com/spreadsheets/d/1zXqoogyqGbmgvdu4vSTepZG3Cy8kMoJjp0n3KaZPkd4/edit?usp=sharing,,,Rubin,,,Alliant Energy,United States,"6200 76th Ave SW, Fairfax, IA 52228"
+- [Post by SemiAnalysis](https://newsletter.semianalysis.com/p/meta-compute-everyone-wants-to-be) claiming Meta is the tenant for QTS Cedar Rapids.
+",https://docs.google.com/spreadsheets/d/1zXqoogyqGbmgvdu4vSTepZG3Cy8kMoJjp0n3KaZPkd4/edit?usp=sharing,,,"B300,Rubin",,,Alliant Energy,United States,"6200 76th Ave SW, Fairfax, IA 52228"
 QTS Eagle Mountain,0,0,0,Meta #speculative,Meta #speculative,"- [QTS Eagle Mountain website](https://q.com/data-centers/eagle-mountain/)
 - [DEQ Approval listing emergency generators](https://daqpermitting.utah.gov/DocViewer?IntDocID=155764&contentType=application/pdf)
 ",https://docs.google.com/spreadsheets/d/1pWiTKivojS1IY4tiv0aHM06FugKbLA2qjLJ-5DFoRF4/edit?usp=sharing,,,B300,,,,United States,"652 E Hyperscale Way, Eagle Mountain, UT 84013"

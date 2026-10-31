@@ -2141,6 +2141,36 @@ class TestCcCnPaceBand:
         assert (lo, hi, obs) == (0.85, 1.15, None)
 
 
+class TestCcFrontierAnchor:
+    """A projection starts from the newest record blended with the previous
+    one carried to its date on trend, spread across the two."""
+
+    @staticmethod
+    def _fr(*pts):
+        return [(datetime(2026, m, 1), s, f"m{m}") for m, s in pts]
+
+    def test_a_near_flat_record_keeps_part_of_the_trend_since(self):
+        # 1 ECI a month on trend, then a record a hair above the last.
+        fr = self._fr((1, 150.0), (3, 152.0), (5, 154.0), (6, 155.0),
+                      (9, 155.5))
+        d, mid, half, name = vp._cc_frontier_anchor(fr)
+        rate = vp._cc_frontier_eci_slope(fr, vp._CC_CALIB_SINCE)
+        carried = 155.0 + rate * (fr[-1][0] - fr[-2][0]).days / 365.25
+        assert (d, name) == (fr[-1][0], "m9")
+        assert mid == pytest.approx(0.5 * (155.5 + carried))
+        assert 155.5 < mid < carried
+        assert half == pytest.approx(0.5 * (carried - 155.5))
+
+    def test_a_jump_above_trend_is_pulled_back_halfway(self):
+        fr = self._fr((1, 150.0), (3, 152.0), (5, 154.0), (6, 160.0))
+        _, mid, half, _ = vp._cc_frontier_anchor(fr)
+        assert mid < 160.0 and mid + half == pytest.approx(160.0)
+
+    def test_one_record_is_its_own_anchor(self):
+        assert vp._cc_frontier_anchor(self._fr((1, 150.0))) == (
+            datetime(2026, 1, 1), 150.0, 0.0, "m1")
+
+
 class TestCcCnCrossingSim:
     KW = dict(a_partial=8.0, g_lo=0.15, g_hi=0.30, algo_lo=11.0,
               algo_mid=12.5, algo_hi=13.0, pace_lo=0.9, pace_hi=1.1, n=4000)
@@ -2180,6 +2210,16 @@ class TestCcCnCrossingSim:
             150.0, 149.0, us_anchor=160.0, us_rate=0.0,
             inno_lo=3.0, inno_hi=4.0, **self.KW)
         assert np.nanmedian(y) <= 1.0 / 12.0 + 1e-9
+
+    def test_anchor_spread_widens_the_start_and_keeps_channels_summing(self):
+        chan = {}
+        _, _, traj = vp._cc_cn_crossing_sim(
+            150.0, 170.0, us_anchor=165.0, us_rate=15.0, inno_lo=3.0,
+            inno_hi=4.0, anchor_spread=1.5, channels=chan, **self.KW)
+        assert traj[:, 0].min() >= 148.5 and traj[:, 0].max() <= 151.5
+        assert np.median(traj[:, 0]) == pytest.approx(150.0, abs=0.1)
+        total = sum(chan[k] for k in chan if k != 'compute_domestic')
+        assert np.allclose(total, traj - 150.0)
 
     def test_pause_to_frozen_bar_lands_after_161_with_us_moving(self):
         """The tab-level ordering on live data: the Pacing tab's pause panel (frozen

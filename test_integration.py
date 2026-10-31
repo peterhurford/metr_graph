@@ -13,7 +13,10 @@ import pytest
 from datetime import datetime
 import json
 import re
+from itertools import combinations
 from visualize_projection import (_pc_add_months, _pc_pause_default_mo,
+                                   _pc_span, _ECI_COMPANIES, _ECI_FRONTIER_LABEL,
+                                   load_eci_frontier,
                                    _SLUG_FOR_TAB, N_SAMPLES)
 from streamlit.testing.v1 import AppTest
 
@@ -176,16 +179,34 @@ class TestEciTab:
         at = _fresh_app()
         at.run()
         _switch_tab(at, "ECI")
-        at.selectbox(key="eci_entity_a").set_value("Anthropic").run()
-        at.selectbox(key="eci_entity_b").set_value("OpenAI").run()
-        _assert_no_error(at, "ECI / Anthropic vs OpenAI")
+        # The two labs whose bests sit closest, so the pair stacks whatever
+        # the latest pull's scores, among labs with a frontier to project.
+        fr = {lab: [m["eci_score"] for m in load_eci_frontier(
+                  orgs=tuple(spec["orgs"])) if m["is_frontier"]]
+              for lab, spec in _ECI_COMPANIES.items()}
+        best = {lab: max(s) for lab, s in fr.items() if len(s) >= 2}
+        # The subject's label shows only when the reference leads it.
+        a, b = sorted(min(combinations(best, 2),
+                          key=lambda p: abs(best[p[0]] - best[p[1]])),
+                      key=best.get, reverse=True)
+        at.selectbox(key="eci_entity_a").set_value(a).run()
+        at.selectbox(key="eci_entity_b").set_value(b).run()
+        _assert_no_error(at, f"ECI / {a} vs {b}")
         spec = json.loads(at.get("plotly_chart")[0].proto.spec)
         names = [t["text"][0] for t in spec["data"]
                  if "text" in t.get("mode", "") and t.get("text")]
         assert len(names) == len(set(names)), names
         edge = [an["text"] for an in spec["layout"]["annotations"]
                 if an.get("xref") == "paper" and an.get("x") == 1.0]
-        assert [e for e in edge if "Anthropic best" in e and "OpenAI best" in e], edge
+        assert [e for e in edge if f"{a} best" in e and f"{b} best" in e], edge
+        # The frontier against the lab holding it shares that lab's best.
+        top = max(best, key=best.get)
+        at.selectbox(key="eci_entity_a").set_value(_ECI_FRONTIER_LABEL).run()
+        at.selectbox(key="eci_entity_b").set_value(top).run()
+        spec = json.loads(at.get("plotly_chart")[0].proto.spec)
+        names = [t["text"][0] for t in spec["data"]
+                 if "text" in t.get("mode", "") and t.get("text")]
+        assert len(names) == len(set(names)), names
 
     def test_compare_to_drives_the_months_behind_chart(self):
         at = _fresh_app()
@@ -2333,9 +2354,9 @@ class TestPacingTab:
         at = self._app()
 
         def _surpass_mo(at):
-            m = next(m for m in at.metric
-                     if "Time for China to surpass" in str(m.label))
-            return _span_mo(m.value)
+            # Unrounded: at the tests' sample count a few months' run and a
+            # year can round to the same tenth of a year.
+            return at.session_state["_pc_surpass_mo"]
 
         sl = at.slider(key="pc_cn_run")
         assert sl.value == 2 and sl.max == 12
@@ -2489,7 +2510,7 @@ class TestPacingTab:
         assert "other" in base
         # Innovation and diffusion always close part of it; the compute
         # split's domestic row can be zero while its setback is regrown.
-        assert base["innovation"] > 0 and base["diffusion"] > 0
+        assert base["innovation"] > 0 and base_after["diffusion"] > 0
         assert all(v >= 0 for k, v in base.items() if k != "other")
 
         # A realistic data cut only shrinks the channel (~25% per 10x less
@@ -2868,7 +2889,7 @@ class TestPacingTab:
         us_d = datetime.strptime(coder["US (median, 80%)"][:8], "%b %Y")
         cn_d = datetime.strptime(coder["China (median, 80%)"][:8], "%b %Y")
         mo = (cn_d.year - us_d.year) * 12 + cn_d.month - us_d.month
-        assert mo > 0 and coder["Gap"] == f"China {mo} mo later"
+        assert mo > 0 and coder["Gap"] == f"China {_pc_span(mo, 0)} later"
         assert coder["US (median, 80%)"][:3] in (
             "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split())
 

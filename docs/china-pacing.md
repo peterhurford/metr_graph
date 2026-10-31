@@ -60,22 +60,31 @@ is its consumer. Load-bearing:
 
 1. **The pace band reality-checks the bottom-up rate** against China's observed slope
    over `_CC_GAP_WINDOWS` (`_cc_cn_pace_band`).
-2. **Release steps are carried by level noise, not a release wait.** `level_sd` adds a
+2. **Each side starts from a blended anchor** (`_cc_frontier_anchor`): the newest
+   record's date and name, at the mean of its ECI and the previous record carried to
+   that date on the since-2024 trend, each path's start drawn uniformly across the two
+   (`anchor_spread`, from t=0, inside the `level` channel). A record a hair above the
+   last cannot erase the trend growth since, nor a jump above trend set the level
+   alone; carrying *every* record forward would pick the biggest past jump
+   (DeepSeek-R1, o1). The China tab's projections and Pacing (both sides; Pacing's US
+   bar only when no Takeoff run) start there; the *gap today* cards quote the records
+   (`TestCcFrontierAnchor`).
+3. **Release steps are carried by level noise, not a release wait.** `level_sd` adds a
    per-sample offset, `_cc_frontier_level_sd` (sqrt 2 x China's scatter around its
    since-2024 trend), phased in over the median release gap; `release_gap_days` stays a
    sim option, unused. A rolling-origin backtest over China's 2025–26 releases puts ~80%
    of levels and dates inside the 80% band (`TestCcCrossingBacktest`); a rate spread
    alone covered ~16%, and a release wait on top skewed dates late. With `channels` the
    offset is its own `level` entry, left out of Pacing's breakdown rows.
-3. **The end-year gap card's hover gives the fit-window range** (`_cc_gap_end_range` over
+4. **The end-year gap card's hover gives the fit-window range** (`_cc_gap_end_range` over
    `_CC_CALIB_SENS_STARTS`): China's slope swings on DeepSeek-R1's Jan 2025 jump.
-4. **One channel split, shared.** `_cc_cn_channels` splits China's observed slope into
+5. **One channel split, shared.** `_cc_cn_channels` splits China's observed slope into
    compute (at China's compute growth over the window, `_CC_CN_HIST_COMPUTE`, ×2.12, above
    the forward band's ×1.68 mid, so China decelerates; `compute_fwd` is the forward term),
    innovation (residual), diffusion and distillation; the China tab's breakdown
    chart and scenario chart and the Pacing sim's bands all read it, so the tabs size
    distillation alike (`TestCcCnChannels`).
-5. **Three-channel algorithmic engine.** `_cc_cn_crossing_sim` splits the measured
+6. **Three-channel algorithmic engine.** `_cc_cn_crossing_sim` splits the measured
    rate into innovation (`_cc_pure_innovation_band`, never decays) + diffusion
    (nodist − pure, decays only after a pause, `_CC_DIFF_ABSORB_YRS` absorption ramp
    via `t_pause`) + distillation (algo − nodist, decays with gap/gap₀). With
@@ -312,7 +321,7 @@ same US line the chart draws. It renders **before** the crossing bail, so a
 projection range too narrow for a catch-up still describes the pause. A caption sensitivity reruns China's compute term
 at the catalogued China-accessible pace (sites abroad) vs the export-control band.
 The bar is the best model the US has *trained* by the pause: the Takeoff path (already
-trained), or without one the released-frontier climb (from us_best's release date) plus
+trained), or without one the released-frontier climb (from the blended US anchor's date, each path started across its spread) plus
 the US trained-to-release lag of extra climb. The policy levers below (and their *Advanced* expander) draw in the sidebar, under *Policy levers* above *Compute settings*, through the `levers_box` slot `render_pacing` makes. The US level the distillation gap starts from is the US trend at China's
 anchor date (`us_anchor_cn`), not the US's later best. Three scenario checkboxes plus a slowdown slider: `pc_withhold` (default off; label says "from pacing start") — a US
 *release freeze from pause-run start*: nothing ships once the final run begins, so

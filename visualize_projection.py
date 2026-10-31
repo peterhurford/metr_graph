@@ -1046,7 +1046,8 @@ _RLI_RAW = [
     # Rechecked 2026-10-24: no new model or changed score; Gemini 4 Argon still absent from the CAIS API.
     # Rechecked 2026-10-25: no new model or changed score. The CAIS API now carries Gemini 3.7 Flash (5.00),
     # closing that asymmetry; Gemini 4 Argon is still Scale-only.
-    # Rechecked 2026-10-26: no new model or changed score; Scale's newest createdAt is still Gemini 4 Argon.
+    # Rechecked 2026-10-26 to 10-30: no new model or changed score; Scale's newest createdAt is still Gemini 4
+    # Argon, which is still absent from the CAIS API.
 ]
 
 
@@ -4845,6 +4846,11 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         x_lo = tab_all[0]['date'] - timedelta(days=30)
         x_hi = proj_end_date
 
+        # A reference model also on the subject's frontier (Frontier vs the
+        # lab holding it) is named there already.
+        _fr_named = ({m['display_name'] for m in tab_frontier_all}
+                     if eci_show_labels else set())
+
         def _add_us_dot(marker, color, textpos='top center'):
             """Draw a labeled dot at a US model, with a dotted line emanating right."""
             fig.add_trace(go.Scatter(
@@ -4854,7 +4860,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             ))
             fig.add_trace(go.Scatter(
                 x=[marker['date']], y=[marker['score']],
-                mode='markers+text',
+                mode='markers' + ('' if marker['name'] in _fr_named else '+text'),
                 marker=dict(color=color, size=10, symbol='circle',
                             line=dict(color='white', width=1)),
                 text=[marker['name']], textposition=textpos,
@@ -8435,7 +8441,7 @@ _OPENAI_REVENUE = [
     # no OpenAI total.
     # Rechecked 2026-10-18: no TickerTrends post since. Epoch has replaced its $70B row with the FT's $50B
     # (as of 09-30) and a $30B July row; press line only, so this series is unchanged.
-    # Rechecked daily 2026-10-21 to 10-28: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
+    # Rechecked daily 2026-10-21 to 10-30: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -8549,8 +8555,8 @@ _ANTHROPIC_REVENUE = [
     # leaves the figure blank: "our Run-Rate Revenue was $ as of October 31, 2026". An S-1/A should fill it
     # in; that is a company-disclosed point and belongs here, dated 2026-10-31. Excluded: H1 2026 revenue
     # of $16.3B (period revenue); Q3 revenue is also still blank.
-    # Rechecked 2026-10-27 and 10-28: no S-1/A or 424B on EDGAR yet, so the figure is still blank;
-    # anthropic.com/news (10-27 drug development, GSA) states no run rate.
+    # Rechecked 2026-10-27 to 10-30: no S-1/A or 424B on EDGAR yet, so the figure is still blank;
+    # anthropic.com/news (10-27 drug development, GSA; 10-28 AI for Science) states no run rate.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -13212,6 +13218,24 @@ def _cc_country_frontier(models, country):
     return out
 
 
+def _cc_frontier_anchor(fr):
+    """Where a country's projection starts, as (date, mid, half, name): the
+    newest record's date and name, its level the mean of that record and the
+    previous one carried to its date on the frontier's trend since
+    `_CC_CALIB_SINCE`, `half` their half-difference. A record a hair above the
+    last cannot erase the trend growth since, nor a jump above trend set the
+    level alone; sims draw each path's start uniformly over mid ± half.
+    Carrying every record forward instead would pick the biggest past jump
+    (DeepSeek-R1, o1)."""
+    d, e, name = fr[-1]
+    rate = _cc_frontier_eci_slope(fr, _CC_CALIB_SINCE) if len(fr) >= 2 else None
+    if rate is None:
+        return d, e, 0.0, name
+    d0, e0, _ = fr[-2]
+    carried = e0 + rate * (d - d0).days / 365.25
+    return d, 0.5 * (e + carried), 0.5 * abs(e - carried), name
+
+
 def _cc_country_compute_frontier(rows, country):
     """Running-max *training-compute* frontier for one country, from the models
     that disclose FLOP, as [(date, log10_flop, eci, model_name), …].
@@ -13472,6 +13496,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     cn_best = max(cn_fr, key=lambda x: x[1])
     gap_now = us_best[1] - cn_best[1]
     mo_now = _eci_months_behind(us_fr, cn_best[1], cn_best[0])
+    # The cards above quote the records; projections start from the blend.
+    us_anc, cn_anc = _cc_frontier_anchor(us_fr), _cc_frontier_anchor(cn_fr)
 
     # ── Compute: largest *actual* runs (grounded, Epoch per-model) vs cluster
     # *capacity* (US measured from buildout; China estimated from its chips). ──
@@ -13533,8 +13559,8 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     cn_eci_smid = 0.5 * (cn_eci_slo + cn_eci_shi)
 
     # Each side climbs from its own last frontier model, not from today.
-    gap_end = ((us_best[1] + us_eci_smid * (horizon - us_best[0]).days / 365.25)
-               - (cn_best[1] + cn_eci_smid * (horizon - cn_best[0]).days / 365.25))
+    gap_end = ((us_anc[1] + us_eci_smid * (horizon - us_anc[0]).days / 365.25)
+               - (cn_anc[1] + cn_eci_smid * (horizon - cn_anc[0]).days / 365.25))
     mo_end = (gap_end / us_eci_smid * 12.0) if us_eci_smid > 0 else float('nan')
 
     c1, c2, c3 = st.columns(3)
@@ -13687,14 +13713,16 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     figf = go.Figure()
     _dc_add_projection_band(figf, today, horizon)
     for fr, best, slo, shi, smid, kc, col, rgb, label in (
-            (us_fr, us_best, us_eci_slo, us_eci_shi, us_eci_smid, k_us,
+            (us_fr, us_anc, us_eci_slo, us_eci_shi, us_eci_smid, k_us,
              '#1F77B4', (31, 119, 180), 'United States'),
-            (cn_fr, cn_best, cn_eci_slo, cn_eci_shi, cn_eci_smid, k_cn,
+            (cn_fr, cn_anc, cn_eci_slo, cn_eci_shi, cn_eci_smid, k_cn,
              '#D62728', (214, 39, 40), 'China')):
-        # From the country's own last frontier model, not from today.
+        # From the country's own last frontier model, not from today; the
+        # band opens by the anchor's own spread.
         x_dates = [best[0]] + _cc_quarter_ends(best[0], horizon)
         dt = np.array([(d - best[0]).days / 365.25 for d in x_dates])
-        lo, hi, mid = best[1] + slo * dt, best[1] + shi * dt, best[1] + smid * dt
+        lo, hi = best[1] - best[2] + slo * dt, best[1] + best[2] + shi * dt
+        mid = best[1] + smid * dt
         r, gg, bb = rgb
         figf.add_trace(go.Scatter(
             x=x_dates + x_dates[::-1], y=list(hi) + list(lo[::-1]),
@@ -14143,8 +14171,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                         diff_keep=0.0, t_dist_stop=None, dist_keep=0.0, comp_dead=None,
                         comp_slow=None,
                         dist_teacher=None, channels=None, comp_shadow=None,
-                        level_sd=0.0, level_ramp_yrs=0.5, us_path=None,
-                        speedup=None, speedup_follow=(0.0, 0.0),
+                        level_sd=0.0, level_ramp_yrs=0.5, anchor_spread=0.0,
+                        us_path=None, speedup=None, speedup_follow=(0.0, 0.0),
                         speedup_scale=None, comp_cut=None, diff_flow=None,
                         dist_sched=None, theft_soft=None, theft_weights=None):
     """_cc_cn_target_years with a three-channel algorithmic engine.
@@ -14229,8 +14257,10 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     linearly over `level_ramp_yrs`: the frontier moves in release-sized steps
     around its trend, which a rate spread alone cannot cover at short
     horizons. It shifts `traj` and the crossings, not the channels or the
-    distillation gap. With `channels`, it is recorded as its own `level`
-    entry so the channels still sum to `traj - anchor_eci`.
+    distillation gap. `anchor_spread` (`_cc_frontier_anchor`'s half) moves
+    each path's start by U(-spread, spread) from t=0, gap included. With
+    `channels`, both are recorded as one `level` entry so the channels still
+    sum to `traj - anchor_eci`.
 
     Returns (years, grid_yrs, traj): crossing years incl. any release wait
     (NaN = not crossed within horizon), the monthly time grid, and the
@@ -14263,7 +14293,6 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
     steps = int(round(horizon_yrs / dt))
     grid = np.arange(steps + 1) * dt
     traj = np.empty((n, steps + 1))
-    traj[:, 0] = anchor_eci
     shadow = channels is not None and comp_shadow is not None
     us_tr = us_rel = None
     if us_path is not None:
@@ -14275,13 +14304,18 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                    + (('theft',) if theft_weights is not None else ())):
             channels[_k] = np.zeros((n, steps + 1))
     soft_done = wt_done = False
-    e = np.full(n, float(anchor_eci))
     years = np.full(n, np.nan)
     us_rate = np.asarray(us_rate)      # scalar or per-sample array
     offset = (np.random.normal(0.0, level_sd, n) if level_sd > 0
               else np.zeros(n))
-    if channels is not None and level_sd > 0:
+    start = (np.random.uniform(-anchor_spread, anchor_spread, n)
+             if anchor_spread > 0 else np.zeros(n))
+    e = float(anchor_eci) + start
+    traj[:, 0] = e
+    has_level = level_sd > 0 or anchor_spread > 0
+    if channels is not None and has_level:
         channels['level'] = np.zeros((n, steps + 1))
+        channels['level'][:, 0] = start
     for i in range(1, steps + 1):
         if us_rel is not None:
             us_level = us_rel[:, i - 1]
@@ -14368,8 +14402,8 @@ def _cc_cn_crossing_sim(anchor_eci, target, *, us_anchor, us_rate, a_partial,
                 channels['compute_domestic'][:, i - 1] + dom * dt
         e = e + rate * dt + jump
         traj[:, i] = e + offset * min(grid[i] / level_ramp_yrs, 1.0)
-        if channels is not None and level_sd > 0:
-            channels['level'][:, i] = traj[:, i] - e
+        if channels is not None and has_level:
+            channels['level'][:, i] = traj[:, i] - e + start
         if us_tr is not None:
             hit = np.isnan(years) & (traj[:, i] >= us_tr[:, i])
             if np.any(hit):
@@ -18788,9 +18822,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     if len(us_fr) < 2 or len(cn_fr) < 2 or dec is None or inno is None:
         st.info("Not enough ECI data for the pause scenario.")
         return
-    us_best = max(us_fr, key=lambda x: x[1])
-    cn_best = max(cn_fr, key=lambda x: x[1])
-    anchor_d, anchor_eci, anchor_name = cn_best
+    # Both sides start from `_cc_frontier_anchor`'s blend, each path drawn
+    # across its spread.
+    _ud, _ue, us_half, _un = _cc_frontier_anchor(us_fr)
+    us_best = (_ud, _ue, _un)
+    anchor_d, anchor_eci, cn_half, anchor_name = _cc_frontier_anchor(cn_fr)
     if anchor_eci >= us_best[1]:
         st.success(f"{pretty(anchor_name)} is already at the US frontier.")
         return
@@ -18902,12 +18938,16 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _t_day = ((tk['day'] if tk else today) - anchor_d).days / 365.25
     _draw = (np.arange(n_s) % len(tk['paths'])) if tk else None
 
+    _us_start = (np.random.uniform(-us_half, us_half, n_s)
+                 if tk is None and us_half > 0 else np.zeros(n_s))
+
     def _us_trained_unpaced(t):
         """Trained US frontier at `t` (years from China's anchor), unpaced;
         `t` is (n_s, m)."""
         t = np.asarray(t, dtype=float)
         if tk is None:
-            return us_best[1] + us_rate_s[:, None] * (t + _us_dt)
+            return (us_best[1] + _us_start[:, None]
+                    + us_rate_s[:, None] * (t + _us_dt))
         return _pc_tk_interp(tk, _draw, t - _t_day)
 
     # China gets automated coding and RSI at the ECI the US got them: each
@@ -19176,7 +19216,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               dist_sched=_sec if sec_dist else None,
               theft_soft=_theft_soft, theft_weights=_theft_wt,
               comp_cut=(lambda t: a_partial * _g_dom_ref * _sup(t)),
-              level_sd=_cc_frontier_level_sd(cn_fr),
+              level_sd=_cc_frontier_level_sd(cn_fr), anchor_spread=cn_half,
               level_ramp_yrs=(_cc_release_gap_days(
                   cn_fr, since=today - timedelta(days=730)) or 47.5) / 365.25,
               **({'pure_lo': pure[0], 'pure_hi': pure[1]} if pure else {}))
@@ -19357,6 +19397,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               + (f", plus {len(pace_wins)} pacing window"
                  + ("s" if len(pace_wins) > 1 else "") if pace_wins else "")
               + ". ")
+    st.session_state.pop("_pc_surpass_mo", None)
     if crossed:
         d10, d50, d90 = (_pdate(q) for q in (10, 50, 90))
         # Milestone offsets came from the top of the function; the pause is
@@ -19373,6 +19414,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         _delta_mo = ((yr_all * 365.25 - _floor) - cn_lag_d) / 30.44
         s10, s50, s90 = (float(np.percentile(_delta_mo, p))
                          for p in (10, 50, 90))
+        # Unrounded, for tests: the card reads to a tenth of a year.
+        st.session_state["_pc_surpass_mo"] = s50
         _past = f"past {_yr_end}"
         # Drawn under the milestone table, above *Why this US-China gap?*.
         _cards = [
@@ -19974,8 +20017,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     if 'level' in chan:
         _notes.append(
             f"Each path also carries ±{_cc_frontier_level_sd(cn_fr):.1f} "
-            "ECI of release-step scatter, which closes no gap on average and "
-            "is left out of the rows.")
+            "ECI of release-step scatter"
+            + (f" and starts within ±{cn_half:.1f} of {anchor_eci:.1f}, "
+               f"between {pretty(anchor_name)}'s {cn_fr[-1][1]:.1f} and the "
+               "previous record carried on trend" if cn_half > 0 else "")
+            + ", which closes no gap on average and is left out of the rows.")
     # The compute ratios and mix stand without a crossing: they then run to
     # *Project through* (`test_compute_ratios_show_without_a_crossing`).
     if crossed:
