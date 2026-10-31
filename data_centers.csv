@@ -53,6 +53,10 @@ Google New Albany,323900.9600808489,333,12.614706,Google #confident,Google DeepM
 - Google’s [2025 Environmental Report](https://sustainability.google/reports/google-2025-environmental-report/)
 
 ",https://docs.google.com/spreadsheets/d/1b9T05Ze9Kv3Um4C6wv2uVYB0q7KgZ4AQaDPnaoh-ro0/edit?usp=sharing,,"TPU v5e,TPU v5p,TPU v6e","TPU v5e,TPU v5p,TPU v6e",,,,United States,"1101 Beech Rd SW, New Albany, OH 43054"
+Anthropic Lake Mariner,292829.71197574533,210,7.955219999999999,AI XPV Platform #confident,Anthropic #likely,"- [Terawulf press release with details and timeline for Buildings 1-5](https://investors.terawulf.com/news-events/press-releases/detail/132/terawulf-reports-fourth-quarter-and-full-year-2025-results)
+- [DCD article suggesting that Fluidstack will deploy Google TPUs at Lake Mariner](https://www.datacenterdynamics.com/en/news/google-offers-its-tpus-to-ai-cloud-providers-report/)
+- [Announcement of Anthropic-Fluidstack partnership, including data center(s) in New York](https://www.anthropic.com/news/anthropic-invests-50-billion-in-american-ai-infrastructure)
+",https://docs.google.com/spreadsheets/d/1MrE3TlzhV8IPcb0uPixkfec3txcHt0iLTXhKjeFPsSU/edit?usp=sharing,,TPU v7,TPU v7,"Google,Blackstone",,,United States,"7725 Lake Rd, Barker, NY 14012"
 Google Mesa,289540.17180394137,183,6.932405999999999,Google #confident,,"- [DCD article on the site breaking ground](https://www.datacenterdynamics.com/en/news/google-breaks-ground-on-mesa-data-center-campus-in-arizona/)
 - [DCD article on announcement to build Building 2](https://www.datacenterdynamics.com/en/news/google-files-to-build-second-data-center-at-mesa-campus-in-arizona/)
 ",https://docs.google.com/spreadsheets/d/1A_7rJWFKkspUPlYTmyg5JKL18OIzVgwLdhy3YbLs3eQ/edit?usp=sharing,,"TPU v6e,TPU v5p","TPU v6e,TPU v5p",,,,United States,
@@ -262,10 +266,6 @@ STACK Infrastructure NVA02,61141.99090449722,85,3.21997,,,"- [Official website f
 - [Air quality permit from the state of Virginia.](https://www.deq.virginia.gov/home/showpublisheddocument/25966/638633868679100000)
 
 ",https://docs.google.com/spreadsheets/d/1VaMTR_IA8V30N7aa47QXt1VVLog_-LzLWSrGuFIGF8c/edit?usp=sharing,,H100,H100,,,,United States,"9590 Hornbaker Rd, Manassas, VA 20109"
-Anthropic Lake Mariner,58564.93178372915,42,1.5910440000000001,AI XPV Platform #confident,Anthropic #likely,"- [Terawulf press release with details and timeline for Buildings 1-5](https://investors.terawulf.com/news-events/press-releases/detail/132/terawulf-reports-fourth-quarter-and-full-year-2025-results)
-- [DCD article suggesting that Fluidstack will deploy Google TPUs at Lake Mariner](https://www.datacenterdynamics.com/en/news/google-offers-its-tpus-to-ai-cloud-providers-report/)
-- [Announcement of Anthropic-Fluidstack partnership, including data center(s) in New York](https://www.anthropic.com/news/anthropic-invests-50-billion-in-american-ai-infrastructure)
-",https://docs.google.com/spreadsheets/d/1MrE3TlzhV8IPcb0uPixkfec3txcHt0iLTXhKjeFPsSU/edit?usp=sharing,,TPU v7,TPU v7,"Google,Blackstone",,,United States,"7725 Lake Rd, Barker, NY 14012"
 Microsoft-Nebius New Jersey,56846.89236988378,50,1.8941,Nebius #confident,Microsoft #likely,"- [Nebius: up to 300 MW capacity at new New Jersey data center](https://nebius.com/newsroom/nebius-accelerates-us-expansion-adding-up-to-300-mw-capacity-at-new-data-center-in-new-jersey)
 - [DataOne and Nebius partner for 300 MW AI data center (Data Centre Magazine)](https://datacentremagazine.com/articles/dataone-and-nebius-partner-for-new-300mw-ai-data-centre)
 - [Microsoft secures 100,000 NVIDIA GB300 via Nebius deal (Tom's Hardware)](https://www.tomshardware.com/tech-industry/artificial-intelligence/microsoft-inks-usd33-billion-in-deals-with-neoclouds-like-nebius-coreweave-nebius-deal-alone-secures-100-000-nvidia-gb300-chips-for-internal-use)

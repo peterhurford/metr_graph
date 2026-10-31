@@ -8441,7 +8441,7 @@ _OPENAI_REVENUE = [
     # no OpenAI total.
     # Rechecked 2026-10-18: no TickerTrends post since. Epoch has replaced its $70B row with the FT's $50B
     # (as of 09-30) and a $30B July row; press line only, so this series is unchanged.
-    # Rechecked daily 2026-10-21 to 10-30: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
+    # Rechecked daily 2026-10-21 to 10-31: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -8555,7 +8555,7 @@ _ANTHROPIC_REVENUE = [
     # leaves the figure blank: "our Run-Rate Revenue was $ as of October 31, 2026". An S-1/A should fill it
     # in; that is a company-disclosed point and belongs here, dated 2026-10-31. Excluded: H1 2026 revenue
     # of $16.3B (period revenue); Q3 revenue is also still blank.
-    # Rechecked 2026-10-27 to 10-30: no S-1/A or 424B on EDGAR yet, so the figure is still blank;
+    # Rechecked 2026-10-27 to 10-31: no S-1/A or 424B on EDGAR yet, so the figure is still blank;
     # anthropic.com/news (10-27 drug development, GSA; 10-28 AI for Science) states no run rate.
 ]
 
@@ -8630,7 +8630,8 @@ _CN_REVENUE = {
             ("2026-05-13", 8.0 / 6.8980, "company",
              "Q4 FY26 call: “ARR on the Bailian platform was already above RMB "
              "8 billion”. A floor, converted at 6.8980."),
-            ("2026-08-27", 16.0 / 6.7851, "company",
+            # Dated to the call, 2026-08-20 per the 6-K (Ex. 99.1); was 08-27 until 2026-10-31.
+            ("2026-08-20", 16.0 / 6.7851, "company",
              "CFO Toby Xu, Q1 FY27 call: “ARR of our model and application "
              "services…surpassed RMB 16 billion”. A floor, converted at "
              "6.7851."),
