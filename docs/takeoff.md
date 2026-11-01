@@ -240,7 +240,9 @@ each year*, `_tk_yearly_fig`: ECI gained per calendar year over what the frontie
 in `_TK_YEARLY_BASE_YEAR` (`_tk_year_gain`, 13.5 points, below the 15.7-point fitted trend
 the ECI chart uses, so these bars read ~1.16× that trend's), a different 2025 unit from
 chart 1's experiments; last year is measured off
-the frontier, this year measured to today then projected, each kind its own colour, and
+the frontier, this year measured to today then projected, each kind its own colour; a grid
+clipped at Dec 31 may end a day before Jan 1 and still keeps that year's bar
+(`test_a_grid_ending_on_dec_31_keeps_that_year`); and
 its line labels are placed by hand since a log axis reads an annotation's y as the exponent) and **5. When it happens, and
 how fast** (`_tk_dist_fig`: density and cumulative share of the RSI and ultraintelligence
 dates and the gap between them) and **6. Against Anthropic Staff** (`_tk_staff_survey_rows`:

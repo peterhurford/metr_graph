@@ -6030,6 +6030,20 @@ class TestTakeoffYearlyProgress:
         stopped = {y: v[2] for y, v, _ in rows}
         assert np.isfinite(stopped[2028]) and np.isinf(stopped[2029])
 
+    def test_a_grid_ending_on_dec_31_keeps_that_year(self):
+        """Clipped at Dec 31 2030 from Nov 1, the grid ends a day before Jan 1
+        2031; the 2030 bar stays."""
+        today = datetime(2026, 11, 1)
+        end = (datetime(2030, 12, 31) - today).total_seconds() / (365.25 * 86400)
+        years = np.r_[np.arange(0, end, 1 / 12), end]
+        frontier = [{"date": datetime(2024, 12, 1), "eci_score": 140.0},
+                    {"date": datetime(2025, 12, 1), "eci_score": 152.0}]
+        eci = {"paths": np.vstack([152 + 15 * years]), "ppy": 15.0,
+               "frontier": frontier, "now": 152.0}
+        result = {"workflow_progress": {"years": years}, "stopped_at": np.array([np.inf])}
+        rows = vp._tk_yearly_progress(result, eci, today, 2030)
+        assert rows[-1][0] == 2030
+
 
 class TestTakeoffEciRates:
     """ECI reading: compute at the Compute/capabilities tab's frontier-grade
