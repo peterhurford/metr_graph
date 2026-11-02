@@ -226,7 +226,7 @@ pace; then the factor chart, whose labor-and-compute factor splits exactly into
 human labor, AI capabilities and compute (`pace_factors` `labor`/`ai`/`compute`, summing to
 `resources`; `test_pace_factors_multiply_back_to_the_pace`), then *Compute going in*
 (`_tk_compute_fig`, each draw's `workflow_progress["compute_log"]`, post-RSI boost included,
-with the milestone medians marked), then *Where the compute goes* (`_tk_compute_split_fig`: each draw's budget times its shares, per-part medians as log lines, not a log-axis stack, which squeezes the upper bands; `TestTakeoffComputeSplit`), then *How the compute is split*), **2. People step out of the loop**
+with the milestone medians marked), then *Where the compute goes* (`_tk_compute_split_fig`: the median budget times the median split, stacked on a log axis so the top edge is *Compute going in*'s median; `TestTakeoffComputeSplit`), then *How the compute is split*), **2. People step out of the loop**
 (`_tk_humans_fig`), **3. The research workforce** (`_tk_workforce_fig`: heads, humans from
 `_TK_HUMAN_RESEARCHERS` growing `_TK_HIRING_GROWTH` a year to each draw's RSI and shrinking
 by `_TK_POST_RSI_DECLINE` after, and AI copies from `_TK_AI_COPIES_TODAY` (50k, an

@@ -1265,7 +1265,8 @@ class TestTakeoffTab:
             "Net research pace"]
         parts = json.loads(_tk_charts(at)[5].proto.spec)
         assert [d["name"] for d in parts["data"]] == [
-            "Total", "Training", "Experiments", "Running AI researchers"]
+            "Training", "Experiments", "Running AI researchers"]
+        assert {d.get("stackgroup") for d in parts["data"]} == {"parts"}
         split = json.loads(_tk_charts(at)[6].proto.spec)
         assert [d["name"] for d in split["data"]] == [
             "Training", "Running AI researchers", "Experiments"]

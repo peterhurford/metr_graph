@@ -5999,10 +5999,10 @@ class TestTakeoffUltraThreshold:
 
 
 class TestTakeoffComputeSplit:
-    """`_tk_compute_split_fig` draws each part of the budget in absolute terms:
-    today's split at the start, and per draw the parts add up to the total."""
+    """`_tk_compute_split_fig` stacks the median budget times the median split:
+    today's split at the start, the top edge the median budget."""
 
-    def test_parts_start_at_todays_split_and_sum_to_the_total(self):
+    def test_parts_start_at_todays_split_and_stack_to_the_median_total(self):
         years = np.linspace(0, 2, 5)
         compute_log = np.outer([0.5, 1.0, 1.5], years)
         agent = np.full((3, 5), 0.2)
@@ -6014,9 +6014,11 @@ class TestTakeoffComputeSplit:
         y = {t.name: np.asarray(t.y) for t in fig.data}
         np.testing.assert_allclose([y["Training"][0], y["Experiments"][0],
                                     y["Running AI researchers"][0]], [0.4, 0.4, 0.2])
+        total = np.exp(np.median(compute_log, axis=0))
         np.testing.assert_allclose(
-            y["Training"] + y["Experiments"] + y["Running AI researchers"], y["Total"])
-        assert y["Experiments"][-1] / y["Total"][-1] == pytest.approx(0.5)
+            y["Training"] + y["Experiments"] + y["Running AI researchers"], total)
+        assert y["Experiments"][-1] / total[-1] == pytest.approx(0.5)
+        assert {t.stackgroup for t in fig.data} == {"parts"}
 
 
 class TestTakeoffYearlyProgress:
