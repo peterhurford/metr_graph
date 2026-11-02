@@ -56,7 +56,7 @@ Gemini 3 Flash,152.01,2025-12-17,Google DeepMind,United States of America,API ac
 Qwen 3.8 27B,151.8,2026-08-14,Alibaba,China,Open weights (unrestricted),,Confident,Qwen 3.8 27B,,Qwen 3.8 27B
 Kimi K2.6,151.06,2026-04-20,Moonshot,China,Open weights (unrestricted),,Confident,Kimi K2.6,,Kimi K2.6
 GPT-5 Pro,150.74,2025-10-07,OpenAI,United States of America,API access,,Unknown,GPT-5 Pro,,GPT-5 Pro
-Mistral Large 4,150.59,2026-10-06,Mistral AI,France,Open weights (restricted use),,Confident,Mistral Large 4,,Mistral Large 4
+Mistral Large 4,150.59,2026-10-06,Mistral AI,France,Open weights (restricted use),1.24e+25,Confident,Mistral Large 4,,Mistral Large 4
 Inkling-Small,150.46,2026-07-15,Thinking Machines,United States of America,Open weights (unrestricted),,Confident,Inkling-Small,,Inkling-Small
 Beam 1.0,150.24,2026-10-05,Reflection,United States of America,Open weights (unrestricted),,,Beam 1.0,,Beam 1.0
 Kimi K2.7 Code,150.23,2026-06-12,Moonshot,China,Open weights (unrestricted),,Confident,Kimi K2.7 Code,,Kimi K2.7 Code
