@@ -5998,6 +5998,27 @@ class TestTakeoffUltraThreshold:
         assert "This view uses ECI 341, about 4.0 such jumps" in vp._tk_ultra_explainer(341.0)
 
 
+class TestTakeoffComputeSplit:
+    """`_tk_compute_split_fig` draws each part of the budget in absolute terms:
+    today's split at the start, and per draw the parts add up to the total."""
+
+    def test_parts_start_at_todays_split_and_sum_to_the_total(self):
+        years = np.linspace(0, 2, 5)
+        compute_log = np.outer([0.5, 1.0, 1.5], years)
+        agent = np.full((3, 5), 0.2)
+        agent[:, -1] = 0.1
+        result = {"params": {"training_share": 40},
+                  "workflow_progress": {"years": years, "compute_log": compute_log,
+                                        "agent_share": agent}}
+        fig = vp._tk_compute_split_fig(result, datetime(2026, 11, 2))
+        y = {t.name: np.asarray(t.y) for t in fig.data}
+        np.testing.assert_allclose([y["Training"][0], y["Experiments"][0],
+                                    y["Running AI researchers"][0]], [0.4, 0.4, 0.2])
+        np.testing.assert_allclose(
+            y["Training"] + y["Experiments"] + y["Running AI researchers"], y["Total"])
+        assert y["Experiments"][-1] / y["Total"][-1] == pytest.approx(0.5)
+
+
 class TestTakeoffYearlyProgress:
     """Years of 2025-level ECI progress per calendar year: ECI gained over the
     points the frontier gained in 2025, +inf once a draw has run away; last

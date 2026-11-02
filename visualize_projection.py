@@ -21355,6 +21355,41 @@ def _tk_compute_fig(result, today, slow_date, hist=None, markers=()):
     return fig
 
 
+def _tk_compute_split_fig(result, today, markers=()):
+    """The compute going in, split: each draw's budget (`compute_log`) times
+    its shares, as a multiple of today's whole budget, so the three lines start
+    at today's split and sum to the budget per draw. Medians (middle 80% in the
+    hover) of each part, taken per draw, so they need not sum to the median
+    budget. Log lines, not a stack: a log-axis stack squeezes the upper bands."""
+    wp = result["workflow_progress"]
+    x = _tk_dates(result, today)
+    level = np.exp(wp["compute_log"])
+    train = result["params"]["training_share"] / 100
+    agents = wp["agent_share"].astype(float)
+    fig = go.Figure()
+    for name, values, color, dash in (
+            ("Total", level, "#555", "dot"),
+            ("Training", level * train, "#7f8c8d", None),
+            ("Experiments", level * (1 - train - agents), "#2980b9", None),
+            ("Running AI researchers", level * agents, "#d68910", None)):
+        q = np.quantile(values, [.1, .5, .9], axis=0).T
+        fig.add_trace(go.Scatter(
+            x=x, y=q[:, 1], mode="lines", name=name,
+            line=dict(color=color, width=1.5 if dash else 2.5, dash=dash),
+            text=[f"{m:.3g}× (middle 80%: {lo:.3g}–{hi:.3g}×)" for lo, m, hi in q],
+            hovertemplate="%{x|%b %Y}<br>%{text}<extra>" + name + "</extra>"))
+    fig.add_vline(x=today, line_color="#555", line_width=1.5)
+    for i, (label, when) in enumerate(markers):
+        fig.add_vline(x=when, line_dash="dot", line_color="#b0b0b0", line_width=1)
+        fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper", text=label,
+                           showarrow=False, xanchor="left", font=dict(size=11, color="#888"))
+    fig.update_layout(height=340, margin=dict(l=55, r=20, t=30, b=40),
+                      xaxis=dict(range=[x[0], x[-1]]),
+                      yaxis=dict(type="log", title="× today's total compute"),
+                      legend=dict(orientation="h", y=-0.15), hovermode="x")
+    return fig
+
+
 def _tk_split_fig(result, today, markers=()):
     """How the compute is split: training's fixed share, and the rest between
     running AI researchers and experiments (median, the AI researchers' middle
@@ -22874,6 +22909,17 @@ def _render_takeoff(loading):
     st.plotly_chart(_tf(_tk_to(_tk_compute_fig(
         result, today, datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31), result.get("hist_compute"),
         markers), view_end)), width="stretch")
+    st.markdown("**Where the compute goes**")
+    _fn_caption(
+        "Training, experiments and running AI researchers, each as a multiple of today's "
+        "total compute: the chart above, split as the chart below.",
+        ("each as a multiple",
+         "Each part's median across scenarios, with the middle 80% in the hover; the "
+         "medians need not add up to the total's. Today's split is training "
+         f"{result['params']['training_share']:g}%, experiments "
+         f"{result['params']['experiment_share']:g}%, AI researchers the rest."))
+    st.plotly_chart(_tf(_tk_to(_tk_compute_split_fig(result, today, markers), view_end)),
+                    width="stretch")
     st.markdown("**How the compute is split**")
     _fn_caption(
         "Training keeps its share; the rest goes to running AI researchers or to "
