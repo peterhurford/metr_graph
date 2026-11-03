@@ -113,7 +113,12 @@ setting moves returns to inputs only, not difficulty
 experiment calibration: a higher exponent lets compute and coding explain more of the
 observed experiment growth, leaving a lower fitted judgment elasticity (at `cal_weight` 0
 it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
-`_TK_FACTOR_VIEW`. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
+`_TK_FACTOR_VIEW`; `_tk_multiply_fig` restates it at the median RSI date (else the view's
+end) as log-scale steps from today's pace, ending on the net pace's own median, not the
+steps' product, since medians don't multiply. `_tk_flow_dot` (graphviz) draws evidence →
+setting → factor → net, coloured as the factor lines; the experiment series has its own
+grey (`_TK_PACE_COLOR`) because it sets today's pace, not Compute, and its evidence panel
+runs its trend on to today's marked pace. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
 Non-AI inputs (all scaled by `baseline_inputs`): staff headcount (`hiring_growth`,
 `staff_after_rsi`, on each draw's RSI clock when AI transfer is on) speeds the human share
 inside the Amdahl term, and experiment compute grows at `exp_share` of the frontier's log
