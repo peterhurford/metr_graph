@@ -7481,6 +7481,42 @@ def _eci_rows_by_version():
                 for r in csv.DictReader(f) if r['ECI Score'] and r['Release date']]
 
 
+# Claude's AECI-minus-ECI gap is fitted from here on, where it starts to grow.
+_METR_GAP_FROM = datetime(2025, 1, 1)
+
+
+def _metr_gap_trend(rows=None):
+    """AECI minus ECI on Claude models since `_METR_GAP_FROM`, as a line in
+    time: (gap at `_METR_BREAK`, points a year, residual sd)."""
+    offs = [o for o in _metr_offsets(rows)
+            if o['anthropic'] and o['date'] >= _METR_GAP_FROM]
+    t = np.array([(o['date'] - _METR_BREAK).days / 365.25 for o in offs])
+    y = np.array([o['offset'] for o in offs])
+    slope, icpt = np.polyfit(t, y, 1)
+    sd = float(np.sqrt(((y - (icpt + slope * t)) ** 2).sum() / (len(t) - 2)))
+    return float(icpt), float(slope), sd
+
+
+def _metr_on_eci(rows=None):
+    """METR's Anthropic rows on Epoch's scale: [{'model', 'date' (METR's),
+    'eci', 'projected', 'sd', 'kind'}]. A model Epoch scores keeps its score;
+    the rest (internal models, Mythos) are AECI less Claude's gap trend at
+    their date (`_metr_gap_trend`), with that fit's residual sd."""
+    rows = rows or load_metr_aeci()
+    eci = {m['version']: m['eci'] for m in _eci_rows_by_version()}
+    icpt, slope, sd = _metr_gap_trend(rows)
+    out = []
+    for r in rows:
+        if r['chart'] != 'anthropic':
+            continue
+        known = r['epoch_model'] in eci
+        gap = icpt + slope * (r['date'] - _METR_BREAK).days / 365.25
+        out.append({'model': r['model'], 'date': r['date'], 'kind': r['kind'],
+                    'eci': eci[r['epoch_model']] if known else r['aeci'] - gap,
+                    'projected': not known, 'sd': 0.0 if known else sd})
+    return out
+
+
 def _metr_readings():
     """How fast the frontier's ECI climbs since `_METR_BREAK`, by source: a list
     of {'label', 'fit' (`_metr_hinge`), 'basis', 'note'} in points a year.
@@ -7508,6 +7544,14 @@ def _metr_readings():
         fit = _metr_hinge([r['date'] for r in pts], [r['aeci'] for r in pts])
         if fit:
             out.append({'label': label, 'fit': fit, 'basis': 'aeci', 'note': note})
+    on_eci = [r for r in _metr_on_eci(rows) if r['kind'] != 'not_frontier']
+    fit = _metr_hinge([r['date'] for r in on_eci], [r['eci'] for r in on_eci])
+    if fit:
+        out.insert(3, {'label': "METR AECI: Anthropic, on Epoch's scale", 'fit': fit,
+                       'basis': 'aeci',
+                       'note': "METR's Anthropic frontier with each model at its Epoch "
+                               "score, internal ones projected from AECI less Claude's "
+                               "growing AECI–ECI gap; dated at first internal use."})
     return out
 
 
@@ -7560,65 +7604,80 @@ def _render_rsi_metr():
             x=[r['date'], e['date']], y=[r['aeci'], e['eci']], mode='lines',
             line=dict(color='rgba(127,127,127,0.5)', width=1), hoverinfo='skip',
             showlegend=False))
-    first = min(r['date'] for r in anth)
+    others = [r for r in rows if r['chart'] == 'all_developers' and r['kind'] == 'other']
+    figure.add_trace(go.Scatter(
+        x=[r['date'] for r in others], y=[r['aeci'] for r in others], mode='markers',
+        name="AECI: other developers (record-setters)",
+        marker=dict(color='#95a5a6', size=7), text=[r['model'] for r in others],
+        hovertemplate='%{text}<br>%{x|%b %d, %Y}<br>AECI %{y:.1f}<extra></extra>'))
+    projected = [r for r in _metr_on_eci(rows) if r['projected'] and r['kind'] == 'internal']
+    figure.add_trace(go.Scatter(
+        x=[r['date'] for r in projected], y=[r['eci'] for r in projected],
+        mode='markers', name="Internal: projected ECI",
+        marker=dict(color='#d8774f', symbol='diamond-open', size=9, line=dict(width=2)),
+        error_y=dict(type='data', array=[1.2816 * r['sd'] for r in projected],
+                     color='rgba(216,119,79,0.5)', thickness=1),
+        text=[r['model'] for r in projected],
+        hovertemplate='%{text}<br>%{x|%b %d, %Y}<br>Projected ECI %{y:.1f} '
+                      '(AECI less Claude\'s gap at that date; bar: 80%)<extra></extra>'))
+    first = min(r['date'] for r in anth + others)
     last = max(r['date'] for r in anth)
-    for (a, b, dash, name) in ((first, _METR_BREAK, None, None),
-                               (_METR_BREAK, last, 'dash', 'pre-break trend continued'),
-                               (_METR_BREAK, last, None, None)):
-        slope = fit['pre'] if (dash or b == _METR_BREAK) else fit['post']
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    for (a, b, slope, dash, color, label) in (
+            (first, _METR_BREAK, fit['pre'], None, '#2c3e50', f"METR fit: +{fit['pre']:.0f}/yr"),
+            (_METR_BREAK, last, fit['pre'], 'dash', '#95a5a6', 'pre-break trend continued'),
+            (_METR_BREAK, last, fit['post'], None, '#2c3e50', f"METR fit: +{fit['post']:.0f}/yr"),
+            (last, today, fit['post'], 'dot', '#2c3e50', 'METR fit carried to today')):
         ys = [fit['icpt'] + slope * (d - _METR_BREAK).days / 365.25 for d in (a, b)]
-        label = (name or (f"METR fit: +{fit['pre']:.0f}/yr" if b == _METR_BREAK
-                          else f"METR fit: +{fit['post']:.0f}/yr"))
         figure.add_trace(go.Scatter(
             x=[a, b], y=ys, mode='lines', name=label, hoverinfo='skip',
-            line=dict(color='#2c3e50' if not dash else '#95a5a6', dash=dash, width=2)))
-    today = _add_today_vline(figure)
-    x_range = [first - timedelta(days=30), today + timedelta(days=30)]
+            line=dict(color=color, dash=dash, width=2)))
+    _add_today_diamond(figure, 'METR fit carried to today', lambda v: f"{v:.0f} AECI",
+                       label="trend", position='top left')
+    # Takeoff's trained frontier today, on Epoch's scale, for comparison.
+    eci_today = float(st.session_state.get("tk_eci_today", _TK_ECI_TODAY))
+    tk_now = (_eci_entity_data("US best")[1][-1]['eci_score']
+              + eci_today * _ship_lag("us") / 365.25)
+    figure.add_trace(go.Scatter(
+        x=[today], y=[tk_now], mode='markers+text', text=[f"Takeoff: ECI {tk_now:.0f}"],
+        textposition='bottom right', textfont=dict(size=12), name="Takeoff's trained frontier today",
+        marker=dict(symbol='diamond', size=13, color=_TK_PACE_COLOR,
+                    line=dict(color='white', width=1)),
+        hovertemplate="Takeoff's trained frontier today: the latest US release plus "
+                      "the US ship lag at Today's ECI growth<extra></extra>"))
+    _add_today_vline(figure)
     figure.update_layout(
-        height=460, margin=dict(l=50, r=20, t=30, b=40),
-        xaxis=dict(title='Date', range=x_range, gridcolor='rgba(0,0,0,0.12)'),
+        height=480, margin=dict(l=50, r=20, t=30, b=40),
+        xaxis=dict(title='Date', range=[first - timedelta(days=30), today + timedelta(days=45)],
+                   gridcolor='rgba(0,0,0,0.12)'),
         yaxis=dict(title='Capabilities index', gridcolor='rgba(0,0,0,0.12)'),
         plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#1a1a2e'),
         legend=dict(x=0.01, y=0.99, bgcolor='rgba(255,255,255,0.9)'),
         hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e'))
     st.plotly_chart(figure, width='stretch', theme=None)
-
     offsets = _metr_offsets(rows)
-    fig2 = go.Figure()
-    for anthropic, name, color in ((True, 'Anthropic models', '#d8774f'),
-                                   (False, 'Other developers', '#7f8c8d')):
-        pts = [o for o in offsets if o['anthropic'] == anthropic]
-        fig2.add_trace(go.Bar(
-            x=[o['date'] for o in pts], y=[o['offset'] for o in pts], name=name,
-            marker_color=color, width=86400000 * 9, text=[o['model'] for o in pts],
-            hovertemplate='%{text}<br>Released %{x|%b %d, %Y}<br>AECI − ECI: '
-                          '%{y:+.1f}<extra></extra>'))
-    _add_today_vline(fig2)
-    fig2.update_layout(
-        height=300, margin=dict(l=50, r=20, t=30, b=40), barmode='overlay',
-        xaxis=dict(title='Release date', range=x_range, gridcolor='rgba(0,0,0,0.12)'),
-        yaxis=dict(title='AECI − Epoch ECI (points)', gridcolor='rgba(0,0,0,0.12)',
-                   zeroline=True, zerolinecolor='#999'),
-        plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#1a1a2e'),
-        legend=dict(x=0.01, y=0.99, bgcolor='rgba(255,255,255,0.9)'),
-        hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e'))
-    st.markdown("**The two indexes on the same model**")
-    st.plotly_chart(fig2, width='stretch', theme=None)
     recent = [o['offset'] for o in offsets if o['anthropic'] and o['date'] >= datetime(2026, 4, 1)]
-    others = [o['offset'] for o in offsets if not o['anthropic'] and o['date'] >= datetime(2025, 1, 1)]
+    gap_others = [o['offset'] for o in offsets
+                  if not o['anthropic'] and o['date'] >= _METR_GAP_FROM]
+    _, gap_slope, _ = _metr_gap_trend(rows)
     _fn_caption(
-        f"Other labs' models sit a steady ~{np.median(others):+.0f} on AECI; "
-        f"Claude models since April 2026 sit {min(recent):+.0f} to {max(recent):+.0f}. "
-        "The data cannot say which index is off.",
-        ("which index is off",
-         "Either AECI's internal benchmarks favour recent Claude models, or Epoch's "
-         "public benchmarks are saturating, so its index compresses the newest models. "
-         "METR found every AECI benchmark above 50% for Model 4 and weak evidence that "
-         "saturation understates it. Removing the Claude-specific gap takes METR's "
-         "all-developer acceleration from about 1.4× to about 1.2×."))
+        f"Other labs' models sit a steady ~{np.median(gap_others):+.0f} on AECI over "
+        f"ECI; Claude models since April 2026 sit {min(recent):+.0f} to "
+        f"{max(recent):+.0f}, a gap growing ~{gap_slope:.0f} points a year. Internal "
+        "models' projected ECI takes that gap off.",
+        ("a gap growing",
+         "Fitted on Claude models Epoch also scores, since 2025. The data cannot say "
+         "which index is off: AECI's internal benchmarks and larger token budgets may "
+         "favour recent Claude models, or Epoch's public benchmarks may be saturating "
+         "and compressing the newest models. METR found every AECI benchmark above 50% "
+         "for Model 4. Either way, the projection is what Epoch's index would likely "
+         "read, the scale Takeoff uses."),
+        ("Internal models' projected ECI",
+         "Gray dots are other developers' models that set METR's all-developer record "
+         "(METR shows no others). Gray diamonds sit at each Claude model's Epoch score "
+         "and release date, joined to its AECI point."))
 
     readings = _metr_readings()
-    eci_today = float(st.session_state.get("tk_eci_today", _TK_ECI_TODAY))
     pre = fit['pre']
     labels = [r['label'] for r in readings] + ["METR's judgment (× AECI's pre-break rate)"]
     mids = [r['fit']['post'] for r in readings] + [_METR_HEADLINE[0] * pre]

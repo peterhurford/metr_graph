@@ -6172,7 +6172,21 @@ class TestMetrAeci:
     def test_readings_cover_public_and_aeci_lines(self):
         labels = [r['label'] for r in vp._metr_readings()]
         assert labels == ["Epoch ECI: US frontier", "Epoch ECI: Anthropic",
-                          "METR AECI: all developers", "METR AECI: Anthropic"]
+                          "METR AECI: all developers",
+                          "METR AECI: Anthropic, on Epoch's scale", "METR AECI: Anthropic"]
+
+    def test_epoch_scale_keeps_scored_models_and_projects_the_rest(self):
+        eci = {m['version']: m['eci'] for m in vp._eci_rows_by_version()}
+        rows = vp.load_metr_aeci()
+        icpt, slope, sd = vp._metr_gap_trend(rows)
+        assert slope > 0 and sd > 0      # Claude's gap grows, with scatter
+        for r, p in zip([r for r in rows if r['chart'] == 'anthropic'], vp._metr_on_eci(rows)):
+            if r['epoch_model'] in eci:
+                assert not p['projected'] and p['eci'] == eci[r['epoch_model']]
+            else:
+                assert p['projected'] and p['eci'] < r['aeci']
+        m4 = next(p for p in vp._metr_on_eci(rows) if p['model'] == 'Model 4')
+        assert 170 < m4['eci'] < 177
 
 
 class TestTakeoffHumanSpeedup:

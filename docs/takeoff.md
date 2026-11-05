@@ -575,12 +575,16 @@ line, then the paper's prediction sigmoid (`_tasteval_predict_mase`) against the
 curve (`test_tasteval_section_charts_without_dating`).
 
 `_render_rsi_metr()` sets METR's AECI (`metr_aeci.csv`, `load_metr_aeci`) against
-Epoch's ECI: the two indexes on the same models, their per-model gap (`_metr_offsets`:
-other labs ~+2, Claude since April 2026 +4 to +6, cause unknown), and a readings chart of
-each source's climb since `_METR_BREAK` (`_metr_readings`, METR's one-break fit
-`_metr_hinge`, analytic 80% intervals, no RNG) with `tk_eci_today` drawn on it. The
-readings chart has no date axis, so `test_every_chart_marks_today` exempts it by axis
-title. `TestMetrAeci` holds the digitization to METR's printed slopes and Model 4's value.
+Epoch's ECI on one chart: Anthropic's AECI points and METR's one-break fit carried to a
+today diamond, other developers' record-setting AECI points, each Claude model's Epoch
+score, internal models' projected ECI (`_metr_on_eci`: AECI less Claude's AECI–ECI gap,
+which `_metr_gap_trend` fits as growing ~3 points a year since 2025, 80% bars from its
+residual sd), and Takeoff's trained frontier today for comparison. A readings chart gives
+each source's climb since `_METR_BREAK` (`_metr_readings`, METR's fit `_metr_hinge`,
+analytic 80% intervals, no RNG; the Epoch-scale row uses `_metr_on_eci`) with
+`tk_eci_today` drawn on it. It has no date axis, so `test_every_chart_marks_today`
+exempts it by axis title. `TestMetrAeci` holds the digitization to METR's printed slopes
+and Model 4's value.
 
 The RSI blend's *Capabilities Milestones* row dates the CoBench and next-step
 bars through `_pc_rsi_eta()` and `_pc_nextstep_eta()`, which reuse this tab's own
