@@ -6597,6 +6597,7 @@ def render_rsi(end_year):
                         "Anthropic research staff",
         annotation_position="top left",
         annotation_font=dict(size=11, color='#e74c3c'))
+    _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.0f}%", label="trend")
     _add_today_vline(fig)
 
     fig.update_layout(
@@ -6918,6 +6919,7 @@ def _render_rsi_automation(end_year):
                         "led by Claude (AL4+), then unsupervised (AL5)",
         annotation_position="top left",
         annotation_font=dict(size=11, color='#e74c3c'))
+    _add_today_diamond(fig, 'AL4+ median projection', lambda v: f"{v:.0f}%", label="AL4+ trend")
     _add_today_vline(fig)
 
     fig.update_layout(
@@ -7079,6 +7081,7 @@ def _render_rsi_survey(end_year):
         text=f"{_PC_RSI_SURVEY_TARGET_X:.0f}x — the milestone bar, about a "
              "doubling and a half past the last round",
         font=dict(size=11, color='#e74c3c'))
+    _add_today_diamond(fig, 'Median projection', lambda v: f"~{v:.1f}×", label="trend", log=True)
     _add_today_vline(fig)
     fig.update_layout(
         height=480, margin=dict(l=50, r=60, t=40, b=40),
@@ -7225,6 +7228,7 @@ def _render_rsi_code(end_year):
         text=f"{_RSI_CODE_TARGET:.0f}x — one engineer merging what "
              f"{_RSI_CODE_TARGET:.0f} did before 2025",
         font=dict(size=11, color='#e74c3c'))
+    _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}×", label="trend", log=True)
     _add_today_vline(fig)
 
     fig.update_layout(
@@ -7783,6 +7787,7 @@ def _render_rsi_direction(end_year):
                         "ceiling: a judge shown the finished session",
         annotation_position="top left",
         annotation_font=dict(size=11, color='#e74c3c'))
+    _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.0f}%", label="trend")
     _add_today_vline(fig)
 
     fig.update_layout(
@@ -7890,6 +7895,8 @@ def _render_rsi_tasteval(end_year):
         xref='x domain', x=0.01, y=0.0, yanchor='bottom', xanchor='left',
         text="1× — the best human expert", showarrow=False,
         font=dict(size=11, color='#e74c3c'))
+    _add_today_diamond(fig, next((t.name for t in fig.data if (t.name or '').startswith('From ')), ''),
+                       lambda v: f"{v:.1f}×", label="post-break trend", log=True)
     _add_today_vline(fig)
     x_end = max(datetime.now(), rows[-1]['date']) + timedelta(days=45)
     fig.update_layout(
@@ -7956,6 +7963,7 @@ def _render_rsi_tasteval(end_year):
         fig.add_hline(y=y, line=dict(color=color, width=1.5, dash='dash'),
                       annotation_text=label, annotation_position="top left",
                       annotation_font=dict(size=11, color=color))
+    _add_today_diamond(fig, "Its extrapolation", lambda v: f"{v:.2f}", label="extrapolated")
     _add_today_vline(fig)
     fig.update_layout(
         height=420, margin=dict(l=50, r=60, t=50, b=40),
@@ -21522,6 +21530,7 @@ def _tk_pace_fig(result, today, markers=(), history=None, today_note="METR",
                              "200×", "500×", "1,000×", "10,000×", "100,000×",
                              "1,000,000×"]),
         legend=dict(orientation="h", y=-0.12), hovermode="x")
+    _add_today_diamond(fig, lines[-1][1], lambda v: f"{v:.1f}\u00d7", log=True)
     return fig
 
 
@@ -22123,6 +22132,7 @@ def _tk_eci_fig(result, today, eci, markers=()):
                    range=[min(m['eci_score'] for m in past) - 10,
                           eci["ultra_level"] + _TK_ECI_VIEW_PAST_ULTRA]),
         legend=dict(orientation="h", y=-0.12), hovermode="x")
+    _add_today_diamond(fig, "Projected ECI", lambda v: f"{v:.0f}", label="trained frontier")
     return fig
 
 
@@ -22407,6 +22417,8 @@ def _tk_humans_fig(result, today, ladder=None, markers=()):
         yaxis=dict(range=[0, 100], ticksuffix="%",
                    title="Human hours still needed"),
         legend=dict(orientation="h", y=-0.12), hovermode="x")
+    _add_today_diamond(fig, "Research direction", lambda v: f"{v:.0f}%",
+                       label="research direction")
     return fig
 
 

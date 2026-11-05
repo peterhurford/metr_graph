@@ -1302,9 +1302,11 @@ class TestTakeoffTab:
         workforce = json.loads(_tk_charts(at)[9].proto.spec)
         assert {"AI researcher copies", "Human researchers", "AI (FTE)", "Humans (FTE)", "Total (humans + AIs)"} <= {
             d.get("name") for d in workforce["data"]}
-        # Three stages (band edges + median each), then the measured index history.
-        assert len(people["data"]) == 10
-        assert people["data"][-1]["name"] == "Measured: R&D automation index"
+        # Three stages (band edges + median each), then the measured index
+        # history, then today's diamond on research direction.
+        assert len(people["data"]) == 11
+        assert people["data"][-2]["name"] == "Measured: R&D automation index"
+        assert people["data"][-1]["name"] == "Today"
         assert [s["y0"] for s in people["layout"]["shapes"]
                 if s.get("yref") == "y"] == [5]
         before = [(m.label, m.value) for m in at.metric]
