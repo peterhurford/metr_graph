@@ -51,6 +51,14 @@ def _has_widget(at, widget_type, key):
         return False
 
 
+def vp_fit_ppy():
+    """The public US-best ECI line's fitted points a year, Takeoff's rate
+    before `tk_eci_today` set it."""
+    import takeoff_model
+    import visualize_projection as vp
+    return vp._tk_eci_scale(takeoff_model.DEFAULTS)[2]
+
+
 def _rsi_cdf_index(at):
     """Position of the RSI projection's CDF, the evidence half's last chart."""
     import json
@@ -976,7 +984,11 @@ class TestRsiTab:
             return (x.get("title")
                     and len(rng) == 2 and all(isinstance(v, str) for v in rng))
         series = [L for L in charts if _calendar(L)]
-        assert series and len(series) == len(charts) - 1
+        # Besides the CDF, METR's readings chart has no date axis at all.
+        readings = [L for L in charts if str(((L.get("xaxis") or {}).get("title") or {})
+                                             .get("text", "")).startswith("ECI points a year")]
+        assert len(readings) == 1
+        assert series and len(series) == len(charts) - 2
         for L in series:
             notes = [a for a in L.get("annotations", [])
                      if a.get("text") == "Today"]
@@ -2103,6 +2115,9 @@ class TestPacingTab:
         its rate and China crosses sooner; uncut, it runs at the US's pace,
         sooner still."""
         at = self._app()
+        # The public ECI line's own rate, so the paced US is still caught
+        # before 2032 and the leak has a crossing to move.
+        at.session_state["tk_eci_today"] = round(vp_fit_ppy(), 2)
         at.select_slider(key="pc_pace").set_value(25).run()
 
         def surpass(at):

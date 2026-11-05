@@ -12,9 +12,10 @@ the AL5 card's weight set to zero, since full autonomy is not a coding milestone
 They no longer shift an otherwise identical post-coding simulation forward in time.
 
 Research is partially automated today. Initial human-hour shares (calibrated below),
-coding automation (70%), and the current software
-progress rate (one doubling per nine months) are assumptions. The current progress rate
-already includes existing AI assistance. One full cycle (training plus validation, four
+coding automation (70%), and the software progress rate behind the public ECI line
+(one doubling per nine months) are assumptions. Today's rate is that one sped up until
+modeled ECI growth equals `tk_eci_today` (24 points a year by default, 5.8 months a
+doubling); it already includes existing AI assistance. One full cycle (training plus validation, four
 months) of undeployed discoveries initializes both the actual and same-compute reference
 pipelines, the steady state, so the next model ships at today's pace. Those discoveries must
 still pass validation; the model does not invent a pre-today trajectory.
@@ -148,8 +149,7 @@ They start from today's already-assisted rate and can fall if difficulty outpace
 No minimum of 1× is imposed.
 
 The reporting anchor is a set research pace today relative to 2025 (`tk_pace_today`,
-by default OpenAI's experiments per experimenter, its fitted trend carried from the last
-reading to today, about 2×; experiments are a proxy for research). Each draw keeps its RSI activity
+by default 2×, METR's October 2026 assessment of Anthropic). Each draw keeps its RSI activity
 multiple's spread around that median. It is a stated normalization, not measured discovery
 growth. It rescales each draw before computing percentiles and does not multiply existing
 assistance into dynamics a second time, so it moves the 2×/5× crossings but no milestone.

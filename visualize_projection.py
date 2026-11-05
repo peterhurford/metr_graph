@@ -6602,6 +6602,7 @@ def render_rsi(end_year):
     _render_rsi_survey(rsi_end_year)
     _render_rsi_code(rsi_end_year)
     _render_rsi_experiments(rsi_end_year)
+    _render_rsi_metr()
     _render_rsi_direction(rsi_end_year)
     _render_rsi_tasteval(rsi_end_year)
 
@@ -7339,9 +7340,9 @@ def _render_rsi_experiments(end_year):
             marker=dict(symbol='diamond', size=13, color='#7f8c8d',
                         line=dict(color='white', width=1)),
             name="Takeoff's pace today",
-            hovertemplate=f"Today: {float(pace):g}× 2025, the trend's median carried "
-                          "from the last reading.<br>The Takeoff model's research pace "
-                          "starts here.<extra></extra>"))
+            hovertemplate=f"Today: {float(pace):g}× 2025, METR's assessment of "
+                          "Anthropic (Oct 2026), not this trend.<br>The Takeoff model's "
+                          "research pace starts here.<extra></extra>"))
     _add_today_vline(fig)
     fig.update_layout(
         height=480, margin=dict(l=50, r=60, t=50, b=40),
@@ -7372,6 +7373,267 @@ def _render_rsi_experiments(end_year):
          "of half to twice the fitted value and an 80% position range of fitted "
          "value divided/multiplied by 1.3. These are modeling assumptions, not "
          "source error bars; overlapping four-week averages are correlated."))
+
+
+# ── METR's acceleration assessment (AECI) against public ECI ─────────────
+_METR_ACCEL_SOURCE_URL = (
+    "https://metr.org/blog/2026-11-05-anthropic-ai-rd-acceleration-assessment")
+_METR_BREAK = datetime(2025, 10, 7)      # METR's fitted slope change
+_METR_HEADLINE = (2.0, 1.3, 3.0)         # its judgment: ~2x, 1.3-3x unsurprising
+_METR_LINK_RANGE = (1.1, 2.9)            # its link-function robustness range
+_METR_WINDOW_FROM = datetime(2024, 2, 1)  # METR's charts open at Claude 3 Opus
+
+
+def load_metr_aeci():
+    """METR's AECI points, digitized (`metr_aeci.csv`; method in its header)."""
+    with Path(__file__).with_name('metr_aeci.csv').open() as f:
+        return [{'chart': r['chart'], 'model': r['model'],
+                 'date': datetime.strptime(r['date'], '%Y-%m-%d'),
+                 'aeci': float(r['aeci']), 'kind': r['kind'],
+                 'epoch_model': r['epoch_model'] or None}
+                for r in csv.DictReader(line for line in f if not line.startswith('#'))]
+
+
+def _t80(dof):
+    """Two-sided 80% t multiplier (Cornish-Fisher past `_DT_T80`'s table)."""
+    return _DT_T80.get(dof) or 1.2816 * (1 + (1.2816 ** 2 + 1) / (4 * dof))
+
+
+def _metr_hinge(dates, ys, brk=_METR_BREAK):
+    """METR's trend fit: least squares with the slope changing at `brk`.
+
+    {'pre', 'post' (points a year), 'post_lo', 'post_hi', 'ratio', 'ratio_lo',
+    'ratio_hi' (80% t-intervals; the ratio's by the delta method on its log),
+    'icpt' (the fit at `brk`), 'n'}, or None under five points or a flat
+    pre-break slope. Deterministic, so no seed is needed."""
+    t = np.array([(d - brk).days / 365.25 for d in dates])
+    y = np.asarray(ys, dtype=float)
+    if len(t) < 5:
+        return None
+    X = np.c_[np.ones_like(t), t, np.maximum(t, 0)]
+    b, *_ = np.linalg.lstsq(X, y, rcond=None)
+    dof = len(t) - 3
+    V = (((y - X @ b) ** 2).sum() / dof) * np.linalg.inv(X.T @ X)
+    pre, post = b[1], b[1] + b[2]
+    if pre <= 0 or post <= 0:
+        return None
+    var_post = V[1, 1] + V[2, 2] + 2 * V[1, 2]
+    cov = V[1, 1] + V[1, 2]
+    se_log = np.sqrt(max(var_post / post ** 2 + V[1, 1] / pre ** 2
+                         - 2 * cov / (post * pre), 0.0))
+    k = _t80(dof)
+    return {'pre': pre, 'post': post, 'icpt': b[0], 'n': len(t),
+            'post_lo': post - k * np.sqrt(var_post), 'post_hi': post + k * np.sqrt(var_post),
+            'ratio': post / pre, 'ratio_lo': post / pre * np.exp(-k * se_log),
+            'ratio_hi': post / pre * np.exp(k * se_log)}
+
+
+def _metr_offsets(rows=None):
+    """AECI minus Epoch's ECI for each model in both: [{'model', 'date' (Epoch's
+    release), 'offset', 'anthropic'}], each model once."""
+    eci = {m['version']: m for m in _eci_rows_by_version()}
+    out, seen = [], set()
+    for r in rows or load_metr_aeci():
+        name = r['epoch_model']
+        if not name or name in seen or name not in eci:
+            continue
+        seen.add(name)
+        out.append({'model': r['model'], 'date': eci[name]['date'],
+                    'offset': r['aeci'] - eci[name]['eci'],
+                    'anthropic': 'Claude' in name})
+    return sorted(out, key=lambda o: o['date'])
+
+
+def _eci_rows_by_version():
+    """Epoch's ECI file as [{'version', 'eci', 'date', 'org'}]."""
+    with Path(__file__).with_name('epoch_capabilities_index.csv').open() as f:
+        return [{'version': r['Model version'], 'eci': float(r['ECI Score']),
+                 'date': datetime.strptime(r['Release date'], '%Y-%m-%d'),
+                 'org': r['Organization']}
+                for r in csv.DictReader(f) if r['ECI Score'] and r['Release date']]
+
+
+def _metr_readings():
+    """How fast the frontier's ECI climbs since `_METR_BREAK`, by source: a list
+    of {'label', 'fit' (`_metr_hinge`), 'basis', 'note'} in points a year.
+    Public lines are Epoch's running records from `_METR_WINDOW_FROM`; AECI lines
+    are METR's frontier rows, internal models dated at first internal use."""
+    out = []
+    for label, entity, note in (
+            ("Epoch ECI: US frontier", "US best",
+             "Public models at release; running record across US labs."),
+            ("Epoch ECI: Anthropic", "Anthropic",
+             "Public Claude models at release.")):
+        fr = [m for m in _eci_entity_data(entity)[1] if m['date'] >= _METR_WINDOW_FROM]
+        fit = _metr_hinge([m['date'] for m in fr], [m['eci_score'] for m in fr])
+        if fit:
+            out.append({'label': label, 'fit': fit, 'basis': 'public', 'note': note})
+    rows = load_metr_aeci()
+    for label, chart, note in (
+            ("METR AECI: all developers", "all_developers",
+             "Other labs' public models plus Anthropic's, internal ones at first "
+             "internal use; METR prints 1.4×."),
+            ("METR AECI: Anthropic", "anthropic",
+             "Anthropic's frontier, internal models at first internal use; METR "
+             "prints 1.9× [95%: 1.5–2.8×].")):
+        pts = [r for r in rows if r['chart'] == chart and r['kind'] != 'not_frontier']
+        fit = _metr_hinge([r['date'] for r in pts], [r['aeci'] for r in pts])
+        if fit:
+            out.append({'label': label, 'fit': fit, 'basis': 'aeci', 'note': note})
+    return out
+
+
+def _render_rsi_metr():
+    """METR's AECI acceleration finding beside Epoch's public ECI: the two
+    indexes on the same models, their gap, and every source's current climb
+    against Takeoff's `tk_eci_today`."""
+    st.subheader("METR's acceleration assessment")
+    rows = load_metr_aeci()
+    anth = [r for r in rows if r['chart'] == 'anthropic']
+    fit = _metr_hinge([r['date'] for r in anth if r['kind'] != 'not_frontier'],
+                      [r['aeci'] for r in anth if r['kind'] != 'not_frontier'])
+    _fn_line(
+        f"METR finds Anthropic's benchmark index climbing {fit['ratio']:.1f}× its "
+        "pre-October-2025 rate, and judges AI R&D there about 2× as fast. Epoch's "
+        "public index on the same models shows less.",
+        ("Anthropic's benchmark index",
+         "AECI: Anthropic's version of Epoch's Capabilities Index, Epoch's code on "
+         "Anthropic's mix of internal and external benchmarks. The fit is METR's: "
+         "least squares with the slope changing on Oct 7, 2025, refitted here on "
+         "the digitized points."),
+        ("judges AI R&D there about 2× as fast",
+         "Capabilities on well-specified tasks improving ~2× the Mar 2024–Oct 2025 "
+         "rate; 1.3× or 3× would not surprise METR. About 80% of today's "
+         "acceleration put down to AI, with substantial uncertainty. Anthropic "
+         "redacted most of the evidence METR found most informative."))
+    eci = {m['version']: m for m in _eci_rows_by_version()}
+    figure = go.Figure()
+    styles = {'frontier': ('Public, frontier', '#1a7048', 'circle'),
+              'internal': ('Internal (first internal use)', '#d8774f', 'circle'),
+              'not_frontier': ('Public, not frontier', '#1a7048', 'circle-open')}
+    for kind, (name, color, symbol) in styles.items():
+        pts = [r for r in anth if r['kind'] == kind]
+        figure.add_trace(go.Scatter(
+            x=[r['date'] for r in pts], y=[r['aeci'] for r in pts], mode='markers',
+            name=f"AECI: {name}", marker=dict(color=color, symbol=symbol, size=9),
+            text=[r['model'] for r in pts],
+            hovertemplate='%{text}<br>%{x|%b %d, %Y}<br>AECI %{y:.1f}<extra></extra>'))
+    matched = [(r, eci[r['epoch_model']]) for r in anth
+               if r['epoch_model'] in eci]
+    figure.add_trace(go.Scatter(
+        x=[e['date'] for _, e in matched], y=[e['eci'] for _, e in matched],
+        mode='markers', name="Epoch ECI, same model (release date)",
+        marker=dict(color='#7f8c8d', symbol='diamond', size=8),
+        text=[f"{r['model']}: AECI {r['aeci']:.1f}, ECI {e['eci']:.1f}"
+              for r, e in matched],
+        hovertemplate='%{text}<br>Released %{x|%b %d, %Y}<extra></extra>'))
+    for (r, e) in matched:
+        figure.add_trace(go.Scatter(
+            x=[r['date'], e['date']], y=[r['aeci'], e['eci']], mode='lines',
+            line=dict(color='rgba(127,127,127,0.5)', width=1), hoverinfo='skip',
+            showlegend=False))
+    first = min(r['date'] for r in anth)
+    last = max(r['date'] for r in anth)
+    for (a, b, dash, name) in ((first, _METR_BREAK, None, None),
+                               (_METR_BREAK, last, 'dash', 'pre-break trend continued'),
+                               (_METR_BREAK, last, None, None)):
+        slope = fit['pre'] if (dash or b == _METR_BREAK) else fit['post']
+        ys = [fit['icpt'] + slope * (d - _METR_BREAK).days / 365.25 for d in (a, b)]
+        label = (name or (f"METR fit: +{fit['pre']:.0f}/yr" if b == _METR_BREAK
+                          else f"METR fit: +{fit['post']:.0f}/yr"))
+        figure.add_trace(go.Scatter(
+            x=[a, b], y=ys, mode='lines', name=label, hoverinfo='skip',
+            line=dict(color='#2c3e50' if not dash else '#95a5a6', dash=dash, width=2)))
+    today = _add_today_vline(figure)
+    x_range = [first - timedelta(days=30), today + timedelta(days=30)]
+    figure.update_layout(
+        height=460, margin=dict(l=50, r=20, t=30, b=40),
+        xaxis=dict(title='Date', range=x_range, gridcolor='rgba(0,0,0,0.12)'),
+        yaxis=dict(title='Capabilities index', gridcolor='rgba(0,0,0,0.12)'),
+        plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#1a1a2e'),
+        legend=dict(x=0.01, y=0.99, bgcolor='rgba(255,255,255,0.9)'),
+        hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e'))
+    st.plotly_chart(figure, width='stretch', theme=None)
+
+    offsets = _metr_offsets(rows)
+    fig2 = go.Figure()
+    for anthropic, name, color in ((True, 'Anthropic models', '#d8774f'),
+                                   (False, 'Other developers', '#7f8c8d')):
+        pts = [o for o in offsets if o['anthropic'] == anthropic]
+        fig2.add_trace(go.Bar(
+            x=[o['date'] for o in pts], y=[o['offset'] for o in pts], name=name,
+            marker_color=color, width=86400000 * 9, text=[o['model'] for o in pts],
+            hovertemplate='%{text}<br>Released %{x|%b %d, %Y}<br>AECI − ECI: '
+                          '%{y:+.1f}<extra></extra>'))
+    _add_today_vline(fig2)
+    fig2.update_layout(
+        height=300, margin=dict(l=50, r=20, t=30, b=40), barmode='overlay',
+        xaxis=dict(title='Release date', range=x_range, gridcolor='rgba(0,0,0,0.12)'),
+        yaxis=dict(title='AECI − Epoch ECI (points)', gridcolor='rgba(0,0,0,0.12)',
+                   zeroline=True, zerolinecolor='#999'),
+        plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#1a1a2e'),
+        legend=dict(x=0.01, y=0.99, bgcolor='rgba(255,255,255,0.9)'),
+        hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e'))
+    st.markdown("**The two indexes on the same model**")
+    st.plotly_chart(fig2, width='stretch', theme=None)
+    recent = [o['offset'] for o in offsets if o['anthropic'] and o['date'] >= datetime(2026, 4, 1)]
+    others = [o['offset'] for o in offsets if not o['anthropic'] and o['date'] >= datetime(2025, 1, 1)]
+    _fn_caption(
+        f"Other labs' models sit a steady ~{np.median(others):+.0f} on AECI; "
+        f"Claude models since April 2026 sit {min(recent):+.0f} to {max(recent):+.0f}. "
+        "The data cannot say which index is off.",
+        ("which index is off",
+         "Either AECI's internal benchmarks favour recent Claude models, or Epoch's "
+         "public benchmarks are saturating, so its index compresses the newest models. "
+         "METR found every AECI benchmark above 50% for Model 4 and weak evidence that "
+         "saturation understates it. Removing the Claude-specific gap takes METR's "
+         "all-developer acceleration from about 1.4× to about 1.2×."))
+
+    readings = _metr_readings()
+    eci_today = float(st.session_state.get("tk_eci_today", _TK_ECI_TODAY))
+    pre = fit['pre']
+    labels = [r['label'] for r in readings] + ["METR's judgment (× AECI's pre-break rate)"]
+    mids = [r['fit']['post'] for r in readings] + [_METR_HEADLINE[0] * pre]
+    los = [r['fit']['post_lo'] for r in readings] + [_METR_HEADLINE[1] * pre]
+    his = [r['fit']['post_hi'] for r in readings] + [_METR_HEADLINE[2] * pre]
+    notes = ([f"{r['note']}<br>Before: +{r['fit']['pre']:.1f}/yr; since Oct 2025: "
+              f"+{r['fit']['post']:.1f}/yr (80%: {r['fit']['post_lo']:.1f}–"
+              f"{r['fit']['post_hi']:.1f}), {r['fit']['ratio']:.2f}× "
+              f"(80%: {r['fit']['ratio_lo']:.2f}–{r['fit']['ratio_hi']:.2f}×)"
+              for r in readings]
+             + [f"~2× (1.3–3×) of AECI's pre-break +{pre:.1f}/yr. METR's link-function "
+                f"checks alone span {_METR_LINK_RANGE[0]}–{_METR_LINK_RANGE[1]}×."])
+    fig3 = go.Figure(go.Scatter(
+        x=mids, y=labels, mode='markers', marker=dict(size=11, color='#2c3e50'),
+        error_x=dict(type='data', symmetric=False,
+                     array=[h - m for h, m in zip(his, mids)],
+                     arrayminus=[m - lo for m, lo in zip(mids, los)], color='#7f8c8d'),
+        text=notes, hovertemplate='%{y}<br>%{text}<extra></extra>', showlegend=False))
+    fig3.add_vline(x=eci_today, line=dict(color=_TK_PACE_COLOR, width=2, dash='dash'))
+    fig3.add_annotation(x=eci_today, y=1.0, yref='paper', showarrow=False,
+                        text=f"Takeoff uses {eci_today:g}", xanchor='left',
+                        yanchor='bottom', font=dict(color='#555'))
+    fig3.update_layout(
+        height=320, margin=dict(l=20, r=20, t=40, b=40),
+        xaxis=dict(title='ECI points a year since Oct 2025 (80% interval)',
+                   gridcolor='rgba(0,0,0,0.12)', rangemode='tozero'),
+        yaxis=dict(autorange='reversed'), plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(color='#1a1a2e'), hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e'))
+    st.markdown("**How fast is the frontier climbing today?**")
+    st.plotly_chart(fig3, width='stretch', theme=None)
+    _fn_caption(
+        f"Source: [METR, *AI R&D acceleration at Anthropic*]({_METR_ACCEL_SOURCE_URL}), "
+        "AECI values digitized from its charts; Epoch's ECI from this app's ECI tab. "
+        "The dashed line is Takeoff's *Today's ECI growth*.",
+        ("digitized from its charts",
+         "METR prints no table. Marker centres were read against the axis ticks; the "
+         "refit reproduces METR's printed +15→+29 and +17→+24 points a year and Model "
+         "4's 178.6 (metr_aeci.csv's header)."),
+        ("Today's ECI growth",
+         "The one input here that moves Takeoff's dates: it sets today's software "
+         "pace. The public lines date models at release, the AECI ones at first "
+         "internal use, and Takeoff's frontier is the trained one, so the truth for "
+         "it lies between."))
 
 
 def _rsi_dir_label_positions(rows, gap_days=90, rise_pts=6.0):
@@ -20546,13 +20808,21 @@ _TK_COMPUTE_SLOW_YEAR = 2030
 # the default of `tk_ultra_eci`, and the range its input accepts.
 _TK_ULTRA_ECI = 250.0
 _TK_ULTRA_RANGE = (180.0, 500.0)
+# Today's research pace (x 2025), where chart 1 starts: METR's assessment of
+# Anthropic, Oct 2026 (~2x, 1.3-3x). A label only; no date moves with it.
+_TK_PACE_TODAY = 2.0
+# Today's frontier ECI growth, points a year (`tk_eci_today`): the middle of
+# the 2026 readings in `metr_aeci.csv`, against the public fit's ~16.5. It sets
+# today's software pace, so it moves the dates (`_tk_eci_today_pace`).
+_TK_ECI_TODAY = 24.0
 _TK_DEFAULTS = {"tk_" + k: v for k, v in takeoff.DEFAULTS.items()
                 if k not in _TK_NOT_WIDGETS}
 _TK_DEFAULTS.update({
     "tk_end_year": 2030, "tk_cal_weight": 50.0, "tk_cal_compute": 2.0,
     "tk_cal_capability": 2.0, "tk_cal_yield": 1.0, "tk_cal_validated": 0.0,
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
-    "tk_pace_today": 1.7, "tk_returns": 1.0, "tk_dc_compute": True,
+    "tk_pace_today": _TK_PACE_TODAY, "tk_eci_today": _TK_ECI_TODAY,
+    "tk_returns": 1.0, "tk_dc_compute": True,
     "tk_coding_pairing": 0.9,
     "tk_wf_humans": 10_000,
     "tk_wf_copies": 50_000, "tk_wf_power": 10.0, "tk_ultra_eci": _TK_ULTRA_ECI,
@@ -21067,22 +21337,8 @@ _TK_DEFAULTS["tk_coding_slope"] = _tk_survey_coding(
     _TK_DEFAULTS["tk_transfer"] / 100, _tk_copies_yearly(load_rsi_automation()))
 
 
-def _tk_pace_today_default(today=None):
-    """Today's research pace in 2025 units: OpenAI's experiments per
-    experimenter, its fitted trend carried from the last reading to today
-    (the median of the same draws the RSI experiment fan uses)."""
-    rows = load_rsi_experiments()
-    draws = _rsi_experiment_draws(rows, n=N_SAMPLES)
-    if draws is None:
-        return 1.7
-    starts, slopes = draws
-    today = (today or datetime.now()).replace(hour=0, minute=0, second=0, microsecond=0)
-    return round(float(np.median(np.exp(starts + slopes * (today - rows[-1]["date"]).days))), 1)
-
-
-_TK_DEFAULTS["tk_pace_today"] = _tk_pace_today_default()
 _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
-# The experiment trend sets today's pace: its own grey, not Compute's blue.
+# Today's pace (METR's assessment): its own grey, not Compute's blue.
 _TK_PACE_COLOR = "#7f8c8d"
 
 
@@ -21159,7 +21415,7 @@ def _tk_dates(result, today):
             for y in result["workflow_progress"]["years"]]
 
 
-def _tk_pace_fig(result, today, markers=(), history=None, today_note="OpenAI trend",
+def _tk_pace_fig(result, today, markers=(), history=None, today_note="METR",
                  capability=False):
     """Research pace in multiples of 2025, actual vs AI frozen at today; with
     `capability`, the pace with headcount, compute and difficulty held at today's.
@@ -21373,6 +21629,7 @@ def _tk_flow_dot(v):
         node("ns", "Next-step + TasteVal\\nwin odds vs researcher", "#8e44ad"),
         node("su", "Staff speedup survey\\nself-reported output", "#d68910"),
         node("ex", "OpenAI experiments\\nper researcher", p),
+        node("mt", "METR assessment\\n+ ECI readings", p),
         node("ix", "R&D automation index", "#16a085"),
         node("dc", v["compute_source"], "#2980b9"),
         node("sb", "Sidebar assumptions", "#c0392b"),
@@ -21390,11 +21647,11 @@ def _tk_flow_dot(v):
         node("fd", "Harder ideas (÷)", "#c0392b", "ellipse"),
         node("net", f"Net research pace\\n{v['pace_today']:g}× today, times\\nthe five "
                     "factors", p, "doubleoctagon"),
-        '{rank=same; h1; ns; su; ex; ix; dc; sb;}',
+        '{rank=same; h1; ns; su; ex; mt; ix; dc; sb;}',
         '{rank=same; h2; pj; pc; ph; pk; pn; pt;}',
         '{rank=same; h3; fj; fa; fh; fk; fd;}',
         '{rank=same; h4; net;}',
-        edge("ns", "pj"), edge("su", "pc"), edge("ex", "pt", "trend to today"),
+        edge("ns", "pj"), edge("su", "pc"), edge("mt", "pt", "today's pace"),
         edge("ix", "ph"), edge("dc", "pk"), edge("sb", "pn"),
         edge("pj", "fj"), edge("pc", "fa"), edge("ph", "fa", "Amdahl"),
         edge("ph", "fh", "people speed\\ntheir share"), edge("pk", "fk"),
@@ -21652,30 +21909,34 @@ def _tk_dist_fig(rsi, ultra, gap, today, view_end, sim_end, ultra_level=_TK_ULTR
     return fig
 
 
-def _tk_eci_scale(params, hist=None, lead_years=0.0):
+def _tk_eci_scale(params, hist=None, lead_years=0.0, ppy=None):
     """(US-best frontier rows, today's ECI, its fitted points a year, today's
     modeled capability growth): ECI = now + ppy / base_rate * capability.
 
     `now` is the best *trained* model: the latest release plus `lead_years`
-    (the US trained-to-release lag) of the fitted climb."""
+    (the US trained-to-release lag) of the climb. `ppy`, when given, is that
+    climb (today's rate, `tk_eci_today`); else the frontier's fitted line."""
     frontier = _eci_entity_data("US best")[1]
-    days = np.array([(m['date'] - frontier[0]['date']).days for m in frontier], dtype=float)
-    ppy = fit_line(days, np.array([m['eci_score'] for m in frontier]))[1] * 365.25
+    if ppy is None:
+        days = np.array([(m['date'] - frontier[0]['date']).days for m in frontier],
+                        dtype=float)
+        ppy = fit_line(days, np.array([m['eci_score'] for m in frontier]))[1] * 365.25
     base_rate = (np.log(2) * 12 / params["software_months"]
                  + (hist if hist is not None else np.log(params["compute_growth"])))
     return frontier, frontier[-1]['eci_score'] + ppy * lead_years, ppy, base_rate
 
 
-def _tk_eci_rates(params, hist=None):
+def _tk_eci_rates(params, hist=None, ppy=None):
     """How the ECI reading credits each part of a model: {'compute', 'software'}
     (ECI points per unit log training compute, per unit log algorithmic
     efficiency), plus the algorithm rate's cross-checks. Compute earns the
     Compute/capabilities tab's frontier-grade exchange rate (margin 3, then
     5, then the pooled fit: the fallback its innovation bands use);
-    algorithms earn the rest of the ECI frontier's fitted climb, so today's
-    modeled growth reproduces it. `algo_ppy` is that rest in points a year,
-    beside the tab's own fixed-compute fits (`fg_b_time`, `pooled_b_time`)."""
-    _, _, ppy, base_rate = _tk_eci_scale(params, hist)
+    algorithms earn the rest of the climb (`ppy`, else the ECI frontier's
+    fitted line), so today's modeled growth reproduces it. `algo_ppy` is that
+    rest in points a year, beside the tab's own fixed-compute fits
+    (`fg_b_time`, `pooled_b_time`)."""
+    _, _, ppy, base_rate = _tk_eci_scale(params, hist, ppy=ppy)
     compute_rate = hist if hist is not None else np.log(params["compute_growth"])
     software_rate = np.log(2) * 12 / params["software_months"]
     rows = load_eci_compute(mtime=_eci_mtime())
@@ -21694,6 +21955,18 @@ def _tk_eci_rates(params, hist=None):
             "pooled_b_time": pooled['b_time'] if pooled else None}
 
 
+def _tk_eci_today_pace(params, hist, eci_today):
+    """Today's software pace over the fitted ECI line's: today's algorithmic
+    points a year (`eci_today` less compute's share) over the fit's. Software
+    sped up by it, at the fit's ECI per unit of efficiency, makes today's
+    modeled ECI growth `eci_today` (`TestTakeoffEciToday`); None if compute
+    alone already exceeds `eci_today`."""
+    r = _tk_eci_rates(params, hist)
+    compute_rate = hist if hist is not None else np.log(params["compute_growth"])
+    algo_today = eci_today - r["compute"] * compute_rate
+    return algo_today / r["algo_ppy"] if algo_today > 0 else None
+
+
 def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
     """Each scenario's capability path read as ECI, anchored on the US frontier
     as trained (`result['eci_lead']` years of climb past the latest release).
@@ -21709,7 +21982,8 @@ def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
     'ultra_level' (`ultra`)}.
     """
     frontier, now, ppy, base_rate = _tk_eci_scale(params, result.get("hist_compute"),
-                                                  result.get("eci_lead", 0.0))
+                                                  result.get("eci_lead", 0.0),
+                                                  ppy=result.get("eci_today"))
     wp = result["workflow_progress"]
     years = wp["years"]
     w_compute, w_software = result["eci_rates"]["compute"], result["eci_rates"]["software"]
@@ -22389,11 +22663,21 @@ def _tk_run(today, progress=None):
     with _seeded_rng(_tk_seed()):
         dc = _tk_dc_compute(today, n) if ss("tk_dc_compute") else None
     compute_rates, hist_compute = dc if dc else (None, None)
+    # Today's ECI growth sets today's software pace: the doubling time is the
+    # fitted line's, sped up so the modeled growth today is `tk_eci_today`.
+    # ECI per unit of efficiency stays the fit's.
+    eci_today = float(ss("tk_eci_today"))
+    software_pace = _tk_eci_today_pace(params, hist_compute, eci_today)
+    if software_pace is None:
+        return {"error": f"Today's ECI growth ({eci_today:g} points a year) must exceed "
+                         "what compute growth alone adds."}
+    params["software_months"] = params["software_months"] / software_pace
     # A model at ultraintelligence has automated coding whatever the RSI projection's
     # date says, so RSI no longer waits on a late inherited date past it.
     eci_lead = _ship_lag("us") / 365.25
-    _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute, eci_lead)
-    eci_rates = _tk_eci_rates(params, hist_compute)
+    _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute, eci_lead,
+                                                  ppy=eci_today)
+    eci_rates = _tk_eci_rates(params, hist_compute, ppy=eci_today)
     ultra = _tk_ultra_eci()
     coding_level = ultra - eci_now          # in ECI points, through eci_rates
     coding_weights = (eci_rates["compute"], eci_rates["software"])
@@ -22430,11 +22714,12 @@ def _tk_run(today, progress=None):
     result["hist_compute"] = hist_compute
     result["eci_rates"] = eci_rates
     result["eci_lead"] = eci_lead
+    result["eci_today"] = eci_today
     rsi = result["events"]["RSI"]
     eci = _tk_eci(result, params, ultra)
     return {"params": params, "result": result, "eci": eci, "eci_base": eci_base,
             "experiment_starts": experiment_starts, "pace_today": pace_today,
-            "pace_yield": pace_yield}
+            "pace_yield": pace_yield, "software_pace": software_pace}
 
 
 def render_takeoff():
@@ -22687,10 +22972,19 @@ def _render_takeoff(loading):
                    "gives the rate. 100 keeps today's growth.")
             number("Research pace today (× 2025)", "pace_today", 0.5, 5.0, 0.1,
                    "Where chart 1 starts: how much faster useful research is today than "
-                   "in 2025. The default is OpenAI's experiments per experimenter, its "
-                   "fitted trend carried from the last reading to today; experiments "
-                   "are a proxy for research, not a measure of it. Scenarios keep their "
-                   "spread around it. Only chart 1's units move, no date.")
+                   "in 2025. The default is METR's assessment of Anthropic (Oct 2026): "
+                   "about 2×, and 1.3–3× would not surprise METR. Scenarios keep their "
+                   "spread around it. Only chart 1's units move, no date; today's ECI "
+                   "growth below is what sets the modeled pace.")
+            number("Today's ECI growth (points a year)", "eci_today", 10.0, 60.0, 0.5,
+                   "How fast the trained frontier's ECI climbs today. It sets today's "
+                   "software pace, so it moves every date: the software doubling time "
+                   "below is sped up until modeled growth matches, at the fitted line's "
+                   "ECI per unit of efficiency. Readings (see *METR's acceleration "
+                   "assessment* above): Epoch's public line ~16.5; Anthropic's public "
+                   "models since Oct 2025 ~21; METR's all-developer frontier ~24; METR's "
+                   "Anthropic-only ~29. The default sits in the middle; a full 2× of the "
+                   "2024–25 pace is ~30.")
             st.markdown("**Feedback starting today**")
             number("Undeployed research today (months of baseline progress)",
                    "pipeline_months", 0.0, 12.0, 0.5,
@@ -22730,7 +23024,11 @@ def _render_takeoff(loading):
             number("Measured validated progress: end / start (×; 0 = unavailable)",
                    "cal_validated", 0.0, 20.0, 0.1,
                    "Supply a matched-period ratio of independently validated fixed-quality "
-                   "algorithmic gains per month. A positive value replaces the experiment proxy.")
+                   "algorithmic gains per month. A positive value replaces the experiment proxy. "
+                   "METR's Oct 2026 fit of Anthropic's benchmark trend is one line since Oct "
+                   "2025, i.e. about 1× over this window, though METR thinks the pace is rising. "
+                   "Any value up to ~1.6× here puts the fitted judgment elasticity at zero, "
+                   "so the default keeps the experiment ratio.")
             st.caption("Matched-stage calibration: enter mean human hours, including "
                        "interventions and rescue work, on comparable projects. Zeros mean "
                        "no measurement supplied; no human-hours data are fabricated.")
@@ -22761,9 +23059,11 @@ def _render_takeoff(loading):
             number("Persistent human-work floor (%)", "human_floor", 0.0, 25.0, 1.0)
             st.markdown("**Validated research progress**")
             number("Baseline software doubling time (months)", "software_months", 3.0, 60.0, 1.0,
-                   "Validated algorithmic progress today, measured as training "
-                   "compute saved at fixed quality, at the reference 40/40/20 compute split. "
-                   "Includes AI assistance already present today; it is not multiplied in again.")
+                   "Validated algorithmic progress at the public ECI line's pace (2024–26), "
+                   "measured as training compute saved at fixed quality, at the reference "
+                   "40/40/20 compute split. Today's ECI growth above speeds it to today's "
+                   "pace; that already includes today's AI assistance, which is not "
+                   "multiplied in again.")
             st.markdown("**Research feedback**")
             number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1,
                    "Default fitted from the staff survey above: the yearly growth in "
@@ -23034,7 +23334,7 @@ def _render_takeoff(loading):
 
     st.subheader("1. Research speeds up")
     pace_history = _tk_pace_history(np.exp(experiment_starts) * pace_yield, today)
-    pace_note = ("OpenAI trend" if abs(pace_today - _TK_DEFAULTS["tk_pace_today"]) < 0.05
+    pace_note = ("METR" if abs(pace_today - _TK_DEFAULTS["tk_pace_today"]) < 0.05
                  else "set")
     st.markdown("**Capability relative to 2025**")
     _fn_caption(

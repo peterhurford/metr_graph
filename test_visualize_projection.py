@@ -6105,6 +6105,76 @@ class TestTakeoffEciRates:
         assert lo - 2 <= r["algo_ppy"] <= hi + 2
 
 
+class TestTakeoffEciToday:
+    """`tk_eci_today` sets today's software pace: modeled ECI growth today
+    equals it, at the fitted line's ECI per unit of efficiency."""
+
+    def test_the_fitted_rate_leaves_software_alone(self):
+        import takeoff_model as tk
+        hist = vp._tk_hist_compute_rate()
+        ppy = vp._tk_eci_scale(tk.DEFAULTS, hist)[2]
+        assert vp._tk_eci_today_pace(tk.DEFAULTS, hist, ppy) == pytest.approx(1.0)
+
+    @pytest.mark.parametrize("eci_today", [20.0, 24.0, 32.0])
+    def test_sped_up_software_reproduces_todays_growth(self, eci_today):
+        import takeoff_model as tk
+        hist = vp._tk_hist_compute_rate()
+        pace = vp._tk_eci_today_pace(tk.DEFAULTS, hist, eci_today)
+        assert pace > 1
+        sped = dict(tk.DEFAULTS, software_months=tk.DEFAULTS["software_months"] / pace)
+        r = vp._tk_eci_rates(sped, hist, ppy=eci_today)
+        software = np.log(2) * 12 / sped["software_months"]
+        assert r["compute"] * hist + r["software"] * software == pytest.approx(eci_today)
+        # ECI per unit of efficiency is the fitted line's, not stretched.
+        assert r["software"] == pytest.approx(vp._tk_eci_rates(tk.DEFAULTS, hist)["software"])
+
+    def test_compute_alone_above_the_setting_has_no_pace(self):
+        import takeoff_model as tk
+        assert vp._tk_eci_today_pace(tk.DEFAULTS, vp._tk_hist_compute_rate(), 0.5) is None
+
+    def test_defaults_are_metrs_pace_and_the_middle_reading(self):
+        assert vp._TK_DEFAULTS["tk_pace_today"] == 2.0
+        assert vp._TK_DEFAULTS["tk_eci_today"] == 24.0
+
+
+class TestMetrAeci:
+    """METR's AECI points, pixel-digitized: the refit must reproduce the slopes
+    and the Model 4 value METR prints."""
+
+    def test_model_4_reads_as_printed(self):
+        m4 = [r for r in vp.load_metr_aeci() if r['model'] == 'Model 4']
+        assert {r['chart'] for r in m4} == {'anthropic', 'all_developers'}
+        assert all(abs(r['aeci'] - 178.6) < 0.3 for r in m4)
+
+    @pytest.mark.parametrize("chart, pre, post, ratio", [
+        ("anthropic", 15, 29, 1.9), ("all_developers", 17, 24, 1.4)])
+    def test_refit_reproduces_metrs_printed_slopes(self, chart, pre, post, ratio):
+        rows = [r for r in vp.load_metr_aeci()
+                if r['chart'] == chart and r['kind'] != 'not_frontier']
+        fit = vp._metr_hinge([r['date'] for r in rows], [r['aeci'] for r in rows])
+        assert fit['pre'] == pytest.approx(pre, abs=0.6)
+        assert fit['post'] == pytest.approx(post, abs=0.6)
+        assert fit['ratio'] == pytest.approx(ratio, abs=0.05)
+        assert fit['ratio_lo'] < fit['ratio'] < fit['ratio_hi']
+
+    def test_every_matched_model_is_in_epochs_file(self):
+        versions = {m['version'] for m in vp._eci_rows_by_version()}
+        named = {r['epoch_model'] for r in vp.load_metr_aeci() if r['epoch_model']}
+        assert named <= versions
+
+    def test_offsets_count_each_model_once(self):
+        offsets = vp._metr_offsets()
+        assert len({o['model'] for o in offsets}) == len(offsets) >= 20
+        # Before 2026 the two indexes agree within a few points.
+        assert all(abs(o['offset']) < 3.5 for o in offsets
+                   if o['date'] < datetime(2026, 1, 1) and o['model'] != 'Gemini 3 Flash Preview')
+
+    def test_readings_cover_public_and_aeci_lines(self):
+        labels = [r['label'] for r in vp._metr_readings()]
+        assert labels == ["Epoch ECI: US frontier", "Epoch ECI: Anthropic",
+                          "METR AECI: all developers", "METR AECI: Anthropic"]
+
+
 class TestTakeoffHumanSpeedup:
     """Hours per stage and automation level: the prior raised to one common
     power so the index's latest month gives the set human speed-up, ends fixed."""

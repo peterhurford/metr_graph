@@ -98,8 +98,9 @@ has its own chart and 2×/5× first-crossing events (internal; no card shows the
 path as ECI at `result["eci_rates"]` (`_tk_eci_rates`): the training-compute part
 (`capability_log − validated_log`) at the CC tab's frontier-grade exchange rate
 (`_cc_frontier_grade_algo`, margin 3 then 5 then pooled), the algorithmic part
-(`validated_log`) at whatever makes today's modeled growth equal the ECI frontier's fitted
-rate, which lands near that tab's own fixed-compute fits (`TestTakeoffEciRates`). One rate
+(`validated_log`) at whatever makes the fitted line's growth come out right, which lands
+near that tab's own fixed-compute fits (`TestTakeoffEciRates`); today's growth is then
+`tk_eci_today`, reached by speeding software (below). One rate
 for both also fits the history but credits the algorithm-driven takeoff less: it put
 ultraintelligence 7 months later. The coding test uses the same reading
 (`simulate(coding_weights=…)`). The path is floored at that trend for `_TK_ECI_FLOOR_YEARS`
@@ -324,9 +325,15 @@ fading weight, not multiplied. Current activity normalization only affects the d
 Its cached result keeps per draw only `capability_log`, `software_realized_log` and
 `compute_log` (the factor chart reads `factor_medians`; `_TK_UNREAD` lists what it drops):
 each (draws x months) array is ~3.4 MB held in memory, and Community Cloud's floor is 690 MB.
-`tk_pace_today` (default `_tk_pace_today_default()`: OpenAI's experiment trend carried to
-today) sets today's
-pace directly; each draw keeps its activity spread around it. Rebase each draw before taking quantiles; never multiply quantile bands.
+`tk_pace_today` (default `_TK_PACE_TODAY`, 2.0: METR's Oct 2026 assessment of Anthropic)
+sets chart 1's starting level, a label only; each draw keeps its activity spread around it.
+`tk_eci_today` (default `_TK_ECI_TODAY`, 24 points a year) is what moves dates: `_tk_run`
+divides `software_months` (now the public ECI line's pace) by `_tk_eci_today_pace`, so
+modeled ECI growth today equals the setting at the fitted line's ECI per unit of
+efficiency, not a stretched readout (`TestTakeoffEciToday`). At the fit's own ~16.5 the
+pace is 1 and nothing moves. 24 sits between Epoch's public lines and METR's AECI ones
+(the readings chart below); 24 against 16.5 moved the median RSI Mar → Feb 2028 and
+ultraintelligence Aug 2029 → Dec 2028. Rebase each draw before taking quantiles; never multiply quantile bands.
 The simulator records ongoing production separately from delivery-window rates, which
 remain available for internal diagnostics and the validated milestone definitions.
 
@@ -343,7 +350,8 @@ CDF (`_tk_charts`).
 
 `render_rsi()` runs CoBench, then the R&D automation index,
 then the staff survey, then
-merged code per person, OpenAI experiment velocity, research direction, then TasteVal
+merged code per person, OpenAI experiment velocity, METR's acceleration assessment
+(`_render_rsi_metr`), research direction, then TasteVal
 (`_render_rsi_tasteval()`), then *Capabilities Milestones* + *Automated coder projection* (`_pc_render_milestones()`,
 moved here from the Pacing tab). The CoBench section plots that eval — Anthropic's
 internal AI R&D benchmark — against release
@@ -565,6 +573,14 @@ axis with the paper's two fits split at GPT-5.2 (`_tasteval_fit`) against a 1× 
 line, then the paper's prediction sigmoid (`_tasteval_predict_mase`) against the card's
 90% bar. No fan and no ETA: the expert line is already passed and the card dates the
 curve (`test_tasteval_section_charts_without_dating`).
+
+`_render_rsi_metr()` sets METR's AECI (`metr_aeci.csv`, `load_metr_aeci`) against
+Epoch's ECI: the two indexes on the same models, their per-model gap (`_metr_offsets`:
+other labs ~+2, Claude since April 2026 +4 to +6, cause unknown), and a readings chart of
+each source's climb since `_METR_BREAK` (`_metr_readings`, METR's one-break fit
+`_metr_hinge`, analytic 80% intervals, no RNG) with `tk_eci_today` drawn on it. The
+readings chart has no date axis, so `test_every_chart_marks_today` exempts it by axis
+title. `TestMetrAeci` holds the digitization to METR's printed slopes and Model 4's value.
 
 The RSI blend's *Capabilities Milestones* row dates the CoBench and next-step
 bars through `_pc_rsi_eta()` and `_pc_nextstep_eta()`, which reuse this tab's own
