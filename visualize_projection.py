@@ -21695,9 +21695,14 @@ def _tk_factors_fig(result, today):
 def _tk_flow_dot(v):
     """Graphviz DOT for evidence -> setting -> pace factor -> net pace, each
     node coloured as its line in the factor chart. `v` holds the values shown."""
+    def tint(color, keep=0.18):
+        # Opaque: a translucent fill shows the page through, dark in dark mode.
+        rgb = [int(color[i:i + 2], 16) for i in (1, 3, 5)]
+        return "#" + "".join(f"{round(255 - (255 - c) * keep):02x}" for c in rgb)
+
     def node(key, label, color, shape="box"):
         return (f'{key} [label="{label}", shape={shape}, style="rounded,filled", '
-                f'fillcolor="{color}22", color="{color}", fontcolor="#555"];')
+                f'fillcolor="{tint(color)}", color="{color}", fontcolor="#333"];')
 
     def edge(a, b, label="", dashed=False):
         attrs = [f'label="{label}"'] if label else []
