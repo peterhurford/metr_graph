@@ -7328,6 +7328,20 @@ def _render_rsi_experiments(end_year):
     fig.add_annotation(xref='x domain', x=0.01, y=np.log10(_RSI_EXPERIMENT_TARGET),
                        text='10x the 2025 baseline', showarrow=False,
                        xanchor='left', yanchor='bottom', font=dict(color='#e74c3c'))
+    # Takeoff's research pace starts at this level (`tk_pace_today`).
+    pace = st.session_state.get("tk_pace_today", _TK_DEFAULTS.get("tk_pace_today"))
+    if pace is not None:
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        fig.add_trace(go.Scatter(
+            x=[today], y=[float(pace)], mode='markers+text',
+            text=[f"today {float(pace):g}×: Takeoff's starting pace"],
+            textposition='bottom right', textfont=dict(color='#1a1a2e', size=12),
+            marker=dict(symbol='diamond', size=13, color='#7f8c8d',
+                        line=dict(color='white', width=1)),
+            name="Takeoff's pace today",
+            hovertemplate=f"Today: {float(pace):g}× 2025, the trend's median carried "
+                          "from the last reading.<br>The Takeoff model's research pace "
+                          "starts here.<extra></extra>"))
     _add_today_vline(fig)
     fig.update_layout(
         height=480, margin=dict(l=50, r=60, t=50, b=40),
@@ -21068,6 +21082,8 @@ def _tk_pace_today_default(today=None):
 
 _TK_DEFAULTS["tk_pace_today"] = _tk_pace_today_default()
 _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
+# The experiment trend sets today's pace: its own grey, not Compute's blue.
+_TK_PACE_COLOR = "#7f8c8d"
 
 
 # The input exponent r is defined against; difficulty = this / r.
@@ -21251,9 +21267,9 @@ def _tk_evidence_fig(params):
         (f"Staff speedup \u2192 coding labor {params['coding_slope']:g}",
          survey, [r['uplift'] for r in survey], "Self-reported output (\u00d7)",
          (survey[0]['date'], s_icpt, s_slope), False, "#d68910"),
-        ("Experiments/researcher \u2192 year-one pace",
+        ("Experiments/researcher \u2192 today's pace",
          exps, [r['mult'] for r in exps], "\u00d7 2025", _rsi_experiment_fit(exps),
-         False, "#2980b9"),
+         False, _TK_PACE_COLOR),
     ]
     fig = make_subplots(rows=1, cols=3, subplot_titles=[p[0] for p in panels],
                         horizontal_spacing=0.09)
@@ -21270,6 +21286,24 @@ def _tk_evidence_fig(params):
                                  line=dict(color=color, width=1.5, dash="dash"),
                                  hoverinfo="skip", showlegend=False), row=1, col=col)
         fig.update_yaxes(type="log", title_text=ytitle, row=1, col=col)
+    # The experiment trend carried to today is where the pace charts start.
+    today, pace = params.get("today"), params.get("pace_today")
+    if today is not None and pace is not None:
+        base, icpt, slope = _rsi_experiment_fit(exps)
+        tail = [exps[-1]['date'] + (today - exps[-1]['date']) * k / 20 for k in range(21)]
+        fig.add_trace(go.Scatter(
+            x=tail, y=np.exp(icpt + slope * np.array([(d - base).days for d in tail])),
+            mode="lines", line=dict(color=_TK_PACE_COLOR, width=1.5, dash="dot"),
+            hoverinfo="skip", showlegend=False), row=1, col=3)
+        fig.add_trace(go.Scatter(
+            x=[today], y=[pace], mode="markers+text", text=[f"today {pace:g}\u00d7"],
+            textposition="middle left", textfont=dict(size=11),
+            marker=dict(symbol="diamond", size=11, color=_TK_PACE_COLOR,
+                        line=dict(color="white", width=1)),
+            showlegend=False,
+            hovertemplate=f"Today: {pace:g}\u00d7 2025, the trend carried from its last "
+                          "reading (median of its draws).<br>Section 1's pace starts here."
+                          "<extra></extra>"), row=1, col=3)
     fig.update_annotations(font_size=12)
     fig.update_layout(height=280, margin=dict(l=50, r=15, t=40, b=30))
     return fig
@@ -21308,6 +21342,126 @@ def _tk_factors_fig(result, today):
                    range=[-np.log10(_TK_FACTOR_VIEW), np.log10(_TK_FACTOR_VIEW)]),
         legend=dict(orientation="h", y=-0.15), hovermode="x")
     return fig
+
+
+def _tk_flow_dot(v):
+    """Graphviz DOT for evidence -> setting -> pace factor -> net pace, each
+    node coloured as its line in the factor chart. `v` holds the values shown."""
+    def node(key, label, color, shape="box"):
+        return (f'{key} [label="{label}", shape={shape}, style="rounded,filled", '
+                f'fillcolor="{color}22", color="{color}", fontcolor="#555"];')
+
+    def edge(a, b, label="", dashed=False):
+        attrs = [f'label="{label}"'] if label else []
+        if dashed:
+            attrs.append('style=dashed')
+        return f'{a} -> {b} [{", ".join(attrs)}];'
+
+    judgment = f"{v['taste_set']:g}"
+    if abs(v["taste_used"] - v["taste_set"]) > 0.005:
+        judgment = f"{v['taste_set']:g} set, {v['taste_used']:.2f} used"
+    p = _TK_PACE_COLOR
+    lines = [
+        'digraph { rankdir=LR; bgcolor="transparent"; nodesep=0.18; ranksep=0.45;',
+        'node [fontname="sans-serif", fontsize=11, margin="0.12,0.05"];',
+        'edge [color="#999", fontcolor="#999", fontname="sans-serif", fontsize=9];',
+        # Column headers, pinned to their columns by invisible edges.
+        'node [shape=plaintext, style="", fontcolor="#999", fontsize=10];',
+        'h1 [label="EVIDENCE"]; h2 [label="SETTING"]; h3 [label="PACE FACTOR"]; '
+        'h4 [label="RESULT"];',
+        'h1 -> h2 -> h3 -> h4 [style=invis];',
+        node("ns", "Next-step + TasteVal\\nwin odds vs researcher", "#8e44ad"),
+        node("su", "Staff speedup survey\\nself-reported output", "#d68910"),
+        node("ex", "OpenAI experiments\\nper researcher", p),
+        node("ix", "R&D automation index", "#16a085"),
+        node("dc", v["compute_source"], "#2980b9"),
+        node("sb", "Sidebar assumptions", "#c0392b"),
+        node("pj", f"Judgment elasticity\\n{judgment}", "#8e44ad"),
+        node("pc", f"Coding elasticity\\n{v['coding']:g}", "#d68910"),
+        node("ph", "People's share of the work\\nfalls as capability rises", "#16a085"),
+        node("pk", f"Compute growth\\n×{v['compute_growth']:.1f} in year one", "#2980b9"),
+        node("pn", f"Staff +{v['hiring']:g}%/yr to RSI\\nreturns r = {v['returns']:g}",
+             "#c0392b"),
+        node("pt", f"Today's pace\\n{v['pace_today']:g}× 2025", p),
+        node("fj", "Research judgment", "#8e44ad", "ellipse"),
+        node("fa", "AI capabilities", "#d68910", "ellipse"),
+        node("fh", "Human researchers", "#16a085", "ellipse"),
+        node("fk", "Compute", "#2980b9", "ellipse"),
+        node("fd", "Harder ideas (÷)", "#c0392b", "ellipse"),
+        node("net", f"Net research pace\\n{v['pace_today']:g}× today, times\\nthe five "
+                    "factors", p, "doubleoctagon"),
+        '{rank=same; h1; ns; su; ex; ix; dc; sb;}',
+        '{rank=same; h2; pj; pc; ph; pk; pn; pt;}',
+        '{rank=same; h3; fj; fa; fh; fk; fd;}',
+        '{rank=same; h4; net;}',
+        edge("ns", "pj"), edge("su", "pc"), edge("ex", "pt", "trend to today"),
+        edge("ix", "ph"), edge("dc", "pk"), edge("sb", "pn"),
+        edge("pj", "fj"), edge("pc", "fa"), edge("ph", "fa", "Amdahl"),
+        edge("ph", "fh", "people speed\\ntheir share"), edge("pk", "fk"),
+        edge("pn", "fh"), edge("pn", "fd", "difficulty\\n= 0.5 / r"),
+        edge("fj", "net", "×"), edge("fa", "net", "×"), edge("fh", "net", "×"),
+        edge("fk", "net", "×"), edge("fd", "net", "÷"),
+        edge("pt", "net", "starting\\nlevel"),
+    ]
+    if v["cal_weight"] > 0:
+        lines.append(edge("ex", "pj", f"calibrates\\n({v['cal_weight']:g}%)", dashed=True))
+    return "\n".join(lines + ["}"])
+
+
+def _tk_multiply_fig(result, pace_today, at_years, at_label):
+    """Today's pace times each factor's median change to `at_years`, as
+    stacked steps on a log scale, ending at the net pace's own median."""
+    wp = result["workflow_progress"]
+    years = np.asarray(wp["years"])
+    k = int(np.argmin(np.abs(years - at_years)))
+    m = wp["factor_medians"]
+    lg = lambda v: float(np.clip(v, -700, 700)) / np.log(10)   # ln -> log10
+    steps = [("Today's pace", np.log10(pace_today), _TK_PACE_COLOR, True)] + [
+        (name, lg(m[key][k]), color, False) for name, key, color in (
+            ("Compute", "compute", "#2980b9"),
+            ("Human researchers", "labor", "#16a085"),
+            ("AI capabilities", "ai", "#d68910"),
+            ("Research judgment", "judgment", "#8e44ad"),
+            ("Harder ideas", "difficulty", "#c0392b"))]
+    net = float(wp["pace_2025_quantiles"][k, 1])
+    names, bases, heights, colors, texts, hovers = [], [], [], [], [], []
+    level = 0.0
+    for name, step, color, absolute in steps:
+        base = 0.0 if absolute else level
+        names.append(name)
+        bases.append(base)
+        heights.append(step)
+        colors.append(color)
+        level = base + step
+        mult = 10 ** step
+        texts.append(f"{mult:.3g}×" if absolute or mult >= 1 else f"÷{1 / mult:.3g}")
+        hovers.append(f"{name}: {texts[-1]}<br>running product {10 ** level:.3g}× 2025")
+    product = 10 ** level
+    names.append(f"Net pace ({at_label})")
+    bases.append(0.0)
+    heights.append(np.log10(net))
+    colors.append("#333")
+    texts.append(f"{net:.3g}×")
+    hovers.append(f"Median net pace: {net:.3g}× 2025<br>The product of the medians "
+                  f"above is {product:.3g}×; medians don't multiply exactly.")
+    fig = go.Figure(go.Bar(
+        x=names, y=heights, base=bases, marker_color=colors, text=texts,
+        textposition="outside", cliponaxis=False, hovertext=hovers,
+        hovertemplate="%{hovertext}<extra></extra>"))
+    # Dotted connectors carry the running product from bar to bar.
+    for i in range(len(steps)):
+        top = bases[i] + heights[i]
+        fig.add_shape(type="line", x0=i + 0.4, x1=i + 0.6, y0=top, y1=top,
+                      line=dict(color="#999", width=1, dash="dot"))
+    tops = [b + h for b, h in zip(bases, heights)] + bases
+    lo, hi = np.floor(min(tops)) - 0.3, np.ceil(max(tops)) + 0.5
+    ticks = np.arange(np.floor(lo), np.ceil(hi) + 1)
+    fig.update_layout(
+        height=340, margin=dict(l=55, r=20, t=20, b=40), showlegend=False,
+        yaxis=dict(title="× 2025 (log)", range=[lo, hi], tickvals=ticks,
+                   ticktext=[f"{10 ** t:g}×" if t >= 0 else f"1/{10 ** -t:g}×"
+                             for t in ticks], zeroline=True))
+    return fig, product, net
 
 
 def _tk_compute_fig(result, today, slow_date, hist=None, markers=()):
@@ -22850,9 +23004,33 @@ def _render_takeoff(loading):
          "capability growth to give elasticities. Win odds are read as research "
          "strength against the researcher (Bradley-Terry). Year one blends in the "
          "experiment trend, fading after."))
-    st.plotly_chart(_tk_evidence_fig({k: st.session_state["tk_" + k]
-                                      for k in ("taste_slope", "coding_slope")}),
-                    width="stretch")
+    st.plotly_chart(_tk_evidence_fig(dict(
+        {k: st.session_state["tk_" + k] for k in ("taste_slope", "coding_slope")},
+        today=today, pace_today=pace_today)), width="stretch")
+    wp = result["workflow_progress"]
+    st.markdown("**How the evidence reaches the pace**")
+    _fn_caption(
+        "Each piece of evidence sets one setting, each setting drives a factor, and "
+        "the net pace is today's level times the five factors.",
+        ("sets one setting",
+         "Colours match the factor lines in *What moves the pace* below. Compute, "
+         "staff growth and returns come from the Data Centers tab and the sidebar, "
+         "not this evidence. The experiment trend also calibrates the judgment "
+         "elasticity, blended with the setting at the sidebar's weight."))
+    st.graphviz_chart(_tk_flow_dot({
+        "taste_set": float(st.session_state["tk_taste_slope"]),
+        "taste_used": float(params["taste_slope"]),
+        "coding": float(params["coding_slope"]),
+        "pace_today": pace_today,
+        "cal_weight": float(st.session_state["tk_cal_weight"]),
+        "compute_source": ("Data Centers tab\\nUS largest-run projection"
+                           if st.session_state["tk_dc_compute"] else
+                           "Sidebar compute growth"),
+        "compute_growth": float(np.exp(np.interp(
+            1.0, wp["years"], np.median(wp["compute_log"], axis=0)))),
+        "hiring": float(params["hiring_growth"]),
+        "returns": float(st.session_state["tk_returns"]),
+    }), width="stretch")
 
     st.subheader("1. Research speeds up")
     pace_history = _tk_pace_history(np.exp(experiment_starts) * pace_yield, today)
@@ -22896,6 +23074,24 @@ def _render_takeoff(loading):
          "blended with OpenAI's experiment trend in year one. Research judgment rises with model capability. Harder ideas: each "
          "improvement makes the next harder to find."))
     st.plotly_chart(_tf(_tk_to(_tk_factors_fig(result, today), view_end)), width="stretch")
+    rsi_t = dict(medians)["RSI"]
+    years_ = result["workflow_progress"]["years"]
+    at_t = rsi_t if 0 < rsi_t <= years_[-1] else years_[-1]
+    at_label = ("median RSI" if at_t == rsi_t else
+                f"{today + timedelta(days=float(at_t * 365.25)):%b %Y}")
+    mult_fig, product, net = _tk_multiply_fig(result, pace_today, at_t, at_label)
+    st.markdown(f"**The multiplication at {at_label}, "
+                f"{today + timedelta(days=float(at_t * 365.25)):%b %Y}**"
+                if at_t == rsi_t else f"**The multiplication in {at_label}**")
+    _fn_caption(
+        f"Today's {pace_today:g}\u00d7, then each factor's median change to that date, "
+        "on a log scale: each bar starts where the last ended.",
+        ("each factor's median change",
+         f"The steps multiply to {product:.3g}\u00d7; the last bar is the net pace's own "
+         f"median, {net:.3g}\u00d7, since medians of the factors don't multiply exactly "
+         "to the median of their product. Research judgment and harder ideas each run "
+         "to large multiples and largely cancel."))
+    st.plotly_chart(mult_fig, width="stretch")
     st.markdown("**Compute going in**")
     _fn_caption(
         "The compute each scenario trains and experiments with, as a multiple of today's. "
