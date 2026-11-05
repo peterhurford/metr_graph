@@ -119,7 +119,7 @@ end) as log-scale steps from today's pace, ending on the net pace's own median, 
 steps' product, since medians don't multiply. `_tk_flow_dot` (graphviz) draws evidence →
 setting → factor → net, coloured as the factor lines; the experiment series has its own
 grey (`_TK_PACE_COLOR`) because it sets today's pace, not Compute, and its evidence panel
-runs its trend on to today's marked pace. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
+marks where its own trend stands today (`_add_today_diamond`), not Takeoff's set pace. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
 Non-AI inputs (all scaled by `baseline_inputs`): staff headcount (`hiring_growth`,
 `staff_after_rsi`, on each draw's RSI clock when AI transfer is on) speeds the human share
 inside the Amdahl term, and experiment compute grows at `exp_share` of the frontier's log

@@ -1010,6 +1010,10 @@ class TestRsiTab:
         fig = next(f for f in figures if any(t.get('name') == 'OpenAI observations'
                                              for t in f['data']))
         assert any(s.get('y0') == s.get('y1') == 10 for s in fig['layout']['shapes'])
+        # Today's diamond is the trend's own value, not Takeoff's set pace.
+        [diamond] = [t for t in fig['data'] if t.get('mode') == 'markers+text']
+        assert diamond['text'][0].startswith("today ") and diamond['text'][0].endswith(": trend")
+        assert "Takeoff" not in diamond['text'][0]
 
     def test_rd_automation_section_and_blend_row(self):
         """The index's own section, card and weighted row — and the fitted

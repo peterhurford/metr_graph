@@ -725,6 +725,41 @@ def _add_today_vline(fig):
     return today
 
 
+def _add_today_diamond(fig, trace_name, fmt, label="", log=False, color='#7f8c8d',
+                       position='bottom right'):
+    """Mark where the line named `trace_name` (a projection's median) stands
+    today: a labelled diamond. Returns the value, or None when no such line
+    spans today. `log` interpolates in log space, as a log axis draws it."""
+    tr = next((t for t in fig.data if t.name == trace_name
+               and t.x is not None and len(t.x) > 1), None)
+    if tr is None:
+        return None
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def secs(d):
+        # Plain conversions: pandas.to_datetime segfaults under numpy 2.5.
+        if isinstance(d, str):
+            d = datetime.fromisoformat(d)
+        elif isinstance(d, np.datetime64):
+            return float(d.astype('datetime64[s]').astype(np.int64))
+        return d.timestamp()
+    xs = np.array([secs(d) for d in tr.x])
+    ys = np.asarray(tr.y, dtype=float)
+    t = today.timestamp()
+    if not xs[0] <= t <= xs[-1]:
+        return None
+    v = (float(np.exp(np.interp(t, xs, np.log(ys)))) if log
+         else float(np.interp(t, xs, ys)))
+    note = f": {label}" if label else ""
+    fig.add_trace(go.Scatter(
+        x=[today], y=[v], mode='markers+text', text=[f"today {fmt(v)}{note}"],
+        textposition=position, textfont=dict(size=12), showlegend=False,
+        marker=dict(symbol='diamond', size=13, color=color,
+                    line=dict(color='white', width=1)),
+        name='Today', hovertemplate=f"Today: {fmt(v)}{note}<extra></extra>"))
+    return v
+
+
 def _add_backtest_traces(fig, backtest_results, proj_start_date, yconv=None):
     """Add cutoff line and actual trajectory line to a plotly figure."""
     _yc = yconv if yconv else (lambda x: x)
@@ -7329,20 +7364,9 @@ def _render_rsi_experiments(end_year):
     fig.add_annotation(xref='x domain', x=0.01, y=np.log10(_RSI_EXPERIMENT_TARGET),
                        text='10x the 2025 baseline', showarrow=False,
                        xanchor='left', yanchor='bottom', font=dict(color='#e74c3c'))
-    # Takeoff's research pace starts at this level (`tk_pace_today`).
-    pace = st.session_state.get("tk_pace_today", _TK_DEFAULTS.get("tk_pace_today"))
-    if pace is not None:
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        fig.add_trace(go.Scatter(
-            x=[today], y=[float(pace)], mode='markers+text',
-            text=[f"today {float(pace):g}×: Takeoff's starting pace"],
-            textposition='bottom right', textfont=dict(color='#1a1a2e', size=12),
-            marker=dict(symbol='diamond', size=13, color='#7f8c8d',
-                        line=dict(color='white', width=1)),
-            name="Takeoff's pace today",
-            hovertemplate=f"Today: {float(pace):g}× 2025, METR's assessment of "
-                          "Anthropic (Oct 2026), not this trend.<br>The Takeoff model's "
-                          "research pace starts here.<extra></extra>"))
+    # Where the trend stands today, not Takeoff's pace (that is METR's, set apart).
+    _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}×",
+                       label="trend", log=True)
     _add_today_vline(fig)
     fig.update_layout(
         height=480, margin=dict(l=50, r=60, t=50, b=40),
