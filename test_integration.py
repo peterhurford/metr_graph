@@ -59,6 +59,15 @@ def vp_fit_ppy():
     return vp._tk_eci_scale(takeoff_model.DEFAULTS)[2]
 
 
+def vp_pace_today():
+    """Today's research pace, by the model's definition, at the default
+    `tk_eci_today`, as `_tk_run` rounds it."""
+    import takeoff_model
+    import visualize_projection as vp
+    return round(vp._tk_eci_today_pace(takeoff_model.DEFAULTS, vp._tk_hist_compute_rate(),
+                                       vp._TK_ECI_TODAY), 2)
+
+
 def _rsi_cdf_index(at):
     """Position of the RSI projection's CDF, the evidence half's last chart."""
     import json
@@ -984,11 +993,7 @@ class TestRsiTab:
             return (x.get("title")
                     and len(rng) == 2 and all(isinstance(v, str) for v in rng))
         series = [L for L in charts if _calendar(L)]
-        # Besides the CDF, METR's readings chart has no date axis at all.
-        readings = [L for L in charts if str(((L.get("xaxis") or {}).get("title") or {})
-                                             .get("text", "")).startswith("ECI points a year")]
-        assert len(readings) == 1
-        assert series and len(series) == len(charts) - 2
+        assert series and len(series) == len(charts) - 1
         for L in series:
             notes = [a for a in L.get("annotations", [])
                      if a.get("text") == "Today"]
@@ -1271,7 +1276,7 @@ class TestTakeoffTab:
             import base64
             y0 = np.frombuffer(base64.b64decode(y0["bdata"]), dtype=y0["dtype"])
         assert float(y0[0]) == pytest.approx(
-            at.number_input(key="tk_pace_today").value, rel=0.05)
+            vp_pace_today(), rel=0.05)
         # Draws run to the horizon, so there is no held-pace tail to label.
         assert not any("hold their last pace" in a.get("text", "")
                    for a in pace["layout"]["annotations"])
@@ -1285,7 +1290,7 @@ class TestTakeoffTab:
             "Today's pace", "Compute", "Human researchers", "AI capabilities",
             "Research judgment", "Harder ideas"]
         assert mult["data"][0]["x"][-1].startswith("Net pace")
-        assert mult["data"][0]["text"][0] == f'{at.number_input(key="tk_pace_today").value:g}\u00d7'
+        assert mult["data"][0]["text"][0] == f'{vp_pace_today():g}\u00d7'
         # The experiment panel runs on to today's pace, marked.
         assert any(d.get("mode") == "markers+text" and "today" in d["text"][0]
                    for d in evidence["data"])

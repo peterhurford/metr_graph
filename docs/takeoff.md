@@ -325,15 +325,15 @@ fading weight, not multiplied. Current activity normalization only affects the d
 Its cached result keeps per draw only `capability_log`, `software_realized_log` and
 `compute_log` (the factor chart reads `factor_medians`; `_TK_UNREAD` lists what it drops):
 each (draws x months) array is ~3.4 MB held in memory, and Community Cloud's floor is 690 MB.
-`tk_pace_today` (default `_TK_PACE_TODAY`, 2.0: METR's Oct 2026 assessment of Anthropic)
-sets chart 1's starting level, a label only; each draw keeps its activity spread around it.
-`tk_eci_today` (default `_TK_ECI_TODAY`, 24 points a year) is what moves dates: `_tk_run`
-divides `software_months` (now the public ECI line's pace) by `_tk_eci_today_pace`, so
-modeled ECI growth today equals the setting at the fitted line's ECI per unit of
-efficiency, not a stretched readout (`TestTakeoffEciToday`). At the fit's own ~16.5 the
-pace is 1 and nothing moves. 24 sits between Epoch's public lines and METR's AECI ones
-(the readings chart below); 24 against 16.5 moved the median RSI Mar → Feb 2028 and
-ultraintelligence Aug 2029 → Dec 2028. Rebase each draw before taking quantiles; never multiply quantile bands.
+**Research pace has one definition** (`_tk_eci_today_pace`): the frontier's ECI growth
+less compute's share, over the public 2024–26 US line's algorithmic growth (~13.4 points a
+year), so that line is 1×. `tk_eci_today` sets it (default `_TK_ECI_TODAY`: Anthropic's
+frontier since Oct 2025 on Epoch's scale, internal models included, from `_metr_readings`,
+~26 → 1.71×); `_tk_run` divides `software_months` by it and reports it as `pace_today`,
+where chart 1 starts. There is no separate pace input to disagree with it
+(`test_default_is_anthropics_epoch_scale_climb_and_pace_is_derived`); at the public
+line's own ~16.5 the pace is 1 and nothing moves. Each draw keeps its activity spread
+around it. Rebase each draw before taking quantiles; never multiply quantile bands.
 The simulator records ongoing production separately from delivery-window rates, which
 remain available for internal diagnostics and the validated milestone definitions.
 
@@ -575,16 +575,14 @@ line, then the paper's prediction sigmoid (`_tasteval_predict_mase`) against the
 curve (`test_tasteval_section_charts_without_dating`).
 
 `_render_rsi_metr()` sets METR's AECI (`metr_aeci.csv`, `load_metr_aeci`) against
-Epoch's ECI on one chart: Anthropic's AECI points and METR's one-break fit carried to a
-today diamond, other developers' record-setting AECI points, each Claude model's Epoch
-score, internal models' projected ECI (`_metr_on_eci`: AECI less Claude's AECI–ECI gap,
-which `_metr_gap_trend` fits as growing ~3 points a year since 2025, 80% bars from its
-residual sd), and Takeoff's trained frontier today for comparison. A readings chart gives
-each source's climb since `_METR_BREAK` (`_metr_readings`, METR's fit `_metr_hinge`,
-analytic 80% intervals, no RNG; the Epoch-scale row uses `_metr_on_eci`) with
-`tk_eci_today` drawn on it. It has no date axis, so `test_every_chart_marks_today`
-exempts it by axis title. `TestMetrAeci` holds the digitization to METR's printed slopes
-and Model 4's value.
+Epoch's ECI on one chart: Claude models on both indexes, internal models' projected ECI
+(`_metr_on_eci`: AECI less Claude's AECI–ECI gap, which `_metr_gap_trend` fits as growing
+~3 points a year since 2025, 80% bars from its residual sd), other labs' record-setting
+AECI points, METR's fit carried to today, and where the takeoff model's ECI starts. Its
+caption says why the indexes differ. `_render_rsi_pace()` then charts research pace by the
+model's definition for the public US line, public Claude and Claude on Epoch's scale
+(METR's one-break fit, `_metr_hinge`, analytic 80% band, no RNG), with `tk_eci_today`'s
+pace marked. `TestMetrAeci` holds the digitization to METR's printed slopes and Model 4.
 
 The RSI blend's *Capabilities Milestones* row dates the CoBench and next-step
 bars through `_pc_rsi_eta()` and `_pc_nextstep_eta()`, which reuse this tab's own

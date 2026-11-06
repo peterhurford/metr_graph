@@ -6157,9 +6157,13 @@ class TestTakeoffEciToday:
         import takeoff_model as tk
         assert vp._tk_eci_today_pace(tk.DEFAULTS, vp._tk_hist_compute_rate(), 0.5) is None
 
-    def test_defaults_are_metrs_pace_and_the_middle_reading(self):
-        assert vp._TK_DEFAULTS["tk_pace_today"] == 2.0
-        assert vp._TK_DEFAULTS["tk_eci_today"] == 24.0
+    def test_default_is_anthropics_epoch_scale_climb_and_pace_is_derived(self):
+        """Today's ECI growth defaults to Anthropic's frontier since Oct 2025 on
+        Epoch's scale; there is no separate pace setting to disagree with it."""
+        [r] = [r for r in vp._metr_readings()
+               if r['label'] == "METR AECI: Anthropic, on Epoch's scale"]
+        assert vp._TK_DEFAULTS["tk_eci_today"] == round(2 * r['fit']['post']) / 2
+        assert "tk_pace_today" not in vp._TK_DEFAULTS
 
 
 class TestMetrAeci:

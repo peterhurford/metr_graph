@@ -14,7 +14,7 @@ They no longer shift an otherwise identical post-coding simulation forward in ti
 Research is partially automated today. Initial human-hour shares (calibrated below),
 coding automation (70%), and the software progress rate behind the public ECI line
 (one doubling per nine months) are assumptions. Today's rate is that one sped up until
-modeled ECI growth equals `tk_eci_today` (24 points a year by default, 5.8 months a
+modeled ECI growth equals `tk_eci_today` (26 points a year by default, 5.3 months a
 doubling); it already includes existing AI assistance. One full cycle (training plus validation, four
 months) of undeployed discoveries initializes both the actual and same-compute reference
 pipelines, the steady state, so the next model ships at today's pace. Those discoveries must
@@ -148,11 +148,12 @@ penalty, sampled near monthly boundaries within the weekly integration resolutio
 They start from today's already-assisted rate and can fall if difficulty outpaces gains.
 No minimum of 1× is imposed.
 
-The reporting anchor is a set research pace today relative to 2025 (`tk_pace_today`,
-by default 2×, METR's October 2026 assessment of Anthropic). Each draw keeps its RSI activity
-multiple's spread around that median. It is a stated normalization, not measured discovery
-growth. It rescales each draw before computing percentiles and does not multiply existing
-assistance into dynamics a second time, so it moves the 2×/5× crossings but no milestone.
+The reporting anchor is today's research pace, by the model's one definition: ECI
+growth less compute's share over the public 2024–26 line's algorithmic growth, set through
+`tk_eci_today` (default ~1.7×). Each draw keeps its RSI activity
+multiple's spread around that median. The chart rescales each draw to it before taking
+percentiles and never multiplies existing assistance in a second time; the dates move only
+through the software pace the same setting gives the dynamics.
 Both modeled pace series start at that level, rather than appearing near zero while
 waiting for the first new successor.
 
