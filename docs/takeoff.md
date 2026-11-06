@@ -233,9 +233,9 @@ human labor, AI capabilities and compute (`pace_factors` `labor`/`ai`/`compute`,
 `resources`; `test_pace_factors_multiply_back_to_the_pace`), then *Compute going in*
 (`_tk_compute_fig`, each draw's `workflow_progress["compute_log"]`, post-RSI boost included,
 with the milestone medians marked), then *Where the compute goes* (`_tk_compute_split_fig`: the median budget times the median split, stacked on a log axis so the top edge is *Compute going in*'s median; `TestTakeoffComputeSplit`), then *How the compute is split*), **2. People step out of the loop**
-(`_tk_humans_fig`), **3. The research workforce** (`_tk_workforce_fig`: heads, humans from
-`_TK_HUMAN_RESEARCHERS` growing `_TK_HIRING_GROWTH` a year to each draw's RSI and shrinking
-by `_TK_POST_RSI_DECLINE` after, and AI copies from `_TK_AI_COPIES_TODAY` (50k, an
+(`_tk_humans_fig`), **3. Anthropic's research workforce** (`_tk_workforce_fig`: heads, humans from
+`_TK_HUMAN_RESEARCHERS` (3,000: the S-1/A's "majority" of ~5,300 employees in research, engineering and product) growing `_TK_HIRING_GROWTH` a year to each draw's RSI and shrinking
+by `_TK_POST_RSI_DECLINE` after, and AI copies from `_TK_AI_COPIES_TODAY` (25k, an
 estimate; all five workforce assumptions are *Advanced* inputs, `tk_wf_*`, read by
 `_tk_workforce_settings`), growing with agent compute and more copies; and human FTEs, each copy worth today
 the automation index's share of today's work spread over those copies (~0.13 people), rising

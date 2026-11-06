@@ -21144,8 +21144,8 @@ _TK_DEFAULTS.update({
     # Staff growth to RSI: Anthropic's headcount grew ~170% in the year to Sep
     # 2026 (S-1), all functions; 100% is a research-staff reading of it.
     "tk_hiring_growth": 100.0,
-    "tk_wf_humans": 10_000,
-    "tk_wf_copies": 50_000, "tk_wf_power": 10.0, "tk_ultra_eci": _TK_ULTRA_ECI,
+    "tk_wf_humans": 3_000,
+    "tk_wf_copies": 25_000, "tk_wf_power": 10.0, "tk_ultra_eci": _TK_ULTRA_ECI,
 })
 _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
 _TK_DEFAULTS["tk_serial_speedup"] = bool(takeoff.DEFAULTS["serial_speedup"])
@@ -22632,16 +22632,16 @@ def _tk_yrs(v):
     return "runaway" if not np.isfinite(v) else f"{v:.1f} yr"
 
 
-# Frontier AI research staff today, an order-of-magnitude assumption since the
-# model tracks shares of research hours, not headcounts; their yearly growth
-# while labs keep hiring (until RSI) and after it, as autopilot makes them
-# unneeded. Assumptions for the workforce chart only.
-_TK_HUMAN_RESEARCHERS = 10_000
+# Anthropic's research staff today: the S-1/A puts ~5,300 employees at Sep 30,
+# 2026, "a majority" in research, engineering and product, so ~3,000. Their
+# yearly growth while hiring (until RSI) and after it, as autopilot makes them
+# unneeded. For the workforce chart only; the model tracks shares of hours.
+_TK_HUMAN_RESEARCHERS = 3_000
 _TK_HIRING_GROWTH = 2.0
 _TK_POST_RSI_DECLINE = 0.7
 # AI research-agent copies running today (an estimate); and how each copy's
 # worth grows with capability: as (ECI / today's)^this power, a judgment.
-_TK_AI_COPIES_TODAY = 50_000
+_TK_AI_COPIES_TODAY = 25_000
 _TK_AI_COMPETENCE_POWER = 10
 
 
@@ -23357,8 +23357,9 @@ def _render_takeoff(loading):
                    "autopilot people do no work after RSI, so this only shows on the "
                    "workforce chart.")
             st.markdown("**Workforce chart (a readout; moves no date)**")
-            number("Human AI researchers today", "wf_humans", 100, 1_000_000, 1000,
-                   "Frontier-lab research staff, an order-of-magnitude guess.")
+            number("Human AI researchers today", "wf_humans", 100, 1_000_000, 500,
+                   "Anthropic's research staff: the S-1/A's \"majority\" of ~5,300 "
+                   "employees in research, engineering and product (Sep 2026).")
             number("AI research-agent copies today", "wf_copies", 100, 100_000_000, 5000,
                    "Copies running today, an estimate. Their total worth is set by the "
                    "automation index's share of today's work, so this splits it into heads.")
@@ -23950,14 +23951,20 @@ def _render_takeoff(loading):
             "Share of people's time today": [f"{100 * v / human.sum():.0f}%" for v in human],
         }), hide_index=True, width="stretch")
 
-    st.subheader("3. The research workforce")
+    st.subheader("3. Anthropic's research workforce")
     wf_humans, wf_hiring, wf_decline, wf_copies, wf_power = _tk_workforce_settings()
     _fn_caption(
-        "How many researchers there are, human and AI, and what they add up to in human "
-        "full-time equivalents.",
+        "How many researchers Anthropic has, human and AI, and what they add up to in "
+        "human full-time equivalents. Anchored on its S-1.",
+        ("Anchored on its S-1",
+         "Anthropic's S-1/A: ~5,300 employees at Sep 30, 2026, up ~170% in a year, \"a "
+         "majority\" in research, engineering and product; and staff's Claude usage, "
+         "valued at list price, grew over 250× from Jan to Sep 2026 and passed cash "
+         "payroll in April. List-price spend is not a count of agents, so the copies "
+         "below stay an estimate."),
         ("How many researchers",
-         f"Human research staff start at {wf_humans:,.0f}, an order-of-magnitude "
-         f"assumption for frontier labs, change {wf_hiring - 1:+.0%} a year while labs "
+         f"Human research staff start at {wf_humans:,.0f} (the S-1's majority of ~5,300), "
+         f"change {wf_hiring - 1:+.0%} a year while labs "
          f"keep hiring and {wf_decline - 1:+.0%} a year after each scenario's "
          "RSI, once autopilot makes them unneeded; both rates are assumptions. AI research "
          f"agents start at {wf_copies:,.0f} copies running today (an estimate) and grow "

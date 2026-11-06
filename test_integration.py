@@ -1230,7 +1230,7 @@ class TestTakeoffTab:
         assert subs[subs.index("Automated coder projection") + 1:][:8] == [
             "METR's acceleration assessment",
             "What the evidence feeds in", "1. Research speeds up", "2. People step out of the loop",
-            "3. The research workforce", "4. What it does to capability (ECI)",
+            "3. Anthropic's research workforce", "4. What it does to capability (ECI)",
             "5. When it happens, and how fast", "6. Against Anthropic Staff"]
         staff = at.dataframe[-1].value
         assert len(staff) == 3 and staff.iloc[0, 2].endswith("(estimate from the index)")
