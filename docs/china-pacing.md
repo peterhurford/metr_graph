@@ -286,8 +286,10 @@ hover (`test_pacing_slows_the_us_and_delays_china`). Pause-scenario tests set
 `pc_pace` to 0 in `TestPacingTab._app`. The pacing date and `_pc_render_us_pause()` follow. The US path is the Takeoff tab's: `_pc_takeoff_us` reads `_tk_run`
 (seeded, so it neither depends on nor shifts this tab's stream) and each sample follows one
 Takeoff scenario's ECI path (`_pc_tk_interp`), the trained bar a ship lag ahead; the chart
-marks where the paced US reaches each scenario's ECI at automated coding and at RSI
-(`us_ms`). Without a Takeoff run the compute-derived straight climb stands in. China gets automated coding and RSI
+marks when the paced US reaches automated coding and RSI (`us_ms`): each scenario's own
+Takeoff date (`_pc_takeoff_us`'s `when`) run through the pacing clock, so unpaced they are
+Takeoff's cards to the month, not where the path re-reaches that ECI, which lands early
+wherever ECI is flat before the event (`test_unpaced_us_milestones_match_takeoff`; the coder is `coding_at` on both). Without a Takeoff run the compute-derived straight climb stands in. China gets automated coding and RSI
 at the same ECI: `_pc_speedup_table` reads each scenario's ECI/yr where its path first stands
 at an ECI, over today's trend (floored at 1), and `_cc_cn_crossing_sim(speedup=…)` multiplies
 China's whole rate by it at China's current ECI, the extra kept as its own `speedup` channel

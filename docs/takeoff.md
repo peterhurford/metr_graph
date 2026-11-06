@@ -92,7 +92,7 @@ none) caps AI research judgment at a multiple of today's
 (`test_a_judgment_cap_only_ever_slows_research`); AI Futures caps taste near 4× the best
 human, which maps to a larger, unmeasured number here. Coding counts as automated at the
 inherited date or once a deployed model reaches the ultraintelligence threshold (`coding_capability`, from
-`_tk_eci_scale`), returned as `coding_at` with `onset` left exact
+`_tk_eci_scale`), returned as `coding_at` (what the *Full coding automation* card and the chart markers date) with `onset` left exact
 (`test_a_model_at_the_coding_capability_has_automated_coding`). Research acceleration
 has its own chart and 2×/5× first-crossing events (internal; no card shows them). `_tk_eci` reads each draw's capability
 path as ECI at `result["eci_rates"]` (`_tk_eci_rates`): the training-compute part
@@ -159,8 +159,10 @@ changes its elasticity by that fraction per 10× of capability (`judgment_gain_l
 can fall or rise as AI improves; the b card's hover gives b at 100× when it is set. A draw
 that runs away numerically counts as reaching RSI then (under a human floor above the bar,
 never): its capability has passed any coding milestone
-(`test_a_runaway_reaches_rsi_unless_the_floor_blocks_it`). Ultraintelligence is the first
-month a draw's ECI reaches `tk_ultra_eci` (*Ultraintelligence threshold*, default
+(`test_a_runaway_reaches_rsi_unless_the_floor_blocks_it`). Ultraintelligence is when a
+draw's ECI first reaches `tk_ultra_eci`, interpolated inside the month (`_tk_first_reach`, as
+Pacing's `_pc_cross_years` reads it; ECI at RSI and at coding is read the same way,
+`_tk_path_at`) (*Ultraintelligence threshold*, default
 `_TK_ULTRA_ECI` = 250, read by `_tk_ultra_eci`, which falls back to 250 outside
 `_TK_ULTRA_RANGE`; `_tk_run` passes it to `_tk_eci` as `ultra_level`, which every card,
 chart and caption reads, and Pacing's milestone takes it from there). Raising it moves RSI's

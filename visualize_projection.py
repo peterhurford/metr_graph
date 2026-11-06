@@ -18635,7 +18635,8 @@ def _pc_takeoff_us(today):
     """The Takeoff tab's run, as the Pacing tab reads it: {'day', 'years',
     'paths' (draws x months, ECI of the trained US frontier from `day`),
     'ppy', 'coder', 'rsi' (each draw's ECI at its automated-coding and RSI
-    dates, NaN if never)}, or None when Takeoff cannot run. Seeded, so it
+    dates, NaN if never), 'when' (each milestone's date per draw, years from
+    `day`, the very dates Takeoff's cards take medians of)}, or None when Takeoff cannot run. Seeded, so it
     neither depends on nor shifts this tab's draws."""
     day = today.replace(hour=0, minute=0, second=0, microsecond=0)
     with _seeded_rng(_tk_seed()):
@@ -18644,13 +18645,13 @@ def _pc_takeoff_us(today):
         return None
     eci, res = run["eci"], run["result"]
     years, paths = res["workflow_progress"]["years"], eci["paths"]
-    rows = np.arange(len(paths))
     ca = np.asarray(res["coding_at"], dtype=float)
-    k = np.clip(np.searchsorted(years, np.nan_to_num(ca, nan=np.inf),
-                                side="right") - 1, 0, len(years) - 1)
-    coder = np.where(np.isfinite(ca) & (ca <= years[-1]), paths[rows, k], np.nan)
+    coder = np.where(np.isfinite(ca) & (ca <= years[-1]),
+                     _tk_path_at(paths, years, ca), np.nan)
     return {"day": day, "years": years, "paths": paths, "ppy": eci["ppy"],
-            "coder": coder, "rsi": eci["at_rsi"], "ultra": eci["ultra_level"]}
+            "coder": coder, "rsi": eci["at_rsi"], "ultra": eci["ultra_level"],
+            "when": {"automated coder": ca, "RSI": np.asarray(res["events"]["RSI"], float),
+                     "ultraintelligence": eci["ultra"]}}
 
 
 # Top of the Pacing chart's ECI axis, past the ultraintelligence threshold.
@@ -20287,15 +20288,15 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _cn_obs = ch['obs'] if ch else _cc_frontier_eci_slope(cn_fr, _CC_CALIB_SINCE)
     # The US bar at each sample's crossing (it moves unless paused).
     us_tr_grid = us_path(grid_yrs)[0]
-    # When the paced US reaches automated coding and RSI: the median of each
-    # sample's first month at the ECI its Takeoff scenario had there (never
-    # counts as later), {name: (years from China's anchor, median ECI)}.
     # Per sample, the years (from China's anchor; inf = never in the window)
-    # each side first reaches each milestone's ECI, both on trained models:
-    # the US on its paced trained frontier, China on its release-dated path
-    # (its marks and dates come back by its lag). Coder and RSI are the levels the
-    # paired Takeoff scenario had at them; ultraintelligence is the Takeoff
-    # tab's threshold (`tk_ultra_eci`). {name: (level per sample, US years, China years)}.
+    # each side reaches each milestone, both on trained models. The US takes
+    # its Takeoff scenario's own date, run through the pacing clock, so
+    # unpaced it is Takeoff's date exactly (`test_unpaced_us_milestones_match_takeoff`);
+    # re-finding the level would land early wherever ECI is flat before it.
+    # China first reaches the ECI that scenario had there, on its
+    # release-dated path (its marks and dates come back by its lag); for
+    # ultraintelligence that is the Takeoff tab's threshold (`tk_ultra_eci`).
+    # {name: (level per sample, US years, China years)}.
     ms_levels = {}
     if tk is not None:
         ms_levels["automated coder"] = tk["coder"][_draw]
@@ -20303,12 +20304,20 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     ms_levels["ultraintelligence"] = np.full(n_s, tk["ultra"] if tk is not None
                                              else _tk_ultra_eci())
     ms_years = {}
+    _g0 = grid_yrs - grid_yrs[0]
+    # Years of Takeoff progress each sample's paced US has made at each grid
+    # point: a Takeoff date is reached where this first passes it.
+    _us_prog = (_us_clock(np.broadcast_to(grid_yrs, (n_s, len(grid_yrs)))) - _t_day
+                if tk is not None else None)
     for _ms_name, _lvl in ms_levels.items():
         _l = np.nan_to_num(_lvl, nan=np.inf)
-        _yu, _yc = (np.nan_to_num(_pc_cross_years(p_, grid_yrs - grid_yrs[0], _l)
-                                  + grid_yrs[0], nan=np.inf)
-                    for p_ in (us_tr_grid, traj))
-        ms_years[_ms_name] = (_lvl, _yu, _yc)
+        _yc = np.nan_to_num(_pc_cross_years(traj, _g0, _l) + grid_yrs[0], nan=np.inf)
+        if tk is not None:
+            _w = np.nan_to_num(np.asarray(tk["when"][_ms_name], float)[_draw], nan=np.inf)
+            _yu = _pc_cross_years(_us_prog, _g0, _w) + grid_yrs[0]
+        else:
+            _yu = _pc_cross_years(us_tr_grid, _g0, _l) + grid_yrs[0]
+        ms_years[_ms_name] = (_lvl, np.nan_to_num(_yu, nan=np.inf), _yc)
     # Medians for the chart's marks (coder and RSI only).
     us_ms, cn_ms = {}, {}
     for _ms_name in _PC_MS_SYMBOL:
@@ -22691,9 +22700,8 @@ def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
                      model + (floored[:, j] - model[:, j])[:, None] * fade[None, :])
     paths = np.maximum.accumulate(paths, axis=1)
     rsi = result["events"]["RSI"]
-    idx = np.clip(np.searchsorted(years, rsi, side="right") - 1, 0, len(years) - 1)
     at_rsi = np.where(np.isfinite(rsi) & (rsi <= years[-1]),
-                      paths[np.arange(len(rsi)), idx], np.nan)
+                      _tk_path_at(paths, years, rsi), np.nan)
     return {"now": now, "released": frontier[-1]['eci_score'], "ppy": ppy,
             "trained": _tk_trained_frontier(),
             "paths": paths, "at_rsi": at_rsi, "model": model, "frontier": frontier,
@@ -22733,10 +22741,30 @@ def _tk_ultra_explainer(level):
         "measured in hours.")
 
 
+def _tk_path_at(paths, years, t):
+    """Each row of `paths` (draws x months on `years`) at its own time `t`,
+    linear inside a month, so a level read at an event is reached at the
+    event, not at the start of its month; NaN where `t` is not finite."""
+    t = np.asarray(t, dtype=float)
+    x = np.clip(np.nan_to_num(t, nan=0.0, posinf=0.0), years[0], years[-1])
+    i = np.clip(np.searchsorted(years, x, side="right") - 1, 0, len(years) - 2)
+    f = (x - years[i]) / (years[i + 1] - years[i])
+    rows = np.arange(len(paths))
+    v = paths[rows, i] * (1 - f) + paths[rows, i + 1] * f
+    return np.where(np.isfinite(t), v, np.nan)
+
+
 def _tk_first_reach(paths, years, level):
-    """Per draw, the first grid year its path reaches `level` (+inf if never)."""
+    """Per draw, when its path first reaches `level`, linear inside the month
+    as Pacing's `_pc_cross_years` reads it (+inf if never; the grid's start if
+    already there)."""
     hit = paths >= level
-    return np.where(hit.any(axis=1), years[np.argmax(hit, axis=1)], np.inf)
+    idx = np.argmax(hit, axis=1)
+    rows = np.arange(len(paths))
+    lo, hi = paths[rows, np.maximum(idx - 1, 0)], paths[rows, idx]
+    f = np.clip((level - lo) / np.maximum(hi - lo, 1e-12), 0.0, 1.0)
+    t = years[np.maximum(idx - 1, 0)] + f * (years[1] - years[0])
+    return np.where(hit.any(axis=1), np.where(idx == 0, years[0], t), np.inf)
 
 
 # Past RSI some scenarios' efficiency compounds without limit, and ECI (linear
@@ -24002,9 +24030,10 @@ def _render_takeoff(loading):
                             f" \u2013 {_tk_span(takeoff.quantile(g, hi), end_date)}")
 
         a, b, c = st.columns(3)
-        _card(a, "Full coding automation", result["onset"],
+        _card(a, "Full coding automation", result["coding_at"],
               "The automated coder projection below, each date paired with a scenario of matching "
-              "capability growth.")
+              f"capability growth, or the month the scenario reaches ECI {eci['ultra_level']:g} "
+              "if sooner: a model that capable has automated coding.")
         at_rsi = result["outcomes"]["RSI"]
         with np.errstate(all="ignore"):
             left = {k: 100 * float(np.nanmedian(at_rsi["human_" + k]))
@@ -24023,7 +24052,7 @@ def _render_takeoff(loading):
                  "people." if params["rsi_autopilot"] else
                  "with autopilot off they keep falling at their own pace."))
         _card(c, f"Ultraintelligence: ECI {eci['ultra_level']:g}", eci["ultra"],
-              f"First month a scenario's best trained model reaches ECI {eci['ultra_level']:g}. "
+              f"When a scenario's best trained model first reaches ECI {eci['ultra_level']:g}. "
               f"Today's trained frontier is ~{eci['now']:.0f}: the latest US release "
               f"({eci['released']:.0f}) plus {_ship_lag('us'):.0f} days of the trend, "
               "the US trained-to-release lag.")
@@ -24071,7 +24100,7 @@ def _render_takeoff(loading):
             st.markdown(_tk_ultra_explainer(eci["ultra_level"]))
         _tk_loading(bar, 3)
         medians = [(label, takeoff.quantile(samples, 0.5, horizon))
-                   for label, samples in (("Coding automated", result["onset"]), ("RSI", rsi),
+                   for label, samples in (("Coding automated", result["coding_at"]), ("RSI", rsi),
                                           ("Ultraintelligence", eci["ultra"]))]
         markers = [(label, today + timedelta(days=float(t * 365.25)))
                    for label, t in medians if 0 <= t <= view_years]

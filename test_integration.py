@@ -2998,6 +2998,29 @@ class TestPacingTab:
         assert coder["US (median, 80%)"][:3] in (
             "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split())
 
+    def test_unpaced_us_milestones_match_takeoff(self):
+        """Unpaced (the default), the US column dates each milestone exactly as
+        Takeoff's cards do, median and 80% range: Pacing runs each scenario's
+        own Takeoff date (the coder's `coding_at`, as the card) through its
+        clock rather than re-finding the ECI, which landed early wherever ECI
+        is flat before the event. Paced to 40%, every US date moves later."""
+        at = _fresh_app().run()
+        cards = {m.label.split(":")[0]: m.value for m in at.metric}
+        ci80 = [c.value for c in at.caption if c.value.startswith("80% CI: ")][:3]
+        _switch_tab(at, "Pacing")
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns
+                 and "Gap" in x.value.columns)
+        us = list(t["US (median, 80%)"])
+        for i, card in enumerate(("Full coding automation", "RSI", "Ultraintelligence")):
+            lo, hi = ci80[i].removeprefix("80% CI: ").split(" \u2013 ")
+            assert us[i] == f"{cards[card]} ({lo} \u2013 {hi})", (card, us[i])
+        at.select_slider(key="pc_pace").set_value(40).run()
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns
+                 and "Gap" in x.value.columns)
+        for before, after in zip(us, t["US (median, 80%)"]):
+            assert (datetime.strptime(after[:8], "%b %Y")
+                    > datetime.strptime(before[:8], "%b %Y"))
+
     def test_milestone_table_follows_the_takeoff_threshold(self):
         """Takeoff's ultraintelligence threshold sets the Pacing milestone's ECI
         and the chart's top."""
