@@ -213,6 +213,11 @@ checkbox and share into the machinery's `condition` (False, or the share).
 `test_condition_ramp_discounts_the_near_future`,
 `test_already_leaves_that_share_at_today`.
 
+A card whose own series has already reached its bar (`_pc_passed()`, the first
+reading at or past it) reads *Passed* with that reading, and with the checkbox on
+its survival is 0 whatever `rsi_already_pct` says: that share is for crossings
+nobody has seen, and this one is in the data (`TestPcPassed`).
+
 Under the cards sits *Automated coder projection* (`_pc_render_rsi_blend()`):
 no single benchmark defines the threshold, so each milestone is treated as one
 candidate definition and `_PC_RSI_WEIGHTS` as the credence each gets: 10 for each of the nine

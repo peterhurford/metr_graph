@@ -17496,6 +17496,36 @@ def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_
                                    us_lag)
 
 
+def _pc_passed():
+    """{slug: (date, reading)} for each card whose own series has already
+    reached its bar: the first reading at or past it. Such a card shows
+    "Passed" instead of a forecast, and with "not crossed yet" on it carries no
+    blend weight: the blend assumes the threshold is ahead, and `already`
+    allows only for crossings nobody has seen (`TestPcPassed`)."""
+    series = [
+        (f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x", load_rsi_survey(), 'uplift',
+         _PC_RSI_SURVEY_TARGET_X, lambda r, v: f"{v:g}\u00d7 ({r['name']})"),
+        (f"code_{_RSI_CODE_TARGET:.0f}x",
+         [r for r in load_rsi_code() if r['fitted']], 'mult', _RSI_CODE_TARGET,
+         lambda r, v: f"{v:g}\u00d7 ({r.get('other') or r['q']})"),
+        (f"experiments_{_RSI_EXPERIMENT_TARGET:.0f}x", load_rsi_experiments(),
+         'mult', _RSI_EXPERIMENT_TARGET, lambda r, v: f"{v:g}\u00d7"),
+        (f"cobench_{_RSI_SUBSTITUTION_BAR:.0f}", rsi_frontier_all, 'cobench',
+         _RSI_SUBSTITUTION_BAR, lambda r, v: f"{v:g}% ({r['name']})"),
+        (f"nextstep_{_RSI_DIR_TARGET:.0f}", rsi_dir_frontier_all, 'better',
+         _RSI_DIR_TARGET, lambda r, v: f"{v:g}% ({r['name']})"),
+        (f"rdauto_{_RSI_AUTO_TARGET:.0f}", load_rsi_automation(), 'al4',
+         _RSI_AUTO_TARGET, lambda r, v: f"{v:g}% ({r['month']})"),
+    ]
+    out = {}
+    for slug, rows, key, bar, fmt in series:
+        hit = [r for r in rows if r.get(key) is not None and r[key] >= bar]
+        if hit:
+            r = min(hit, key=lambda r: r['date'])
+            out[slug] = (r['date'], fmt(r, r[key]))
+    return out
+
+
 def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=None):
     """Shared milestone draws (`_pc_milestone_components` caches them).
 
@@ -17568,15 +17598,15 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
                  "log(multiple) over every round fitted, the carried-over "
                  "estimated point included. The rounds do not report the "
                  f"same statistic on the same sample. "
-                 f"{_PC_RSI_SURVEY_TARGET_X:.0f}x is about a doubling and a "
-                 "half past the most recent round's ~4x."))
+                 f"{_PC_RSI_SURVEY_TARGET_X:.0f}x is each person getting ten "
+                 "people's pre-AI output, by their own report."))
     _cap.append((f"code_{_RSI_CODE_TARGET:.0f}x",
                  f"Code per person reaches {_RSI_CODE_TARGET:.0f}x",
                  _pc_rsi_code_eta(load_rsi_code(), n=n, samples=True), False,
                  "The merged-code fan above, at its defaults: OLS on "
                  "log(multiple) over the quarters from 2025 on, doubling "
-                 "time over that fit's t-widened rate CI, position over its "
-                 "own residual scatter. "
+                 "time over that fit's t-widened rate CI, position between "
+                 "the fit and the latest quarter. "
                  f"{_RSI_CODE_TARGET:.0f}x is one contributor merging what "
                  f"{_RSI_CODE_TARGET:.0f} did before 2025 \u2014 lines "
                  "merged, which a coding "
@@ -17630,6 +17660,8 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
         already = 0.0 if condition is True else float(condition)
         _cap, survival = _pc_condition_on_today(_cap, today, ramp_days=ramp_days,
                                                 already=already)
+        for slug in _pc_passed():      # seen crossed: not the unseen `already`
+            survival[slug] = 0.0
     return _cap, survival, _cap_raw, _notes
 
 
@@ -17654,6 +17686,7 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
     today = today.replace(hour=0, minute=0, second=0, microsecond=0)
     _cap, survival, _cap_raw, _notes = _pc_rsi_components(
         today, timing_label, condition, ramp_days)
+    passed = _pc_passed()
     if _cap:
         st.subheader("Capabilities Milestones")
         _start = 0
@@ -17664,6 +17697,10 @@ def _pc_render_milestones(timing_label, today, condition=True, ramp_days=0.0,
                                                          _chunk):
                 early, med, late = _pc_eta_dates(_anchor, _days)
                 with col:
+                    if slug in passed:
+                        st.metric(lab, "Passed", help=_notes.get(slug))
+                        st.caption(f"{passed[slug][1]}, {passed[slug][0]:%b %Y}")
+                        continue
                     st.metric(lab, med.strftime('%b %Y'),
                               help=_notes.get(slug))
                     st.caption(f"80% CI: {early:%b %Y} \u2013 {late:%b %Y}")

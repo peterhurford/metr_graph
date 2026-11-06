@@ -6551,3 +6551,30 @@ def test_takeoff_durations_read_in_the_coarsest_fitting_unit():
     assert span(0.5) == "6 mo"
     assert span(1.83) == "1.8 yr"
     assert span(np.inf) == "not by 2040"
+
+
+class TestPcPassed:
+    """A card whose own series already reached its bar reads "Passed" and,
+    under the hard "not crossed yet" cut, carries no blend weight."""
+
+    def test_staff_and_code_are_passed_and_dated_by_their_first_reading(self):
+        passed = vp._pc_passed()
+        staff = f"staff_{vp._PC_RSI_SURVEY_TARGET_X:.0f}x"
+        code = f"code_{vp._RSI_CODE_TARGET:.0f}x"
+        assert set(passed) >= {staff, code}
+        assert passed[code][0] == vp.load_rsi_code()[-1]['date']
+        first = min(r['date'] for r in vp.load_rsi_survey()
+                    if r['uplift'] >= vp._PC_RSI_SURVEY_TARGET_X)
+        assert passed[staff][0] == first
+        # Bars no series has reached stay forecasts.
+        assert f"rdauto_{vp._RSI_AUTO_TARGET:.0f}" not in passed
+
+    @pytest.mark.parametrize("condition", [True, 0.05])
+    def test_passed_cards_get_zero_weight_when_conditioned(self, condition):
+        """Zero under the hard cut and under the default 5% `already`, which
+        allows for unseen crossings, not ones the data shows."""
+        _cap, survival, _raw, _notes = vp._pc_milestone_components(
+            vp._RSI_DEFAULTS['rsi_timing'], datetime(2026, 11, 6), condition,
+            0.0, 400, 'k', 1)
+        for slug in vp._pc_passed():
+            assert survival[slug] == 0.0
