@@ -7624,15 +7624,19 @@ def _render_rsi_metr():
                         line=dict(width=1.5, color=color)),
             text=[r['model'] for r in pts], **kw))
 
+    # One meaning per channel: shape is the index (circle AECI, square Epoch
+    # ECI), colour the models (green public Claude, orange internal Claude,
+    # blue other labs); grey diamonds are only today's estimates, as elsewhere.
+    green, orange, blue = '#1a7048', '#d8774f', '#5b8fd9'
     aeci_hover = '%{text}<br>%{x|%b %d, %Y}<br>AECI %{y:.1f}<extra></extra>'
-    dots([r for r in anth if r['kind'] == 'frontier'], "Claude, public (AECI)",
-         '#1a7048', 'circle', group='pub', hovertemplate=aeci_hover)
-    dots([r for r in anth if r['kind'] == 'not_frontier'], "Claude, public (AECI)",
-         '#1a7048', 'circle-open', group='pub', show=False, hovertemplate=aeci_hover)
-    dots([r for r in anth if r['kind'] == 'internal'], "Claude, internal (AECI)",
-         '#d8774f', 'circle', hovertemplate=aeci_hover)
+    dots([r for r in anth if r['kind'] == 'frontier'], "Claude public: AECI",
+         green, 'circle', group='pub', hovertemplate=aeci_hover)
+    dots([r for r in anth if r['kind'] == 'not_frontier'], "Claude public: AECI",
+         green, 'circle-open', group='pub', show=False, hovertemplate=aeci_hover)
+    dots([r for r in anth if r['kind'] == 'internal'], "Claude internal: AECI",
+         orange, 'circle', hovertemplate=aeci_hover)
     projected = [r for r in _metr_on_eci(rows) if r['projected'] and r['kind'] == 'internal']
-    dots(projected, "Claude, internal (projected ECI)", '#d8774f', 'diamond-open',
+    dots(projected, "Claude internal: ECI, projected", orange, 'square-open',
          ys=[r['eci'] for r in projected],
          error_y=dict(type='data', array=[1.2816 * r['sd'] for r in projected],
                       color='rgba(216,119,79,0.45)', thickness=1, width=0),
@@ -7641,12 +7645,12 @@ def _render_rsi_metr():
     matched = [(r, eci[r['epoch_model']]) for r in anth if r['epoch_model'] in eci]
     figure.add_trace(go.Scatter(
         x=[e['date'] for _, e in matched], y=[e['eci'] for _, e in matched],
-        mode='markers', name="Claude, public (Epoch ECI)",
-        marker=dict(color='#7f8c8d', symbol='diamond', size=7),
+        mode='markers', name="Claude public: ECI",
+        marker=dict(color=green, symbol='square', size=7),
         text=[f"{r['model']}: ECI {e['eci']:.1f} (AECI {r['aeci']:.1f})" for r, e in matched],
         hovertemplate='%{text}<br>Released %{x|%b %d, %Y}<extra></extra>'))
     others = [r for r in rows if r['chart'] == 'all_developers' and r['kind'] == 'other']
-    dots(others, "Other labs (AECI)", 'rgba(149,165,166,0.8)', 'circle', size=6,
+    dots(others, "Other labs: AECI", blue, 'circle', size=6,
          hovertemplate=aeci_hover)
     first = min(r['date'] for r in anth + others)
     last = max(r['date'] for r in anth)
@@ -7667,9 +7671,9 @@ def _render_rsi_metr():
               + eci_today * _ship_lag("us") / 365.25)
     aeci_now = fit['icpt'] + fit['post'] * (today - _METR_BREAK).days / 365.25
     for y, text, hover in (
-            (aeci_now, f"AECI {aeci_now:.0f}<br>METR's trend",
+            (aeci_now, f"today (est.)<br>AECI {aeci_now:.0f}",
              "METR's post-break line carried to today"),
-            (tk_now, f"ECI {tk_now:.0f}<br>model starts",
+            (tk_now, f"today (est.)<br>ECI {tk_now:.0f}<br>model starts",
              "The takeoff model below projects ECI from here: the latest US "
              "release plus the US ship lag at today's ECI growth, i.e. the best "
              "model as trained today")):
@@ -7695,11 +7699,12 @@ def _render_rsi_metr():
                   if not o['anthropic'] and o['date'] >= _METR_GAP_FROM]
     _, gap_slope, _ = _metr_gap_trend(rows)
     _fn_caption(
-        "Why AECI and ECI differ: same code and scale, but different benchmarks, "
-        "bigger token budgets and internal-use dates. Other labs' models sit "
-        f"~{np.median(gap_others):+.0f} on AECI; recent Claude models "
-        f"{min(recent):+.0f} to {max(recent):+.0f}, a gap growing "
-        f"~{gap_slope:.0f} a year that nobody has explained. Projected ECI takes it off.",
+        "Circles are AECI, squares Epoch ECI; grey diamonds are today's estimates. "
+        "Why the two differ: same code and scale, but different benchmarks, "
+        "bigger token budgets and internal-use dates. Those explain the steady "
+        f"~{np.median(gap_others):+.0f} on other labs' models; recent Claude models sit "
+        f"{min(recent):+.0f} to {max(recent):+.0f}, a gap growing ~{gap_slope:.0f} a "
+        "year whose cause we can't yet pin down. Projected ECI takes it off.",
         ("different benchmarks",
          "AECI: Anthropic's mix of internal and external benchmarks. ECI: Epoch's "
          "public set."),
@@ -7710,15 +7715,14 @@ def _render_rsi_metr():
         ("internal-use dates",
          "AECI dates a model when most Anthropic staff could use it; ECI at public "
          "release, weeks to months later."),
-        ("nobody has explained",
-         "Either AECI favours recent Claude models, or Epoch's public benchmarks are "
-         "saturating and compress the newest ones (every AECI benchmark is above 50% "
-         "for Model 4). Fitted on the Claude models both score, since 2025."),
+        ("whose cause we can't yet pin down",
+         "Every 2026 model scored on both indexes is a Claude model, so the data "
+         "can't separate two causes: AECI favouring Claude, or Epoch's benchmarks "
+         "saturating on the newest models."),
         ("Projected ECI",
-         "Each internal model's AECI less Claude's gap at its date, with 80% bars "
-         "from the gap fit's scatter: what Epoch's index would likely read, the scale "
-         "the takeoff model uses. Grey dots are the other labs' models that set "
-         "METR's all-developer record; METR shows no others."))
+         "Each internal model's AECI less Claude's gap at its date (fitted since "
+         "2025), with 80% bars: what Epoch's index would likely read. Blue dots are "
+         "other labs' record-setting models; METR shows no others."))
 
 
 def _render_rsi_pace():
