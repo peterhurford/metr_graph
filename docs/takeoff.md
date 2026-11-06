@@ -241,7 +241,7 @@ estimate; all five workforce assumptions are *Advanced* inputs, `tk_wf_*`, read 
 the automation index's share of today's work spread over those copies (~0.13 people), rising
 as (ECI / today's)^`_TK_AI_COMPETENCE_POWER`. Counts
 read k/M/B/T (`_tk_count`, axis `exponentformat="B"`), carried in `text` so today-forward
-can still relabel the dates. A readout, never an input), **4. What it does to capability (ECI)** (plus *How fast ECI climbs*, `_tk_eci_rate_fig`: each scenario's ECI change over a centred six-month window (`_TK_ECI_RATE_WINDOW`) per year, median and middle 80%, against today's setting and the 2024–25 average; and *2025-level ECI progress in
+can still relabel the dates. A readout, never an input), **4. What it does to capability (ECI)** (plus *How fast ECI climbs*, `_tk_eci_rate_fig`: each scenario's ECI change over a centred six-month window (`_TK_ECI_RATE_WINDOW`) per year, median and middle 80%, against today's setting and the 2024–25 average; and *2025-level ECI progress in each year* reads measured years, and this year up to today, off that trained frontier (`eci['trained']`), so the trained frontier's lead over public releases is counted; and *2025-level ECI progress in
 each year*, `_tk_yearly_fig`: ECI gained per calendar year over what the frontier gained
 in `_TK_YEARLY_BASE_YEAR` (`_tk_year_gain`, 13.5 points, below the 15.7-point fitted trend
 the ECI chart uses, so these bars read ~1.16× that trend's), a different 2025 unit from
@@ -328,9 +328,12 @@ each (draws x months) array is ~3.4 MB held in memory, and Community Cloud's flo
 **Research pace has one definition** (`_tk_eci_today_pace`): the frontier's ECI growth
 less compute's share, over the US frontier's 2024–25 average algorithmic growth
 (`_TK_PACE_BASE`, ~16.4 points a year less ~3.0 for compute), so that average is 1×.
-`tk_eci_today` sets it (default `_TK_ECI_TODAY`: Anthropic's frontier on Epoch's scale,
-internal models projected, its climb smoothed by `_metr_local_slope`, a Gaussian-kernel
-local-linear slope over ~6 months, read at the latest model: ~24.5 → 1.6×); `_tk_run`
+`tk_eci_today` sets it (default `_TK_ECI_TODAY`: the US frontier as trained,
+`_tk_trained_frontier`, the running best of every US lab's public models at release and
+METR's Anthropic rows on Epoch's scale at first internal use, its climb smoothed by
+`_metr_local_slope`, a Gaussian-kernel local-linear slope over ~6 months, read at the latest
+model: ~22 → 1.4×); its `on_change` re-reads the evidence at that pace
+(`_tk_evidence_settings`); `_tk_run`
 divides `software_months` by it and reports it as `pace_today`, where chart 1 starts. No
 separate pace input exists to disagree with it
 (`test_default_is_the_smoothed_frontier_climb_and_pace_is_derived`). Section 1 opens with

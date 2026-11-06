@@ -7578,12 +7578,28 @@ def _metr_local_slope(dates, values, at, bw=_METR_PACE_BW_YEARS):
     return out
 
 
+def _tk_trained_frontier(since=datetime(2023, 6, 1)):
+    """The US frontier as trained, on Epoch's scale: the running best of every
+    US lab's public models (at release) and METR's Anthropic rows, internal
+    ones projected (`_metr_on_eci`, at first internal use). [{'date',
+    'eci_score', 'name'}]; any lab can set the record."""
+    pub = [(m['date'], m['eci_score'], m.get('name') or m.get('display_name', ''))
+           for m in _eci_entity_data("US best")[0]]
+    anth = [(r['date'], r['eci'], r['model']) for r in _metr_on_eci()
+            if r['kind'] != 'not_frontier']
+    out, best = [], -np.inf
+    for d, v, n in sorted(pub + anth, key=lambda x: (x[0], x[1])):
+        if v > best and d >= since:
+            out.append({'date': d, 'eci_score': v, 'name': n})
+            best = v
+    return out
+
+
 def _metr_pace_series():
-    """The trained frontier's ECI points on Epoch's scale: METR's Anthropic
-    rows, internal models projected (`_metr_on_eci`), as (dates, values)."""
-    pts = sorted((r['date'], r['eci']) for r in _metr_on_eci()
-                 if r['kind'] != 'not_frontier')
-    return [d for d, _ in pts], [v for _, v in pts]
+    """The trained US frontier (`_tk_trained_frontier`) as (dates, values):
+    the series research pace is read from."""
+    fr = _tk_trained_frontier()
+    return [m['date'] for m in fr], [m['eci_score'] for m in fr]
 
 
 def _metr_readings():
@@ -7707,15 +7723,19 @@ def _render_rsi_metr():
     aeci_now = fit['icpt'] + fit['post'] * (today - _METR_BREAK).days / 365.25
     # One today marker: where the takeoff model's ECI starts. METR's AECI
     # trend carried to today is labelled at the end of its dotted line.
-    figure.add_annotation(x=today, y=aeci_now, text=f"AECI trend {aeci_now:.0f}",
-                          showarrow=False, xanchor='left', xshift=6,
-                          font=dict(size=11, color='#2c3e50'))
+    # Today's estimates in the chart's own shapes: a circle on METR's AECI trend,
+    # a square where the takeoff model's ECI starts.
+    figure.add_trace(go.Scatter(
+        x=[today], y=[aeci_now], mode='markers+text', showlegend=False,
+        text=[f"today (est.)<br>AECI {aeci_now:.0f}"], textposition='middle right',
+        textfont=dict(size=11), marker=dict(symbol='circle-open', size=11,
+                                            color='#2c3e50', line=dict(width=2)),
+        hovertemplate="METR's post-break AECI line carried to today<extra></extra>"))
     figure.add_trace(go.Scatter(
         x=[today], y=[tk_now], mode='markers+text', showlegend=False,
         text=[f"today (est.)<br>ECI {tk_now:.0f}<br>model starts"],
         textposition='middle right', textfont=dict(size=11),
-        marker=dict(symbol='diamond', size=12, color=_TK_PACE_COLOR,
-                    line=dict(color='white', width=1)),
+        marker=dict(symbol='square-open', size=11, color='#2c3e50', line=dict(width=2)),
         hovertemplate="Where the takeoff model's ECI starts: the latest US release "
                       "plus the US ship lag at today's ECI growth, i.e. the best "
                       "model as trained today<extra></extra>"))
@@ -7735,7 +7755,7 @@ def _render_rsi_metr():
                   if not o['anthropic'] and o['date'] >= _METR_GAP_FROM]
     _, gap_slope, _ = _metr_gap_trend(rows)
     _fn_caption(
-        "Circles are AECI, squares Epoch ECI; the grey diamond is where the model starts. "
+        "Circles are AECI, squares Epoch ECI; the dark open marks are today's estimates. "
         "Why the two differ: same code and scale, but different benchmarks, "
         "bigger token budgets and internal-use dates. Those explain the steady "
         f"~{np.median(gap_others):+.0f} on other labs' models; recent Claude models sit "
@@ -7789,13 +7809,14 @@ def _tk_render_pace_so_far(today):
     grid_end = today
     series = []
     d, v = _metr_pace_series()
-    series.append(("Anthropic's best model, internal included: the model's input",
-                   d, v, '#d8774f', 3.5, True))
-    for label, entity, color in (("Anthropic's best public model", "Anthropic", '#1a7048'),
-                                 ("Best public US model, any lab", "US best", '#95a5a6')):
-        fr = [m for m in _eci_entity_data(entity)[1] if m['date'] >= _METR_WINDOW_FROM]
-        series.append((label, [m['date'] for m in fr], [m['eci_score'] for m in fr],
-                       color, 2, False))
+    series.append(("Best US model as trained, any lab: the model's input",
+                   d, v, '#c0392b', 3.5, True))
+    anth = sorted((r['date'], r['eci']) for r in _metr_on_eci() if r['kind'] != 'not_frontier')
+    series.append(("Anthropic's best, internal included", [a for a, _ in anth],
+                   [b for _, b in anth], '#d8774f', 2, False))
+    fr = [m for m in _eci_entity_data("US best")[1] if m['date'] >= _METR_WINDOW_FROM]
+    series.append(("Best public US model, any lab", [m['date'] for m in fr],
+                   [m['eci_score'] for m in fr], '#95a5a6', 2, False))
     for label, dates, vals, color, width, band in series:
         last = min(dates[-1], grid_end)
         grid = [_TK_PACE_BASE[0] + timedelta(days=int(k))
@@ -7807,7 +7828,7 @@ def _tk_render_pace_so_far(today):
             hi = [pace(m + 1.2816 * e) for m, e in est]
             fig.add_trace(go.Scatter(
                 x=grid + grid[::-1], y=hi + lo[::-1], fill='toself', mode='lines',
-                fillcolor='rgba(216,119,79,0.15)', line=dict(width=0),
+                fillcolor='rgba(192,57,43,0.12)', line=dict(width=0),
                 hoverinfo='skip', showlegend=False))
         fig.add_trace(go.Scatter(
             x=grid, y=mid, mode='lines', name=label,
@@ -7841,9 +7862,10 @@ def _tk_render_pace_so_far(today):
         "over ~6 months. The model starts from the thick line.",
         ("smoothed over ~6 months",
          "Gaussian-kernel local-linear slope, no break imposed; the band is its 80% "
-         "interval. The thick line is the trained frontier: Anthropic's models, "
-         "internal ones projected onto Epoch's scale. The dotted public lines date "
-         "models at release and lag it. *Today's ECI growth* in the sidebar sets "
+         "interval. The thick line is the US frontier as trained: the best model from "
+         "any lab, public ones at release and Anthropic's internal ones projected onto "
+         "Epoch's scale at first internal use. Anthropic alone climbs faster partly "
+         "because it was catching up; the public line dates models at release and lags. *Today's ECI growth* in the sidebar sets "
          "the model's start; its default is the thick line at the latest model."))
 
 
@@ -21084,8 +21106,9 @@ _TK_COMPUTE_SLOW_YEAR = 2030
 _TK_ULTRA_ECI = 250.0
 _TK_ULTRA_RANGE = (180.0, 500.0)
 # Today's frontier ECI growth, points a year (`tk_eci_today`): the smoothed
-# climb of Anthropic's frontier on Epoch's scale, internal models included, at
-# the latest model (`_metr_local_slope`), to the nearest half point. It sets
+# climb of the trained US frontier (any lab; Anthropic's internal models
+# projected onto Epoch's scale) at its latest model (`_metr_local_slope`), to
+# the nearest half point. It sets
 # today's research pace, `_tk_eci_today_pace`, the definition every pace on
 # the tab uses.
 _TK_ECI_TODAY = round(2 * _metr_local_slope(
@@ -22306,6 +22329,7 @@ def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
     at_rsi = np.where(np.isfinite(rsi) & (rsi <= years[-1]),
                       paths[np.arange(len(rsi)), idx], np.nan)
     return {"now": now, "released": frontier[-1]['eci_score'], "ppy": ppy,
+            "trained": _tk_trained_frontier(),
             "paths": paths, "at_rsi": at_rsi, "model": model, "frontier": frontier,
             "ultra": _tk_first_reach(paths, years, ultra), "ultra_level": ultra}
 
@@ -22492,13 +22516,14 @@ def _tk_yearly_progress(result, eci, today, last_year):
     twice those points made two. Measured gains read the frontier's running
     maximum at each Jan 1. A draw that runs away numerically by the end of a
     year made unboundedly many (+inf)."""
-    unit = _tk_year_gain(eci["frontier"], _TK_YEARLY_BASE_YEAR) or eci["ppy"]
+    fr = eci.get("trained") or eci["frontier"]
+    unit = _tk_year_gain(fr, _TK_YEARLY_BASE_YEAR) or eci["ppy"]
     years = result["workflow_progress"]["years"]
     paths = eci["paths"]
     n = paths.shape[0]
 
     def measured(when):
-        scores = [m['eci_score'] for m in eci["frontier"] if m['date'] <= when]
+        scores = [m['eci_score'] for m in fr if m['date'] <= when]
         return scores[-1] if scores else None
 
     def at(when):
@@ -22514,9 +22539,12 @@ def _tk_yearly_progress(result, eci, today, last_year):
         out.append((last_full, np.full(n, (hi - lo) / unit), "measured"))
     if hi is not None:
         rest, _ = at(datetime(today.year + 1, 1, 1))
-        # Released gain to today, then the trained path's gain after it.
-        out.append((today.year, (eci.get("released", eci["now"]) - hi + rest
-                                 - paths[:, 0]) / unit,
+        # The trained frontier's gain to today, then the trained path's gain
+        # after it. (Public releases alone would drop the lead the trained
+        # frontier holds over them, which no year would then count.)
+        so_far = (measured(today) if eci.get("trained")
+                  else eci.get("released", eci["now"]))
+        out.append((today.year, (so_far - hi + rest - paths[:, 0]) / unit,
                     "partly"))
     for year in range(today.year + 1, last_year + 1):
         start, _ = at(datetime(year, 1, 1))
@@ -23612,7 +23640,8 @@ def _render_takeoff(loading):
                   "a later coding date from the automated coder projection.")
         # In years of 2025-level ECI progress, the yearly chart's unit: 2025's
         # own gain, as a rate of log effective compute through the ECI mapping.
-        unit_pts = _tk_year_gain(eci["frontier"], _TK_YEARLY_BASE_YEAR) or eci["ppy"]
+        unit_pts = _tk_year_gain(eci.get("trained") or eci["frontier"],
+                                 _TK_YEARLY_BASE_YEAR) or eci["ppy"]
         year_rate = eci_base * unit_pts / eci["ppy"]
         burst = takeoff.progress_years(result, unit_pts, level=eci["model"])
         burst = burst[~np.isnan(burst)]
@@ -23969,11 +23998,11 @@ def _render_takeoff(loading):
          "research gains wait for a training run before they count."),
         (f"{_TK_YEARLY_BASE_YEAR}'s pace",
          f"The ECI points the US frontier gained over {_TK_YEARLY_BASE_YEAR}, "
-         f"{_tk_year_gain(eci['frontier'], _TK_YEARLY_BASE_YEAR) or eci['ppy']:.1f}: a year "
+         f"{_tk_year_gain(eci.get('trained') or eci['frontier'], _TK_YEARLY_BASE_YEAR) or eci['ppy']:.1f}: a year "
          "adding twice that made two years. That is below the frontier's fitted "
          f"{eci['ppy']:.1f} points a year over 2024\u201326, which the ECI chart and the "
          "ultraintelligence date use, so the projected years here read about "
-         f"{eci['ppy'] / (_tk_year_gain(eci['frontier'], _TK_YEARLY_BASE_YEAR) or eci['ppy']):.2f}"
+         f"{eci['ppy'] / (_tk_year_gain(eci.get('trained') or eci['frontier'], _TK_YEARLY_BASE_YEAR) or eci['ppy']):.2f}"
          "\u00d7 what they would against that trend. One calendar year is lumpy: a release "
          "landing just before Jan 1 moves it. Bars are the median "
          "scenario, whiskers the middle 80%; the hover gives the share making 3 and 10 "
