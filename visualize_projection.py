@@ -21802,7 +21802,7 @@ def _tk_evidence_fig(params):
         (f"Staff speedup \u2192 coding labor {params['coding_slope']:g}",
          survey, [r['uplift'] for r in survey], "Self-reported output (\u00d7)",
          (survey[0]['date'], s_icpt, s_slope), False, "#d68910"),
-        ("Experiments/researcher \u2192 today's pace",
+        ("Experiments/researcher \u2192 judgment fit",
          exps, [r['mult'] for r in exps], "\u00d7 2025", _rsi_experiment_fit(exps),
          False, _TK_PACE_COLOR),
     ]
