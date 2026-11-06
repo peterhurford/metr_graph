@@ -6403,7 +6403,7 @@ class TestTakeoffRsiCalibration:
         before, after = vp._tk_tasteval_taste(ev, cap, 0.6)
         nextstep = vp._tk_nextstep_taste(vp.rsi_dir_frontier_all, ev, cap, 0.6)
         assert 0 < before < nextstep * 1.5 and after > 2 * nextstep
-        assert vp._tk_tasteval_taste(ev, cap, 0.6, eci_ppy=20.0)[1] > after
+        assert vp._tk_tasteval_taste(ev, cap, 0.6, eci_ppy=vp._TK_ECI_TODAY + 5)[1] > after
 
     def test_taste_default_is_the_geometric_mean_of_three_readings(self):
         ev = vp.load_rsi_experiments()

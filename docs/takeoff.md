@@ -309,7 +309,7 @@ third of the weight; `judgment_spread` (70) keeps all three inside its 80% band
 (`TestTakeoffRsiCalibration`). The coding elasticity is the staff survey's yearly output growth. Both go
 through `_tk_elasticity` against capability growth over the experiment window, which
 comes from evidence (`_tk_evidence_window_growth`: the data-center compute fit times the
-software trend, ~7.8×/yr), never a free assumption: an elasticity measured against one
+software trend at today's pace, ~13×/yr; TasteVal is likewise read at `_TK_ECI_TODAY`), never a free assumption: an elasticity measured against one
 capability rate and applied at another is inflated by their ratio. The experiment fit
 runs the model's own research equation over the window, crediting compute, coding help and
 the automation index's falling human share (`_tk_automation_growth`) before judgment, and

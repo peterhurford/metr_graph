@@ -21269,21 +21269,15 @@ _TK_ODDS_TO_JUDGMENT = 0.5
 _TK_TASTEVAL_TO_QUALITY = 0.5
 
 
-def _tk_eci_points_a_year():
-    """The US frontier's fitted ECI climb a year, the one `_tk_eci_scale` uses."""
-    frontier = _eci_entity_data("US best")[1]
-    days = np.array([(m['date'] - frontier[0]['date']).days for m in frontier], dtype=float)
-    return fit_line(days, np.array([m['eci_score'] for m in frontier]))[1] * 365.25
-
-
 def _tk_tasteval_taste(experiments, capability_growth, transfer, eci_ppy=None):
     """Research-judgment elasticities implied by TasteVal's compute multiplier,
     one per regime of `_TASTEVAL_ECI_PER_DOUBLING` (before, after its break).
 
-    Per ECI point, so it is read at today's ECI climb; the multiplier's growth
-    becomes quality growth at `_TK_TASTEVAL_TO_QUALITY`, then goes through the
-    same transfer form as the next-step study."""
-    ppy = _tk_eci_points_a_year() if eci_ppy is None else eci_ppy
+    Per ECI point, so it is read at today's ECI climb (`_TK_ECI_TODAY`, the
+    evidence window's own pace, not the 2024-25 average); the multiplier's
+    growth becomes quality growth at `_TK_TASTEVAL_TO_QUALITY`, then goes
+    through the same transfer form as the next-step study."""
+    ppy = _TK_ECI_TODAY if eci_ppy is None else eci_ppy
     return tuple(_tk_elasticity(2 ** (_TK_TASTEVAL_TO_QUALITY * ppy / per_doubling),
                                 experiments, capability_growth, transfer,
                                 takeoff.DEFAULTS["taste_slope"])
@@ -21314,10 +21308,12 @@ def _tk_hist_compute_rate():
 def _tk_evidence_window_growth(experiments):
     """(compute, effective capability) growth over the experiment evidence
     window, from evidence: the data-center compute fit, and that times the
-    model's own software-efficiency trend."""
+    software trend at today's pace (the window is 2026, after the speed-up:
+    `_tk_eci_today_pace` at `_TK_ECI_TODAY`)."""
     years = (experiments[-1]['date'] - experiments[0]['date']).days / 365.25
     compute = _tk_hist_compute_rate()
-    software = np.log(2) * 12 / takeoff.DEFAULTS["software_months"]
+    pace = _tk_eci_today_pace(takeoff.DEFAULTS, compute, _TK_ECI_TODAY) or 1.0
+    software = np.log(2) * 12 / takeoff.DEFAULTS["software_months"] * pace
     return (round(float(np.exp(compute * years)), 2),
             round(float(np.exp((compute + software) * years)), 2))
 
@@ -21345,8 +21341,6 @@ def _tk_copies_yearly(rows, params=None):
     return float((h + (1 - h) / s) / (h + (1 - h) / (s * g)))
 
 
-_TK_DEFAULTS["tk_cal_compute"], _TK_DEFAULTS["tk_cal_capability"] = \
-    _tk_evidence_window_growth(load_rsi_experiments())
 def _tk_human_calibration(accel):
     """The stage settings a human research speed-up of `accel` today implies:
     each stage's starting human share and halving time, read through the hours
@@ -21607,12 +21601,6 @@ def _tk_on_human_accel():
 
 _TK_DEFAULTS["tk_human_accel"] = _TK_HUMAN_ACCELERATION
 _TK_DEFAULTS.update(_tk_human_calibration(_TK_HUMAN_ACCELERATION))
-_TK_DEFAULTS["tk_taste_slope"] = _tk_taste_default(
-    rsi_dir_frontier_all, load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
-    _TK_DEFAULTS["tk_transfer"] / 100)
-_TK_DEFAULTS["tk_coding_slope"] = _tk_survey_coding(
-    load_rsi_survey(), load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
-    _TK_DEFAULTS["tk_transfer"] / 100, _tk_copies_yearly(load_rsi_automation()))
 
 
 _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
@@ -22254,6 +22242,18 @@ def _tk_eci_today_pace(params, hist, eci_today):
     compute_rate = hist if hist is not None else np.log(params["compute_growth"])
     algo_today = eci_today - r["compute"] * compute_rate
     return algo_today / r["algo_ppy"] if algo_today > 0 else None
+
+
+# Evidence-calibrated defaults: read at today's pace, so after the ECI and
+# pace machinery they need is defined.
+_TK_DEFAULTS["tk_cal_compute"], _TK_DEFAULTS["tk_cal_capability"] = \
+    _tk_evidence_window_growth(load_rsi_experiments())
+_TK_DEFAULTS["tk_taste_slope"] = _tk_taste_default(
+    rsi_dir_frontier_all, load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
+    _TK_DEFAULTS["tk_transfer"] / 100)
+_TK_DEFAULTS["tk_coding_slope"] = _tk_survey_coding(
+    load_rsi_survey(), load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
+    _TK_DEFAULTS["tk_transfer"] / 100, _tk_copies_yearly(load_rsi_automation()))
 
 
 def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
