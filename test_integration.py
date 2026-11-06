@@ -143,7 +143,14 @@ class TestDefaultTab:
         at = _fresh_app().run()
         _assert_no_error(at, "bare URL")
         assert [r for r in at.radio if r.label == "Tab"][0].value == "Takeoff"
-        assert "tab" not in at.query_params
+        # Nothing at all: the multiplication slider's computed start stays out too.
+        assert not list(at.query_params.keys())
+
+    def test_moving_the_multiplication_slider_writes_it(self):
+        at = _fresh_app().run()
+        at.select_slider(key="tk_mult_at").set_value("Today").run()
+        _assert_no_error(at, "tk_mult_at=Today")
+        assert _qp(at, "tk_mult_at") == ["Today"]
 
     def test_eci_gets_its_slug_in_the_url(self):
         at = _fresh_app().run()

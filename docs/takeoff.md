@@ -223,7 +223,7 @@ URL sharing, stale imports, and exact inheritance from RSI.
 The tab reads as a story, top to bottom, under the one *Takeoff* header with no warning: the model (the loop
 `_TK_LOOP_HTML`, its three brakes, the headline cards for coding automation, RSI and
 ultraintelligence with 80%/90% CIs, the two gaps between them and the first-year progress),
-*The evidence* (the former RSI tab), then *Inside the takeoff model*: the evidence row, then *What moves the pace* (the factor chart) and *The multiplication at …* (its slider and steps), which sit above **1. Research speeds
+*The evidence* (the former RSI tab), then *Inside the takeoff model*: the evidence row, then *What moves the pace* (the factor chart) and *The multiplication at …* (its slider and steps; the slider starts at the month nearest the median RSI and, while it sits there, `_url_auto_defaults` keeps `tk_mult_at` out of the URL, `test_bare_url_opens_on_takeoff`), which sit above **1. Research speeds
 up** (`_tk_pace_fig` twice: *Capability relative to 2025* (`capability=True`,
 `capability_2025_quantiles`: the pace with the labor, compute and difficulty factors held
 at today's, so only AI and judgment move it, axis to `_TK_CAPABILITY_VIEW`;

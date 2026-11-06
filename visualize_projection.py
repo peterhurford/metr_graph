@@ -16711,6 +16711,8 @@ def _sync_session_to_url():
         st.session_state["_url_baseline"] = {}
     baseline = st.session_state["_url_baseline"]
     url_keys_at_load = st.session_state.get("_url_keys_at_load", set())
+    # Defaults a tab computes at run time (`tk_mult_at`) override the static ones.
+    auto = st.session_state.get("_url_auto_defaults", {})
     for k in keys:
         if k not in st.session_state:
             if k in qp:
@@ -16720,7 +16722,9 @@ def _sync_session_to_url():
         # Capture baseline for keys whose initial value wasn't supplied via URL
         if k not in baseline and k not in url_keys_at_load and k not in defaults:
             baseline[k] = val
-        if k in defaults:
+        if k in auto:
+            eff_default = auto[k]
+        elif k in defaults:
             eff_default = defaults[k]
         elif k in baseline:
             eff_default = baseline[k]
@@ -24153,10 +24157,13 @@ def _render_takeoff(loading):
             stops.append((f"{end_of:%b %Y}", t))
         m = nxt
     labels = [lab for lab, _ in stops]
+    rsi_t = meds["RSI"]
+    auto = min(stops, key=lambda x: abs(x[1] - rsi_t))[0] \
+        if np.isfinite(rsi_t) else labels[-1]
+    # The URL omits the param while the slider sits at this computed start.
+    st.session_state.setdefault("_url_auto_defaults", {})["tk_mult_at"] = auto
     if st.session_state.get("tk_mult_at") not in labels:
-        rsi_t = meds["RSI"]
-        st.session_state["tk_mult_at"] = min(stops, key=lambda x: abs(x[1] - rsi_t))[0] \
-            if np.isfinite(rsi_t) else labels[-1]
+        st.session_state["tk_mult_at"] = auto
     pick = st.select_slider(
         "Read the multiplication at", labels, key="tk_mult_at",
         help="Today, or the end of any month to Dec 2030. Starts at the month nearest "
