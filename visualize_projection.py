@@ -21098,7 +21098,7 @@ _TK_DEFAULTS.update({
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
     "tk_eci_today": _TK_ECI_TODAY,
     "tk_returns": 1.0, "tk_dc_compute": True,
-    "tk_coding_pairing": 0.9,
+    "tk_coding_pairing": 0.9, "tk_mult_at": "rsi",
     "tk_wf_humans": 10_000,
     "tk_wf_copies": 50_000, "tk_wf_power": 10.0, "tk_ultra_eci": _TK_ULTRA_ECI,
 })
@@ -23655,15 +23655,30 @@ def _render_takeoff(loading):
          "blended with OpenAI's experiment trend in year one. Research judgment rises with model capability. Harder ideas: each "
          "improvement makes the next harder to find."))
     st.plotly_chart(_tf(_tk_to(_tk_factors_fig(result, today), view_end)), width="stretch")
-    rsi_t = dict(medians)["RSI"]
     years_ = result["workflow_progress"]["years"]
-    at_t = rsi_t if 0 < rsi_t <= years_[-1] else years_[-1]
-    at_label = ("median RSI" if at_t == rsi_t else
-                f"{today + timedelta(days=float(at_t * 365.25)):%b %Y}")
+    meds = dict(medians)
+
+    def when(t):
+        return f"{today + timedelta(days=float(t * 365.25)):%b %Y}"
+    # The date the multiplication is read at: a milestone's median or a fixed
+    # horizon (`tk_mult_at`). A median past the simulation falls back to its end.
+    choices = {"rsi": ("median RSI", meds["RSI"]),
+               "ultra": ("median ultraintelligence", meds["Ultraintelligence"]),
+               "0.5": ("6 months out", 0.5), "1": ("1 year out", 1.0),
+               "2": ("2 years out", 2.0), "3": ("3 years out", 3.0)}
+    if st.session_state.get("tk_mult_at") not in choices:
+        st.session_state["tk_mult_at"] = _TK_DEFAULTS["tk_mult_at"]
+    pick = st.selectbox(
+        "Read the multiplication at", list(choices), key="tk_mult_at",
+        format_func=lambda k: (f"{choices[k][0]} ({when(choices[k][1])})"
+                               if 0 < choices[k][1] <= years_[-1] else choices[k][0]),
+        help="Which date the bars below multiply out to.")
+    name, at_t = choices[pick]
+    if not 0 < at_t <= years_[-1]:
+        at_t, name = years_[-1], "the simulation's end"
+    at_label = name
     mult_fig, product, net = _tk_multiply_fig(result, pace_today, at_t, at_label)
-    st.markdown(f"**The multiplication at {at_label}, "
-                f"{today + timedelta(days=float(at_t * 365.25)):%b %Y}**"
-                if at_t == rsi_t else f"**The multiplication in {at_label}**")
+    st.markdown(f"**The multiplication at {at_label}, {when(at_t)}**")
     _fn_caption(
         f"Today's {pace_today:g}\u00d7, then each factor's median change to that date, "
         "on a log scale: each bar starts where the last ended.",
