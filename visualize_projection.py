@@ -7978,9 +7978,9 @@ def _tk_pace_comparison(eci_today):
     anth_now = _metr_local_slope([r['date'] for r in on], [r['eci'] for r in on],
                                  [on[-1]['date']])[0][0]
     out = [
-        ("METR: Anthropic only, AECI, against Anthropic's own 2024–25 rate",
+        ("METR's AECI measure of Anthropic models (including internal) divided by Anthropic's 2024–25 AECI rate",
          f"{m['post']:.1f} vs {m['pre']:.1f}", f"{m['ratio']:.2f}×"),
-        ("Anthropic only, Epoch's ECI scale (internal models projected), same ratio",
+        ("Projected ECI measure of Anthropic models (including internal) divided by Anthropic's 2024–25 ECI rate",
          f"{e['post']:.1f} vs {e['pre']:.1f}", f"{e['ratio']:.2f}×"),
         (f"Anthropic's latest climb as a pace: ({anth_now:.1f} − {c_pts:.1f}) ÷ {a_pts:.1f}",
          f"{anth_now - c_pts:.1f} vs {a_pts:.1f}", f"{(anth_now - c_pts) / a_pts:.2f}×"),
