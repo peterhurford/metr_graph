@@ -5350,12 +5350,15 @@ class TestPacing:
         args = (days, origin, origin + timedelta(days=200),
                 origin + timedelta(days=1000), origin + timedelta(days=1800))
         horizon = datetime(2027, 12, 31)
+        def median_marked(fig):
+            return any(str((t.text or [""])[0]).startswith("median")
+                       for t in fig.data if t.mode == "markers+text")
         capped = vp._pc_rsi_dist_fig(*args, horizon=horizon)
         assert max(capped.data[0].x) <= horizon
-        assert not capped.layout.annotations
+        assert not median_marked(capped)
         free = vp._pc_rsi_dist_fig(*args)
         assert max(free.data[0].x) > horizon
-        assert free.layout.annotations
+        assert median_marked(free)
 
     def test_rsi_subjective_penalty_calibration_and_ordering(self):
         days = np.arange(1.0, 10001.0)
@@ -5380,6 +5383,8 @@ class TestPacing:
         dates = [origin + timedelta(days=float(x))
                  for x in np.percentile(adjusted, [10, 50, 90])]
         fig = vp._pc_rsi_dist_fig(adjusted, origin, *dates, model_days=days)
+        # The curves carry hover text; the median and today markers don't.
+        fig.data = [t for t in fig.data if t.hovertext is not None]
         assert len(fig.data) == 2
         assert np.all(np.array(fig.data[0].y) >= np.array(fig.data[1].y))
         assert "before subjective penalty" in fig.data[0].hovertext[0]
@@ -5393,13 +5398,14 @@ class TestPacing:
         fig = vp._pc_rsi_dist_fig(cond, origin, origin + timedelta(days=40),
                                   origin + timedelta(days=200),
                                   origin + timedelta(days=360), raw_days=raw)
+        fig.data = [t for t in fig.data if t.hovertext is not None]
         assert len(fig.data) == 2
         assert fig.data[0].y[0] > 10          # ghost carries the past mass
         assert fig.data[1].y[0] < fig.data[0].y[0]
         solo = vp._pc_rsi_dist_fig(cond, origin, origin + timedelta(days=40),
                                    origin + timedelta(days=200),
                                    origin + timedelta(days=360))
-        assert len(solo.data) == 1
+        assert len([t for t in solo.data if t.hovertext is not None]) == 1
 
     def test_ramp_window_extends_on_the_release_clock(self):
         """Release dates trail run-finished by a report lag, so an active

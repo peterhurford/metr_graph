@@ -6960,6 +6960,8 @@ def _render_rsi_automation(end_year):
         annotation_position="top left",
         annotation_font=dict(size=11, color='#e74c3c'))
     _add_today_diamond(fig, 'AL4+ median projection', lambda v: f"{v:.0f}%", label="AL4+ trend")
+    _add_today_diamond(fig, 'AL5 median (assumed lag)', lambda v: f"{v:.1f}%",
+                       label="AL5", color='#c0392b', position='top right')
     _add_today_vline(fig)
 
     fig.update_layout(
@@ -7849,6 +7851,13 @@ def _tk_render_pace_so_far(today):
                 x=grid + grid[::-1], y=hi + lo[::-1], fill='toself', mode='lines',
                 fillcolor='rgba(192,57,43,0.12)', line=dict(width=0),
                 hoverinfo='skip', showlegend=False))
+        if band and grid[-1] < today:
+            # From the latest model to today: the line's last value carried
+            # flat, dotted, to the diamond that is the model's start.
+            fig.add_trace(go.Scatter(
+                x=[grid[-1], today], y=[mid[-1], mid[-1]], mode='lines',
+                line=dict(color=color, width=2, dash='dot'), hoverinfo='skip',
+                showlegend=False))
         fig.add_trace(go.Scatter(
             x=grid, y=mid, mode='lines', name=label,
             line=dict(color=color, width=width, dash=None if band else 'dot'),
@@ -18015,14 +18024,29 @@ def _pc_rsi_dist_fig(days, origin, early, med, late, horizon=None,
         hoverinfo='text', showlegend=False))
     fig.add_vrect(x0=early, x1=late, fillcolor='rgba(52,152,219,0.10)',
                   line_width=0, layer='below')
-    # add_vline's own annotation averages the x endpoints, which throws on a
-    # datetime axis; place it separately against the paper y-axis instead.
+    # The median as a point on the curve where it crosses 50%, with a faint
+    # guide from the axis, rather than a full-height line.
     if horizon is None or med <= horizon:
-        fig.add_vline(x=med, line=dict(color='#2c3e50', width=2, dash='dash'))
-        fig.add_annotation(x=med, y=1.0, yref='paper', yanchor='bottom',
-                           xanchor='left', xshift=4, showarrow=False,
-                           text=f"median {med:%b %Y}",
-                           font=dict(size=11, color='#2c3e50'))
+        fig.add_trace(go.Scatter(
+            x=[dates[0], med], y=[50, 50], mode='lines', hoverinfo='skip',
+            line=dict(color='#2c3e50', width=1, dash='dot'), showlegend=False))
+        fig.add_trace(go.Scatter(
+            x=[med], y=[50], mode='markers+text', showlegend=False,
+            text=[f"median (50%): {med:%b %Y}"], textposition='middle right',
+            textfont=dict(size=11, color='#2c3e50'),
+            marker=dict(symbol='circle', size=10, color='#2c3e50',
+                        line=dict(color='white', width=1)),
+            hovertemplate=f"Median: {med:%b %d, %Y}<extra></extra>"))
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    if dates[0] <= today <= dates[-1]:
+        v = float(np.interp((today - origin).days, grid, cdf))
+        fig.add_trace(go.Scatter(
+            x=[today], y=[v], mode='markers+text', showlegend=False,
+            text=[f"today (est.) {v:.0f}%"], textposition='top right',
+            textfont=dict(size=12),
+            marker=dict(symbol='diamond', size=13, color='#7f8c8d',
+                        line=dict(color='white', width=1)),
+            hovertemplate=f"Today (est.): {v:.1f}% already crossed<extra></extra>"))
     fig.update_layout(
         height=300, margin=dict(l=50, r=30, t=30, b=35),
         font=dict(color='#1a1a2e'),
@@ -22642,7 +22666,9 @@ def _tk_eci_rate_fig(result, today, eci, markers=()):
         height=360, margin=dict(l=55, r=20, t=30, b=40),
         xaxis=dict(range=[today, x[-1]]),
         yaxis=dict(type="log", title="ECI points a year",
-                   range=[np.log10(5), np.log10(_TK_ECI_RATE_VIEW)]),
+                   range=[np.log10(5), np.log10(_TK_ECI_RATE_VIEW)],
+                   tickvals=[5, 10, 20, 50, 100, 200, 400],
+                   ticktext=["5", "10", "20", "50", "100", "200", "400"]),
         legend=dict(orientation="h", y=-0.15), hovermode="x")
     return fig
 
@@ -23859,6 +23885,7 @@ def _render_takeoff(loading):
         {k: st.session_state["tk_" + k] for k in ("taste_slope", "coding_slope")},
         today=today, pace_today=pace_today)), width="stretch")
     wp = result["workflow_progress"]
+    _tk_render_pace_so_far(today)
     st.markdown("**How the evidence reaches the pace**")
     _fn_caption(
         "Read left to right: each piece of evidence is measured as a yearly rate, "
@@ -23888,7 +23915,6 @@ def _render_takeoff(loading):
         st.markdown(_tk_evidence_math(chain))
 
     st.subheader("1. Research speeds up")
-    _tk_render_pace_so_far(today)
     pace_history = _tk_pace_history(np.exp(experiment_starts) * pace_yield, today)
     pace_note = "from today's ECI growth"
     st.markdown("**Capability relative to 2025**")
