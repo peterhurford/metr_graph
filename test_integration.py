@@ -1081,9 +1081,10 @@ class TestRsiTab:
         assert len(bars) == 1
 
     def test_tasteval_section_charts_without_dating(self):
-        """TasteVal closes the evidence: the multiplier against the 1× expert
-        line, then the paper's prediction curve against its card's bar, with
-        no fan and no row in the automated-coder projection."""
+        """TasteVal: the multiplier against the 1× expert line, run on as a fan
+        from the post-break fit with today's diamond, then the paper's
+        prediction curve against its card's bar, and no row in the
+        automated-coder projection."""
         import json
         import visualize_projection as vp
         at = self._rsi_app()
@@ -1095,7 +1096,10 @@ class TestRsiTab:
             t.get("name") == "Frontier models (fitted)" for t in f["data"]))
         assert mult["layout"]["yaxis"]["type"] == "log"
         assert any(s.get("y0") == s.get("y1") == 1.0 for s in mult["layout"]["shapes"])
-        assert not any("CI" in (t.get("name") or "") for t in mult["data"])
+        names = {t.get("name") for t in mult["data"]}
+        assert {"80% CI", "Median projection"} <= names
+        assert any(str(t.get("text", [""])[0]).startswith("today (est.)")
+                   for t in mult["data"] if t.get("mode") == "markers+text")
         pred = next(f for f in figures if any(
             t.get("name") == "The paper's fit" for t in f["data"]))
         bar = vp._TASTEVAL_PREDICT_BASELINE - vp._TASTEVAL_PREDICT_TARGET / 100 * (

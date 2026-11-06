@@ -7967,9 +7967,9 @@ def _render_rsi_tasteval(end_year):
     """TasteVal: how much compute a model's experiment choices save against
     expert researchers', then how well it predicts an experiment's result.
     Neither enters the automated-coder blend; both feed Takeoff's judgment
-    elasticity and the prediction card. Charted as published, with no fan:
-    the multiplier's bar (the experts) is already passed, and the prediction
-    curve is the paper's own."""
+    elasticity and the prediction card. The multiplier runs on as a fan from
+    the post-GPT-5.2 fit (no bar or ETA: the experts are already passed); the
+    prediction curve is the paper's own."""
     st.subheader("Research taste (TasteVal)")
     _fn_line(
         "Research also means picking which experiment to run. TasteVal has a "
@@ -8034,10 +8034,36 @@ def _render_rsi_tasteval(end_year):
         xref='x domain', x=0.01, y=0.0, yanchor='bottom', xanchor='left',
         text="1× — the best human expert", showarrow=False,
         font=dict(size=11, color='#e74c3c'))
-    _add_today_diamond(fig, next((t.name for t in fig.data if (t.name or '').startswith('From ')), ''),
-                       lambda v: f"{v:.1f}×", label="post-break trend", log=True)
+    # The post-break fit carried on as a fan, like the other evidence charts:
+    # 80% from half to double its doubling time, widened to the t-interval.
+    post = [r for r in rows if r['fitted'] and r['date'] >= brk]
+    _d0, _d1, p_icpt, p_slope = segs[-1]
+    y_top = 6.0
+    if len(post) >= 2 and p_slope > 0:
+        pdays = [(r['date'] - post[0]['date']).days for r in post]
+        fit_dt = 365.25 / p_slope                       # days per doubling
+        dt_lo, dt_hi = _dt_ci_t_widened(pdays, np.log([r['mult'] for r in post]), fit_dt)
+        anchor = post[-1]['date']
+        a_val = 2 ** (p_icpt + p_slope * (anchor - brk).days / 365.25)
+        end = datetime(int(end_year), 12, 31)
+        fdays = np.arange(0, (end - anchor).days + 1, 7, dtype=float)
+        fdates = [anchor + timedelta(days=float(d)) for d in fdays]
+        med = a_val * 2 ** (fdays / fit_dt)
+        fast, slow = a_val * 2 ** (fdays / dt_lo), a_val * 2 ** (fdays / dt_hi)
+        fig.add_trace(go.Scatter(
+            x=fdates + fdates[::-1], y=list(fast) + list(slow[::-1]), fill='toself',
+            mode='lines', fillcolor='rgba(52,152,219,0.18)', line=dict(width=0),
+            name='80% CI', hoverinfo='skip'))
+        fig.add_trace(go.Scatter(
+            x=fdates, y=med.tolist(), mode='lines', name='Median projection',
+            line=dict(color='#2c3e50', dash='dash'),
+            hovertemplate='%{x|%b %d, %Y}<br>Median: %{y:.1f}×<extra></extra>'))
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        y_top = max(y_top, 20 * a_val * 2 ** (max((today - anchor).days, 0) / fit_dt))
+    _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}×",
+                       label="trend", log=True)
     _add_today_vline(fig)
-    x_end = max(datetime.now(), rows[-1]['date']) + timedelta(days=45)
+    x_end = max(datetime(int(end_year), 12, 31), rows[-1]['date']) + timedelta(days=45)
     fig.update_layout(
         height=480, margin=dict(l=50, r=60, t=50, b=40),
         font=dict(color='#1a1a2e'),
@@ -8046,7 +8072,7 @@ def _render_rsi_tasteval(end_year):
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         yaxis=dict(title="Compute multiplier vs. experts (×)", type='log',
-                   range=[np.log10(0.004), np.log10(6)],
+                   range=[np.log10(0.004), np.log10(y_top)],
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         hovermode='closest',
