@@ -1219,7 +1219,7 @@ class TestTakeoffTab:
         assert any(h.value == "Takeoff" for h in at.header)
         # RSI evidence, capability pace, net pace, pace factors, their multiplication,
         # compute, people, ECI, yearly progress and the distributions.
-        assert len(_tk_charts(at)) == 14
+        assert len(_tk_charts(at)) == 15
         # The evidence first, then the takeoff model.
         # The takeoff model's loop and cards lead, then the evidence, then the
         # model's charts.
@@ -1235,7 +1235,7 @@ class TestTakeoffTab:
         staff = at.dataframe[-1].value
         assert len(staff) == 3 and staff.iloc[0, 2].endswith("(estimate from the index)")
         import json
-        dist = json.loads(_tk_charts(at)[13].proto.spec)
+        dist = json.loads(_tk_charts(at)[14].proto.spec)
         # Density and cumulative share for RSI, ultraintelligence and the gap.
         assert len(dist["data"]) == 6
         import base64
@@ -1250,7 +1250,7 @@ class TestTakeoffTab:
         titles = " ".join(a["text"] for a in evidence["layout"]["annotations"])
         for name in ("Next-step + TasteVal", "Staff speedup", "Experiments/researcher"):
             assert name in titles
-        yearly = json.loads(_tk_charts(at)[12].proto.spec)
+        yearly = json.loads(_tk_charts(at)[13].proto.spec)
         # Last year measured, this year partly, then each year to the sidebar's.
         assert yearly["data"][0]["x"] == list(range(datetime.now().year - 1, 2031))
         assert yearly["layout"]["yaxis"]["title"]["text"] == "Years of 2025-level ECI progress"
@@ -1389,7 +1389,7 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", old_simulator)
         at = self._app()
         assert tk.simulate is not old_simulator
-        assert len(_tk_charts(at)) == 14
+        assert len(_tk_charts(at)) == 15
 
     def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
         import takeoff_model as tk
@@ -3186,15 +3186,16 @@ class TestTodayForwardMode:
         assert not [c for c in at.checkbox if c.key == "today_fwd"]
 
     def test_takeoff_converts_its_projections_not_the_evidence(self):
-        """The RSI projection's CDF and the ten takeoff projections go
-        forward; the evidence charts above them keep their history."""
+        """The RSI projection's CDF and the eleven takeoff projections (the
+        ECI growth chart included) go forward; the evidence charts above them
+        keep their history."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Takeoff")
         at.checkbox(key="today_fwd").set_value(True).run()
         specs = self._specs(at)
         fwd = [sp for sp in specs if self._starts_today(sp)]
-        assert len(fwd) == 11
+        assert len(fwd) == 12
         assert fwd[0]["layout"]["yaxis"]["title"]["text"] == "Chance crossed by then"
         assert len(specs) > len(fwd)
 

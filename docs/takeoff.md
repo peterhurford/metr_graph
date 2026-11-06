@@ -241,7 +241,7 @@ estimate; all five workforce assumptions are *Advanced* inputs, `tk_wf_*`, read 
 the automation index's share of today's work spread over those copies (~0.13 people), rising
 as (ECI / today's)^`_TK_AI_COMPETENCE_POWER`. Counts
 read k/M/B/T (`_tk_count`, axis `exponentformat="B"`), carried in `text` so today-forward
-can still relabel the dates. A readout, never an input), **4. What it does to capability (ECI)** (plus *2025-level ECI progress in
+can still relabel the dates. A readout, never an input), **4. What it does to capability (ECI)** (plus *How fast ECI climbs*, `_tk_eci_rate_fig`: each scenario's ECI change over a centred six-month window (`_TK_ECI_RATE_WINDOW`) per year, median and middle 80%, against today's setting and the 2024–25 average; and *2025-level ECI progress in
 each year*, `_tk_yearly_fig`: ECI gained per calendar year over what the frontier gained
 in `_TK_YEARLY_BASE_YEAR` (`_tk_year_gain`, 13.5 points, below the 15.7-point fitted trend
 the ECI chart uses, so these bars read ~1.16× that trend's), a different 2025 unit from

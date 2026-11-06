@@ -22388,6 +22388,65 @@ def _tk_eci_fig(result, today, eci, markers=()):
     return fig
 
 
+# ECI growth is read over this centred window (years): models ship in steps,
+# so a shorter one spikes at each release.
+_TK_ECI_RATE_WINDOW = 0.5
+# The rate chart's view stops at this many points a year; runaways go higher.
+_TK_ECI_RATE_VIEW = 400.0
+
+
+def _tk_eci_rate_quantiles(eci, years, window=_TK_ECI_RATE_WINDOW):
+    """(dates' year offsets, [10, 50, 90] quantiles of ECI points a year): each
+    scenario's ECI change over a centred `window`, per year, then quantiles
+    across scenarios. Ends half a window in from the simulation's ends."""
+    paths = np.asarray(eci["paths"], dtype=float)
+    h = window / 2
+    mid = years[(years >= years[0] + h) & (years <= years[-1] - h)]
+    lo = np.searchsorted(years, mid - h)
+    hi = np.minimum(np.searchsorted(years, mid + h), len(years) - 1)
+    rate = (paths[:, hi] - paths[:, lo]) / (years[hi] - years[lo])
+    return mid, np.quantile(rate, [.1, .5, .9], axis=0).T
+
+
+def _tk_eci_rate_fig(result, today, eci, markers=()):
+    """ECI points gained a year: the scenarios' median and middle 80%, against
+    today's setting and the US frontier's 2024-25 average (the 1x pace)."""
+    years = np.asarray(result["workflow_progress"]["years"], dtype=float)
+    mid, q = _tk_eci_rate_quantiles(eci, years)
+    x = [today + timedelta(days=float(y * 365.25)) for y in mid]
+    q = np.clip(q, 0.1, _TK_ECI_RATE_VIEW * 10)
+    base = _tk_eci_scale(takeoff.DEFAULTS)[2]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x, y=q[:, 0], mode="lines", line=dict(width=0),
+                             hoverinfo="skip", showlegend=False))
+    fig.add_trace(go.Scatter(x=x, y=q[:, 2], mode="lines", line=dict(width=0),
+                             fill="tonexty", fillcolor="rgba(192,57,43,0.15)",
+                             name="Middle 80% of scenarios", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(
+        x=x, y=q[:, 1], mode="lines", name="ECI gained a year (median)",
+        line=dict(color="#c0392b", width=2.5),
+        hovertemplate="%{x|%b %Y}<br>%{y:.0f} ECI points a year<extra>Median</extra>"))
+    for y, name, dash in ((eci["ppy"], f"Today's setting: {eci['ppy']:g}/yr", "dash"),
+                          (base, f"2024–25 average: {base:.1f}/yr", "dot")):
+        fig.add_hline(y=y, line=dict(color="#7f8c8d", width=1.2, dash=dash))
+        # By hand: on a log axis plotly reads an annotation's y as the exponent.
+        fig.add_annotation(xref="x domain", x=0.99, y=np.log10(y), text=name,
+                           showarrow=False, xanchor="right", yanchor="bottom",
+                           font=dict(color="#7f8c8d", size=11))
+    for i, (label, when) in enumerate(markers):
+        fig.add_vline(x=when, line_dash="dot", line_color="#b0b0b0", line_width=1)
+        fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper", text=label,
+                           showarrow=False, xanchor="left", font=dict(size=11, color="#888"))
+    fig.add_vline(x=today, line_color="#555", line_width=1.5)
+    fig.update_layout(
+        height=360, margin=dict(l=55, r=20, t=30, b=40),
+        xaxis=dict(range=[today, x[-1]]),
+        yaxis=dict(type="log", title="ECI points a year",
+                   range=[np.log10(5), np.log10(_TK_ECI_RATE_VIEW)]),
+        legend=dict(orientation="h", y=-0.15), hovermode="x")
+    return fig
+
+
 # Years of 2025-level progress made in one calendar year: the chart's view
 # stops here, since a runaway year's count is unbounded.
 _TK_YEARLY_VIEW = 100
@@ -23867,6 +23926,16 @@ def _render_takeoff(loading):
          "so ultraintelligence would come later. For the first year ECI is floored at the trend, since no new model has "
          "shipped yet."))
     st.plotly_chart(_tf(_tk_to(_tk_eci_fig(result, today, eci, markers), view_end)),
+                    width="stretch")
+    st.markdown("**How fast ECI climbs**")
+    _fn_caption(
+        "ECI points gained a year in each scenario, read over six months so single "
+        "model releases don't spike it. A rising line is superexponential growth.",
+        ("read over six months",
+         "Each scenario's ECI change over a centred six-month window, per year; then "
+         "the median and middle 80% across scenarios. The dashed line is today's "
+         "setting, the dotted one the 2024–25 average (1× pace)."))
+    st.plotly_chart(_tf(_tk_to(_tk_eci_rate_fig(result, today, eci, markers), view_end)),
                     width="stretch")
     st.markdown("**2025-level ECI progress in each year**")
     _fn_caption(
