@@ -77,9 +77,18 @@ def _rsi_cdf_index(at):
                 == "Chance crossed by then")
 
 
+def _evidence_end_index(at):
+    """Position of the research-pace chart, the evidence half's last chart."""
+    import json
+    specs = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+    return next(i for i, sp in enumerate(specs)
+                if ((sp["layout"].get("yaxis") or {}).get("title") or {}).get("text")
+                == "Research pace (× the 2024–26 line)")
+
+
 def _tk_charts(at):
     """The takeoff model's own charts, after the RSI evidence above them."""
-    return at.get("plotly_chart")[_rsi_cdf_index(at) + 1:]
+    return at.get("plotly_chart")[_evidence_end_index(at) + 1:]
 
 
 def _span_mo(text):
@@ -986,7 +995,7 @@ class TestRsiTab:
         # would sit on its own left edge. Calendar charts are the ones whose
         # explicit x range is a pair of date strings.
         charts = [json.loads(el.proto.spec)["layout"]
-                  for el in at.get("plotly_chart")[:_rsi_cdf_index(at) + 1]]
+                  for el in at.get("plotly_chart")[:_evidence_end_index(at) + 1]]
         def _calendar(L):
             x = L.get("xaxis") or {}
             rng = x.get("range") or []
@@ -1214,7 +1223,8 @@ class TestTakeoffTab:
                                                 "Inside the takeoff model"]
         subs = [s.value for s in at.subheader]
         assert subs.index("CoBench") < subs.index("Automated coder projection")
-        assert subs[subs.index("Automated coder projection") + 1:][:7] == [
+        assert subs[subs.index("Automated coder projection") + 1:][:9] == [
+            "METR's acceleration assessment", "Research pace, by this model's definition",
             "What the evidence feeds in", "1. Research speeds up", "2. People step out of the loop",
             "3. The research workforce", "4. What it does to capability (ECI)",
             "5. When it happens, and how fast", "6. Against Anthropic Staff"]

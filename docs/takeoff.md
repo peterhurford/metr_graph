@@ -350,10 +350,11 @@ CDF (`_tk_charts`).
 
 `render_rsi()` runs CoBench, then the R&D automation index,
 then the staff survey, then
-merged code per person, OpenAI experiment velocity, METR's acceleration assessment
-(`_render_rsi_metr`), research direction, then TasteVal
+merged code per person, OpenAI experiment velocity, research direction, then TasteVal
 (`_render_rsi_tasteval()`), then *Capabilities Milestones* + *Automated coder projection* (`_pc_render_milestones()`,
-moved here from the Pacing tab). The CoBench section plots that eval — Anthropic's
+moved here from the Pacing tab), then METR's assessment and the research pace it implies
+(`_render_rsi_metr`, `_render_rsi_pace`), last, just above the model that reads that pace.
+Tests find the takeoff model's charts after that pace chart (`_evidence_end_index`). The CoBench section plots that eval — Anthropic's
 internal AI R&D benchmark — against release
 date, with a fitted trend, a projection fan and `_RSI_SUBSTITUTION_BAR` drawn as
 its bar (Anthropic's own stated score for a model that could fully substitute for

@@ -6654,8 +6654,6 @@ def render_rsi(end_year):
     _render_rsi_survey(rsi_end_year)
     _render_rsi_code(rsi_end_year)
     _render_rsi_experiments(rsi_end_year)
-    _render_rsi_metr()
-    _render_rsi_pace()
     _render_rsi_direction(rsi_end_year)
     _render_rsi_tasteval(rsi_end_year)
 
@@ -6668,6 +6666,10 @@ def render_rsi(end_year):
                               "rsi_notyet_ramp",
                               _RSI_DEFAULTS["rsi_notyet_ramp"]),
                           end_year=rsi_end_year)
+    # METR's assessment and the pace it implies close the evidence, just above
+    # the takeoff model that reads that pace.
+    _render_rsi_metr()
+    _render_rsi_pace()
 
 
 # The ladder's colours: a light-to-saturated ramp, so the rungs read as one
