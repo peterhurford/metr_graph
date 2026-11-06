@@ -22578,6 +22578,28 @@ def _tk_eci_fig(result, today, eci, markers=()):
         line=dict(color="#333", width=1.5, shape="hv"), marker=dict(color="#333", size=6),
         text=[m['name'] for m in past],
         hovertemplate="%{text}<br>%{x|%b %Y}: %{y:.1f}<extra></extra>"))
+    # The trained frontier: public models plus Anthropic's internal ones
+    # projected onto Epoch's scale, joined (dotted) to where projections start.
+    trained = [m for m in eci.get("trained", []) if m['date'] >= datetime(2024, 1, 1)]
+    if trained:
+        internal = {r['model'] for r in _metr_on_eci() if r['kind'] == 'internal'}
+        inner = [m for m in trained if m['name'] in internal]
+        fig.add_trace(go.Scatter(
+            x=[m['date'] for m in trained] + [today],
+            y=[m['eci_score'] for m in trained] + [trained[-1]['eci_score']],
+            mode="lines", name="Trained frontier (internal models included)",
+            line=dict(color="#d8774f", width=1.5, shape="hv"), hoverinfo="skip"))
+        fig.add_trace(go.Scatter(
+            x=[m['date'] for m in inner], y=[m['eci_score'] for m in inner],
+            mode="markers", name="Anthropic internal (ECI projected)",
+            marker=dict(color="#d8774f", symbol="square-open", size=8, line=dict(width=2)),
+            text=[m['name'] for m in inner],
+            hovertemplate="%{text} (internal)<br>%{x|%b %d, %Y}: ECI %{y:.1f} "
+                          "projected<extra></extra>"))
+        fig.add_trace(go.Scatter(
+            x=[trained[-1]['date'], today], y=[trained[-1]['eci_score'], eci["now"]],
+            mode="lines", line=dict(color="#c0392b", width=1.5, dash="dot"),
+            hoverinfo="skip", showlegend=False))
     fig.add_trace(go.Scatter(x=x, y=q[:, 0], mode="lines", line=dict(width=0),
                              name="Projected ECI: 10th percentile",
                              hoverinfo="skip", showlegend=False))
