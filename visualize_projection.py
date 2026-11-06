@@ -1665,9 +1665,18 @@ def _rsi_auto_start(rows):
     cur = [r for r in rows if r['fitted']][-1]
     fitted = icpt + slope * (cur['date'] - base).days
     observed = _logit(min(max(cur['al4'], 0.05), 99.95) / 100)
+    return (cur,) + _fan_start(fitted, observed, _rsi_auto_pos_sigma(cur))
+
+
+def _fan_start(fitted, observed, sigma):
+    """(centre, sigma) of an evidence fan's start, in the fit's own space.
+
+    Midway between the fitted line and the latest reading, `sigma` widened so
+    the 80% band reaches both: a reading off the trend is evidence the fan
+    must cover, and a start on the line alone leaves it outside the 90% band.
+    """
     half_gap = abs(fitted - observed) / 2
-    sigma = float(np.hypot(_rsi_auto_pos_sigma(cur), half_gap / 1.282))
-    return cur, (fitted + observed) / 2, sigma
+    return (fitted + observed) / 2, float(np.hypot(sigma, half_gap / 1.282))
 
 
 def _rsi_auto_reach(rows, key, share, epoch=None):
@@ -7054,8 +7063,9 @@ def _render_rsi_survey(end_year):
         proj_slope = np.log(2) / np.maximum(
             _lognormal_from_ci(*_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
         fitted = intercept + slope * (cur['date'] - base).days
-        sigma = np.log(_RSI_SURVEY_POS_FACTOR) / 1.282
-        start_log = np.random.normal(fitted, sigma, n)
+        centre, sigma = _fan_start(fitted, np.log(cur['uplift']),
+                                   np.log(_RSI_SURVEY_POS_FACTOR) / 1.282)
+        start_log = np.random.normal(centre, sigma, n)
 
         pdays = _fan_days(max((datetime(end_year, 12, 31) - cur['date']).days, 1))
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
@@ -7199,8 +7209,8 @@ def _render_rsi_code(end_year):
         proj_slope = np.log(2) / np.maximum(
             _lognormal_from_ci(*_rsi_code_dt_ci(rows, dt), n=n), 1.0)
         fitted = icpt + slope * (cur['date'] - base).days
-        start_log = np.random.normal(
-            fitted, np.log(_RSI_CODE_POS_FACTOR) / 1.282, n)
+        start_log = np.random.normal(*_fan_start(
+            fitted, np.log(cur['mult']), np.log(_RSI_CODE_POS_FACTOR) / 1.282), n)
 
         pdays = _fan_days(max((datetime(end_year, 12, 31) - cur['date']).days, 1))
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
@@ -7359,7 +7369,8 @@ def _rsi_experiment_draws(rows, n=None):
     slopes = np.log(2) / np.maximum(
         rng.lognormal(np.log(dt), np.log(2) / 1.282, n), 1.0)
     fitted = icpt + slope * (rows[-1]['date'] - base).days
-    starts = rng.normal(fitted, np.log(_RSI_EXPERIMENT_POS_FACTOR) / 1.282, n)
+    starts = rng.normal(*_fan_start(fitted, np.log(rows[-1]['mult']),
+                                    np.log(_RSI_EXPERIMENT_POS_FACTOR) / 1.282), n)
     return starts, slopes
 
 
@@ -8219,12 +8230,20 @@ def _render_rsi_tasteval(end_year):
         fit_dt = 365.25 / p_slope                       # days per doubling
         dt_lo, dt_hi = _dt_ci_t_widened(pdays, np.log([r['mult'] for r in post]), fit_dt)
         anchor = post[-1]['date']
-        a_val = 2 ** (p_icpt + p_slope * (anchor - brk).days / 365.25)
+        fitted = np.log(2) * (p_icpt + p_slope * (anchor - brk).days / 365.25)
+        centre, sigma = _fan_start(fitted, np.log(post[-1]['mult']), 0.0)
+        # A local generator: this chart's draws must not shift the tab's stream.
+        rng = np.random.default_rng(20261106)
+        n = N_SAMPLES
+        starts = rng.normal(centre, sigma, n)
+        slopes = np.log(2) / rng.lognormal(
+            np.log(np.sqrt(dt_lo * dt_hi)), np.log(dt_hi / dt_lo) / (2 * 1.282), n)
         end = datetime(int(end_year), 12, 31)
-        fdays = np.arange(0, (end - anchor).days + 1, 7, dtype=float)
+        fdays = _fan_days(max((end - anchor).days, 1))
         fdates = [anchor + timedelta(days=float(d)) for d in fdays]
-        med = a_val * 2 ** (fdays / fit_dt)
-        fast, slow = a_val * 2 ** (fdays / dt_lo), a_val * 2 ** (fdays / dt_hi)
+        pct = _fan_pctiles(starts, slopes, fdays, (10, 50, 90))
+        med, fast, slow = pct[50], pct[90], pct[10]
+        a_val = float(np.exp(centre))
         fig.add_trace(go.Scatter(
             x=fdates + fdates[::-1], y=list(fast) + list(slow[::-1]), fill='toself',
             mode='lines', fillcolor='rgba(52,152,219,0.18)', line=dict(width=0),
@@ -17814,8 +17833,8 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
     The RSI tab's survey fan at its defaults — OLS on log(multiple) over
     every round the tab fits (the carried-over `estimated` point included),
     doubling time lognormal over `_rsi_survey_dt_ci()`'s t-widened interval,
-    position lognormal over the fitted multiple divided and multiplied by
-    `_RSI_SURVEY_POS_FACTOR`. Returns None if the fitted slope is flat or
+    position lognormal from `_fan_start()` between the fit and the latest
+    round, base width `_RSI_SURVEY_POS_FACTOR`. Returns None if the fitted slope is flat or
     negative.
     """
     n = n or N_SAMPLES
@@ -17829,7 +17848,8 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
     proj_slope = np.log(2) / np.maximum(
         _lognormal_from_ci(*_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
     fitted = intercept + slope * (rows[-1]['date'] - base).days
-    start = np.random.normal(fitted, np.log(_RSI_SURVEY_POS_FACTOR) / 1.282, n)
+    start = np.random.normal(*_fan_start(fitted, np.log(rows[-1]['uplift']),
+                                         np.log(_RSI_SURVEY_POS_FACTOR) / 1.282), n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
     return _pc_eta_out(rows[-1]['date'], days_to, samples)
 
@@ -17844,8 +17864,8 @@ def _pc_rsi_code_eta(rows, target_x=_RSI_CODE_TARGET, n=None, samples=False):
 
     The section's fan at its defaults — OLS on log(multiple) over the quarters
     from 2025 on, doubling time lognormal over `_rsi_code_dt_ci()`, position
-    lognormal over the fitted multiple divided and multiplied by
-    `_RSI_CODE_POS_FACTOR`. Returns None if the fitted slope is flat.
+    lognormal from `_fan_start()` between the fit and the latest quarter, base
+    width `_RSI_CODE_POS_FACTOR`. Returns None if the fitted slope is flat.
     """
     n = n or N_SAMPLES
     base, icpt, slope = _rsi_code_fit(rows)
@@ -17855,7 +17875,8 @@ def _pc_rsi_code_eta(rows, target_x=_RSI_CODE_TARGET, n=None, samples=False):
         _lognormal_from_ci(*_rsi_code_dt_ci(rows, np.log(2) / slope), n=n), 1.0)
     cur = rows[-1]
     fitted = icpt + slope * (cur['date'] - base).days
-    start = np.random.normal(fitted, np.log(_RSI_CODE_POS_FACTOR) / 1.282, n)
+    start = np.random.normal(*_fan_start(fitted, np.log(cur['mult']),
+                                         np.log(_RSI_CODE_POS_FACTOR) / 1.282), n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
     return _pc_eta_out(cur['date'], days_to, samples)
 

@@ -529,9 +529,13 @@ things are load-bearing.
 2. **The hatched final bar is fitted, at its quarter's midpoint like the rest.**
    It averages only the days observed when the post went up, so a midpoint date
    is later than the days it covers — which reads the ramp slow, not hot.
-3. **The position CI is the fit's own residual scatter** (`_RSI_CODE_POS_FACTOR`),
-   not the survey's one-significant-figure allowance: this series is counted,
-   not self-reported. The rate CI is `_dt_ci_t_widened` like the other two.
+3. **The position CI starts at `_RSI_CODE_POS_FACTOR`**, not the survey's
+   one-significant-figure allowance: this series is counted, not self-reported.
+   Like every fitted evidence fan (survey, code, experiments, TasteVal, and the
+   automation index's `_rsi_auto_start`), it starts at `_fan_start`: midway
+   between the fit and the latest reading, widened so the 80% band reaches
+   both (`test_fan_start_reaches_both_the_fit_and_the_reading`). The rate CI is
+   `_dt_ci_t_widened` like the other two.
 4. **The target label is added by hand**, here and on the survey chart's
    `_PC_RSI_SURVEY_TARGET_X` bar. On a log axis plotly reads an annotation's y
    as the exponent, so `add_hline(annotation_text=…)` parks the label at 10^30

@@ -2904,6 +2904,16 @@ class TestRsiCode:
         pooled = vp.fit_line(all_days, np.log([r['mult'] for r in rows]))[1]
         assert pooled < slope / 2
 
+    def test_fan_start_reaches_both_the_fit_and_the_reading(self):
+        """`_fan_start`'s 80% band spans the fitted line and the latest
+        reading, so a reading off the trend (the S-1's 41.7x against a ~20x
+        fit) lands inside the fan instead of past its 90% edge."""
+        fitted, observed = np.log(20.0), np.log(41.7)
+        centre, sigma = vp._fan_start(fitted, observed, np.log(1.3) / 1.282)
+        assert centre == pytest.approx((fitted + observed) / 2)
+        assert centre - 1.282 * sigma <= fitted and observed <= centre + 1.282 * sigma
+        assert vp._fan_start(fitted, fitted, 0.2) == pytest.approx((fitted, 0.2))
+
 
 class TestRsiAutomation:
     """Anthropic's R&D Automation Index — the AL4 ("AI leads") share.
@@ -3192,7 +3202,10 @@ class TestRsiMilestoneCards:
         want_anchor, (base, icpt, slope), target_y, (anchor, days) = \
             self._case(which)
         assert anchor == want_anchor
-        deterministic = (target_y - (icpt + slope * (anchor - base).days)) / slope
+        start = icpt + slope * (anchor - base).days
+        if which == 'code':     # the fan starts between the fit and the reading
+            start = vp._fan_start(start, np.log(vp.load_rsi_code()[-1]['mult']), 0.0)[0]
+        deterministic = (target_y - start) / slope
         assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
 
     def test_milestone_cards_are_weighted_in_the_blend(self):
