@@ -2676,10 +2676,11 @@ class TestRsi:
         assert lo3 < np.log(2) / slope
 
     def test_small_sample_ci_widens_both_rsi_fits(self):
-        """Live data: CoBench's four frontier points and the survey's four
-        rounds (the estimated one included) each leave two residual dof, so
-        both slow edges widen past the convention but stay under the cap.
-        If a new round moves either, update this."""
+        """Live data: CoBench's four frontier points leave two residual dof, so
+        its slow edge widens past the convention but stays under the cap. The
+        survey's eight rounds (METR's readings added) no longer need widening:
+        its interval is the convention, never narrower. If a new round moves
+        either, update this."""
         fr = [m for m in vp.load_rsi_data() if m['is_frontier']]
         _, _, slope = vp._rsi_fit(fr)
         dt = np.log(2) / slope
@@ -2690,15 +2691,15 @@ class TestRsi:
         _, sslope = vp.fit_line(days, np.log([r['uplift'] for r in rows]))
         sdt = np.log(2) / sslope
         slo, shi = vp._rsi_survey_dt_ci(rows, sdt)
-        assert round(sdt * 2) < shi < vp._DT_CAP_DAYS
+        assert round(sdt * 2) <= shi < vp._DT_CAP_DAYS
         assert slo <= round(sdt / 2)
 
-    def test_survey_eta_includes_the_estimated_round(self, monkeypatch):
-        """The card fits and anchors on every round the tab fits — the
-        carried-over Model 2 point included, whose flat reading is the
-        reason the slope runs shallower than the surveyed points alone."""
+    def test_survey_eta_fits_every_round_metrs_included(self, monkeypatch):
+        """The card fits and anchors on every round the tab fits, METR's
+        digitized Slack-poll readings included; the latest is Model 4's."""
         rows = vp.load_rsi_survey()
-        assert rows[-1].get('estimated')
+        assert rows[-1]['name'] == "Model 4 (internal)" and rows[-1].get('metr')
+        assert not any(r.get('estimated') for r in rows)
         seen = []
         real = vp._rsi_survey_dt_ci
         monkeypatch.setattr(vp, '_rsi_survey_dt_ci',
@@ -2711,8 +2712,6 @@ class TestRsi:
             return np.log(2) / vp.fit_line(np.array(days, dtype=float),
                                            np.log([r['uplift'] for r in rs]))[1]
         assert seen == [pytest.approx(fit_dt(rows))]
-        surveyed = fit_dt([r for r in rows if not r.get('estimated')])
-        assert seen[0] > surveyed * 1.05
 
 
 class TestRsiDirection:

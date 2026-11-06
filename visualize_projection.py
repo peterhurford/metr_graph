@@ -1181,11 +1181,18 @@ def _rsi_date_label(m, fmt='%b %d, %Y'):
 # multiple against no AI assistance, per frontier model. The rounds do not all
 # report the same statistic on the same sample, so each point carries its own
 # `note` on hover; the numbers are self-reported to one significant figure,
-# hence the "~" everywhere they render. Opus 4 (May 2025) is deliberately not
-# carried: that round reported no number, only that the result fell under the
-# pre-set 3x median rule-out threshold, and a bound is not a point on a trend.
+# hence the "~" everywhere they render. Opus 4's own system-card round reported
+# only a bound (under the 3x rule-out), so its point is METR's instead.
+# Rows marked `metr` are digitized from METR's *Informal self-reported uplift*
+# chart (Nov 2026, `_METR_ACCEL_SOURCE_URL`): Anthropic's targeted surveys and
+# broad Slack polls, which METR calls very loose evidence. A METR reading of a
+# round already listed here is not added twice.
 
 _RSI_SURVEY = [
+    {"name": "Claude 3.7 Sonnet", "date": "2025-02-24", "uplift": 1.2, "metr": True,
+     "note": "targeted survey, hours saved (METR's chart)"},
+    {"name": "Opus 4", "date": "2025-05-22", "uplift": 1.3, "metr": True,
+     "note": "targeted survey, hours saved (METR's chart)"},
     {"name": "Opus 4.5", "date": "2025-11-24", "uplift": 2.0,
      "note": "n=18, top ~30 staff by internal Claude Code use · median (mean 3.2x)"
              "<br>0 of 18 thought it crossed AI R&D-4"},
@@ -1196,14 +1203,18 @@ _RSI_SURVEY = [
     {"name": "Mythos Preview", "date": "2026-04-07", "uplift": 4.0,
      "note": "n=130, opt-in Slack poll · geometric mean, past week's work output"
              "<br>1 of 18 in a separate poll said a drop-in L4 already exists"},
-    # No round was run for Model 2 (internal); ~4x is carried over from Mythos
-    # Preview as the best available read. `estimated` draws it hollow as an
-    # assumed value, but it is *in* the fit: with only three surveyed rounds,
-    # ignoring the one flat reading available overstates the slope.
-    {"name": "Model 2 (internal)", "date": "2026-07-06", "uplift": 4.0,
-     "estimated": True,
-     "note": "no survey run · ~4x carried over from Mythos Preview"},
+    {"name": "Opus 4.6 (broad poll)", "date": "2026-02-05", "uplift": 2.8, "metr": True,
+     "note": "broad Slack poll (METR's chart)"},
+    {"name": "Mythos 5", "date": "2026-06-09", "uplift": 5.1, "metr": True,
+     "note": "broad Slack poll (METR's chart)"},
+    {"name": "Model 4 (internal)", "date": "2026-09-24", "uplift": 12.0, "metr": True,
+     "note": "broad Slack poll, first internal use (METR's chart)"},
 ]
+
+# Label positions where neighbouring rounds would collide (same or near dates).
+_RSI_SURVEY_LABEL_AT = {"Opus 4.5": "top left", "Opus 4.6": "bottom right",
+                        "Claude 3.7 Sonnet": "top center", "Opus 4": "bottom right",
+                        "Model 4 (internal)": "top center"}
 
 # The survey fan's position CI: the fitted multiple divided and multiplied by
 # this. Self-reports to one significant figure don't support anything tighter.
@@ -6403,8 +6414,8 @@ def _dt_ci_t_widened(days, ys, fit_dt):
 def _rsi_survey_dt_ci(rows, fit_dt):
     """Default 80% CI on the survey's doubling time, in days.
 
-    `_dt_ci_t_widened` over every point the fit uses (the carried-over
-    `estimated` round included, like the fit itself).
+    `_dt_ci_t_widened` over every point the fit uses, METR's digitized
+    readings included, like the fit itself.
     """
     return _dt_ci_t_widened(
         [(r['date'] - rows[0]['date']).days for r in rows],
@@ -7076,15 +7087,19 @@ def _render_rsi_survey(end_year):
                 mode='lines', line=dict(color='#4F8DFD', width=1.5),
                 opacity=0.35, hoverinfo='skip', showlegend=False))
         _est = r.get('estimated', False)
+        _metr = r.get('metr', False)
         fig.add_trace(go.Scatter(
             x=[r['date']], y=[r['uplift']], mode='markers+text',
             marker=dict(color='white' if _est else '#4F8DFD', size=13,
+                        symbol='triangle-up' if _metr else 'circle',
                         line=dict(color='#4F8DFD', width=2) if _est
                         else dict(color='white', width=2)),
             text=[r['name'] + (' (est.)' if _est else '')],
-            # Below the marker for the estimate: the median projection passes
-            # just above it, and a top label lands on the line.
-            textposition='bottom center' if _est else 'top center',
+            # METR's readings label to the right, so two rounds on one date
+            # don't collide; Model 4's goes above, clear of today's diamond.
+            textposition=_RSI_SURVEY_LABEL_AT.get(
+                r['name'], 'bottom center' if _est else
+                'middle right' if _metr else 'top center'),
             textfont=dict(size=10, color='#999999' if _est else '#1a1a2e'),
             hovertext=f"{r['name']}<br>{r['date'].strftime('%b %Y')}<br>"
                       f"~{r['uplift']:g}x output vs no AI<br>{r['note']}",
@@ -7110,7 +7125,7 @@ def _render_rsi_survey(end_year):
                    gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
         yaxis=dict(title="Self-reported output vs. no AI assistance",
-                   type='log', range=[0, np.log10(y_top * 1.3)],
+                   type='log', range=[np.log10(0.8), np.log10(y_top * 1.3)],
                    # Decades only, as on the merged-code chart: the default
                    # log axis labels every minor tick and buries them.
                    dtick=1, ticksuffix='x',

@@ -490,18 +490,16 @@ substitution series, the internal staff survey (§3.4.2): self-reported output
 multiple against no AI assistance, from `_RSI_SURVEY` via `load_rsi_survey()`,
 fitted and projected on **log(multiple)** — a multiple has no ceiling to bound it
 against, so it compounds the way METR's horizon does rather than saturating like
-a percentage. Three things are load-bearing. Opus 4's round is not carried at
-all: it reported no number, only that the result fell under the pre-set 3x median
-rule-out threshold, and a bound is not a point on a trend. Model 2 (internal)
-has an `estimated` point carried over from Mythos Preview — no round was run for it —
-which draws hollow as an assumed value but is **included in the fit and the
-anchor**: with only three surveyed rounds, ignoring the one flat reading
-available overstates the slope, so the flattening is the point, not a bug (the
-flag governs styling only). The rounds do not
+a percentage. Three things are load-bearing. Rows marked `metr` are read off METR's
+*Informal self-reported uplift* chart (Nov 2026): targeted surveys for Claude 3.7
+Sonnet and Opus 4 (whose system-card round gave only a bound), and broad Slack polls
+for Opus 4.6, Mythos 5 and Model 4 (12×); a METR reading of a round already listed is
+not added twice. They are fitted like the rest (log-linear, ~3.9×/yr; METR's own
+exponential fit is 3.9×/yr). The carried-over Model 2 estimate is gone, superseded by
+real later readings (`test_survey_eta_fits_every_round_metrs_included`). The rounds do not
 report the same statistic on the same sample (medians on superusers, then on a
 broader sample, then a geometric mean on an opt-in poll), so each point carries
-its `note` on hover and the caption says the rounds differ — and the survey is
-not discontinued, the report says only that no new round was run for Mythos 5.
+its `note` on hover and the caption says the rounds differ.
 The fan runs to the tab's *Project through* year like every chart, but the log axis
 stops at `_RSI_MULTIPLE_VIEW`× the bar (the code chart likewise): at the fitted doubling
 time the median runs orders of magnitude past the data by end-decade, which would squash
