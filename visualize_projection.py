@@ -22073,7 +22073,7 @@ def _tk_flow_dot(v):
     c = v["chain"]
     p = _TK_PACE_COLOR
     pur, ora, grn, blu, red = "#8e44ad", "#d68910", "#16a085", "#2980b9", "#c0392b"
-    ln = f"ln {c['cap_y']:.1f}"
+    ln = f"per ×{c['cap_y']:.1f}/yr\\nof capability"
     (pre, pre_m, pre_q, pre_e), (post, post_m, post_q, post_e) = c["tv"]
     used = (f"{c['judgment_used']:.2f} used" if abs(c["judgment_used"] - c["judgment_set"]) > 0.005
             else "")
@@ -22093,13 +22093,13 @@ def _tk_flow_dot(v):
         # The yardstick every elasticity divides by.
         node("y_ev", "Compute (Data Centers)\\n× software at today's pace", blu),
         node("y_me", f"capability ×{c['cap']:.2f}\\nover Jan–Aug 2026", blu),
-        node("y_cv", f"= ×{c['cap_y']:.1f} a year\\n(the yardstick)", blu),
+        node("y_cv", f"capability grows ×{c['cap_y']:.1f}/yr:\\nwhat each reading\\nis measured against", blu),
         # Judgment readings.
         node("n_ev", "Next-step study\\nwin odds vs researcher", pur),
         node("n_me", f"odds ×{c['odds_y']:.2f}\\na year", pur),
         node("n_cv", f"^{c['odds_power']:g} → ×{c['value_y']:.2f}\\n→ reading {c['e_ns']:.2f}", pur),
         node("t_ev", "TasteVal compute\\nmultiplier", pur),
-        node("t_me", f"before: ×{pre_m:.1f}/yr\\nafter: ×{post_m:.0f}/yr", pur),
+        node("t_me", f"multiplier grows ×{pre_m:.1f}/yr\\n(rate before GPT-5.2) or\\n×{post_m:.0f}/yr (rate since)", pur),
         node("t_cv", f"^{c['tv_power']:g} → ×{pre_q:.1f}, ×{post_q:.1f}\\n→ {pre_e:.2f}, {post_e:.2f}", pur),
         node("pj", f"Judgment {c['judgment_set']:.2f}\\n(geometric mean)" + (f"\\n{used}" if used else ""), pur),
         # Experiment calibration.
@@ -22110,10 +22110,10 @@ def _tk_flow_dot(v):
         # Coding labor.
         node("s_ev", "Staff speedup\\nsurvey", ora),
         node("s_me", f"output ×{c['survey_y']:.2f}\\na year", ora),
-        node("s_cv", f"÷ more copies ×{c['copies_y']:.3f}\\n→ ×{c['survey_y'] / c['copies_y']:.2f}", ora),
+        node("s_cv", f"less what just running\\nmore copies adds (+{100 * (c['copies_y'] - 1):.1f}%/yr)\\n→ ×{c['survey_y'] / c['copies_y']:.2f}", ora),
         node("pc", f"Coding labor {c['coding']:.2f}", ora),
         # Other inputs.
-        node("ix", "R&D automation index", grn),
+        node("ix", "R&D automation index\\n(AL4 / AL5)", grn),
         node("ph", "People's share\\nof the work", grn),
         node("pk", f"Compute ×{v['compute_growth']:.1f}\\nin year one", blu),
         node("pn", f"Staff +{v['hiring']:g}%/yr\\nreturns r = {v['returns']:g}", red),
@@ -22135,8 +22135,8 @@ def _tk_flow_dot(v):
         edge("n_ev", "n_me"), edge("n_me", "n_cv"), edge("n_cv", "pj"),
         edge("t_ev", "t_me", f"at {c['E']:g} ECI/yr"), edge("t_me", "t_cv"), edge("t_cv", "pj"),
         edge("x_ev", "x_me"), edge("x_me", "x_cv"),
-        edge("s_ev", "s_me"), edge("s_me", "s_cv"), edge("s_cv", "pc", f"÷ {ln}"),
-        edge("y_cv", "n_cv", f"÷ {ln}", dashed=True), edge("y_cv", "t_cv", f"÷ {ln}", dashed=True),
+        edge("s_ev", "s_me"), edge("s_me", "s_cv"), edge("s_cv", "pc", ln),
+        edge("y_cv", "n_cv", ln, dashed=True), edge("y_cv", "t_cv", ln, dashed=True),
         edge("ix", "ph"), edge("pj", "fj"), edge("pc", "fa"), edge("ph", "fa", "Amdahl"),
         edge("ph", "fh"), edge("pk", "fk"), edge("pn", "fh"),
         edge("pn", "fd", "difficulty = 0.5 / r"),
