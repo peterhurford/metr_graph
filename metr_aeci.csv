@@ -17,28 +17,28 @@
 # produced / produced_lo / produced_hi (anthropic rows): estimated date each snapshot
 # finished training, central and plausible window: availability less 0-28 days (central
 # 14), narrowed by METR's stated finish months (Model 2 Jul 2026, Model 3 Aug-Sep, Model 4
-# Sep-Oct) and never after availability. Re-dating moves METR's 1.90x to 1.91x.
+# Sep-Oct) and capped at this file's availability date. Re-dating moves METR's 1.90x to 1.91x.
 chart,model,date,aeci,kind,epoch_model,produced,produced_lo,produced_hi
 anthropic,Claude 3 Opus,2024-02-29,124.74,frontier,Claude 3 Opus,2024-02-15,2024-02-01,2024-02-29
 anthropic,Claude 3.5 Sonnet,2024-06-16,130.00,frontier,Claude 3.5 Sonnet,2024-06-02,2024-05-19,2024-06-16
-anthropic,Claude 3.5 Sonnet New,2024-10-09,133.22,frontier,Claude 3.5 Sonnet (October 2024),2024-09-26,2024-09-12,2024-10-10
-anthropic,Claude 3.7 Sonnet,2025-02-18,141.70,frontier,Claude 3.7 Sonnet,2025-02-05,2025-01-22,2025-02-19
-anthropic,Claude Opus 4,2025-05-18,144.81,frontier,Claude Opus 4,2025-05-05,2025-04-21,2025-05-19
+anthropic,Claude 3.5 Sonnet New,2024-10-09,133.22,frontier,Claude 3.5 Sonnet (October 2024),2024-09-26,2024-09-12,2024-10-09
+anthropic,Claude 3.7 Sonnet,2025-02-18,141.70,frontier,Claude 3.7 Sonnet,2025-02-05,2025-01-22,2025-02-18
+anthropic,Claude Opus 4,2025-05-18,144.81,frontier,Claude Opus 4,2025-05-05,2025-04-21,2025-05-18
 anthropic,Claude Sonnet 4.5,2025-09-22,147.77,frontier,Claude Sonnet 4.5,2025-09-08,2025-08-25,2025-09-22
 anthropic,Claude Opus 4.5,2025-11-19,152.32,frontier,Claude Opus 4.5,2025-11-05,2025-10-22,2025-11-19
 anthropic,Claude Opus 4.6,2026-01-24,157.26,frontier,Claude Opus 4.6,2026-01-10,2025-12-27,2026-01-24
-anthropic,Mythos Preview Early,2026-02-23,162.32,internal,,2026-02-10,2026-01-27,2026-02-24
-anthropic,Mythos Preview,2026-03-31,165.64,internal,,2026-03-18,2026-03-04,2026-04-01
-anthropic,Claude Opus 4.7,2026-04-10,160.26,not_frontier,Claude Opus 4.7,2026-03-28,2026-03-14,2026-04-11
-anthropic,Claude Opus 4.8,2026-05-18,163.37,not_frontier,Claude Opus 4.8,2026-05-05,2026-04-21,2026-05-19
-anthropic,Mythos 5,2026-05-31,168.59,frontier,,2026-05-18,2026-05-04,2026-06-01
-anthropic,Model 2 Early,2026-07-09,171.76,internal,,2026-06-26,2026-06-12,2026-07-10
-anthropic,Claude Opus 5,2026-07-16,169.32,not_frontier,Claude Opus 5,2026-07-03,2026-06-19,2026-07-17
-anthropic,Mythos 5.1,2026-08-06,172.47,not_frontier,,2026-07-24,2026-07-10,2026-08-07
+anthropic,Mythos Preview Early,2026-02-23,162.32,internal,,2026-02-10,2026-01-27,2026-02-23
+anthropic,Mythos Preview,2026-03-31,165.64,internal,,2026-03-18,2026-03-04,2026-03-31
+anthropic,Claude Opus 4.7,2026-04-10,160.26,not_frontier,Claude Opus 4.7,2026-03-28,2026-03-14,2026-04-10
+anthropic,Claude Opus 4.8,2026-05-18,163.37,not_frontier,Claude Opus 4.8,2026-05-05,2026-04-21,2026-05-18
+anthropic,Mythos 5,2026-05-31,168.59,frontier,,2026-05-18,2026-05-04,2026-05-31
+anthropic,Model 2 Early,2026-07-09,171.76,internal,,2026-06-26,2026-06-12,2026-07-09
+anthropic,Claude Opus 5,2026-07-16,169.32,not_frontier,Claude Opus 5,2026-07-03,2026-06-19,2026-07-16
+anthropic,Mythos 5.1,2026-08-06,172.47,not_frontier,,2026-07-24,2026-07-10,2026-08-06
 anthropic,Model 2,2026-08-06,174.04,internal,,2026-07-16,2026-07-01,2026-07-31
-anthropic,Claude Opus 5.5,2026-09-08,174.65,not_frontier,Claude Opus 5.5,2026-08-26,2026-08-12,2026-09-09
-anthropic,Model 3 Early,2026-09-08,176.34,internal,,2026-08-26,2026-08-12,2026-09-09
-anthropic,Model 3,2026-09-21,176.95,internal,,2026-09-08,2026-08-01,2026-09-22
+anthropic,Claude Opus 5.5,2026-09-08,174.65,not_frontier,Claude Opus 5.5,2026-08-26,2026-08-12,2026-09-08
+anthropic,Model 3 Early,2026-09-08,176.34,internal,,2026-08-26,2026-08-12,2026-09-08
+anthropic,Model 3,2026-09-21,176.95,internal,,2026-09-08,2026-08-01,2026-09-21
 anthropic,Model 4,2026-09-25,178.63,internal,,2026-09-11,2026-09-01,2026-09-25
 all_developers,GPT-4o,2024-05-12,127.08,other,GPT-4o (May 2024),,,
 all_developers,Claude 3.5 Sonnet,2024-06-19,130.03,frontier,Claude 3.5 Sonnet,,,
