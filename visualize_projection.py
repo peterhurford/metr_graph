@@ -65,9 +65,9 @@ st.markdown("""<style>
         display: none; }
     .st-key-_active_tab [data-testid="stRadioOption"] p {
         font-size: 0.86rem !important; line-height: 1.4; }
-    /* The tabs under *More* (from `_TAB_MAIN_N`, 7, so n+8): their chips here are hidden,
+    /* The tabs under *More* (from `_TAB_MAIN_N`, 6, so n+7): their chips here are hidden,
        and the expander's buttons select them instead. */
-    .st-key-_active_tab [role="radiogroup"] > :nth-child(n+8) { display: none !important; }
+    .st-key-_active_tab [role="radiogroup"] > :nth-child(n+7) { display: none !important; }
     .st-key-_more_tabs button { min-height: 0; padding: 0.1rem 0.55rem; }
     .st-key-_more_tabs button p { font-size: 0.86rem !important; }
     .st-key-_active_tab [data-testid="stRadioOption"][data-selected="true"] {
@@ -3431,9 +3431,9 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # The first `_TAB_MAIN_N` show as chips; the rest sit under *More*, as buttons
 # that set the same radio, whose own chips for them the style block hides.
-_TAB_OPTIONS = ["ECI", "METR Horizon", "Remote Labor Index", "Data Centers", "China", "Takeoff", "Pacing",
-                "Revenue", "UK Cyber", "Employment", "Frontier Thresholds"]
-_TAB_MAIN_N = 7
+_TAB_OPTIONS = ["ECI", "Remote Labor Index", "Data Centers", "China", "Takeoff", "Pacing",
+                "METR Horizon", "Revenue", "UK Cyber", "Employment", "Frontier Thresholds"]
+_TAB_MAIN_N = 6
 _TAB_LABEL = {"ECI": "Epoch ECI"}
 _SLUG_FOR_TAB = {"METR Horizon": "metr", "ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
@@ -3446,9 +3446,10 @@ _TAB_SLUG["ecigap"] = _TAB_SLUG["eci"]
 # The Pacing tab was Pausing; old links still land.
 _TAB_SLUG["pausing"] = _TAB_SLUG["pacing"]
 
-# Read ?tab= from URL for deep-linking
+# Read ?tab= from URL for deep-linking; with none, the app opens on `_DEFAULT_TAB`.
+_DEFAULT_TAB = "Takeoff"
 _url_tab = st.query_params.get("tab", "").lower()
-_default_tab_idx = _TAB_SLUG.get(_url_tab, 0)
+_default_tab_idx = _TAB_SLUG.get(_url_tab, _TAB_OPTIONS.index(_DEFAULT_TAB))
 
 with st.sidebar:
     active_tab = st.radio("Tab", _TAB_OPTIONS, index=_default_tab_idx, horizontal=True,
@@ -3463,7 +3464,6 @@ with st.sidebar:
                           args=("_active_tab", _t))
 
 # Keep URL in sync with selected tab (omit when at default)
-_DEFAULT_TAB = _TAB_OPTIONS[0]
 if active_tab == _DEFAULT_TAB:
     if "tab" in st.query_params:
         del st.query_params["tab"]
@@ -23550,10 +23550,6 @@ def _render_takeoff(loading):
                f"come from scenarios simulated through {_TK_SIM_END_YEAR}, whatever "
                f"this says; the evidence charts stop by {_RSI_MAX_END_YEAR}.")
     st.header("Takeoff")
-    st.warning("Warning: RSI projections under construction, these are simple "
-               "models and not 'all things considered' takes. They assume business as "
-               "usual: no pause, deliberate pacing or slowdown, and no war or other "
-               "disruption to labs, chips or power.")
     # The takeoff model's loop and headline cards lead the page, but they need
     # the evidence's settings first: drawn into this slot once computed.
     # The loading bar sits above the slot, so drawing the model's header and
@@ -23949,7 +23945,6 @@ def _render_takeoff(loading):
                    "a number moves from sampling alone.")
 
     with top.container(key="tk_headline"):
-        st.header("The takeoff model")
         st.markdown(_TK_LOOP_HTML, unsafe_allow_html=True)
         _fn_line(
             "Brakes: **limited compute**, **ideas get harder to find**, and "

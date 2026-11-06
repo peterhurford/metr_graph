@@ -220,7 +220,7 @@ Unit tests cover accounting, snapshots, fast feedback, calibration, ordering, ce
 convergence, and RNG isolation. AppTests cover the layout, calibration, matched hours,
 URL sharing, stale imports, and exact inheritance from RSI.
 
-The tab reads as a story, top to bottom: the warning, *The takeoff model* (the loop
+The tab reads as a story, top to bottom, under the one *Takeoff* header with no warning: the model (the loop
 `_TK_LOOP_HTML`, its three brakes, the headline cards for coding automation, RSI and
 ultraintelligence with 80%/90% CIs, the two gaps between them and the first-year progress),
 *The evidence* (the former RSI tab), then *Inside the takeoff model*: the evidence row, then *What moves the pace* (the factor chart) and *The multiplication at …* (its slider and steps), which sit above **1. Research speeds
@@ -346,7 +346,7 @@ remain available for internal diagnostics and the validated milestone definition
 ## RSI tab (now the evidence half of Takeoff)
 
 The RSI tab merged into Takeoff: `render_takeoff()` draws the shared *Project through*
-(`tk_end_year`), the header and warning, then `render_rsi(end_year)` under *The evidence*,
+(`tk_end_year`), the header, then `render_rsi(end_year)` under *The evidence*,
 then *The takeoff model*. The evidence charts project through that year capped at
 `_RSI_MAX_END_YEAR` (2031), on a weekly grid (`_fan_days`; a day is under a pixel). The rest of this
 section still says "RSI tab" for that half; `_pc_rsi_onset` only reads its widget keys,

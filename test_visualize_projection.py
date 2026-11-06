@@ -2612,6 +2612,16 @@ class TestUkCyberTargetEta:
         assert vp.ukc_target_eta_direct(one, 90.0) is None
 
 
+class TestTabChips:
+    """The style block hides the chips of the tabs under *More*; its hardcoded
+    nth-child cutoff must sit one past `_TAB_MAIN_N`."""
+
+    def test_css_cutoff_matches_main_count(self):
+        src = open(vp.__file__).read()
+        assert f':nth-child(n+{vp._TAB_MAIN_N + 1})' in src
+        assert "METR Horizon" in vp._TAB_OPTIONS[vp._TAB_MAIN_N:]
+
+
 class TestRsi:
     """CoBench, the RSI tab's only feed."""
 

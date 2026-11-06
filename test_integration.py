@@ -135,6 +135,22 @@ class TestNonDefaultProjectionBases:
 # Mode switching: Linear vs Piecewise produce different widgets and output
 # ===========================================================================
 
+class TestDefaultTab:
+    """With no ?tab= the app opens on Takeoff (`_DEFAULT_TAB`) and keeps the URL
+    bare; ECI, no longer the default, gets ?tab=eci."""
+
+    def test_bare_url_opens_on_takeoff(self):
+        at = _fresh_app().run()
+        _assert_no_error(at, "bare URL")
+        assert [r for r in at.radio if r.label == "Tab"][0].value == "Takeoff"
+        assert "tab" not in at.query_params
+
+    def test_eci_gets_its_slug_in_the_url(self):
+        at = _fresh_app().run()
+        _switch_tab(at, "ECI")
+        assert _qp(at, "tab") == ["eci"]
+
+
 class TestEciTab:
     """The ECI tab carries the old ECI Company Gap tab: a leaderboard, the
     projection, then the subject's months behind the reference."""
@@ -1223,7 +1239,7 @@ class TestTakeoffTab:
         # The evidence first, then the takeoff model.
         # The takeoff model's loop and cards lead, then the evidence, then the
         # model's charts.
-        assert [h.value for h in at.header] == ["Takeoff", "The takeoff model", "The evidence",
+        assert [h.value for h in at.header] == ["Takeoff", "The evidence",
                                                 "Inside the takeoff model"]
         subs = [s.value for s in at.subheader]
         assert subs.index("CoBench") < subs.index("Automated coder projection")
@@ -1347,7 +1363,7 @@ class TestTakeoffTab:
         cis = [c.value for c in at.caption if c.value.startswith("80% CI: ")]
         assert len(cis) >= 5
         assert len([c for c in at.caption if c.value.startswith("90% CI: ")]) == 6
-        assert any("RSI projections under construction" in w.value for w in at.warning)
+        assert not at.warning
         # The loading bars (the app's first-run one and Takeoff's) stay until
         # the page is drawn, then go; later reruns skip the first-run bar.
         assert not at.get("progress")
