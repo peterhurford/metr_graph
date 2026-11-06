@@ -5314,6 +5314,31 @@ class TestPacing:
         assert 0.4 < surv["mid"] < 0.6
         assert {c[0] for c in out} == {"mid", "far"}
 
+    def test_already_leaves_that_share_at_today(self):
+        """The soft reality check: past mass is kept at today until it is
+        `already` of what survives, and the ramp climbs on from there."""
+        today = datetime(2026, 8, 24)
+        days = np.r_[np.full(3000, -40.0), np.linspace(1, 400, 7000)]
+        np.random.seed(0)
+        out, surv = vp._pc_condition_on_today([("m", "m", today, days)], today,
+                                              ramp_days=90.0, already=0.05)
+        kept = out[0][3]
+        assert np.mean(kept <= 0) == pytest.approx(0.05, abs=0.01)
+        assert (kept >= 0).all()          # past samples sit at today, not before
+        # Just past today the keep rate starts at the past's rate q, not at zero.
+        q = np.sum(kept <= 0) / 3000
+        near = np.sum((kept > 0) & (kept <= 9)) / np.sum((days > 0) & (days <= 9))
+        assert q > 0.02 and near == pytest.approx(q, rel=0.5)
+        np.random.seed(0)
+        hard, _ = vp._pc_condition_on_today([("m", "m", today, days)], today,
+                                            ramp_days=90.0, already=0.0)
+        assert (hard[0][3] > 0).all()     # 0 is the old hard cut
+
+    def test_condition_setting_reads_the_checkbox_and_share(self):
+        assert vp._pc_condition_setting(False, 5.0) is False
+        assert vp._pc_condition_setting(True, 5.0) == 0.05
+        assert vp._pc_condition_setting(True, 0.0) == 0.0
+
     def test_dist_fig_respects_the_horizon(self):
         """The CDF axis runs to the *Project through* year end when given
         one (98th-percentile cap otherwise), and a median past the horizon

@@ -6270,7 +6270,7 @@ def render_rli():
 # ── RSI (CoBench: automating Anthropic's own AI R&D) ─────────────────────
 
 _RSI_RESET_KEYS = [
-    "rsi_timing", "rsi_notyet", "rsi_notyet_ramp",
+    "rsi_timing", "rsi_notyet", "rsi_notyet_ramp", "rsi_already_pct",
     "rsi_atc_penalty",
     "rsi_custom_dt_lo", "rsi_custom_dt_hi", "rsi_custom_dt_dist",
     "rsi_custom_pos_lo", "rsi_custom_pos_hi", "rsi_al5_lag_mo",
@@ -6280,9 +6280,25 @@ _RSI_DEFAULTS = {
     "rsi_timing": "Training run finished",
     "rsi_notyet": True,
     "rsi_notyet_ramp": 90.0,
+    # Chance a milestone has already been crossed, unseen: the reality check
+    # leaves this much at today instead of none (0 is the hard cut).
+    "rsi_already_pct": 5.0,
     "rsi_atc_penalty": 0,
     "rsi_custom_dt_dist": "Lognormal",
 }
+
+
+def _pc_condition_setting(notyet=None, already_pct=None):
+    """The milestone machinery's `condition`: False with the reality check off,
+    else the share left at today for "already crossed, unseen" (0.0 is the
+    hard cut at today, the old default)."""
+    ss = st.session_state
+    notyet = ss.get("rsi_notyet", True) if notyet is None else notyet
+    if not notyet:
+        return False
+    pct = ss.get("rsi_already_pct", _RSI_DEFAULTS["rsi_already_pct"]) \
+        if already_pct is None else already_pct
+    return round(float(pct) / 100, 4)
 
 
 def _rsi_fit(frontier):
@@ -6646,7 +6662,7 @@ def render_rsi(end_year):
     # The conditioning controls render inside the blend's weights expander,
     # below their consumers — read via session state, like the weights.
     _pc_render_milestones(rsi_timing, datetime.now(),
-                          condition=st.session_state.get("rsi_notyet", True),
+                          condition=_pc_condition_setting(),
                           ramp_days=st.session_state.get(
                               "rsi_notyet_ramp",
                               _RSI_DEFAULTS["rsi_notyet_ramp"]),
@@ -6742,7 +6758,7 @@ def _render_rsi_automation(end_year):
         comps, *_ = _pc_rsi_components(
             datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
             st.session_state.get("rsi_timing", _RSI_DEFAULTS["rsi_timing"]),
-            st.session_state.get("rsi_notyet", True),
+            _pc_condition_setting(),
             st.session_state.get("rsi_notyet_ramp", _RSI_DEFAULTS["rsi_notyet_ramp"]))
         by_slug = {c[0]: c for c in comps}
         for col, slug, label, help in (
@@ -16982,12 +16998,15 @@ def _pc_rsi_onset(today):
     # The editors render above on the same page, so read the keys, never set
     # them: a widget's key cannot change once it is drawn.
     settings = {k: st.session_state.get(k, _RSI_DEFAULTS[k]) for k in
-                ("rsi_timing", "rsi_notyet", "rsi_notyet_ramp", "rsi_atc_penalty")}
+                ("rsi_timing", "rsi_notyet", "rsi_notyet_ramp", "rsi_already_pct",
+                 "rsi_atc_penalty")}
     for slug, default in _PC_RSI_WEIGHTS.items():
         key = _PC_RSI_W_KEY + slug
         settings[key] = st.session_state.get(key, default)
     components, survival, raw, _ = _pc_rsi_components(
-        today, settings["rsi_timing"], settings["rsi_notyet"], settings["rsi_notyet_ramp"])
+        today, settings["rsi_timing"],
+        _pc_condition_setting(settings["rsi_notyet"], settings["rsi_already_pct"]),
+        settings["rsi_notyet_ramp"])
     components, raw = _pc_blend_parts(components), raw and _pc_blend_parts(raw)
     weights = {slug: float(settings[_PC_RSI_W_KEY + slug])
                for slug, _, _, _ in components}
@@ -17093,6 +17112,13 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
                  "today are dropped and the rest renormalized, and the blend "
                  "down-weights each milestone by the mass it put in the past. "
                  "Assumes a crossing would be known by now.")
+        st.number_input(
+            "Chance it has already happened, unseen (%)", min_value=0.0,
+            max_value=50.0, step=1.0, key="rsi_already_pct", disabled=not _notyet,
+            help="How much of each milestone's probability the reality check "
+                 "leaves at today, for a crossing already made inside a lab and "
+                 "not yet visible. From there the chance climbs on without a "
+                 "step. 0 is the hard cut: nothing crossed by today.")
         st.number_input(
             "Also discount the next … days", min_value=0.0, max_value=365.0,
             step=5.0, key="rsi_notyet_ramp", disabled=not _notyet,
@@ -17315,10 +17341,11 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
             for slug, lab, r, rel, _n in _cap if r is not None]
     survival, _cap_raw = None, None
     ramp_days = _pc_ramp_for(timing_label, ramp_days, us_lag)
-    if condition:
+    if condition is not False and condition is not None:
         _cap_raw = _cap
-        _cap, survival = _pc_condition_on_today(_cap, today,
-                                                ramp_days=ramp_days)
+        already = 0.0 if condition is True else float(condition)
+        _cap, survival = _pc_condition_on_today(_cap, today, ramp_days=ramp_days,
+                                                already=already)
     return _cap, survival, _cap_raw, _notes
 
 
@@ -17639,7 +17666,7 @@ def _pc_tasteval_predict_eta(n=None, samples=False):
     return _pc_eta_out(anchor, np.exp(np.log(med) + sigma * z), samples)
 
 
-def _pc_condition_on_today(components, today, ramp_days=0.0):
+def _pc_condition_on_today(components, today, ramp_days=0.0, already=0.0):
     """Condition each milestone on not having crossed by `today`.
 
     Every ETA sampler already truncates at its own anchor (`days_to >= 0`);
@@ -17653,6 +17680,12 @@ def _pc_condition_on_today(components, today, ramp_days=0.0):
     crossing, the more visible its run-up would already be, so "no signs
     today" argues against it in proportion. 0 disables the ramp.
 
+    `already` softens the cut: a crossing already made but not yet seen keeps
+    likelihood q instead of 0, q solved so the past holds `already` of the
+    kept mass, and those samples sit at today. Inside the ramp a sample keeps
+    max(q, t/ramp_days), so the chance climbs on from `already` without a
+    step (`test_already_leaves_that_share_at_today`). 0 is the hard cut.
+
     Returns (conditioned components, {slug: survival fraction}); a component
     with no surviving samples drops out entirely. The blend must then mix
     with each weight multiplied by its survival — survival is the expected
@@ -17663,14 +17696,32 @@ def _pc_condition_on_today(components, today, ramp_days=0.0):
     out, survival = [], {}
     for slug, lab, anchor, days in components:
         rel = days + (anchor - today).days
-        if ramp_days > 0:
-            keep = np.random.random(len(days)) < np.clip(
-                rel / float(ramp_days), 0.0, 1.0)
+        future = (np.clip(rel / float(ramp_days), 0.0, 1.0) if ramp_days > 0
+                  else (rel > 0).astype(float))
+        future = np.where(rel > 0, future, 0.0)
+        q = 0.0
+        past = float(np.sum(rel <= 0))
+        if already > 0 and past > 0:
+            def share(q):
+                kept = q * past
+                return kept / (kept + np.maximum(future, q)[rel > 0].sum())
+            lo, hi = 0.0, 1.0
+            if share(1.0) <= already:
+                lo = 1.0
+            else:
+                for _ in range(40):
+                    mid = (lo + hi) / 2
+                    lo, hi = (mid, hi) if share(mid) < already else (lo, mid)
+            q = lo
+        prob = np.where(rel > 0, np.maximum(future, q), q)
+        if ramp_days > 0 or q > 0:
+            keep = np.random.random(len(days)) < prob
         else:
             keep = rel > 0
         survival[slug] = float(np.mean(keep))
         if keep.any():
-            out.append((slug, lab, anchor, days[keep]))
+            kept = np.where(rel[keep] <= 0, (today - anchor).days, days[keep])
+            out.append((slug, lab, anchor, kept))
     return out, survival
 
 

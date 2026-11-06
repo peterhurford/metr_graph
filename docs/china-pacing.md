@@ -203,10 +203,15 @@ the window — the closer a crossing, the more visible its run-up would already
 be. On the release clock an active window grows by that range's lower bound
 via `_pc_ramp_for()` — a model shipping that soon finished training a
 report lag earlier — and the fine print quotes the window actually applied. Survival stays the expected likelihood, so the weight × survival mixing is
-unchanged. Assumes a crossing would be known by now — weaker for the internal
-evals, and the checkbox help says so.
+unchanged. `rsi_already_pct` (default 5%, *Chance it has already happened,
+unseen*) softens the cut for a crossing made inside a lab and not yet visible: a
+past sample keeps likelihood q, solved so it holds that share of the kept mass, and
+sits at today; inside the ramp a sample keeps max(q, t/N), so the CDF climbs on from
+it without a step. 0 restores the hard cut. `_pc_condition_setting()` turns the
+checkbox and share into the machinery's `condition` (False, or the share).
 `test_condition_on_today_truncates_and_reweights`,
-`test_condition_ramp_discounts_the_near_future`.
+`test_condition_ramp_discounts_the_near_future`,
+`test_already_leaves_that_share_at_today`.
 
 Under the cards sits *Automated coder projection* (`_pc_render_rsi_blend()`):
 no single benchmark defines the threshold, so each milestone is treated as one
