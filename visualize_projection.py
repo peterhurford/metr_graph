@@ -24066,32 +24066,6 @@ def _render_takeoff(loading):
     with st.expander("The math, step by step"):
         st.markdown(_tk_evidence_math(chain))
 
-    st.subheader("1. Research speeds up")
-    pace_history = _tk_pace_history(np.exp(experiment_starts) * pace_yield, today)
-    pace_note = "from today's ECI growth"
-    st.markdown("**Capability relative to 2025**")
-    _fn_caption(
-        "Research pace as a multiple of 2025 from AI capabilities and research "
-        "judgment alone, with headcount, compute and idea difficulty held at today's.",
-        ("headcount, compute and idea difficulty held",
-         "The net pace below with its human-researchers, compute and harder-ideas "
-         "factors taken back out from today on; today's level still carries the past's. "
-         "Medians, with the middle 80% shaded. The axis stops at "
-         f"{_TK_CAPABILITY_VIEW:,.0f}\u00d7."))
-    st.plotly_chart(_tf(_tk_to(_tk_pace_fig(
-        result, today, markers, history=pace_history, today_note=pace_note,
-        capability=True), view_end)), width="stretch")
-    st.markdown("**Overall net research speedup**")
-    _fn_caption(
-        "Research pace as a multiple of 2025, with more researchers and harder "
-        "ideas. Verticals mark milestone medians.",
-        ("Research pace", "Useful work before validation, including work in "
-         "progress while successors train. Medians, with the middle 80% shaded. "
-         f"The axis stops at {_TK_PACE_VIEW:,}\u00d7; scenarios that run away "
-         "leave the top of the chart."))
-    st.plotly_chart(_tf(_tk_to(_tk_pace_fig(
-        result, today, markers, history=pace_history, today_note=pace_note), view_end)),
-        width="stretch")
     st.markdown("**What moves the pace**")
     _fn_caption(
         "Multiply the five factors and you get the dotted line.",
@@ -24146,6 +24120,32 @@ def _render_takeoff(loading):
          "to the median of their product. Research judgment and harder ideas each run "
          "to large multiples and largely cancel."))
     st.plotly_chart(mult_fig, width="stretch")
+    st.subheader("1. Research speeds up")
+    pace_history = _tk_pace_history(np.exp(experiment_starts) * pace_yield, today)
+    pace_note = "from today's ECI growth"
+    st.markdown("**Capability relative to 2025**")
+    _fn_caption(
+        "Research pace as a multiple of 2025 from AI capabilities and research "
+        "judgment alone, with headcount, compute and idea difficulty held at today's.",
+        ("headcount, compute and idea difficulty held",
+         "The net pace below with its human-researchers, compute and harder-ideas "
+         "factors taken back out from today on; today's level still carries the past's. "
+         "Medians, with the middle 80% shaded. The axis stops at "
+         f"{_TK_CAPABILITY_VIEW:,.0f}\u00d7."))
+    st.plotly_chart(_tf(_tk_to(_tk_pace_fig(
+        result, today, markers, history=pace_history, today_note=pace_note,
+        capability=True), view_end)), width="stretch")
+    st.markdown("**Overall net research speedup**")
+    _fn_caption(
+        "Research pace as a multiple of 2025, with more researchers and harder "
+        "ideas. Verticals mark milestone medians.",
+        ("Research pace", "Useful work before validation, including work in "
+         "progress while successors train. Medians, with the middle 80% shaded. "
+         f"The axis stops at {_TK_PACE_VIEW:,}\u00d7; scenarios that run away "
+         "leave the top of the chart."))
+    st.plotly_chart(_tf(_tk_to(_tk_pace_fig(
+        result, today, markers, history=pace_history, today_note=pace_note), view_end)),
+        width="stretch")
     st.markdown("**Compute going in**")
     _fn_caption(
         "The compute each scenario trains and experiments with, as a multiple of today's. "

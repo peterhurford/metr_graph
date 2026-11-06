@@ -1278,9 +1278,9 @@ class TestTakeoffTab:
         first_year = slice(0, 13)        # monthly grid: today plus 12 months
         assert np.all(_ys(traces["Projected ECI: 10th percentile"])[first_year]
                       >= _ys(traces["Today's trend continued"])[first_year] - 1e-9)
-        capability = json.loads(_tk_charts(at)[2].proto.spec)
+        capability = json.loads(_tk_charts(at)[4].proto.spec)
         assert "Pace from capability" in {d.get("name") for d in capability["data"]}
-        pace = json.loads(_tk_charts(at)[3].proto.spec)
+        pace = json.loads(_tk_charts(at)[5].proto.spec)
         assert {"Modeled research pace", "If AI stopped improving today"} <= {
             d.get("name") for d in pace["data"]}
         # Today's pace is set, not inherited from the experiment proxy.
@@ -1294,12 +1294,12 @@ class TestTakeoffTab:
         # Draws run to the horizon, so there is no held-pace tail to label.
         assert not any("hold their last pace" in a.get("text", "")
                    for a in pace["layout"]["annotations"])
-        factors = json.loads(_tk_charts(at)[4].proto.spec)
+        factors = json.loads(_tk_charts(at)[2].proto.spec)
         assert [d["name"] for d in factors["data"]] == [
             "Human researchers", "AI capabilities", "Compute", "Research judgment", "Harder ideas (divides)",
             "Net research pace"]
         # Today's pace times each factor, then the net pace's own median.
-        mult = json.loads(_tk_charts(at)[5].proto.spec)
+        mult = json.loads(_tk_charts(at)[3].proto.spec)
         assert mult["data"][0]["x"][:6] == [
             "Today's pace", "Compute", "Human researchers", "AI capabilities",
             "Research judgment", "Harder ideas"]
@@ -1591,7 +1591,7 @@ class TestTakeoffTab:
         labels = ["Coding automation \u2192 RSI", "RSI \u2192 ultraintelligence"]
         for label in labels:
             assert any(m.label == label for m in at.metric), label
-        pace = json.loads(_tk_charts(at)[3].proto.spec)
+        pace = json.loads(_tk_charts(at)[5].proto.spec)
         assert pace["layout"]["yaxis"]["range"][1] <= np.log10(1000) + 1e-9
         assert not any(m.label.startswith("FOOM") for m in at.metric)
 
