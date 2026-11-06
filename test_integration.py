@@ -1319,8 +1319,13 @@ class TestTakeoffTab:
             "Training", "Running AI researchers", "Experiments"]
         people = json.loads(_tk_charts(at)[9].proto.spec)
         workforce = json.loads(_tk_charts(at)[10].proto.spec)
-        assert {"AI researcher copies", "Human researchers", "AI (FTE)", "Humans (FTE)", "Total (humans + AIs)"} <= {
-            d.get("name") for d in workforce["data"]}
+        assert {"AI researchers", "Human researchers", "Total (humans + AI), FTE"} <= {
+            d.get("name") for d in workforce["data"] if d.get("showlegend") is not False}
+        # One legend entry per concept: no name shows twice.
+        shown = [d.get("name") for d in workforce["data"]
+                 if d.get("showlegend") is not False and d.get("mode") == "lines"
+                 and (d.get("line") or {}).get("width", 0) > 0]
+        assert len(shown) == len(set(shown))
         # Three stages (band edges + median each), then the measured index
         # history, then today's diamond on research direction.
         assert len(people["data"]) == 11

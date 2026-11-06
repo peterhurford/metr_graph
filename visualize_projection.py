@@ -7730,9 +7730,12 @@ def _render_rsi_metr():
                         line=dict(width=1.5, color=color)),
             # Internal models: "(internal)" after the name, "~" on the date, since
             # their dates are estimates.
-            hovertext=[f"{r['model']}{' (internal)' if r.get('kind') == 'internal' else ''}"
-                       f"<br>{'~' if r.get('kind') == 'internal' else ''}"
-                       f"{r['date']:%b %d, %Y}<br>{what} {y:.1f}{note}"
+            # Anthropic's points sit at an internal date (estimated end of
+            # training), so every one reads "(internal)" and "~"; other labs'
+            # points are public releases.
+            hovertext=[(f"{r['model']} (internal)<br>Training ends ~{r['date']:%b %d, %Y}"
+                        if r.get('produced') else f"{r['model']}<br>Released {r['date']:%b %d, %Y}")
+                       + f"<br>{what} {y:.1f}{note}"
                        for r, y in zip(pts, ys or [r['aeci'] for r in pts])],
             hoverinfo='text', **kw))
 
@@ -7747,7 +7750,7 @@ def _render_rsi_metr():
     dots([r for r in anth if r['kind'] == 'internal'], "Claude internal: AECI",
          orange, 'circle')
     produced = {r['model']: r['date'] for r in anth}
-    projected = [dict(r, date=produced.get(r['model'], r['date']))
+    projected = [dict(r, date=produced.get(r['model'], r['date']), produced=True)
                  for r in _metr_on_eci(rows) if r['projected'] and r['kind'] == 'internal']
     dots(projected, "Claude internal: ECI, projected", orange, 'square-open',
          ys=[r['eci'] for r in projected],
@@ -7802,7 +7805,8 @@ def _render_rsi_metr():
     _add_today_vline(figure)
     figure.update_layout(
         height=480, margin=dict(l=50, r=20, t=20, b=20),
-        xaxis=dict(title='Date', range=[first - timedelta(days=20), today + timedelta(days=130)],
+        xaxis=dict(title='Training ends (internal) date',
+                   range=[first - timedelta(days=20), today + timedelta(days=130)],
                    gridcolor='rgba(0,0,0,0.10)'),
         yaxis=dict(title='Capabilities index (AECI or ECI)', gridcolor='rgba(0,0,0,0.10)'),
         plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#1a1a2e'),
@@ -22974,12 +22978,15 @@ def _tk_workforce_fig(result, today, eci, markers=()):
     x = _tk_dates(result, today)
     fig = make_subplots(rows=1, cols=2, horizontal_spacing=0.09,
                         subplot_titles=["Researchers (heads)", "Human full-time equivalents"])
-    for col, series in ((1, (("AI researcher copies", ais, "#d68910"),
-                             ("Human researchers", people, "#2980b9"))),
-                        (2, (("AI (FTE)", fte - people, "#d68910"),
-                             ("Humans (FTE)", people, "#2980b9"),
-                             ("Total (humans + AIs)", fte, "#8e44ad")))):
-        for name, values, color in series:
+    # One legend entry per concept, shared by both panels (heads on the left,
+    # full-time equivalents on the right); the total is right-hand only.
+    for col, series in ((1, (("AI researcher copies", ais, "#d68910", "AI researchers"),
+                             ("Human researchers", people, "#2980b9", "Human researchers"))),
+                        (2, (("AI (FTE)", fte - people, "#d68910", "AI researchers"),
+                             ("Humans (FTE)", people, "#2980b9", "Human researchers"),
+                             ("Total (humans + AIs)", fte, "#c0392b",
+                              "Total (humans + AI), FTE")))):
+        for name, values, color, legend in series:
             # The total is a dotted median over the two parts, without a band.
             total = name.startswith("Total")
             q = np.quantile(values, [.1, .5, .9], axis=0)
@@ -22993,11 +23000,14 @@ def _tk_workforce_fig(result, today, eci, markers=()):
                                          fillcolor=f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.15)",
                                          name=name + " 90%"), row=1, col=col)
             fig.add_trace(go.Scatter(
-                x=x, y=q[1], mode="lines", name=name,
-                line=dict(color=color, width=2 if total else 2.5, dash="dot" if total else None),
+                x=x, y=q[1], mode="lines", name=name, legendgroup=legend,
+                legendgrouptitle=None, showlegend=(col == 1 or total),
+                line=dict(color=color, width=3 if total else 2.5, dash="dash" if total else None),
                 text=[_tk_count(v) for v in q[1]],
                 hovertemplate="%{x|%b %Y}<br>%{text}<extra>" + name + "</extra>"),
                 row=1, col=col)
+            if col == 1 or total:
+                fig.data[-1].name = legend
     for i, (label, when) in enumerate(markers):
         for col in (1, 2):
             fig.add_vline(x=when, line_dash="dot", line_color="#b0b0b0", line_width=1,
