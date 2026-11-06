@@ -2864,7 +2864,10 @@ class TestRsiCode:
         assert vp._rsi_code_mid("2026Q2") == datetime(2026, 5, 16, 12)
         assert vp._rsi_code_mid("2025Q4") == datetime(2025, 11, 16)
         assert [r['q'] for r in rows if r['partial']] == [vp._RSI_CODE_PARTIAL]
-        assert rows[-1]['partial'] and rows[-1]['mult'] == 8.0
+        partial = next(r for r in rows if r['partial'])
+        assert partial['mult'] == 8.0
+        # The S-1's Q3 2026 reading sits after it, fitted, and labelled as such.
+        assert rows[-1]['q'] == "2026Q3" and rows[-1]['other'] and rows[-1]['fitted']
         for r in rows:
             assert r['fitted'] == (r['date'] >= vp._RSI_CODE_FIT_FROM)
 

@@ -1442,7 +1442,14 @@ _RSI_CODE_RAW = [
     ("2024Q1", 1.00), ("2024Q2", 0.85), ("2024Q3", 0.87), ("2024Q4", 0.89),
     ("2025Q1", 1.20), ("2025Q2", 1.50), ("2025Q3", 1.90), ("2025Q4", 2.50),
     ("2026Q1", 5.80), ("2026Q2", 8.00),
+    # Anthropic's S-1/A (Nov 2026): Q3 2026 code per engineer "over 45 times"
+    # the 2024 daily average; 2024 averaged ~0.90 of this chart's pre-2025
+    # baseline, so >=41.7x here. A different definition (per engineer, not per
+    # active contributor; no stated 99th-percentile cap), fitted all the same.
+    ("2026Q3", 41.7),
 ]
+# Rows from another source than the chart, with the label each draws.
+_RSI_CODE_OTHER = {"2026Q3": "S-1 (per engineer)"}
 _RSI_CODE_PARTIAL = "2026Q2"      # the hatched bar: a quarter still running
 
 
@@ -1456,7 +1463,11 @@ def _rsi_code_mid(q):
 
 def _rsi_code_hover(r):
     """One point's hover: the quarter, its multiple and why it draws as it does."""
-    if r['partial']:
+    if r.get('other'):
+        tail = ("<br>Anthropic's S-1/A: over 45× the 2024 average per engineer, "
+                "restated on this chart's baseline. A different definition: per "
+                "engineer, not per active contributor")
+    elif r['partial']:
         tail = "<br>partial quarter — the days observed so far"
     elif not r['fitted']:
         tail = "<br>pre-2025 baseline — charted, not fitted"
@@ -1468,7 +1479,7 @@ def _rsi_code_hover(r):
 @st.cache_data
 def load_rsi_code():
     rows = [{'q': q, 'date': _rsi_code_mid(q), 'mult': v,
-             'partial': q == _RSI_CODE_PARTIAL,
+             'partial': q == _RSI_CODE_PARTIAL, 'other': _RSI_CODE_OTHER.get(q),
              'fitted': _rsi_code_mid(q) >= _RSI_CODE_FIT_FROM}
             for q, v in _RSI_CODE_RAW]
     rows.sort(key=lambda r: r['date'])
@@ -7236,9 +7247,12 @@ def _render_rsi_code(end_year):
             ([r for r in rows if not r['fitted']],
              dict(color='#aaaaaa', size=8, symbol='circle-open',
                   line=dict(color='#777777', width=2))),
-            ([r for r in rows if r['fitted'] and not r['partial']],
+            ([r for r in rows if r['fitted'] and not r['partial'] and not r.get('other')],
              dict(color='#4F8DFD', size=11,
                   line=dict(color='white', width=2))),
+            ([r for r in rows if r.get('other')],
+             dict(color='#4F8DFD', size=12, symbol='triangle-up',
+                  line=dict(color='white', width=1))),
             ([r for r in rows if r['partial']],
              dict(color='white', size=11,
                   line=dict(color='#4F8DFD', width=2)))]:
@@ -7249,6 +7263,11 @@ def _render_rsi_code(end_year):
             mode='markers', marker=marker,
             hovertext=[_rsi_code_hover(r) for r in grp],
             hoverinfo='text', showlegend=False))
+    for r in rows:
+        if r.get('other'):
+            fig.add_annotation(x=r['date'], y=np.log10(r['mult']), text=r['other'],
+                               showarrow=False, xanchor='right', xshift=-10,
+                               font=dict(size=11))
 
     fig.add_hline(y=_RSI_CODE_TARGET,
                   line=dict(color='#e74c3c', width=1.5, dash='dash'))

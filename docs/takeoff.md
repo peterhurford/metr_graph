@@ -538,6 +538,8 @@ things are load-bearing.
    and off the chart. This chart's axis is also `dtick=1`: three decades of
    minor tick labels bury the four that matter.
 
+The 2026Q3 row is Anthropic's S-1/A, not the chart: Q3 code per engineer "over 45 times" the 2024 average, restated on this chart's pre-2025 baseline (×0.90, ≥41.7×). It is fitted (doubling 160 → 117 days, so the 30× milestone is passed) but drawn as a labelled triangle (`_RSI_CODE_OTHER`), since the S-1 counts per engineer and states no 99th-percentile cap.
+
 Lines merged is an output proxy a coding model inflates directly, so the caption
 and the milestone card's hover both have to keep saying it measures how much code
 ships, not how much research it settles. Guarded by `TestRsiCode`.
