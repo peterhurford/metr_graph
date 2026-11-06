@@ -21099,6 +21099,9 @@ _TK_DEFAULTS.update({
     "tk_eci_today": _TK_ECI_TODAY,
     "tk_returns": 1.0, "tk_dc_compute": True,
     "tk_coding_pairing": 0.9, "tk_mult_at": "rsi",
+    # Staff growth to RSI: Anthropic's headcount grew ~170% in the year to Sep
+    # 2026 (S-1), all functions; 100% is a research-staff reading of it.
+    "tk_hiring_growth": 100.0,
     "tk_wf_humans": 10_000,
     "tk_wf_copies": 50_000, "tk_wf_power": 10.0, "tk_ultra_eci": _TK_ULTRA_ECI,
 })
@@ -22575,7 +22578,7 @@ def _tk_yrs(v):
 # while labs keep hiring (until RSI) and after it, as autopilot makes them
 # unneeded. Assumptions for the workforce chart only.
 _TK_HUMAN_RESEARCHERS = 10_000
-_TK_HIRING_GROWTH = 1.3
+_TK_HIRING_GROWTH = 2.0
 _TK_POST_RSI_DECLINE = 0.7
 # AI research-agent copies running today (an estimate); and how each copy's
 # worth grows with capability: as (ECI / today's)^this power, a judgment.
@@ -23285,7 +23288,8 @@ def _render_takeoff(loading):
             number("Human research staff growth until RSI (%/yr)", "hiring_growth",
                    -50.0, 200.0, 5.0,
                    "More staff finish the share of research work people still do sooner. "
-                   "Experiment compute's growth is refitted so history still has a "
+                   "Default 100%: Anthropic's headcount grew ~170% in the year to Sep 2026 "
+                   "(S-1), all functions. Experiment compute's growth is refitted so history still has a "
                    "steady pace with AI frozen, so faster hiring means slower experiment "
                    "compute, not a faster past.")
             number("Human research staff change after RSI (%/yr)", "staff_after_rsi",

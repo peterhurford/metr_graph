@@ -98,7 +98,8 @@ in which each doubling of cumulative effort buys r doublings of efficiency at th
 input exponent of 0.5. It is held there so the parallelization setting changes only how
 much extra input buys, not how fast ideas get harder. Today's pace has held steady while
 compute grew at its historical rate (the data-center series' own fit, 3.1x/yr). Two other
-inputs are explicit. Human research staff grow 30% a year until a scenario's RSI (and
+inputs are explicit. Human research staff grow 100% a year until a scenario's RSI (the app's
+default, a research-staff reading of the S-1's ~170% headcount growth; the model file keeps 30%) (and
 change -30% a year after); more staff finish the share of work people still do sooner, so
 they matter until autopilot and not after. Experiment compute grows at a fixed share of the
 frontier's log growth, fitted so labor and experiments together hold today's pace steady
