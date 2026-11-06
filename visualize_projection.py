@@ -7469,10 +7469,14 @@ _METR_WINDOW_FROM = datetime(2024, 2, 1)  # METR's charts open at Claude 3 Opus
 def load_metr_aeci():
     """METR's AECI points, digitized (`metr_aeci.csv`; method in its header)."""
     with Path(__file__).with_name('metr_aeci.csv').open() as f:
+        def day(v):
+            return datetime.strptime(v, '%Y-%m-%d') if v else None
         return [{'chart': r['chart'], 'model': r['model'],
                  'date': datetime.strptime(r['date'], '%Y-%m-%d'),
                  'aeci': float(r['aeci']), 'kind': r['kind'],
-                 'epoch_model': r['epoch_model'] or None}
+                 'epoch_model': r['epoch_model'] or None,
+                 'produced': day(r.get('produced')), 'produced_lo': day(r.get('produced_lo')),
+                 'produced_hi': day(r.get('produced_hi'))}
                 for r in csv.DictReader(line for line in f if not line.startswith('#'))]
 
 
@@ -7667,18 +7671,24 @@ def _render_rsi_metr():
     and where the Takeoff model starts today."""
     st.subheader("METR's acceleration assessment")
     rows = load_metr_aeci()
-    anth = [r for r in rows if r['chart'] == 'anthropic']
+    # Anthropic's models sit at their estimated end of training (`produced`),
+    # not METR's staff-availability dates; METR's own fit used the latter.
+    anth = [dict(r, date=r['produced'] or r['date']) for r in rows if r['chart'] == 'anthropic']
     fit = _metr_hinge([r['date'] for r in anth if r['kind'] != 'not_frontier'],
                       [r['aeci'] for r in anth if r['kind'] != 'not_frontier'])
     _fn_line(
-        f"METR finds Anthropic's benchmark index climbing {fit['ratio']:.1f}× its "
-        "pre-October-2025 rate, and judges AI R&D there about 2× as fast. Epoch's "
-        "public index on the same models shows less.",
+        f"METR finds Anthropic's benchmark index climbing 1.9× its pre-October-2025 "
+        "rate, and judges AI R&D there about 2× as fast. Dated by when each model "
+        f"finished training, it is {fit['ratio']:.2f}×. Epoch's public index on the "
+        "same models shows less.",
         ("Anthropic's benchmark index",
          "AECI: Anthropic's version of Epoch's Capabilities Index, Epoch's code on "
          "Anthropic's mix of internal and external benchmarks. The fit is METR's: "
          "least squares with the slope changing on Oct 7, 2025, refitted here on "
-         "the digitized points."),
+         "the digitized points. METR dates each model by when most staff could use "
+         "it; here Anthropic's models sit at an estimated end of training (bars: the "
+         "plausible window), which moves 1.90× to 1.91×. Re-dated 10,000 ways at "
+         "random within those windows, it stays within 1.80–2.01×."),
         ("judges AI R&D there about 2× as fast",
          "Capabilities on well-specified tasks improving ~2× the Mar 2024–Oct 2025 "
          "rate; 1.3× or 3× would not surprise METR. About 80% of today's "
@@ -7689,6 +7699,16 @@ def _render_rsi_metr():
     figure = go.Figure()
 
     def dots(pts, name, color, symbol, size=9, group=None, show=True, ys=None, **kw):
+        if pts and pts[0].get('produced_lo') and ys is None:
+            # Each model's plausible end-of-training window, drawn as a segment
+            # (plotly draws no error bars on a date axis).
+            xs, yv = [], []
+            for r in pts:
+                xs += [r['produced_lo'], r['produced_hi'], None]
+                yv += [r['aeci'], r['aeci'], None]
+            figure.add_trace(go.Scatter(
+                x=xs, y=yv, mode='lines', line=dict(color=color, width=2),
+                opacity=0.45, hoverinfo='skip', showlegend=False, legendgroup=group or name))
         figure.add_trace(go.Scatter(
             x=[r['date'] for r in pts], y=ys or [r['aeci'] for r in pts], mode='markers',
             name=name, legendgroup=group or name, showlegend=show,
@@ -7707,7 +7727,9 @@ def _render_rsi_metr():
          green, 'circle-open', group='pub', show=False, hovertemplate=aeci_hover)
     dots([r for r in anth if r['kind'] == 'internal'], "Claude internal: AECI",
          orange, 'circle', hovertemplate=aeci_hover)
-    projected = [r for r in _metr_on_eci(rows) if r['projected'] and r['kind'] == 'internal']
+    produced = {r['model']: r['date'] for r in anth}
+    projected = [dict(r, date=produced.get(r['model'], r['date']))
+                 for r in _metr_on_eci(rows) if r['projected'] and r['kind'] == 'internal']
     dots(projected, "Claude internal: ECI, projected", orange, 'square-open',
          ys=[r['eci'] for r in projected],
          error_y=dict(type='data', array=[1.2816 * r['sd'] for r in projected],
@@ -7726,7 +7748,8 @@ def _render_rsi_metr():
          hovertemplate=aeci_hover)
     first = min(r['date'] for r in anth + others)
     last = max(r['date'] for r in anth)
-    fit_name = f"METR's fit: +{fit['pre']:.0f} → +{fit['post']:.0f} AECI a year"
+    fit_name = (f"Fit by end of training: +{fit['pre']:.0f} → +{fit['post']:.0f} AECI a year "
+                f"({fit['ratio']:.2f}×; METR's, by availability: 1.90×)")
     for (a, b, slope, dash, color, show) in (
             (first, _METR_BREAK, fit['pre'], None, '#2c3e50', True),
             (_METR_BREAK, last, fit['post'], None, '#2c3e50', False),

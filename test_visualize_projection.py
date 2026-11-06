@@ -6216,6 +6216,18 @@ class TestMetrAeci:
         assert fit['ratio'] == pytest.approx(ratio, abs=0.05)
         assert fit['ratio_lo'] < fit['ratio'] < fit['ratio_hi']
 
+    def test_training_finish_dates_precede_availability_and_barely_move_the_fit(self):
+        """A snapshot can't be used before it exists: each estimated end of
+        training (and its window) is on or before METR's availability date, and
+        refitting on those dates moves 1.90x by under 0.05x."""
+        rows = [r for r in vp.load_metr_aeci() if r['chart'] == 'anthropic']
+        assert all(r['produced_lo'] <= r['produced'] <= r['produced_hi'] <= r['date']
+                   for r in rows)
+        fitted = [r for r in rows if r['kind'] != 'not_frontier']
+        by_avail = vp._metr_hinge([r['date'] for r in fitted], [r['aeci'] for r in fitted])
+        by_made = vp._metr_hinge([r['produced'] for r in fitted], [r['aeci'] for r in fitted])
+        assert abs(by_made['ratio'] - by_avail['ratio']) < 0.05
+
     def test_every_matched_model_is_in_epochs_file(self):
         versions = {m['version'] for m in vp._eci_rows_by_version()}
         named = {r['epoch_model'] for r in vp.load_metr_aeci() if r['epoch_model']}

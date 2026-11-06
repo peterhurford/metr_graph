@@ -581,7 +581,7 @@ line, then the paper's prediction sigmoid (`_tasteval_predict_mase`) against the
 90% bar. The multiplier runs on as a fan from the post-GPT-5.2 fit (80% from half to double its doubling time, widened to the t-interval) with today's diamond; no bar or ETA, since the expert line is already passed and the card dates the prediction curve (`test_tasteval_section_charts_without_dating`).
 
 `_render_rsi_metr()` sets METR's AECI (`metr_aeci.csv`, `load_metr_aeci`) against
-Epoch's ECI on one chart: Claude models on both indexes, internal models' projected ECI
+Epoch's ECI on one chart, Anthropic's models at their estimated end of training (`produced`, with its plausible window as a segment; METR dated by staff availability, 1.90× → 1.91×): Claude models on both indexes, internal models' projected ECI
 (`_metr_on_eci`: AECI less Claude's AECI–ECI gap, which `_metr_gap_trend` fits as growing
 ~3 points a year since 2025, 80% bars from its residual sd), other labs' record-setting
 AECI points, METR's fit carried to today, and where the takeoff model's ECI starts. Its
