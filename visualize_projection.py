@@ -21616,42 +21616,12 @@ def _tk_ladder_curve(hours=None, years=40.0, lag_days=None, monotone=True):
 
 # Anthropic's August 2026 staff poll (1,334 respondents; the 1,093 the post also
 # cites is only its GDP-model subset): the median estimate of AI's share of the
-# work of building a frontier model, by date, and Figure 8's printed 10th-90th
-# percentile whisker ends. A cross-check only, never a model input: it is
-# self-reported, and a share of work is not the share of human hours the model
-# runs on.
+# work of building a frontier model, by date. The AL5 card's cross-check only,
+# never a model input: it is self-reported, and a share of work is not the
+# share of human hours the model runs on.
 _TK_STAFF_SURVEY_URL = "https://www.anthropic.com/research/ai-expectations-gap"
 _TK_STAFF_SURVEY_AI_SHARE = (("in August 2026", "2026-08-15", 51), ("end-2027", "2027-12-31", 80),
                              ("end-2030", "2030-12-31", 95))
-_TK_STAFF_SURVEY_AI_RANGE = ((28, 80), (51, 95), (80, 100))
-
-
-def _tk_staff_survey_rows(result, today):
-    """Section 6's table: per survey date, the staff's median and 10th-90th
-    percentile AI share of the work beside this run's AI share of research
-    hours. A date before `today` reads the automation index's nearest month
-    through the assumed hours per level (`model_range` None); a later one the
-    run's all-stage median and middle 80%."""
-    w = result["workflow_progress"]
-    q = w["overall_human_quantiles"]
-    ladder = load_rsi_automation()
-    hours = _tk_al_hours_now()
-    rows = []
-    for (_label, d, staff), staff_range in zip(_TK_STAFF_SURVEY_AI_SHARE,
-                                               _TK_STAFF_SURVEY_AI_RANGE):
-        when = datetime.strptime(d, '%Y-%m-%d')
-        if when < today:
-            month = min(ladder, key=lambda r: abs((r['date'] - when).days))
-            model, model_range = 100 * (1 - _tk_ladder_human_share(month, hours)), None
-        else:
-            y = (when - today).days / 365.25
-            # The human share's 90th percentile is AI's 10th.
-            model, lo, hi = (100 * (1 - float(np.interp(y, w["years"], q[:, k])))
-                             for k in (1, 2, 0))
-            model_range = (lo, hi)
-        rows.append({"when": when, "staff": staff, "staff_range": staff_range,
-                     "model": model, "model_range": model_range})
-    return rows
 
 
 def _tk_staff_al5_check(hours=None):
@@ -24473,38 +24443,6 @@ def _render_takeoff(loading):
          "denominator."))
     st.plotly_chart(_tf(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_end,
                                      end_date, eci["ultra_level"])), width="stretch")
-
-    st.subheader("6. Against Anthropic Staff")
-    survey = _tk_staff_survey_rows(result, today)
-    _fn_caption(
-        f"Anthropic Staff put AI's share of the work of building a frontier model at "
-        f"{survey[0]['staff']}% in August 2026 and {survey[1]['staff']}% by the end of 2027; "
-        f"this model has AI's share of research hours at {survey[0]['model']:.0f}% and "
-        f"{survey[1]['model']:.0f}%.",
-        ("Anthropic Staff",
-         "An internal poll of 1,334 Anthropic Staff, August 9–12, 2026 (Anthropic, “The AI "
-         "expectations gap”): what share of the work of building an early-2026 frontier "
-         "model AI does today, and at the end of 2027 and 2030. Unweighted personal "
-         "estimates, not a measurement or a company forecast; the later two are forecasts. "
-         "Never an input to this model."),
-        ("AI's share of research hours",
-         "Not the same quantity: AI doing half the work still leaves people hours directing "
-         "and reviewing it. August 2026 is an estimate, not a measurement: the R&D "
-         "automation index's August mix of tasks by level (itself rated by a Claude judge) "
-         "times the human time each level is assumed to take, set by *Human research "
-         "speed-up today*. Later dates are this run's scenarios, all three stages at their "
-         "weights. All three move with the sidebar."))
-    st.dataframe(pandas.DataFrame({
-        "When": [f"End of {r['when']:%Y}" if r['when'].month == 12 else f"{r['when']:%B %Y}"
-                 for r in survey],
-        "Anthropic Staff: AI's share of the work, median (10th–90th)":
-            [f"{r['staff']}% ({r['staff_range'][0]}–{r['staff_range'][1]}%)"
-             for r in survey],
-        "This model: AI's share of research hours, median (middle 80%)":
-            [f"{r['model']:.0f}% (estimate from the index)" if r['model_range'] is None
-             else f"{r['model']:.0f}% ({r['model_range'][0]:.0f}–"
-                  f"{r['model_range'][1]:.0f}%)" for r in survey],
-    }), hide_index=True, width="stretch")
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────

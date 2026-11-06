@@ -253,13 +253,7 @@ clipped at Dec 31 may end a day before Jan 1 and still keeps that year's bar
 (`test_a_grid_ending_on_dec_31_keeps_that_year`); and
 its line labels are placed by hand since a log axis reads an annotation's y as the exponent) and **5. When it happens, and
 how fast** (`_tk_dist_fig`: density and cumulative share of the RSI and ultraintelligence
-dates and the gap between them) and **6. Against Anthropic Staff** (`_tk_staff_survey_rows`:
-the August 2026 staff poll's AI share of the work, median and Figure 8's printed 10th–90th,
-beside the run's AI share of research hours from `overall_human_quantiles`, the quantiles of
-each draw's stages at `WORKFLOW_WEIGHTS`, never a sum of stage quantiles
-(`test_all_stage_quantiles_are_of_the_weighted_draws`); a survey date before today reads the
-automation index through the assumed hours per level, an estimate. A table, not a chart overlay, and never an input: a share of work
-is not a share of hours). `test_default_render_and_stable_rerun` pins the order.
+dates and the gap between them). `test_default_render_and_stable_rerun` pins the order.
 
 Today's human share comes from the automation index's latest mix of AL levels times the
 human time each level still takes in each stage: `_TK_AL_STAGE_HOURS_PRIOR` (stages x

@@ -6376,25 +6376,6 @@ class TestTakeoffHumanSpeedup:
         slow, fast = vp._tk_human_calibration(1.4), vp._tk_human_calibration(2.5)
         assert fast["tk_human_direction"] < slow["tk_human_direction"]
 
-    def test_staff_survey_table_reads_the_index_then_the_run(self):
-        """Section 6: a survey date before today is the automation index's
-        month, measured; later ones are the run's all-stage band, flipped from
-        human to AI share."""
-        result = {"workflow_progress": {
-            "years": np.array([0.0, 10.0]),
-            "overall_human_quantiles": np.array([[0.2, 0.4, 0.6], [0.2, 0.4, 0.6]])}}
-        rows = vp._tk_staff_survey_rows(result, datetime(2026, 10, 26))
-        august = min(vp.load_rsi_automation(),
-                     key=lambda r: abs((r['date'] - datetime(2026, 8, 15)).days))
-        assert rows[0]["model_range"] is None
-        assert rows[0]["model"] == pytest.approx(
-            100 * (1 - vp._tk_ladder_human_share(august, vp._tk_al_hours_now())))
-        for r in rows[1:]:
-            assert r["model"] == pytest.approx(60)
-            assert r["model_range"] == pytest.approx((40, 80))
-        assert [(r["staff"], r["staff_range"]) for r in rows] == [
-            (51, (28, 80)), (80, (51, 95)), (95, (80, 100))]
-
 
 class TestStaffAl5Check:
     """The AL5 card's hover dates the AL4-to-AL5 gap Anthropic's staff survey

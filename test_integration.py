@@ -1250,13 +1250,11 @@ class TestTakeoffTab:
                                                 "Inside the takeoff model"]
         subs = [s.value for s in at.subheader]
         assert subs.index("CoBench") < subs.index("Automated coder projection")
-        assert subs[subs.index("Automated coder projection") + 1:][:8] == [
+        assert subs[subs.index("Automated coder projection") + 1:][:7] == [
             "METR's acceleration assessment",
             "What the evidence feeds in", "1. Research speeds up", "2. People step out of the loop",
             "3. Anthropic's research workforce", "4. What it does to capability (ECI)",
-            "5. When it happens, and how fast", "6. Against Anthropic Staff"]
-        staff = at.dataframe[-1].value
-        assert len(staff) == 3 and staff.iloc[0, 2].endswith("(estimate from the index)")
+            "5. When it happens, and how fast"]
         import json
         dist = json.loads(_tk_charts(at)[14].proto.spec)
         # Density and cumulative share for RSI, ultraintelligence and the gap.
