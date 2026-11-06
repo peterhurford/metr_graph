@@ -6578,3 +6578,13 @@ class TestPcPassed:
             0.0, 400, 'k', 1)
         for slug in vp._pc_passed():
             assert survival[slug] == 0.0
+
+
+class TestTkPaceComparison:
+    """Each row's *Points a year* is "numerator vs denominator" of its Ratio."""
+
+    def test_points_column_divides_to_the_ratio(self):
+        t = vp._tk_pace_comparison(vp._TK_ECI_TODAY)
+        for pts, ratio in zip(t["Points a year"], t["Ratio"]):
+            num, den = (float(x) for x in pts.split(" vs "))
+            assert num / den == pytest.approx(float(ratio.rstrip("×")), abs=0.01)

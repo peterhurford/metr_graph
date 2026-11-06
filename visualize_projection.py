@@ -7964,7 +7964,9 @@ def _tk_render_pace_so_far(today):
 
 def _tk_pace_comparison(eci_today):
     """Rows comparing METR's ratio with this model's pace, computed live:
-    {'What is measured', 'Points a year', 'Ratio'}."""
+    {'What is measured', 'Points a year', 'Ratio'}. Every *Points a year* cell
+    is the ratio's own numerator vs denominator, so the pace rows show the
+    algorithmic part, compute already off (`TestTkPaceComparison`)."""
     hist = _tk_hist_compute_rate()
     rates = _tk_eci_rates(takeoff.DEFAULTS, hist)
     c_pts, a_pts = rates['compute'] * hist, rates['algo_ppy']
@@ -7981,9 +7983,9 @@ def _tk_pace_comparison(eci_today):
         ("Anthropic only, Epoch's ECI scale (internal models projected), same ratio",
          f"{e['post']:.1f} vs {e['pre']:.1f}", f"{e['ratio']:.2f}×"),
         (f"Anthropic's latest climb as a pace: ({anth_now:.1f} − {c_pts:.1f}) ÷ {a_pts:.1f}",
-         f"{anth_now:.1f}", f"{(anth_now - c_pts) / a_pts:.2f}×"),
+         f"{anth_now - c_pts:.1f} vs {a_pts:.1f}", f"{(anth_now - c_pts) / a_pts:.2f}×"),
         (f"US frontier, any lab (the model's input): ({eci_today:g} − {c_pts:.1f}) ÷ {a_pts:.1f}",
-         f"{eci_today:g}", f"{(eci_today - c_pts) / a_pts:.2f}×"),
+         f"{eci_today - c_pts:.1f} vs {a_pts:.1f}", f"{(eci_today - c_pts) / a_pts:.2f}×"),
     ]
     return {"What is measured": [r[0] for r in out], "Points a year": [r[1] for r in out],
             "Ratio": [r[2] for r in out]}
