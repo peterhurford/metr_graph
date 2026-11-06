@@ -7,9 +7,11 @@ Cross-tab mechanisms: ship lags, section deep links, today-forward mode, and whe
 `us_ship_lag` (70 days) and `cn_ship_lag` (21), `_SHIP_LAG_DEFAULTS`, are app-wide sidebar
 settings (`_ship_lag_inputs`: US on Takeoff, both on Pacing), read by `_ship_lag` and
 reassigned at dispatch so a tab switch keeps them. Takeoff and Pacing date *trained* models.
-Takeoff's ECI paths start at the latest US release plus the US lag of the fitted climb
-(`_tk_eci_scale(lead_years=…)`; `eci["released"]` keeps the release for the yearly chart;
-`test_today_is_the_trained_frontier_a_ship_lag_past_the_release`), and release-dated
+Takeoff's ECI paths start at today's trained frontier (`_tk_trained_now`: the latest
+trained model, e.g. Anthropic's Model 4 projected onto Epoch's scale, carried to today at
+`tk_eci_today`, never below the latest US release plus the US lag of that climb), passed
+as `_tk_eci_scale(lead_years=…)`; `eci["released"]` keeps the release
+(`test_today_is_the_trained_frontier_a_ship_lag_past_the_release`), and release-dated
 milestone cards are pulled back over 0.7–1.3× the US lag (`_pc_report_lag_days`). On Pacing
 a China release at t races the US as of t less China's lag (`us_path_cn`); the bar, the
 milestone table and the time to surpass are trained against trained on every clock, while

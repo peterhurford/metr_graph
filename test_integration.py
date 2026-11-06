@@ -2136,14 +2136,15 @@ class TestPacingTab:
         assert "China, no compute levers" in names
 
     def test_methods_toggle_keeps_diffusion_running(self):
-        """At quarter pace, with the leak only half cut, diffusion keeps part of
+        """At 15% pace, with the leak only half cut, diffusion keeps part of
         its rate and China crosses sooner; uncut, it runs at the US's pace,
-        sooner still."""
+        sooner still. (15%, not a quarter: the US now starts from its trained
+        frontier, and at a quarter China no longer crosses before 2032.)"""
         at = self._app()
         # The public ECI line's own rate, so the paced US is still caught
         # before 2032 and the leak has a crossing to move.
         at.session_state["tk_eci_today"] = round(vp_fit_ppy(), 2)
-        at.select_slider(key="pc_pace").set_value(25).run()
+        at.select_slider(key="pc_pace").set_value(15).run()
 
         def surpass(at):
             m = next(m for m in at.metric
