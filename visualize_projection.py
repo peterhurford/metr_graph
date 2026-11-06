@@ -21121,7 +21121,7 @@ _TK_DEFAULTS.update({
     "tk_measure_baseline": 0.0, "tk_measure_before": 0.0, "tk_measure_now": 0.0,
     "tk_eci_today": _TK_ECI_TODAY,
     "tk_returns": 1.0, "tk_dc_compute": True,
-    "tk_coding_pairing": 0.9, "tk_mult_at": "rsi",
+    "tk_coding_pairing": 0.9, "tk_mult_at": "",
     # Staff growth to RSI: Anthropic's headcount grew ~170% in the year to Sep
     # 2026 (S-1), all functions; 100% is a research-staff reading of it.
     "tk_hiring_growth": 100.0,
@@ -23767,25 +23767,31 @@ def _render_takeoff(loading):
 
     def when(t):
         return f"{today + timedelta(days=float(t * 365.25)):%b %Y}"
-    # The date the multiplication is read at: a milestone's median or a fixed
-    # horizon (`tk_mult_at`). A median past the simulation falls back to its end.
-    choices = {"rsi": ("median RSI", meds["RSI"]),
-               "ultra": ("median ultraintelligence", meds["Ultraintelligence"]),
-               "0.5": ("6 months out", 0.5), "1": ("1 year out", 1.0),
-               "2": ("2 years out", 2.0), "3": ("3 years out", 3.0)}
-    if st.session_state.get("tk_mult_at") not in choices:
-        st.session_state["tk_mult_at"] = _TK_DEFAULTS["tk_mult_at"]
-    pick = st.selectbox(
-        "Read the multiplication at", list(choices), key="tk_mult_at",
-        format_func=lambda k: (f"{choices[k][0]} ({when(choices[k][1])})"
-                               if 0 < choices[k][1] <= years_[-1] else choices[k][0]),
-        help="Which date the bars below multiply out to.")
-    name, at_t = choices[pick]
-    if not 0 < at_t <= years_[-1]:
-        at_t, name = years_[-1], "the simulation's end"
-    at_label = name
+    # The date the multiplication is read at: today or any month's end through
+    # 2030 (`tk_mult_at`); until set, the month-end nearest the median RSI.
+    stops = [("Today", 0.0)]
+    m = datetime(today.year, today.month, 1)
+    while m.year <= 2030:
+        nxt = datetime(m.year + (m.month == 12), m.month % 12 + 1, 1)
+        end_of = nxt - timedelta(days=1)
+        t = (end_of - today).days / 365.25
+        if 0 < t <= years_[-1]:
+            stops.append((f"{end_of:%b %Y}", t))
+        m = nxt
+    labels = [lab for lab, _ in stops]
+    if st.session_state.get("tk_mult_at") not in labels:
+        rsi_t = meds["RSI"]
+        st.session_state["tk_mult_at"] = min(stops, key=lambda x: abs(x[1] - rsi_t))[0] \
+            if np.isfinite(rsi_t) else labels[-1]
+    pick = st.select_slider(
+        "Read the multiplication at", labels, key="tk_mult_at",
+        help="Today, or the end of any month to Dec 2030. Starts at the month nearest "
+             + (f"the median RSI ({when(meds['RSI'])})." if np.isfinite(meds["RSI"])
+                else "the median RSI, or the last month when RSI is not reached."))
+    at_t = dict(stops)[pick]
+    at_label = "today" if pick == "Today" else f"the end of {pick}"
     mult_fig, product, net = _tk_multiply_fig(result, pace_today, at_t, at_label)
-    st.markdown(f"**The multiplication at {at_label}, {when(at_t)}**")
+    st.markdown(f"**The multiplication at {at_label}**")
     _fn_caption(
         f"Today's {pace_today:g}\u00d7, then each factor's median change to that date, "
         "on a log scale: each bar starts where the last ended.",
