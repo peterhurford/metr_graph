@@ -330,7 +330,7 @@ less compute's share, over the US frontier's 2024–25 average algorithmic growt
 (`_TK_PACE_BASE`, ~16.4 points a year less ~3.0 for compute), so that average is 1×.
 `tk_eci_today` sets it (default `_TK_ECI_TODAY`: Anthropic's frontier on Epoch's scale,
 internal models projected, its climb smoothed by `_metr_local_slope`, a Gaussian-kernel
-local-linear slope over ~4 months, read at the latest model: ~24.5 → 1.6×); `_tk_run`
+local-linear slope over ~6 months, read at the latest model: ~24.5 → 1.6×); `_tk_run`
 divides `software_months` by it and reports it as `pace_today`, where chart 1 starts. No
 separate pace input exists to disagree with it
 (`test_default_is_the_smoothed_frontier_climb_and_pace_is_derived`). Section 1 opens with

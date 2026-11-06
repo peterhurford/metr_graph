@@ -7554,8 +7554,8 @@ def _metr_on_eci(rows=None):
 # climb over these dates (from, to), less compute's share.
 _TK_PACE_BASE = (datetime(2024, 1, 1), datetime(2026, 1, 1))
 # Bandwidth (years) of the kernel that smooths the frontier's ECI climb into a
-# pace curve: ~4 months, so a model or two either side sets each point.
-_METR_PACE_BW_YEARS = 0.35
+# pace curve: ~6 months. Narrower lets single releases bend the line.
+_METR_PACE_BW_YEARS = 0.5
 
 
 def _metr_local_slope(dates, values, at, bw=_METR_PACE_BW_YEARS):
@@ -7705,19 +7705,20 @@ def _render_rsi_metr():
     tk_now = (_eci_entity_data("US best")[1][-1]['eci_score']
               + eci_today * _ship_lag("us") / 365.25)
     aeci_now = fit['icpt'] + fit['post'] * (today - _METR_BREAK).days / 365.25
-    for y, text, hover in (
-            (aeci_now, f"today (est.)<br>AECI {aeci_now:.0f}",
-             "METR's post-break line carried to today"),
-            (tk_now, f"today (est.)<br>ECI {tk_now:.0f}<br>model starts",
-             "The takeoff model below projects ECI from here: the latest US "
-             "release plus the US ship lag at today's ECI growth, i.e. the best "
-             "model as trained today")):
-        figure.add_trace(go.Scatter(
-            x=[today], y=[y], mode='markers+text', text=[text], showlegend=False,
-            textposition='middle right', textfont=dict(size=11),
-            marker=dict(symbol='diamond', size=12, color=_TK_PACE_COLOR,
-                        line=dict(color='white', width=1)),
-            hovertemplate=f"{hover}<extra></extra>"))
+    # One today marker: where the takeoff model's ECI starts. METR's AECI
+    # trend carried to today is labelled at the end of its dotted line.
+    figure.add_annotation(x=today, y=aeci_now, text=f"AECI trend {aeci_now:.0f}",
+                          showarrow=False, xanchor='left', xshift=6,
+                          font=dict(size=11, color='#2c3e50'))
+    figure.add_trace(go.Scatter(
+        x=[today], y=[tk_now], mode='markers+text', showlegend=False,
+        text=[f"today (est.)<br>ECI {tk_now:.0f}<br>model starts"],
+        textposition='middle right', textfont=dict(size=11),
+        marker=dict(symbol='diamond', size=12, color=_TK_PACE_COLOR,
+                    line=dict(color='white', width=1)),
+        hovertemplate="Where the takeoff model's ECI starts: the latest US release "
+                      "plus the US ship lag at today's ECI growth, i.e. the best "
+                      "model as trained today<extra></extra>"))
     _add_today_vline(figure)
     figure.update_layout(
         height=480, margin=dict(l=50, r=20, t=20, b=20),
@@ -7734,7 +7735,7 @@ def _render_rsi_metr():
                   if not o['anthropic'] and o['date'] >= _METR_GAP_FROM]
     _, gap_slope, _ = _metr_gap_trend(rows)
     _fn_caption(
-        "Circles are AECI, squares Epoch ECI; grey diamonds are today's estimates. "
+        "Circles are AECI, squares Epoch ECI; the grey diamond is where the model starts. "
         "Why the two differ: same code and scale, but different benchmarks, "
         "bigger token budgets and internal-use dates. Those explain the steady "
         f"~{np.median(gap_others):+.0f} on other labs' models; recent Claude models sit "
@@ -7788,9 +7789,10 @@ def _tk_render_pace_so_far(today):
     grid_end = today
     series = []
     d, v = _metr_pace_series()
-    series.append(("Claude incl. internal, on Epoch's scale", d, v, '#d8774f', 3.5, True))
-    for label, entity, color in (("Claude, public (Epoch)", "Anthropic", '#1a7048'),
-                                 ("US frontier, public (Epoch)", "US best", '#95a5a6')):
+    series.append(("Anthropic's best model, internal included: the model's input",
+                   d, v, '#d8774f', 3.5, True))
+    for label, entity, color in (("Anthropic's best public model", "Anthropic", '#1a7048'),
+                                 ("Best public US model, any lab", "US best", '#95a5a6')):
         fr = [m for m in _eci_entity_data(entity)[1] if m['date'] >= _METR_WINDOW_FROM]
         series.append((label, [m['date'] for m in fr], [m['eci_score'] for m in fr],
                        color, 2, False))
@@ -7836,8 +7838,8 @@ def _tk_render_pace_so_far(today):
     st.plotly_chart(fig, width='stretch', theme=None)
     _fn_caption(
         f"Source: [METR]({_METR_ACCEL_SOURCE_URL}) and Epoch's ECI, each climb smoothed "
-        "over ~4 months. The model starts from the thick line.",
-        ("smoothed over ~4 months",
+        "over ~6 months. The model starts from the thick line.",
+        ("smoothed over ~6 months",
          "Gaussian-kernel local-linear slope, no break imposed; the band is its 80% "
          "interval. The thick line is the trained frontier: Anthropic's models, "
          "internal ones projected onto Epoch's scale. The dotted public lines date "
@@ -21772,7 +21774,6 @@ def _tk_pace_fig(result, today, markers=(), history=None,
                              "200×", "500×", "1,000×", "10,000×", "100,000×",
                              "1,000,000×"]),
         legend=dict(orientation="h", y=-0.12), hovermode="x")
-    _add_today_diamond(fig, lines[-1][1], lambda v: f"{v:.1f}\u00d7", log=True)
     return fig
 
 
@@ -22384,7 +22385,6 @@ def _tk_eci_fig(result, today, eci, markers=()):
                    range=[min(m['eci_score'] for m in past) - 10,
                           eci["ultra_level"] + _TK_ECI_VIEW_PAST_ULTRA]),
         legend=dict(orientation="h", y=-0.12), hovermode="x")
-    _add_today_diamond(fig, "Projected ECI", lambda v: f"{v:.0f}", label="trained frontier")
     return fig
 
 
