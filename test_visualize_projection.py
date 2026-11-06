@@ -5323,7 +5323,7 @@ class TestPacing:
                                               ramp_days=90.0, already=0.05)
         kept = out[0][3]
         assert np.mean(kept <= 0) == pytest.approx(0.05, abs=0.01)
-        assert (kept >= 0).all()          # past samples sit at today, not before
+        assert (kept[kept <= 0] == -40.0).all()   # kept at their own dates: no step at today
         # Just past today the keep rate starts at the past's rate q, not at zero.
         q = np.sum(kept <= 0) / 3000
         near = np.sum((kept > 0) & (kept <= 9)) / np.sum((days > 0) & (days <= 9))

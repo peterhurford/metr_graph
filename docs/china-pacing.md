@@ -205,9 +205,9 @@ via `_pc_ramp_for()` — a model shipping that soon finished training a
 report lag earlier — and the fine print quotes the window actually applied. Survival stays the expected likelihood, so the weight × survival mixing is
 unchanged. `rsi_already_pct` (default 5%, *Chance it has already happened,
 unseen*) softens the cut for a crossing made inside a lab and not yet visible: a
-past sample keeps likelihood q, solved so it holds that share of the kept mass, and
-sits at today; inside the ramp a sample keeps max(q, t/N), so the CDF climbs on from
-it without a step. 0 restores the hard cut. `_pc_condition_setting()` turns the
+past sample keeps likelihood q, solved so it holds that share of the kept mass, at its
+own date; inside the ramp a sample keeps max(q, t/N), so the CDF passes through today at
+that share with no step. 0 restores the hard cut. `_pc_condition_setting()` turns the
 checkbox and share into the machinery's `condition` (False, or the share).
 `test_condition_on_today_truncates_and_reweights`,
 `test_condition_ramp_discounts_the_near_future`,

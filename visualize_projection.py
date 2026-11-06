@@ -17746,9 +17746,9 @@ def _pc_condition_on_today(components, today, ramp_days=0.0, already=0.0):
 
     `already` softens the cut: a crossing already made but not yet seen keeps
     likelihood q instead of 0, q solved so the past holds `already` of the
-    kept mass, and those samples sit at today. Inside the ramp a sample keeps
-    max(q, t/ramp_days), so the chance climbs on from `already` without a
-    step (`test_already_leaves_that_share_at_today`). 0 is the hard cut.
+    kept mass, at its own dates. Inside the ramp a sample keeps
+    max(q, t/ramp_days), so the CDF passes through today at `already` with
+    no step (`test_already_leaves_that_share_at_today`). 0 is the hard cut.
 
     Returns (conditioned components, {slug: survival fraction}); a component
     with no surviving samples drops out entirely. The blend must then mix
@@ -17784,8 +17784,7 @@ def _pc_condition_on_today(components, today, ramp_days=0.0, already=0.0):
             keep = rel > 0
         survival[slug] = float(np.mean(keep))
         if keep.any():
-            kept = np.where(rel[keep] <= 0, (today - anchor).days, days[keep])
-            out.append((slug, lab, anchor, kept))
+            out.append((slug, lab, anchor, days[keep]))
     return out, survival
 
 
