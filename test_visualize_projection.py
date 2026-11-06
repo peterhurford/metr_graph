@@ -6156,13 +6156,26 @@ class TestTakeoffEciToday:
         import takeoff_model as tk
         assert vp._tk_eci_today_pace(tk.DEFAULTS, vp._tk_hist_compute_rate(), 0.5) is None
 
-    def test_default_is_anthropics_epoch_scale_climb_and_pace_is_derived(self):
-        """Today's ECI growth defaults to Anthropic's frontier since Oct 2025 on
-        Epoch's scale; there is no separate pace setting to disagree with it."""
-        [r] = [r for r in vp._metr_readings()
-               if r['label'] == "METR AECI: Anthropic, on Epoch's scale"]
-        assert vp._TK_DEFAULTS["tk_eci_today"] == round(2 * r['fit']['post']) / 2
+    def test_default_is_the_smoothed_frontier_climb_and_pace_is_derived(self):
+        """Today's ECI growth defaults to the smoothed climb of Anthropic's
+        frontier on Epoch's scale at the latest model; there is no separate
+        pace setting to disagree with it, and the 2024-25 average is 1x."""
+        dates, vals = vp._metr_pace_series()
+        [(slope, _se)] = vp._metr_local_slope(dates, vals, [dates[-1]])
+        assert vp._TK_DEFAULTS["tk_eci_today"] == round(2 * slope) / 2
         assert "tk_pace_today" not in vp._TK_DEFAULTS
+        import takeoff_model as tk
+        hist = vp._tk_hist_compute_rate()
+        base = vp._tk_eci_scale(tk.DEFAULTS)[2]
+        assert vp._tk_eci_today_pace(tk.DEFAULTS, hist, base) == pytest.approx(1.0)
+
+    def test_local_slope_recovers_a_straight_line(self):
+        from datetime import timedelta
+        d0 = datetime(2025, 1, 1)
+        dates = [d0 + timedelta(days=30 * k) for k in range(20)]
+        vals = [100 + 20 * (d - d0).days / 365.25 for d in dates]
+        for slope, se in vp._metr_local_slope(dates, vals, dates[::5]):
+            assert slope == pytest.approx(20, abs=1e-6) and se < 1e-6
 
 
 class TestMetrAeci:

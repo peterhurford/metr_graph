@@ -6680,7 +6680,6 @@ def render_rsi(end_year):
     # METR's assessment and the pace it implies close the evidence, just above
     # the takeoff model that reads that pace.
     _render_rsi_metr()
-    _render_rsi_pace()
 
 
 # The ladder's colours: a light-to-saturated ramp, so the rungs read as one
@@ -7551,6 +7550,42 @@ def _metr_on_eci(rows=None):
     return out
 
 
+# The baseline research pace is a multiple of: the US frontier's average ECI
+# climb over these dates (from, to), less compute's share.
+_TK_PACE_BASE = (datetime(2024, 1, 1), datetime(2026, 1, 1))
+# Bandwidth (years) of the kernel that smooths the frontier's ECI climb into a
+# pace curve: ~4 months, so a model or two either side sets each point.
+_METR_PACE_BW_YEARS = 0.35
+
+
+def _metr_local_slope(dates, values, at, bw=_METR_PACE_BW_YEARS):
+    """(points a year, its standard error) at each date in `at`: Gaussian-
+    kernel local-linear regression of `values` on time, a smooth slope with
+    no break imposed. Deterministic (no RNG)."""
+    t = np.array([(d - _METR_BREAK).days / 365.25 for d in dates])
+    y = np.asarray(values, dtype=float)
+    out = []
+    for d in at:
+        t0 = (d - _METR_BREAK).days / 365.25
+        w = np.exp(-0.5 * ((t - t0) / bw) ** 2)
+        X = np.c_[np.ones_like(t), t - t0]
+        A = np.linalg.inv(X.T @ (w[:, None] * X))
+        beta = A @ X.T @ (w * y)
+        r = y - X @ beta
+        s2 = (w * r ** 2).sum() / max(w.sum() - 2, 1.0)
+        cov = s2 * A @ (X.T @ ((w ** 2)[:, None] * X)) @ A
+        out.append((float(beta[1]), float(np.sqrt(max(cov[1, 1], 0.0)))))
+    return out
+
+
+def _metr_pace_series():
+    """The trained frontier's ECI points on Epoch's scale: METR's Anthropic
+    rows, internal models projected (`_metr_on_eci`), as (dates, values)."""
+    pts = sorted((r['date'], r['eci']) for r in _metr_on_eci()
+                 if r['kind'] != 'not_frontier')
+    return [d for d, _ in pts], [v for _, v in pts]
+
+
 def _metr_readings():
     """How fast the frontier's ECI climbs since `_METR_BREAK`, by source: a list
     of {'label', 'fit' (`_metr_hinge`), 'basis', 'note'} in points a year.
@@ -7725,86 +7760,89 @@ def _render_rsi_metr():
          "other labs' record-setting models; METR shows no others."))
 
 
-def _render_rsi_pace():
-    """Research pace by the takeoff model's definition: each source's ECI growth,
-    less compute's share, over the public 2024-26 line's algorithmic growth,
-    before and since `_METR_BREAK`, with `tk_eci_today`'s pace marked."""
-    st.subheader("Research pace, by this model's definition")
+def _tk_render_pace_so_far(today):
+    """Research pace so far, by the model's one definition: the frontier's
+    smoothed ECI climb (`_metr_local_slope`), less compute's share, over the US
+    frontier's 2024-25 average, ending where chart 1 starts."""
     hist = _tk_hist_compute_rate()
-
-    def pace(ppy):
-        return _tk_eci_today_pace(takeoff.DEFAULTS, hist, ppy) or 0.0
     rates = _tk_eci_rates(takeoff.DEFAULTS, hist)
     compute_pts, algo_pts = rates['compute'] * hist, rates['algo_ppy']
-    _fn_line(
-        "Research pace is how fast algorithms improve, measured through ECI: the "
-        "frontier's ECI growth less what compute growth adds, as a multiple of "
-        "the public 2024–26 line's.",
-        ("less what compute growth adds",
+
+    def pace(ppy):
+        return (ppy - compute_pts) / algo_pts
+    st.markdown("**Research pace so far**")
+    _fn_caption(
+        "How fast algorithms improve, read off the frontier's ECI: its climb less "
+        "what compute growth adds, as a multiple of the 2024–25 average. Chart 1 "
+        "starts where this ends.",
+        ("its climb less what compute growth adds",
          f"Compute adds ~{compute_pts:.1f} ECI points a year at the frontier-grade "
-         f"exchange rate; the public US line's other ~{algo_pts:.1f} are algorithmic, "
-         "so 1× is that line. METR found compute growth did not speed up, so the "
-         "acceleration is all algorithmic. On this definition METR's own 2× (a ratio "
-         "of total AECI growth against Anthropic's slow 2024–25) reads lower."))
-    readings = {r['label']: r for r in _metr_readings()}
-    series = (("Epoch ECI: US frontier", "US frontier, public (Epoch)", '#95a5a6', 2, 'dot'),
-              ("Epoch ECI: Anthropic", "Claude, public (Epoch)", '#1a7048', 2, 'dash'),
-              ("METR AECI: Anthropic, on Epoch's scale",
-               "Claude incl. internal, on Epoch's scale", '#d8774f', 3.5, None))
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+         f"exchange rate. The US frontier's 2024–25 average was ~{algo_pts + compute_pts:.1f} "
+         f"a year, ~{algo_pts:.1f} of it algorithmic: that is 1×. METR found compute "
+         "growth did not speed up, so the rise is algorithmic."),
+        ("the 2024–25 average",
+         "The US frontier on Epoch's ECI, Jan 2024 to Dec 2025. METR's own ~2× is a "
+         "different ratio: total AECI growth against Anthropic's slow 2024–25."))
     fig = go.Figure()
     fig.add_hline(y=1.0, line=dict(color='#bbb', width=1))
-    for label, name, color, width, dash in series:
-        r = readings.get(label)
-        if not r:
-            continue
-        f = r['fit']
-        pre, post = pace(f['pre']), pace(f['post'])
-        if label.endswith("Epoch's scale"):
-            lo, hi = pace(f['post_lo']), pace(f['post_hi'])
+    grid_end = today
+    series = []
+    d, v = _metr_pace_series()
+    series.append(("Claude incl. internal, on Epoch's scale", d, v, '#d8774f', 3.5, True))
+    for label, entity, color in (("Claude, public (Epoch)", "Anthropic", '#1a7048'),
+                                 ("US frontier, public (Epoch)", "US best", '#95a5a6')):
+        fr = [m for m in _eci_entity_data(entity)[1] if m['date'] >= _METR_WINDOW_FROM]
+        series.append((label, [m['date'] for m in fr], [m['eci_score'] for m in fr],
+                       color, 2, False))
+    for label, dates, vals, color, width, band in series:
+        last = min(dates[-1], grid_end)
+        grid = [_TK_PACE_BASE[0] + timedelta(days=int(k))
+                for k in range(0, (last - _TK_PACE_BASE[0]).days + 1, 14)]
+        est = _metr_local_slope(dates, vals, grid)
+        mid = [pace(m) for m, _ in est]
+        if band:
+            lo = [pace(m - 1.2816 * e) for m, e in est]
+            hi = [pace(m + 1.2816 * e) for m, e in est]
             fig.add_trace(go.Scatter(
-                x=[_METR_BREAK, today, today, _METR_BREAK], y=[lo, lo, hi, hi],
-                mode='lines', fill='toself', fillcolor='rgba(216,119,79,0.15)', line=dict(width=0),
+                x=grid + grid[::-1], y=hi + lo[::-1], fill='toself', mode='lines',
+                fillcolor='rgba(216,119,79,0.15)', line=dict(width=0),
                 hoverinfo='skip', showlegend=False))
         fig.add_trace(go.Scatter(
-            x=[_METR_WINDOW_FROM, _METR_BREAK, _METR_BREAK, today],
-            y=[pre, pre, post, post], mode='lines', name=name,
-            line=dict(color=color, width=width, dash=dash),
-            hovertemplate=(f"{name}<br>Before Oct 2025: +{f['pre']:.1f} ECI/yr = "
-                           f"{pre:.2f}×<br>Since: +{f['post']:.1f} ECI/yr = {post:.2f}×"
-                           "<extra></extra>")))
-        fig.add_annotation(x=today, y=post, text=f"{post:.2f}×", showarrow=False,
-                           xanchor='left', xshift=6, font=dict(color=color, size=12))
+            x=grid, y=mid, mode='lines', name=label,
+            line=dict(color=color, width=width, dash=None if band else 'dot'),
+            hovertemplate=f"{label}<br>%{{x|%b %Y}}: %{{y:.2f}}× the 2024–25 average"
+                          "<extra></extra>"))
     eci_today = float(st.session_state.get("tk_eci_today", _TK_ECI_TODAY))
     now = pace(eci_today)
     fig.add_trace(go.Scatter(
         x=[today], y=[now], mode='markers+text', showlegend=False,
-        text=[f"today {now:.2f}×: the takeoff model"], textposition='bottom left',
+        text=[f"today (est.) {now:.2f}×: the model's start"], textposition='bottom left',
         textfont=dict(size=12),
         marker=dict(symbol='diamond', size=13, color=_TK_PACE_COLOR,
                     line=dict(color='white', width=1)),
-        hovertemplate=f"The takeoff model's pace today: {eci_today:g} ECI points a "
-                      f"year (*Today's ECI growth*) = {now:.2f}×<extra></extra>"))
+        hovertemplate=f"The model's pace today: {eci_today:g} ECI points a year "
+                      f"(*Today's ECI growth*) = {now:.2f}×<extra></extra>"))
     _add_today_vline(fig)
     fig.update_layout(
-        height=380, margin=dict(l=50, r=50, t=20, b=20),
-        xaxis=dict(title='Date', range=[_METR_WINDOW_FROM - timedelta(days=20),
-                                        today + timedelta(days=40)],
+        height=340, margin=dict(l=50, r=30, t=20, b=20),
+        xaxis=dict(title='Date', range=[_TK_PACE_BASE[0] - timedelta(days=20),
+                                        today + timedelta(days=30)],
                    gridcolor='rgba(0,0,0,0.10)'),
-        yaxis=dict(title='Research pace (× the 2024–26 line)', rangemode='tozero',
+        yaxis=dict(title='Research pace (× 2024–25 average)', rangemode='tozero',
                    gridcolor='rgba(0,0,0,0.10)'),
         plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#1a1a2e'),
-        legend=dict(orientation='h', x=0, y=-0.2, yanchor='top', font=dict(size=11)),
+        legend=dict(orientation='h', x=0, y=-0.22, yanchor='top', font=dict(size=11)),
         hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e'))
     st.plotly_chart(fig, width='stretch', theme=None)
     _fn_caption(
-        f"Source: [METR]({_METR_ACCEL_SOURCE_URL}) and Epoch's ECI; METR's one-break "
-        "fit on each series. The takeoff model uses the thick line's pace today.",
-        ("the thick line's pace",
-         "The trained frontier since Oct 2025 is Anthropic's, internal models "
-         "included, and the takeoff model reads ECI on Epoch's scale. The shaded band "
-         "is that fit's 80% interval. The public lines date models at release and lag "
-         "it. Set *Today's ECI growth* in the sidebar to use another."))
+        f"Source: [METR]({_METR_ACCEL_SOURCE_URL}) and Epoch's ECI, each climb smoothed "
+        "over ~4 months. The model starts from the thick line.",
+        ("smoothed over ~4 months",
+         "Gaussian-kernel local-linear slope, no break imposed; the band is its 80% "
+         "interval. The thick line is the trained frontier: Anthropic's models, "
+         "internal ones projected onto Epoch's scale. The dotted public lines date "
+         "models at release and lag it. *Today's ECI growth* in the sidebar sets "
+         "the model's start; its default is the thick line at the latest model."))
 
 
 def _rsi_dir_label_positions(rows, gap_days=90, rise_pts=6.0):
@@ -21043,13 +21081,13 @@ _TK_COMPUTE_SLOW_YEAR = 2030
 # the default of `tk_ultra_eci`, and the range its input accepts.
 _TK_ULTRA_ECI = 250.0
 _TK_ULTRA_RANGE = (180.0, 500.0)
-# Today's frontier ECI growth, points a year (`tk_eci_today`): Anthropic's
-# frontier since Oct 2025 on Epoch's scale, internal models included
-# (`_metr_readings`), to the nearest half point. It sets today's research pace,
-# `_tk_eci_today_pace`, the definition every pace on the tab uses.
-_TK_ECI_TODAY = round(2 * next(
-    r['fit']['post'] for r in _metr_readings()
-    if r['label'] == "METR AECI: Anthropic, on Epoch's scale")) / 2
+# Today's frontier ECI growth, points a year (`tk_eci_today`): the smoothed
+# climb of Anthropic's frontier on Epoch's scale, internal models included, at
+# the latest model (`_metr_local_slope`), to the nearest half point. It sets
+# today's research pace, `_tk_eci_today_pace`, the definition every pace on
+# the tab uses.
+_TK_ECI_TODAY = round(2 * _metr_local_slope(
+    *_metr_pace_series(), [_metr_pace_series()[0][-1]])[0][0]) / 2
 _TK_DEFAULTS = {"tk_" + k: v for k, v in takeoff.DEFAULTS.items()
                 if k not in _TK_NOT_WIDGETS}
 _TK_DEFAULTS.update({
@@ -22160,12 +22198,14 @@ def _tk_eci_scale(params, hist=None, lead_years=0.0, ppy=None):
 
     `now` is the best *trained* model: the latest release plus `lead_years`
     (the US trained-to-release lag) of the climb. `ppy`, when given, is that
-    climb (today's rate, `tk_eci_today`); else the frontier's fitted line."""
+    climb (today's rate, `tk_eci_today`); else the US frontier's 2024-25
+    average (`_TK_PACE_BASE`), the pace baseline."""
     frontier = _eci_entity_data("US best")[1]
     if ppy is None:
-        days = np.array([(m['date'] - frontier[0]['date']).days for m in frontier],
-                        dtype=float)
-        ppy = fit_line(days, np.array([m['eci_score'] for m in frontier]))[1] * 365.25
+        # The 2024-25 average: the baseline every pace on the tab is a multiple of.
+        base = [m for m in frontier if _TK_PACE_BASE[0] <= m['date'] < _TK_PACE_BASE[1]]
+        days = np.array([(m['date'] - base[0]['date']).days for m in base], dtype=float)
+        ppy = fit_line(days, np.array([m['eci_score'] for m in base]))[1] * 365.25
     base_rate = (np.log(2) * 12 / params["software_months"]
                  + (hist if hist is not None else np.log(params["compute_growth"])))
     return frontier, frontier[-1]['eci_score'] + ppy * lead_years, ppy, base_rate
@@ -23222,10 +23262,10 @@ def _render_takeoff(loading):
                    "How fast the trained frontier's ECI climbs today. This sets today's "
                    "research pace, so it moves every date: pace = (this, less the ~3 "
                    "points a year compute adds) ÷ the ~13 algorithmic points a year of "
-                   "the public 2024–26 line. The software doubling time below is sped up "
-                   "by that pace. Default: Anthropic's frontier since Oct 2025 on Epoch's "
-                   "scale, internal models included (*Research pace, by this model's "
-                   "definition*, above). Epoch's public US line alone gives ~16.5 (1×).")
+                   "the US frontier's 2024–25 average. The software doubling time below "
+                   "is sped up by that pace. Default: Anthropic's frontier on Epoch's "
+                   "scale, internal models included, smoothed, at the latest model "
+                   "(*Research pace so far*, section 1). The 2024–25 average, ~16.4, is 1×.")
             st.markdown("**Feedback starting today**")
             number("Undeployed research today (months of baseline progress)",
                    "pipeline_months", 0.0, 12.0, 0.5,
@@ -23300,7 +23340,7 @@ def _render_takeoff(loading):
             number("Persistent human-work floor (%)", "human_floor", 0.0, 25.0, 1.0)
             st.markdown("**Validated research progress**")
             number("Baseline software doubling time (months)", "software_months", 3.0, 60.0, 1.0,
-                   "Validated algorithmic progress at the public ECI line's pace (2024–26), "
+                   "Validated algorithmic progress at the 2024–25 average pace, "
                    "measured as training compute saved at fixed quality, at the reference "
                    "40/40/20 compute split. Today's ECI growth above speeds it to today's "
                    "pace; that already includes today's AI assistance, which is not "
@@ -23574,6 +23614,7 @@ def _render_takeoff(loading):
     }), width="stretch")
 
     st.subheader("1. Research speeds up")
+    _tk_render_pace_so_far(today)
     pace_history = _tk_pace_history(np.exp(experiment_starts) * pace_yield, today)
     pace_note = "from today's ECI growth"
     st.markdown("**Capability relative to 2025**")

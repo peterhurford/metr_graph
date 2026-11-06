@@ -78,12 +78,12 @@ def _rsi_cdf_index(at):
 
 
 def _evidence_end_index(at):
-    """Position of the research-pace chart, the evidence half's last chart."""
+    """Position of METR's AECI chart, the evidence half's last chart."""
     import json
     specs = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
     return next(i for i, sp in enumerate(specs)
                 if ((sp["layout"].get("yaxis") or {}).get("title") or {}).get("text")
-                == "Research pace (× the 2024–26 line)")
+                == "Capabilities index (AECI or ECI)")
 
 
 def _tk_charts(at):
@@ -1219,7 +1219,7 @@ class TestTakeoffTab:
         assert any(h.value == "Takeoff" for h in at.header)
         # RSI evidence, capability pace, net pace, pace factors, their multiplication,
         # compute, people, ECI, yearly progress and the distributions.
-        assert len(_tk_charts(at)) == 13
+        assert len(_tk_charts(at)) == 14
         # The evidence first, then the takeoff model.
         # The takeoff model's loop and cards lead, then the evidence, then the
         # model's charts.
@@ -1227,15 +1227,15 @@ class TestTakeoffTab:
                                                 "Inside the takeoff model"]
         subs = [s.value for s in at.subheader]
         assert subs.index("CoBench") < subs.index("Automated coder projection")
-        assert subs[subs.index("Automated coder projection") + 1:][:9] == [
-            "METR's acceleration assessment", "Research pace, by this model's definition",
+        assert subs[subs.index("Automated coder projection") + 1:][:8] == [
+            "METR's acceleration assessment",
             "What the evidence feeds in", "1. Research speeds up", "2. People step out of the loop",
             "3. The research workforce", "4. What it does to capability (ECI)",
             "5. When it happens, and how fast", "6. Against Anthropic Staff"]
         staff = at.dataframe[-1].value
         assert len(staff) == 3 and staff.iloc[0, 2].endswith("(estimate from the index)")
         import json
-        dist = json.loads(_tk_charts(at)[12].proto.spec)
+        dist = json.loads(_tk_charts(at)[13].proto.spec)
         # Density and cumulative share for RSI, ultraintelligence and the gap.
         assert len(dist["data"]) == 6
         import base64
@@ -1250,17 +1250,17 @@ class TestTakeoffTab:
         titles = " ".join(a["text"] for a in evidence["layout"]["annotations"])
         for name in ("Next-step + TasteVal", "Staff speedup", "Experiments/researcher"):
             assert name in titles
-        yearly = json.loads(_tk_charts(at)[11].proto.spec)
+        yearly = json.loads(_tk_charts(at)[12].proto.spec)
         # Last year measured, this year partly, then each year to the sidebar's.
         assert yearly["data"][0]["x"] == list(range(datetime.now().year - 1, 2031))
         assert yearly["layout"]["yaxis"]["title"]["text"] == "Years of 2025-level ECI progress"
-        compute = json.loads(_tk_charts(at)[5].proto.spec)
+        compute = json.loads(_tk_charts(at)[6].proto.spec)
         assert {"Compute in the model", "Middle 80% of scenarios"} <= {
             d.get("name") for d in compute["data"]}
         assert compute["layout"]["yaxis"]["type"] == "log"
         assert {"Coding automated", "RSI", "Ultraintelligence"} <= {
             a.get("text") for a in compute["layout"]["annotations"]}
-        eci = json.loads(_tk_charts(at)[10].proto.spec)
+        eci = json.loads(_tk_charts(at)[11].proto.spec)
         [projected] = [d for d in eci["data"] if d.get("name") == "Projected ECI"]
         # The axis ends on the sidebar's year end; the line runs a month past it.
         assert eci["layout"]["xaxis"]["range"][1].startswith("2030-12-31")
@@ -1278,9 +1278,9 @@ class TestTakeoffTab:
         first_year = slice(0, 13)        # monthly grid: today plus 12 months
         assert np.all(_ys(traces["Projected ECI: 10th percentile"])[first_year]
                       >= _ys(traces["Today's trend continued"])[first_year] - 1e-9)
-        capability = json.loads(_tk_charts(at)[1].proto.spec)
+        capability = json.loads(_tk_charts(at)[2].proto.spec)
         assert "Pace from capability" in {d.get("name") for d in capability["data"]}
-        pace = json.loads(_tk_charts(at)[2].proto.spec)
+        pace = json.loads(_tk_charts(at)[3].proto.spec)
         assert {"Modeled research pace", "If AI stopped improving today"} <= {
             d.get("name") for d in pace["data"]}
         # Today's pace is set, not inherited from the experiment proxy.
@@ -1294,12 +1294,12 @@ class TestTakeoffTab:
         # Draws run to the horizon, so there is no held-pace tail to label.
         assert not any("hold their last pace" in a.get("text", "")
                    for a in pace["layout"]["annotations"])
-        factors = json.loads(_tk_charts(at)[3].proto.spec)
+        factors = json.loads(_tk_charts(at)[4].proto.spec)
         assert [d["name"] for d in factors["data"]] == [
             "Human researchers", "AI capabilities", "Compute", "Research judgment", "Harder ideas (divides)",
             "Net research pace"]
         # Today's pace times each factor, then the net pace's own median.
-        mult = json.loads(_tk_charts(at)[4].proto.spec)
+        mult = json.loads(_tk_charts(at)[5].proto.spec)
         assert mult["data"][0]["x"][:6] == [
             "Today's pace", "Compute", "Human researchers", "AI capabilities",
             "Research judgment", "Harder ideas"]
@@ -1310,15 +1310,15 @@ class TestTakeoffTab:
                    for d in evidence["data"])
         [flow] = at.get("graphviz_chart")
         assert "Research judgment" in flow.proto.spec and "Today's pace" in flow.proto.spec
-        parts = json.loads(_tk_charts(at)[6].proto.spec)
+        parts = json.loads(_tk_charts(at)[7].proto.spec)
         assert [d["name"] for d in parts["data"]] == [
             "Training", "Experiments", "Running AI researchers"]
         assert {d.get("stackgroup") for d in parts["data"]} == {"parts"}
-        split = json.loads(_tk_charts(at)[7].proto.spec)
+        split = json.loads(_tk_charts(at)[8].proto.spec)
         assert [d["name"] for d in split["data"]] == [
             "Training", "Running AI researchers", "Experiments"]
-        people = json.loads(_tk_charts(at)[8].proto.spec)
-        workforce = json.loads(_tk_charts(at)[9].proto.spec)
+        people = json.loads(_tk_charts(at)[9].proto.spec)
+        workforce = json.loads(_tk_charts(at)[10].proto.spec)
         assert {"AI researcher copies", "Human researchers", "AI (FTE)", "Humans (FTE)", "Total (humans + AIs)"} <= {
             d.get("name") for d in workforce["data"]}
         # Three stages (band edges + median each), then the measured index
@@ -1389,7 +1389,7 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", old_simulator)
         at = self._app()
         assert tk.simulate is not old_simulator
-        assert len(_tk_charts(at)) == 13
+        assert len(_tk_charts(at)) == 14
 
     def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
         import takeoff_model as tk
@@ -1532,7 +1532,7 @@ class TestTakeoffTab:
         assert _qp(at, "tk_end_year") == ["2035"]
         # The year crops the charts; the cards come from scenarios run to 2040.
         assert [(m.label, m.value) for m in at.metric] == cards
-        eci = json.loads(_tk_charts(at)[10].proto.spec)
+        eci = json.loads(_tk_charts(at)[11].proto.spec)
         assert eci["layout"]["xaxis"]["range"][1].startswith("2035-12-31")
         at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_end_year").value == 2030
@@ -1586,7 +1586,7 @@ class TestTakeoffTab:
         labels = ["Coding automation \u2192 RSI", "RSI \u2192 ultraintelligence"]
         for label in labels:
             assert any(m.label == label for m in at.metric), label
-        pace = json.loads(_tk_charts(at)[2].proto.spec)
+        pace = json.loads(_tk_charts(at)[3].proto.spec)
         assert pace["layout"]["yaxis"]["range"][1] <= np.log10(1000) + 1e-9
         assert not any(m.label.startswith("FOOM") for m in at.metric)
 
