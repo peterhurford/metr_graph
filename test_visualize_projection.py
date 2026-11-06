@@ -6169,6 +6169,15 @@ class TestTakeoffEciToday:
         base = vp._tk_eci_scale(tk.DEFAULTS)[2]
         assert vp._tk_eci_today_pace(tk.DEFAULTS, hist, base) == pytest.approx(1.0)
 
+    def test_evidence_settings_follow_todays_eci_growth(self):
+        """The startup defaults are the evidence read at the default ECI growth,
+        and a faster growth reads a bigger capability yardstick."""
+        base = vp._tk_evidence_settings(vp._TK_ECI_TODAY)
+        assert all(vp._TK_DEFAULTS[k] == v for k, v in base.items())
+        faster = vp._tk_evidence_settings(vp._TK_ECI_TODAY + 6)
+        assert faster["tk_cal_capability"] > base["tk_cal_capability"]
+        assert faster["tk_coding_slope"] < base["tk_coding_slope"]
+
     def test_local_slope_recovers_a_straight_line(self):
         from datetime import timedelta
         d0 = datetime(2025, 1, 1)

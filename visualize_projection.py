@@ -21284,12 +21284,12 @@ def _tk_tasteval_taste(experiments, capability_growth, transfer, eci_ppy=None):
                  for per_doubling in _TASTEVAL_ECI_PER_DOUBLING)
 
 
-def _tk_taste_default(frontier, experiments, capability_growth, transfer):
+def _tk_taste_default(frontier, experiments, capability_growth, transfer, eci_ppy=None):
     """The judgment elasticity default: the geometric mean of the next-step
     study's and TasteVal's two regimes, so the post-break rate carries a third
     of the weight, about the odds its curvature carries over to frontier R&D."""
     estimates = (_tk_nextstep_taste(frontier, experiments, capability_growth, transfer),
-                 *_tk_tasteval_taste(experiments, capability_growth, transfer))
+                 *_tk_tasteval_taste(experiments, capability_growth, transfer, eci_ppy))
     return round(float(np.exp(np.mean(np.log(np.maximum(estimates, 1e-3))))), 2)
 
 
@@ -21305,14 +21305,15 @@ def _tk_hist_compute_rate():
     return fit['g'] * np.log(10) if fit else np.log(takeoff.DEFAULTS["compute_growth"])
 
 
-def _tk_evidence_window_growth(experiments):
+def _tk_evidence_window_growth(experiments, eci_today=None):
     """(compute, effective capability) growth over the experiment evidence
     window, from evidence: the data-center compute fit, and that times the
     software trend at today's pace (the window is 2026, after the speed-up:
     `_tk_eci_today_pace` at `_TK_ECI_TODAY`)."""
     years = (experiments[-1]['date'] - experiments[0]['date']).days / 365.25
     compute = _tk_hist_compute_rate()
-    pace = _tk_eci_today_pace(takeoff.DEFAULTS, compute, _TK_ECI_TODAY) or 1.0
+    pace = _tk_eci_today_pace(takeoff.DEFAULTS, compute,
+                              _TK_ECI_TODAY if eci_today is None else eci_today) or 1.0
     software = np.log(2) * 12 / takeoff.DEFAULTS["software_months"] * pace
     return (round(float(np.exp(compute * years)), 2),
             round(float(np.exp((compute + software) * years)), 2))
@@ -22244,16 +22245,27 @@ def _tk_eci_today_pace(params, hist, eci_today):
     return algo_today / r["algo_ppy"] if algo_today > 0 else None
 
 
+def _tk_evidence_settings(eci_today):
+    """The evidence-read settings at `eci_today` ECI points a year: the
+    window's compute and capability growth, and the judgment and coding
+    elasticities read against them."""
+    ex = load_rsi_experiments()
+    tr = _TK_DEFAULTS["tk_transfer"] / 100
+    comp, cap = _tk_evidence_window_growth(ex, eci_today)
+    return {"tk_cal_compute": comp, "tk_cal_capability": cap,
+            "tk_taste_slope": _tk_taste_default(rsi_dir_frontier_all, ex, cap, tr, eci_today),
+            "tk_coding_slope": _tk_survey_coding(load_rsi_survey(), ex, cap, tr,
+                                                 _tk_copies_yearly(load_rsi_automation()))}
+
+
+def _tk_on_eci_today():
+    """A new ECI growth re-reads the evidence at that pace."""
+    st.session_state.update(_tk_evidence_settings(float(st.session_state["tk_eci_today"])))
+
+
 # Evidence-calibrated defaults: read at today's pace, so after the ECI and
 # pace machinery they need is defined.
-_TK_DEFAULTS["tk_cal_compute"], _TK_DEFAULTS["tk_cal_capability"] = \
-    _tk_evidence_window_growth(load_rsi_experiments())
-_TK_DEFAULTS["tk_taste_slope"] = _tk_taste_default(
-    rsi_dir_frontier_all, load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
-    _TK_DEFAULTS["tk_transfer"] / 100)
-_TK_DEFAULTS["tk_coding_slope"] = _tk_survey_coding(
-    load_rsi_survey(), load_rsi_experiments(), _TK_DEFAULTS["tk_cal_capability"],
-    _TK_DEFAULTS["tk_transfer"] / 100, _tk_copies_yearly(load_rsi_automation()))
+_TK_DEFAULTS.update(_tk_evidence_settings(_TK_ECI_TODAY))
 
 
 def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
@@ -23322,13 +23334,16 @@ def _render_takeoff(loading):
                    "past it, power and spending limits bind, and no published estimate "
                    "gives the rate. 100 keeps today's growth.")
             number("Today's ECI growth (points a year)", "eci_today", 10.0, 60.0, 0.5,
+                   on_change=_tk_on_eci_today, help=
                    "How fast the trained frontier's ECI climbs today. This sets today's "
                    "research pace, so it moves every date: pace = (this, less the ~3 "
                    "points a year compute adds) ÷ the ~13 algorithmic points a year of "
                    "the US frontier's 2024–25 average. The software doubling time below "
                    "is sped up by that pace. Default: Anthropic's frontier on Epoch's "
                    "scale, internal models included, smoothed, at the latest model "
-                   "(*Research pace so far*, section 1). The 2024–25 average, ~16.4, is 1×.")
+                   "(*Research pace so far*, section 1). The 2024–25 average, ~16.4, is 1×. "
+                   "Changing it re-reads the evidence at that pace: the judgment and coding "
+                   "elasticities and the calibration's capability growth reset.")
             st.markdown("**Feedback starting today**")
             number("Undeployed research today (months of baseline progress)",
                    "pipeline_months", 0.0, 12.0, 0.5,
