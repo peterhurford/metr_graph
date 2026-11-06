@@ -6196,6 +6196,23 @@ class TestTakeoffEciToday:
             assert slope == pytest.approx(20, abs=1e-6) and se < 1e-6
 
 
+class TestTakeoffEciFloor:
+    def test_the_eci_floor_follows_research_pace(self):
+        """Flat pace: the floor is today's trend. Rising pace: the floor's growth
+        rises with it, but only after the training-and-validation lag."""
+        years = np.linspace(0, 2, 101)
+        flat = vp._tk_eci_floor(170.0, 22.0, years, np.ones_like(years), 1 / 3, 3.0)
+        assert np.allclose(flat, 170.0 + 22.0 * years)
+        pace = 1 + years                      # doubling over the first year
+        up = vp._tk_eci_floor(170.0, 22.0, years, pace, 1 / 3, 3.0)
+        before = years <= 1 / 3
+        assert np.allclose(up[before], flat[before])
+        rate = np.diff(up) / np.diff(years)
+        # A year after the lag the floor climbs ~3 + 19 x 2 points a year.
+        i = np.searchsorted(years, 1 + 1 / 3)
+        assert rate[i] == pytest.approx(3 + 19 * 2, rel=0.05)
+
+
 class TestMetrAeci:
     """METR's AECI points, pixel-digitized: the refit must reproduce the slopes
     and the Model 4 value METR prints."""

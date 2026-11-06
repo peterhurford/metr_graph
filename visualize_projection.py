@@ -22568,6 +22568,19 @@ def _tk_on_eci_today():
 _TK_DEFAULTS.update(_tk_evidence_settings(_TK_ECI_TODAY))
 
 
+def _tk_eci_floor(now, ppy, years, pace_median, lag_years, compute_pts):
+    """Today's trend continued, sped up as research speeds up: ECI grows at
+    `compute_pts` plus the rest of `ppy` times the median research pace
+    relative to today's, read `lag_years` earlier (a new model's training and
+    validation). The same for every scenario, as the fixed trend was."""
+    med = np.asarray(pace_median, dtype=float)
+    if med.size != np.size(years) or not np.isfinite(med[0]) or med[0] <= 0:
+        return now + ppy * years
+    rel = np.clip(np.interp(years - lag_years, years, med / med[0], left=1.0), 0.0, 1e3)
+    rate = compute_pts + (ppy - compute_pts) * rel
+    return now + np.concatenate([[0.0], np.cumsum(0.5 * (rate[1:] + rate[:-1]) * np.diff(years))])
+
+
 def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
     """Each scenario's capability path read as ECI, anchored on the US frontier
     as trained (`result['eci_lead']` years of climb past the latest release).
@@ -22594,6 +22607,18 @@ def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
     # the next `_TK_ECI_FLOOR_FADE_YEARS`, so the scenario returns to its own
     # dynamics (and can fall behind the trend) without a step.
     trend = now + ppy * years
+    # The floor follows research pace: ECI grows at compute's share plus
+    # algorithms' share times the median scenario's research pace (relative to
+    # today's), delayed by a new model's training and validation, so early
+    # growth rises with the pace chart instead of holding at today's rate
+    # (`test_the_eci_floor_follows_research_pace`).
+    pq = wp.get("pace_2025_quantiles")
+    if pq is not None:
+        hist = result.get("hist_compute")
+        trend = _tk_eci_floor(
+            now, ppy, years, np.asarray(pq, dtype=float)[:, 1],
+            (params["training_months"] + params["validation_months"]) / 12,
+            w_compute * (hist if hist is not None else np.log(params["compute_growth"])))
     model = now + w_compute * (wp["capability_log"] - software) + w_software * software
     floored = np.maximum(model, trend[None, :])
     j = min(np.searchsorted(years, _TK_ECI_FLOOR_YEARS), len(years) - 1)
