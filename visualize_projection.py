@@ -21913,9 +21913,124 @@ def _tk_factors_fig(result, today):
     return fig
 
 
+def _tk_evidence_chain(params):
+    """Every number on the way from the evidence to the pace, live: today's pace
+    from ECI growth, the capability yardstick, each judgment reading, the coding
+    reading and the experiment calibration. `params` is the run's (its
+    `taste_slope` is the value used, after the calibration blend)."""
+    ss = st.session_state.get
+    E = float(ss("tk_eci_today", _TK_ECI_TODAY))
+    hist = _tk_hist_compute_rate()
+    rates = _tk_eci_rates(takeoff.DEFAULTS, hist)
+    c_pts, a_pts = rates["compute"] * hist, rates["algo_ppy"]
+    ex = load_rsi_experiments()
+    yrs = (ex[-1]['date'] - ex[0]['date']).days / 365.25
+    comp = float(ss("tk_cal_compute", _TK_DEFAULTS["tk_cal_compute"]))
+    cap = float(ss("tk_cal_capability", _TK_DEFAULTS["tk_cal_capability"]))
+    T_set = float(ss("tk_transfer", _TK_DEFAULTS["tk_transfer"])) / 100
+    # The readings are shown, not used, when transfer is off; read them at 1.
+    T = T_set if T_set > 0 else 1.0
+    _b, _i, slope = _rsi_dir_fit(rsi_dir_frontier_all)
+    odds_y = float(np.exp(slope * 365.25))
+    e_tv = _tk_tasteval_taste(ex, cap, T, E)
+    tv = [(per, 2 ** (E / per), 2 ** (_TK_TASTEVAL_TO_QUALITY * E / per), e)
+          for per, e in zip(_TASTEVAL_ECI_PER_DOUBLING, e_tv)]
+    rows = load_rsi_survey()
+    days = np.array([(r['date'] - rows[0]['date']).days for r in rows], dtype=float)
+    survey_y = float(np.exp(fit_line(days, np.log([r['uplift'] for r in rows]))[1] * 365.25))
+    copies_y = _tk_copies_yearly(load_rsi_automation())
+    eg = ex[-1]['mult'] / ex[0]['mult']
+    auto = _tk_automation_growth(load_rsi_automation(), ex, params["ai_speed"],
+                                 (cap / comp) ** params["ai_copies"], _tk_al_hours_now())
+    cal = takeoff.calibrate_feedback(
+        eg, comp, cap, float(ss("tk_cal_yield", 1.0)), float(ss("tk_cal_validated", 0)) or None,
+        transfer=T, coding_slope=params["coding_slope"], parallel=params["parallelization"],
+        substitution=params["substitution"], automation_growth=auto) if T_set > 0 else None
+    return {
+        "E": E, "c_pts": c_pts, "a_pts": a_pts, "pace": (E - c_pts) / a_pts,
+        "years": yrs, "compute": comp, "cap": cap, "cap_y": cap ** (1 / yrs), "T": T,
+        "transfer_off": T_set <= 0,
+        "odds_y": odds_y, "value_y": odds_y ** _TK_ODDS_TO_JUDGMENT,
+        "odds_power": _TK_ODDS_TO_JUDGMENT,
+        "e_ns": _tk_nextstep_taste(rsi_dir_frontier_all, ex, cap, T),
+        "tv": tv, "tv_power": _TK_TASTEVAL_TO_QUALITY,
+        "judgment_set": float(ss("tk_taste_slope", _TK_DEFAULTS["tk_taste_slope"])),
+        "judgment_used": float(params["taste_slope"]),
+        "survey_y": survey_y, "copies_y": copies_y, "coding": float(params["coding_slope"]),
+        "exp_growth": eg, "parallel": params["parallelization"],
+        "compute_part": comp ** params["parallelization"],
+        "residual": cal["resource_adjusted_growth"] if cal else None,
+        "automation": auto, "fitted": cal["quality_slope"] if cal else None,
+        "cal_weight": float(ss("tk_cal_weight", _TK_DEFAULTS["tk_cal_weight"])),
+    }
+
+
+def _tk_evidence_math(c):
+    """Markdown with LaTeX: each step of `_tk_evidence_chain`, numbers filled in,
+    and what the result means."""
+    (pre, pre_m, pre_q, pre_e), (post, post_m, post_q, post_e) = c["tv"]
+    T, cy = c["T"], c["cap_y"]
+    lines = (["*AI transfer is 0, so none of these readings reach the dynamics; they are "
+              "shown at full transfer.*"] if c.get("transfer_off") else []) + [
+        "**1. Today's pace, from ECI.** The trained US frontier gains "
+        f"{c['E']:g} ECI points a year. Compute growth adds {c['c_pts']:.1f}; the rest is "
+        f"algorithms, compared with the 2024–25 average's {c['a_pts']:.1f}:",
+        rf"$$\text{{pace}} = \frac{{{c['E']:g} - {c['c_pts']:.1f}}}{{{c['a_pts']:.1f}}} = {c['pace']:.2f}\times$$",
+        "Chart 1 starts here, and the model's software doubling time is the 2024–25 one "
+        "divided by it.",
+        "**2. The yardstick.** Over the evidence window (Jan–Aug 2026, "
+        f"{c['years']:.2f} years) training compute grew ×{c['compute']:.2f} and capability "
+        f"(compute × algorithms at today's pace) ×{c['cap']:.2f}:",
+        rf"$$c = {c['cap']:.2f}^{{1/{c['years']:.2f}}} = {cy:.1f}\times \text{{ a year}}$$",
+        "**3. From a growth rate to an elasticity.** Only a share T = "
+        f"{T:.0%} of AI's gains carries into research, so a quantity growing g× a year "
+        "while capability grows c× a year has elasticity",
+        r"$$e = \frac{\ln\left((g - 1 + T)/T\right)}{\ln c}$$",
+        "and 10× more capability makes that quantity about $10^e$ times bigger.",
+        "**4. Judgment, three readings.**",
+        f"- *Next-step study:* the odds a model's next step beats the researcher's grow "
+        f"×{c['odds_y']:.2f} a year. Picking the better step more often is not "
+        f"proportionally more research, so take the square root: ×{c['value_y']:.2f}. "
+        rf"Then $e = \ln(({c['value_y']:.2f} - 1 + {T:g})/{T:g}) / \ln {cy:.1f} = {c['e_ns']:.2f}$.",
+        f"- *TasteVal:* the compute multiplier doubles every {pre:g} ECI points before "
+        f"GPT-5.2 and every {post:g} after. At {c['E']:g} points a year that is "
+        f"×{pre_m:.1f} and ×{post_m:.0f} a year; it saves experiment time, half the research "
+        f"input, so take the square root: ×{pre_q:.2f} and ×{post_q:.2f}, giving "
+        f"$e$ = {pre_e:.2f} and {post_e:.2f}.",
+        rf"$$\text{{judgment}} = \sqrt[3]{{{c['e_ns']:.2f} \times {pre_e:.2f} \times {post_e:.2f}}} = {c['judgment_set']:.2f}$$",
+        f"10× more capable AI picks experiments about {10 ** c['judgment_set']:.1f}× more valuable.",
+    ]
+    if c["fitted"] is not None:
+        lines += [
+            "**5. The experiment check.** OpenAI's experiments per researcher grew "
+            f"×{c['exp_growth']:.2f} over the window. Compute explains "
+            f"${c['compute']:.2f}^{{{c['parallel']:g}}} = {c['compute_part']:.2f}$ of it, "
+            f"leaving ×{c['residual']:.2f}; AI coding help and people's falling share of the "
+            f"work (×{c['automation']:.2f}) explain more, and the rest is credited to "
+            f"judgment: a fitted {c['fitted']:.2f}. Blended {100 - c['cal_weight']:g}/"
+            f"{c['cal_weight']:g} with the readings above, the run uses "
+            f"**{c['judgment_used']:.2f}**.",
+        ]
+    lines += [
+        f"**6. Coding labor.** Staff report output with AI growing ×{c['survey_y']:.2f} a "
+        f"year; ×{c['copies_y']:.3f} of that is just more AI copies, leaving "
+        f"×{c['survey_y'] / c['copies_y']:.2f}:",
+        rf"$$e = \frac{{\ln(({c['survey_y'] / c['copies_y']:.2f} - 1 + {T:g})/{T:g})}}{{\ln {cy:.1f}}} = {c['coding']:.2f}$$",
+        f"10× more capable AI makes its coding help about {10 ** c['coding']:.1f}× bigger.",
+        "**7. What they do.** Each month the model's research pace is today's pace × "
+        "(people and AI labor, combined with experiment compute) × (judgment) ÷ "
+        "(harder ideas). Judgment multiplies everything, so it moves dates most; coding "
+        "enters through labor, which buys little when compute is the scarcer input, and "
+        "the experiment check partly offsets it (a higher coding number leaves less to "
+        "credit to judgment).",
+    ]
+    return "\n\n".join(lines)
+
+
 def _tk_flow_dot(v):
-    """Graphviz DOT for evidence -> setting -> pace factor -> net pace, each
-    node coloured as its line in the factor chart. `v` holds the values shown."""
+    """Graphviz DOT for evidence -> measured rate -> conversion -> setting ->
+    pace factor -> net pace, every step showing its live number
+    (`_tk_evidence_chain`, in `v["chain"]`), each row coloured as its factor."""
     def tint(color, keep=0.18):
         # Opaque: a translucent fill shows the page through, dark in dark mode.
         rgb = [int(color[i:i + 2], 16) for i in (1, 3, 5)]
@@ -21931,55 +22046,82 @@ def _tk_flow_dot(v):
             attrs.append('style=dashed')
         return f'{a} -> {b} [{", ".join(attrs)}];'
 
-    judgment = f"{v['taste_set']:g}"
-    if abs(v["taste_used"] - v["taste_set"]) > 0.005:
-        judgment = f"{v['taste_set']:g} set, {v['taste_used']:.2f} used"
+    c = v["chain"]
     p = _TK_PACE_COLOR
+    pur, ora, grn, blu, red = "#8e44ad", "#d68910", "#16a085", "#2980b9", "#c0392b"
+    ln = f"ln {c['cap_y']:.1f}"
+    (pre, pre_m, pre_q, pre_e), (post, post_m, post_q, post_e) = c["tv"]
+    used = (f"{c['judgment_used']:.2f} used" if abs(c["judgment_used"] - c["judgment_set"]) > 0.005
+            else "")
     lines = [
-        'digraph { rankdir=LR; bgcolor="transparent"; nodesep=0.18; ranksep=0.45;',
-        'node [fontname="sans-serif", fontsize=11, margin="0.12,0.05"];',
-        'edge [color="#999", fontcolor="#999", fontname="sans-serif", fontsize=9];',
-        # Column headers, pinned to their columns by invisible edges.
+        'digraph { rankdir=LR; bgcolor="transparent"; nodesep=0.12; ranksep=0.35;',
+        'node [fontname="sans-serif", fontsize=10, margin="0.10,0.04"];',
+        'edge [color="#999", fontcolor="#777", fontname="sans-serif", fontsize=9];',
         'node [shape=plaintext, style="", fontcolor="#999", fontsize=10];',
-        'h1 [label="EVIDENCE"]; h2 [label="SETTING"]; h3 [label="PACE FACTOR"]; '
-        'h4 [label="RESULT"];',
-        'h1 -> h2 -> h3 -> h4 [style=invis];',
-        node("ns", "Next-step + TasteVal\\nwin odds vs researcher", "#8e44ad"),
-        node("su", "Staff speedup survey\\nself-reported output", "#d68910"),
-        node("ex", "OpenAI experiments\\nper researcher", p),
-        node("mt", "METR assessment\\n+ ECI readings", p),
-        node("ix", "R&D automation index", "#16a085"),
-        node("dc", v["compute_source"], "#2980b9"),
-        node("sb", "Sidebar assumptions", "#c0392b"),
-        node("pj", f"Judgment elasticity\\n{judgment}", "#8e44ad"),
-        node("pc", f"Coding elasticity\\n{v['coding']:g}", "#d68910"),
-        node("ph", "People's share of the work\\nfalls as capability rises", "#16a085"),
-        node("pk", f"Compute growth\\n×{v['compute_growth']:.1f} in year one", "#2980b9"),
-        node("pn", f"Staff +{v['hiring']:g}%/yr to RSI\\nreturns r = {v['returns']:g}",
-             "#c0392b"),
-        node("pt", f"Today's pace\\n{v['pace_today']:g}× 2025", p),
-        node("fj", "Research judgment", "#8e44ad", "ellipse"),
-        node("fa", "AI capabilities", "#d68910", "ellipse"),
-        node("fh", "Human researchers", "#16a085", "ellipse"),
-        node("fk", "Compute", "#2980b9", "ellipse"),
-        node("fd", "Harder ideas (÷)", "#c0392b", "ellipse"),
-        node("net", f"Net research pace\\n{v['pace_today']:g}× today, times\\nthe five "
-                    "factors", p, "doubleoctagon"),
-        '{rank=same; h1; ns; su; ex; mt; ix; dc; sb;}',
-        '{rank=same; h2; pj; pc; ph; pk; pn; pt;}',
-        '{rank=same; h3; fj; fa; fh; fk; fd;}',
-        '{rank=same; h4; net;}',
-        edge("ns", "pj"), edge("su", "pc"), edge("mt", "pt", "today's pace"),
-        edge("ix", "ph"), edge("dc", "pk"), edge("sb", "pn"),
-        edge("pj", "fj"), edge("pc", "fa"), edge("ph", "fa", "Amdahl"),
-        edge("ph", "fh", "people speed\\ntheir share"), edge("pk", "fk"),
-        edge("pn", "fh"), edge("pn", "fd", "difficulty\\n= 0.5 / r"),
+        'h1 [label="EVIDENCE"]; h2 [label="MEASURED"]; h3 [label="CONVERTED"]; '
+        'h4 [label="SETTING"]; h5 [label="PACE FACTOR"]; h6 [label="RESULT"];',
+        'h1 -> h2 -> h3 -> h4 -> h5 -> h6 [style=invis];',
+        # Today's pace from ECI.
+        node("e_ev", "Trained US frontier\\n(ECI, any lab)", p),
+        node("e_me", f"+{c['E']:g} ECI a year\\ntoday", p),
+        node("e_cv", f"less compute's {c['c_pts']:.1f},\\n÷ 2024–25's {c['a_pts']:.1f}", p),
+        node("pt", f"Today's pace\\n{c['pace']:.2f}×", p),
+        # The yardstick every elasticity divides by.
+        node("y_ev", "Compute (Data Centers)\\n× software at today's pace", blu),
+        node("y_me", f"capability ×{c['cap']:.2f}\\nover Jan–Aug 2026", blu),
+        node("y_cv", f"= ×{c['cap_y']:.1f} a year\\n(the yardstick)", blu),
+        # Judgment readings.
+        node("n_ev", "Next-step study\\nwin odds vs researcher", pur),
+        node("n_me", f"odds ×{c['odds_y']:.2f}\\na year", pur),
+        node("n_cv", f"^{c['odds_power']:g} → ×{c['value_y']:.2f}\\n→ reading {c['e_ns']:.2f}", pur),
+        node("t_ev", "TasteVal compute\\nmultiplier", pur),
+        node("t_me", f"before: ×{pre_m:.1f}/yr\\nafter: ×{post_m:.0f}/yr", pur),
+        node("t_cv", f"^{c['tv_power']:g} → ×{pre_q:.1f}, ×{post_q:.1f}\\n→ {pre_e:.2f}, {post_e:.2f}", pur),
+        node("pj", f"Judgment {c['judgment_set']:.2f}\\n(geometric mean)" + (f"\\n{used}" if used else ""), pur),
+        # Experiment calibration.
+        node("x_ev", "OpenAI experiments\\nper researcher", p),
+        node("x_me", f"×{c['exp_growth']:.2f}\\nJan–Aug 2026", p),
+        node("x_cv", (f"÷ compute ×{c['compute_part']:.2f}\\n÷ labor → fit {c['fitted']:.2f}"
+                      if c["fitted"] is not None else "calibration off"), p),
+        # Coding labor.
+        node("s_ev", "Staff speedup\\nsurvey", ora),
+        node("s_me", f"output ×{c['survey_y']:.2f}\\na year", ora),
+        node("s_cv", f"÷ more copies ×{c['copies_y']:.3f}\\n→ ×{c['survey_y'] / c['copies_y']:.2f}", ora),
+        node("pc", f"Coding labor {c['coding']:.2f}", ora),
+        # Other inputs.
+        node("ix", "R&D automation index", grn),
+        node("ph", "People's share\\nof the work", grn),
+        node("pk", f"Compute ×{v['compute_growth']:.1f}\\nin year one", blu),
+        node("pn", f"Staff +{v['hiring']:g}%/yr\\nreturns r = {v['returns']:g}", red),
+        node("fj", "Research judgment", pur, "ellipse"),
+        node("fa", "AI capabilities", ora, "ellipse"),
+        node("fh", "Human researchers", grn, "ellipse"),
+        node("fk", "Compute", blu, "ellipse"),
+        node("fd", "Harder ideas (÷)", red, "ellipse"),
+        node("net", f"Net research pace\\n{c['pace']:.2f}× today ×\\nthe five factors", p,
+             "doubleoctagon"),
+        '{rank=same; h1; e_ev; y_ev; n_ev; t_ev; x_ev; s_ev; ix;}',
+        '{rank=same; h2; e_me; y_me; n_me; t_me; x_me; s_me;}',
+        '{rank=same; h3; e_cv; y_cv; n_cv; t_cv; x_cv; s_cv;}',
+        '{rank=same; h4; pt; pj; pc; ph; pk; pn;}',
+        '{rank=same; h5; fj; fa; fh; fk; fd;}',
+        '{rank=same; h6; net;}',
+        edge("e_ev", "e_me"), edge("e_me", "e_cv"), edge("e_cv", "pt"),
+        edge("y_ev", "y_me"), edge("y_me", "y_cv"),
+        edge("n_ev", "n_me"), edge("n_me", "n_cv"), edge("n_cv", "pj"),
+        edge("t_ev", "t_me", f"at {c['E']:g} ECI/yr"), edge("t_me", "t_cv"), edge("t_cv", "pj"),
+        edge("x_ev", "x_me"), edge("x_me", "x_cv"),
+        edge("s_ev", "s_me"), edge("s_me", "s_cv"), edge("s_cv", "pc", f"÷ {ln}"),
+        edge("y_cv", "n_cv", f"÷ {ln}", dashed=True), edge("y_cv", "t_cv", f"÷ {ln}", dashed=True),
+        edge("ix", "ph"), edge("pj", "fj"), edge("pc", "fa"), edge("ph", "fa", "Amdahl"),
+        edge("ph", "fh"), edge("pk", "fk"), edge("pn", "fh"),
+        edge("pn", "fd", "difficulty = 0.5 / r"),
         edge("fj", "net", "×"), edge("fa", "net", "×"), edge("fh", "net", "×"),
         edge("fk", "net", "×"), edge("fd", "net", "÷"),
-        edge("pt", "net", "starting\\nlevel"),
+        edge("pt", "net", "starting level"),
     ]
-    if v["cal_weight"] > 0:
-        lines.append(edge("ex", "pj", f"calibrates\\n({v['cal_weight']:g}%)", dashed=True))
+    if c["fitted"] is not None and c["cal_weight"] > 0:
+        lines.append(edge("x_cv", "pj", f"blended in at {c['cal_weight']:g}%", dashed=True))
     return "\n".join(lines + ["}"])
 
 
@@ -23703,29 +23845,32 @@ def _render_takeoff(loading):
 
     st.header("Inside the takeoff model")
     st.subheader("What the evidence feeds in")
+    chain = _tk_evidence_chain(params)
     _fn_caption(
-        "Each trend sets one rate below. The automation index is drawn into chart "
-        "2, the automated coder projection dates coding automation, and compute growth comes "
-        "from the Data Centers tab's US projection (sidebar toggle).",
-        ("sets one rate",
-         "Growth rates are divided by the experiment calibration's assumed "
-         "capability growth to give elasticities. Win odds are read as research "
-         "strength against the researcher (Bradley-Terry). Year one blends in the "
-         "experiment trend, fading after."))
+        "Each trend below is a yearly growth rate. The model turns each into one setting "
+        "by asking how fast it grows per unit of AI capability; the diagram after shows "
+        "every step with its number.",
+        ("per unit of AI capability",
+         "An elasticity e: when capability grows c×, the quantity grows as "
+         "1 − T + T·c^e, with T the share of AI's gains that transfer to research "
+         f"({chain['T']:.0%}). So e = ln((g − 1 + T) / T) ÷ ln c for a quantity growing g× "
+         f"a year while capability grows c = ×{chain['cap_y']:.1f} a year."))
     st.plotly_chart(_tk_evidence_fig(dict(
         {k: st.session_state["tk_" + k] for k in ("taste_slope", "coding_slope")},
         today=today, pace_today=pace_today)), width="stretch")
     wp = result["workflow_progress"]
     st.markdown("**How the evidence reaches the pace**")
     _fn_caption(
-        "Each piece of evidence sets one setting, each setting drives a factor, and "
-        "the net pace is today's level times the five factors.",
-        ("sets one setting",
-         "Colours match the factor lines in *What moves the pace* below. Compute, "
-         "staff growth and returns come from the Data Centers tab and the sidebar, "
-         "not this evidence. The experiment trend also calibrates the judgment "
-         "elasticity, blended with the setting at the sidebar's weight."))
+        "Read left to right: each piece of evidence is measured as a yearly rate, "
+        "converted, and becomes a setting; settings drive five factors; the net pace "
+        "is today's pace times those factors.",
+        ("today's pace times those factors",
+         "Colours match the factor lines in chart 1. Judgment multiplies the whole pace, "
+         "so it moves dates most; coding labor works through people and AI's labor, "
+         "which matters less when experiment compute is the scarcer input. Compute, "
+         "staff growth and returns come from the Data Centers tab and the sidebar."))
     st.graphviz_chart(_tk_flow_dot({
+        "chain": chain,
         "taste_set": float(st.session_state["tk_taste_slope"]),
         "taste_used": float(params["taste_slope"]),
         "coding": float(params["coding_slope"]),
@@ -23739,6 +23884,8 @@ def _render_takeoff(loading):
         "hiring": float(params["hiring_growth"]),
         "returns": float(st.session_state["tk_returns"]),
     }), width="stretch")
+    with st.expander("The math, step by step"):
+        st.markdown(_tk_evidence_math(chain))
 
     st.subheader("1. Research speeds up")
     _tk_render_pace_so_far(today)

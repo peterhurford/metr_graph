@@ -116,8 +116,8 @@ observed experiment growth, leaving a lower fitted judgment elasticity (at `cal_
 it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `_TK_FACTOR_VIEW`; `_tk_multiply_fig` restates it at the median RSI date (else the view's
 end) as log-scale steps from today's pace, ending on the net pace's own median, not the
-steps' product, since medians don't multiply. `_tk_flow_dot` (graphviz) draws evidence →
-setting → factor → net, coloured as the factor lines; the experiment series has its own
+steps' product, since medians don't multiply. `_tk_flow_dot` (graphviz) draws evidence → measured rate → conversion →
+setting → factor → net, every step's live number from `_tk_evidence_chain` (an expander, `_tk_evidence_math`, writes the same steps as formulas with the numbers filled in; with transfer 0 the readings are shown at full transfer), coloured as the factor lines; the experiment series has its own
 grey (`_TK_PACE_COLOR`) because it sets today's pace, not Compute, and its evidence panel
 marks where its own trend stands today (`_add_today_diamond`), not Takeoff's set pace. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
 Non-AI inputs (all scaled by `baseline_inputs`): staff headcount (`hiring_growth`,
