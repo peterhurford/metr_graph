@@ -752,11 +752,11 @@ def _add_today_diamond(fig, trace_name, fmt, label="", log=False, color='#7f8c8d
          else float(np.interp(t, xs, ys)))
     note = f": {label}" if label else ""
     fig.add_trace(go.Scatter(
-        x=[today], y=[v], mode='markers+text', text=[f"today {fmt(v)}{note}"],
+        x=[today], y=[v], mode='markers+text', text=[f"today (est.) {fmt(v)}{note}"],
         textposition=position, textfont=dict(size=12), showlegend=False,
         marker=dict(symbol='diamond', size=13, color=color,
                     line=dict(color='white', width=1)),
-        name='Today', hovertemplate=f"Today: {fmt(v)}{note}<extra></extra>"))
+        name='Today', hovertemplate=f"Today (est.): {fmt(v)}{note}<extra></extra>"))
     return v
 
 
@@ -21761,7 +21761,7 @@ def _tk_evidence_fig(params):
         trend = float(np.exp(icpt + slope * (today - base).days))
         fig.add_trace(go.Scatter(
             x=[today], y=[trend], mode="markers+text",
-            text=[f"today {trend:.1f}\u00d7: trend"],
+            text=[f"today (est.) {trend:.1f}\u00d7: trend"],
             textposition="middle left", textfont=dict(size=11),
             marker=dict(symbol="diamond", size=11, color=_TK_PACE_COLOR,
                         line=dict(color="white", width=1)),
