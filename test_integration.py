@@ -3013,12 +3013,15 @@ class TestPacingTab:
         assert coder["US (median, 80%)"][:3] in (
             "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split())
 
-    def test_unpaced_us_milestones_match_takeoff(self):
+    def test_unpaced_us_milestones_match_takeoff(self, monkeypatch):
         """Unpaced (the default), the US column dates each milestone exactly as
         Takeoff's cards do, median and 80% range: Pacing runs each scenario's
         own Takeoff date (the coder's `coding_at`, as the card) through its
         clock rather than re-finding the ECI, which landed early wherever ECI
-        is flat before the event. Paced to 40%, every US date moves later."""
+        is flat before the event. Paced to 40%, every US date moves later.
+        At production samples: under Takeoff's draw count, Pacing reads only
+        a subset of its scenarios."""
+        monkeypatch.setenv("_VP_SAMPLES", "5000")
         at = _fresh_app().run()
         cards = {m.label.split(":")[0]: m.value for m in at.metric}
         ci80 = [c.value for c in at.caption if c.value.startswith("80% CI: ")][:3]

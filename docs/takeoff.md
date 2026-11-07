@@ -429,8 +429,8 @@ Nine things are load-bearing.
    (`_rsi_auto_pos_sigma`, quoted at 90%, hence the 1.645), widened for the
    bend. The labelled months since May (`_RSI_AUTO_RECENT_N`) climb at about
    half the full fit's rate and the latest sits below the line, so
-   `_rsi_auto_start` centres midway between fit and reading with an 80% band
-   reaching both, and `_rsi_auto_dt_ci` stretches the slow edge to the recent
+   `_rsi_auto_start` starts on the fit with an 80% band reaching the
+   reading, and `_rsi_auto_dt_ci` stretches the slow edge to the recent
    months' own 80% t-interval. Widened, not refitted: four points can't tell a
    bend from noise.
 6. **AL5 has no observations at all.** It is absent in every rated month and the
@@ -527,12 +527,10 @@ things are load-bearing.
    is later than the days it covers — which reads the ramp slow, not hot.
 3. **The position CI starts at `_RSI_CODE_POS_FACTOR`**, not the survey's
    one-significant-figure allowance: this series is counted, not self-reported.
-   The survey, code and research-direction fans start on the fit
-   (`_fan_start_on_trend`), widened so the 80% band reaches the latest
-   reading, with the doubling time lognormal around the fit's own
-   (`_lognormal_around`), so each fan's median continues its trend line
-   (`TestFanFollowsTrend`). Experiments, TasteVal and the automation index
-   still start at `_fan_start`, midway between fit and reading. The rate CI is
+   Every fitted evidence fan starts on the fit (`_fan_start_on_trend`),
+   widened so the 80% band reaches the latest reading, with the doubling time
+   lognormal around the fit's own (`_lognormal_around`), so each fan's median
+   continues its trend line (`TestFanFollowsTrend`). The rate CI is
    `_dt_ci_t_widened` like the other two.
 4. **The target label is added by hand**, here and on the survey chart's
    `_PC_RSI_SURVEY_TARGET_X` bar. On a log axis plotly reads an annotation's y

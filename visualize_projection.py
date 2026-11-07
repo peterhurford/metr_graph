@@ -1684,34 +1684,22 @@ def _rsi_auto_start(rows):
     """(latest labelled row, centre, sigma) for the projection's start, in
     log-odds.
 
-    Centred midway between the fitted line and the latest reading, with the
-    figure's own measurement sigma widened so the 80% band reaches both: when
-    the latest month sits off the trend, neither alone is the place to start.
+    On the fitted line, the figure's own measurement sigma widened so the 80%
+    band reaches the latest reading (`_fan_start_on_trend`).
     """
     base, icpt, slope = _rsi_auto_fit(rows)
     cur = [r for r in rows if r['fitted']][-1]
     fitted = icpt + slope * (cur['date'] - base).days
     observed = _logit(min(max(cur['al4'], 0.05), 99.95) / 100)
-    return (cur,) + _fan_start(fitted, observed, _rsi_auto_pos_sigma(cur))
+    return (cur,) + _fan_start_on_trend(fitted, observed, _rsi_auto_pos_sigma(cur))
 
 
 def _fan_start_on_trend(fitted, observed, sigma):
     """(centre, sigma) of an evidence fan's start on its fitted line, `sigma`
     widened so the 80% band reaches the latest reading: the fan's median then
-    continues the trend line, and the reading stays inside the band. The
-    survey, code-merged and research-direction fans and their cards."""
+    continues the trend line, and the reading stays inside the band. Every
+    fitted evidence fan and its card."""
     return fitted, float(np.hypot(sigma, abs(fitted - observed) / 1.282))
-
-
-def _fan_start(fitted, observed, sigma):
-    """(centre, sigma) of an evidence fan's start, in the fit's own space.
-
-    Midway between the fitted line and the latest reading, `sigma` widened so
-    the 80% band reaches both: a reading off the trend is evidence the fan
-    must cover, and a start on the line alone leaves it outside the 90% band.
-    """
-    half_gap = abs(fitted - observed) / 2
-    return (fitted + observed) / 2, float(np.hypot(sigma, half_gap / 1.282))
 
 
 def _rsi_auto_reach(rows, key, share, epoch=None):
@@ -6931,7 +6919,7 @@ def _render_rsi_automation(end_year):
         dt = np.log(2) / slope
         n = N_SAMPLES
         proj_slope = np.log(2) / np.maximum(
-            _lognormal_from_ci(*_rsi_auto_dt_ci(rows, round(dt)), n=n), 1.0)
+            _lognormal_around(dt, *_rsi_auto_dt_ci(rows, round(dt)), n=n), 1.0)
         _cur, centre, sigma = _rsi_auto_start(rows)
         start_logit = np.random.normal(centre, sigma, n)
 
@@ -7466,7 +7454,7 @@ def _rsi_experiment_draws(rows, n=None):
     slopes = np.log(2) / np.maximum(
         rng.lognormal(np.log(dt), np.log(2) / 1.282, n), 1.0)
     fitted = icpt + slope * (rows[-1]['date'] - base).days
-    starts = rng.normal(*_fan_start(fitted, np.log(rows[-1]['mult']),
+    starts = rng.normal(*_fan_start_on_trend(fitted, np.log(rows[-1]['mult']),
                                     np.log(_RSI_EXPERIMENT_POS_FACTOR) / 1.282), n)
     return starts, slopes
 
@@ -8336,13 +8324,13 @@ def _render_rsi_tasteval(end_year):
         dt_lo, dt_hi = _dt_ci_t_widened(pdays, np.log([r['mult'] for r in post]), fit_dt)
         anchor = post[-1]['date']
         fitted = np.log(2) * (p_icpt + p_slope * (anchor - brk).days / 365.25)
-        centre, sigma = _fan_start(fitted, np.log(post[-1]['mult']), 0.0)
+        centre, sigma = _fan_start_on_trend(fitted, np.log(post[-1]['mult']), 0.0)
         # A local generator: this chart's draws must not shift the tab's stream.
         rng = np.random.default_rng(20261106)
         n = N_SAMPLES
         starts = rng.normal(centre, sigma, n)
         slopes = np.log(2) / rng.lognormal(
-            np.log(np.sqrt(dt_lo * dt_hi)), np.log(dt_hi / dt_lo) / (2 * 1.282), n)
+            np.log(fit_dt), np.log(dt_hi / dt_lo) / (2 * 1.282), n)
         end = datetime(int(end_year), 12, 31)
         fdays = _fan_days(max((end - anchor).days, 1))
         fdates = [anchor + timedelta(days=float(d)) for d in fdays]
@@ -17683,8 +17671,8 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
                  "The R&D automation fan above, at its defaults: single OLS "
                  "in logit space over the six labelled months, odds-doubling "
                  "over that fit's t-widened rate CI, stretched to the "
-                 "slower climb since May; position between the fitted line "
-                 "and the latest reading, which sits below it. "
+                 "slower climb since May; position on the fitted line, its "
+                 "band reaching the latest reading, which sits below it. "
                  f"{_RSI_AUTO_TARGET:.0f}% is this app's bar, not the post's, "
                  "and it still has a human supervising \u2014 AL5 is zero "
                  "throughout. Six points on a steep ramp, judged by a model "
@@ -18053,8 +18041,8 @@ def _pc_rsi_auto_eta(rows, target_pct=_RSI_AUTO_TARGET, n=None, samples=False):
     if slope <= 0:
         return None
     proj_slope = np.log(2) / np.maximum(
-        _lognormal_from_ci(*_rsi_auto_dt_ci(rows, round(np.log(2) / slope)),
-                           n=n), 1.0)
+        _lognormal_around(np.log(2) / slope,
+                          *_rsi_auto_dt_ci(rows, round(np.log(2) / slope)), n=n), 1.0)
     cur, centre, sigma = _rsi_auto_start(rows)
     start = np.random.normal(centre, sigma, n)
     days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
@@ -21701,8 +21689,7 @@ def _tk_ladder_curve(hours=None, years=40.0, lag_days=None, monotone=True):
     lag = _rsi_al5_lag(rows)
     if slope4 <= 0 or lag is None:
         return None
-    dt_lo, dt_hi = _rsi_auto_dt_ci(rows, round(np.log(2) / slope4))
-    slope = np.log(2) / np.sqrt(dt_lo * dt_hi)               # per day, median
+    slope = slope4                                           # per day, median: the fit
     if lag_days is None:
         lag_days = np.sqrt(lag['lag'] * max(lag['lag'], lag['slow']) * _RSI_AL5_TAU_HI_MULT)
     lag_days = np.asarray(lag_days, dtype=float)
@@ -21747,8 +21734,7 @@ def _tk_staff_al5_check(hours=None):
         return None
     start = rows[-1]['date']
     _b, _i, slope4 = _rsi_auto_fit(rows)
-    dt_lo, dt_hi = _rsi_auto_dt_ci(rows, round(np.log(2) / slope4))
-    slope = np.log(2) / np.sqrt(dt_lo * dt_hi)
+    slope = slope4                       # the median rate is the fit's
     _cur, centre, _sigma = _rsi_auto_start(rows)
     lag = _rsi_al5_lag(rows)
     median_gap = np.sqrt(lag['lag'] * max(lag['lag'], lag['slow']) * _RSI_AL5_TAU_HI_MULT)
