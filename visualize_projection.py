@@ -6558,6 +6558,7 @@ def render_rsi(end_year):
                 min_value=0.5, max_value=99.5, step=1.0)
 
     st.header("The evidence")
+    _render_rsi_automation(rsi_end_year)
     st.subheader("CoBench")
     _fn_line(
         "Recursive self-improvement runs through a lab automating its own "
@@ -6681,7 +6682,6 @@ def render_rsi(end_year):
          "shorter investigations for the same token budget on these evaluation "
          "transcripts.” — Fable 5.1 & Mythos 5.1 system card, p. 37"))
 
-    _render_rsi_automation(rsi_end_year)
     _render_rsi_survey(rsi_end_year)
     _render_rsi_code(rsi_end_year)
     _render_rsi_experiments(rsi_end_year)
@@ -6720,7 +6720,7 @@ def _render_rsi_automation(end_year):
     """
     st.subheader("R&D automation index")
     _fn_line(
-        "The other four sections measure how well models score or how much "
+        "The other sections measure how well models score or how much "
         "they produce. This one rates the work itself: the share of "
         "Anthropic's model R&D tasks at each rung of Epoch's automation "
         "scale, from **AI assists** up to **no human in the loop**.",

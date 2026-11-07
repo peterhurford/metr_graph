@@ -350,7 +350,7 @@ since a drawn widget's key cannot be reassigned in the same run. `test_default_r
 stable_rerun` pins the order; tests find Takeoff's own charts after the RSI projection's
 CDF (`_tk_charts`).
 
-`render_rsi()` runs CoBench, then the R&D automation index,
+`render_rsi()` runs the R&D automation index, then CoBench,
 then the staff survey, then
 merged code per person, OpenAI experiment velocity, research direction, then TasteVal
 (`_render_rsi_tasteval()`), then *Capabilities Milestones* + *Automated coder projection* (`_pc_render_milestones()`,
