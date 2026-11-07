@@ -6579,3 +6579,10 @@ class TestTkPaceComparison:
         for pts, ratio in zip(t["Points a year"], t["Ratio"]):
             num, den = (float(x) for x in pts.split(" vs "))
             assert num / den == pytest.approx(float(ratio.rstrip("×")), abs=0.01)
+
+    def test_compute_comes_off_both_numerator_and_denominator(self):
+        pts = [tuple(float(x) for x in p.split(" vs "))
+               for p in vp._tk_pace_comparison(vp._TK_ECI_TODAY)["Points a year"]]
+        off = pts[1][0] - pts[2][0]
+        assert off > 0 and pts[1][1] - pts[2][1] == pytest.approx(off, abs=0.11)
+        assert pts[3][1] == pts[2][1]

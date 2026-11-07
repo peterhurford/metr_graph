@@ -7963,10 +7963,10 @@ def _tk_render_pace_so_far(today):
 
 
 def _tk_pace_comparison(eci_today):
-    """Rows comparing METR's ratio with this model's pace, computed live:
-    {'What is measured', 'Points a year', 'Ratio'}. Every *Points a year* cell
-    is the ratio's own numerator vs denominator, so the pace rows show the
-    algorithmic part, compute already off (`TestTkPaceComparison`)."""
+    """Rows walking METR's ratio to this model's pace one change at a time,
+    computed live: {'What is measured', 'Points a year', 'Ratio'}. Every
+    *Points a year* cell is its ratio's numerator vs denominator; from the
+    compute row on, compute's points come off both (`TestTkPaceComparison`)."""
     hist = _tk_hist_compute_rate()
     rates = _tk_eci_rates(takeoff.DEFAULTS, hist)
     c_pts, a_pts = rates['compute'] * hist, rates['algo_ppy']
@@ -7977,16 +7977,21 @@ def _tk_pace_comparison(eci_today):
     e = _metr_hinge([r['date'] for r in on], [r['eci'] for r in on])
     anth_now = _metr_local_slope([r['date'] for r in on], [r['eci'] for r in on],
                                  [on[-1]['date']])[0][0]
+    e_pre = e['pre'] - c_pts
     out = [
         ("METR's AECI measure of Anthropic models (including internal) in 2026 divided by 2024-2025",
-         f"{m['post']:.1f} vs {m['pre']:.1f}", f"{m['ratio']:.2f}×"),
-        ("Change from AECI to ECI",
-         f"{e['post']:.1f} vs {e['pre']:.1f}", f"{e['ratio']:.2f}×"),
-        (f"Change from the average since Oct 2025 to the latest climb ({anth_now:.1f}), less compute's {c_pts:.1f}",
-         f"{anth_now - c_pts:.1f} vs {a_pts:.1f}", f"{(anth_now - c_pts) / a_pts:.2f}×"),
-        (f"Change from just Anthropic to all AI companies ({eci_today:g}, the model's input)",
-         f"{eci_today - c_pts:.1f} vs {a_pts:.1f}", f"{(eci_today - c_pts) / a_pts:.2f}×"),
+         f"{m['post']:.1f} vs {m['pre']:.1f}", m['ratio']),
+        ("Change from AECI to ECI", f"{e['post']:.1f} vs {e['pre']:.1f}", e['ratio']),
+        (f"Subtract compute's effect: bigger training runs add {c_pts:.1f} ECI a year, "
+         "then and now", f"{e['post'] - c_pts:.1f} vs {e_pre:.1f}",
+         (e['post'] - c_pts) / e_pre),
+        (f"Change from the average since Oct 2025 to the rate at the latest model "
+         f"({on[-1]['model']}, {on[-1]['date']:%b %Y}), a slope weighted to the last ~6 months",
+         f"{anth_now - c_pts:.1f} vs {e_pre:.1f}", (anth_now - c_pts) / e_pre),
+        ("Change from just Anthropic to all US AI companies, then and now (the model's input)",
+         f"{eci_today - c_pts:.1f} vs {a_pts:.1f}", (eci_today - c_pts) / a_pts),
     ]
+    out = [(w, p, f"{r:.2f}×") for w, p, r in out]
     return {"What is measured": [r[0] for r in out], "Points a year": [r[1] for r in out],
             "Ratio": [r[2] for r in out]}
 
