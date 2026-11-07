@@ -162,15 +162,16 @@ step), position ± `_PC_RSI_POS_CI` around the measured score, not the fitted li
 survey: OLS on log(multiple) over every round the tab fits (the carried-over
 `estimated` point included, as on the tab), doubling time over
 `_rsi_survey_dt_ci()`'s t-widened interval, position over the
-fitted multiple ÷ and × `_RSI_SURVEY_POS_FACTOR`; merged code: the same,
+fitted multiple ÷ and × `_RSI_SURVEY_POS_FACTOR`, widened to reach the latest
+round (`_fan_start_on_trend`, so the fan's median continues the trend); merged code: the same,
 over the quarters from 2025 on, with `_rsi_code_dt_ci()` and
 `_RSI_CODE_POS_FACTOR`; R&D automation: single OLS in logit space over the six
 labelled months, odds-doubling over `_rsi_auto_dt_ci()`, position over the
 figure's own 90% interval on the latest month; AL5: that same draw shifted by a
 lag drawn over [censored ladder, `_RSI_AL5_TAU_HI_MULT`x it]; next-step: single OLS in
 logit space, odds-doubling over `_rsi_dir_dt_ci()` (widened to span every frontier
-step's rate), position around the measured score
-± `_RSI_DIR_POS_CI` points (the study's own binomial SE at n=`_RSI_DIR_N`) — rather
+step's rate), position on the fit ± `_RSI_DIR_POS_CI` points widened to reach
+the measured score (the study's own binomial SE at n=`_RSI_DIR_N`) — rather
 than fitting its own, so the tabs can't quote different dates for the same milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
 `test_rli_eta_reproduces_the_rli_tab_defaults` and
 `test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that.

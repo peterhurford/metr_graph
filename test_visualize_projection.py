@@ -3213,8 +3213,6 @@ class TestRsiMilestoneCards:
             self._case(which)
         assert anchor == want_anchor
         start = icpt + slope * (anchor - base).days
-        if which == 'code':     # the fan starts between the fit and the reading
-            start = vp._fan_start(start, np.log(vp.load_rsi_code()[-1]['mult']), 0.0)[0]
         deterministic = (target_y - start) / slope
         assert 0.6 * deterministic < np.median(days) < 1.6 * deterministic
 
@@ -6594,3 +6592,22 @@ class TestTastevalPredictFan:
         fan = vp._tasteval_predict_fan(ds)
         np.testing.assert_allclose(fan[50], vp._tasteval_predict_mase(ds), atol=1e-6)
         assert (fan[10] < fan[50]).all() and (fan[50] < fan[90]).all()
+
+
+class TestFanFollowsTrend:
+    """The survey, code and direction fans' medians continue their trend lines."""
+
+    def test_start_is_the_fit_and_its_band_reaches_the_reading(self):
+        c, sd = vp._fan_start_on_trend(1.0, 2.0, 0.1)
+        assert c == 1.0 and c + 1.2816 * sd >= 2.0
+
+    def test_doubling_time_median_is_the_fit(self):
+        np.random.seed(0)
+        assert np.median(vp._lognormal_around(314.0, 113.0, 1126.0, 20000)) == \
+            pytest.approx(314.0, rel=0.03)
+
+    def test_direction_start_is_on_the_fit(self):
+        fr = vp.rsi_dir_frontier_all
+        base, icpt, slope = vp._rsi_dir_fit(fr)
+        c, _ = vp._rsi_dir_start(fr)
+        assert c == pytest.approx(icpt + slope * (fr[-1]['date'] - base).days)

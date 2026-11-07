@@ -358,6 +358,13 @@ def _lognormal_from_ci(lo, hi, n):
     return np.random.lognormal(mu_ln, sigma_ln, n)
 
 
+def _lognormal_around(median, lo, hi, n):
+    """Lognormal with `median` and the spread of the 80% CI [lo, hi]: a fan's
+    doubling time centred on its fit, so the fan's median follows the trend
+    even when the CI was widened more on one side."""
+    return np.random.lognormal(np.log(median), (np.log(hi) - np.log(lo)) / (2 * 1.282), n)
+
+
 def _normal_from_ci(lo, hi, n):
     """Sample from normal fitted to 80% CI bounds [lo, hi], clipped at lo/10."""
     mu = (lo + hi) / 2
@@ -1686,6 +1693,14 @@ def _rsi_auto_start(rows):
     fitted = icpt + slope * (cur['date'] - base).days
     observed = _logit(min(max(cur['al4'], 0.05), 99.95) / 100)
     return (cur,) + _fan_start(fitted, observed, _rsi_auto_pos_sigma(cur))
+
+
+def _fan_start_on_trend(fitted, observed, sigma):
+    """(centre, sigma) of an evidence fan's start on its fitted line, `sigma`
+    widened so the 80% band reaches the latest reading: the fan's median then
+    continues the trend line, and the reading stays inside the band. The
+    survey, code-merged and research-direction fans and their cards."""
+    return fitted, float(np.hypot(sigma, abs(fitted - observed) / 1.282))
 
 
 def _fan_start(fitted, observed, sigma):
@@ -6527,6 +6542,18 @@ def _rsi_dir_fit(frontier):
     return base, icpt, slope
 
 
+def _rsi_dir_start(frontier):
+    """(centre, sigma) in log-odds of the direction fan's start: the fit at
+    the latest frontier model, widened to reach both its score's
+    +/-`_RSI_DIR_POS_CI` points and the score itself (`_fan_start_on_trend`)."""
+    base, icpt, slope = _rsi_dir_fit(frontier)
+    cur = frontier[-1]
+    sigma = (_logit((cur['better'] + _RSI_DIR_POS_CI) / 100)
+             - _logit((cur['better'] - _RSI_DIR_POS_CI) / 100)) / (2 * 1.282)
+    return _fan_start_on_trend(icpt + slope * (cur['date'] - base).days,
+                               _logit(cur['better'] / 100), max(float(sigma), 0.0))
+
+
 def _rsi_dir_dt_ci(frontier, fit_dt):
     """Default 80% CI on the odds-doubling time, in days: the t-widened
     [DT/2, DT*2], widened again to span every frontier step's own rate (the
@@ -7131,9 +7158,9 @@ def _render_rsi_survey(end_year):
         dt = np.log(2) / slope
         n = N_SAMPLES
         proj_slope = np.log(2) / np.maximum(
-            _lognormal_from_ci(*_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
+            _lognormal_around(dt, *_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
         fitted = intercept + slope * (cur['date'] - base).days
-        centre, sigma = _fan_start(fitted, np.log(cur['uplift']),
+        centre, sigma = _fan_start_on_trend(fitted, np.log(cur['uplift']),
                                    np.log(_RSI_SURVEY_POS_FACTOR) / 1.282)
         start_log = np.random.normal(centre, sigma, n)
 
@@ -7277,9 +7304,9 @@ def _render_rsi_code(end_year):
         dt = np.log(2) / slope
         n = N_SAMPLES
         proj_slope = np.log(2) / np.maximum(
-            _lognormal_from_ci(*_rsi_code_dt_ci(rows, dt), n=n), 1.0)
+            _lognormal_around(dt, *_rsi_code_dt_ci(rows, dt), n=n), 1.0)
         fitted = icpt + slope * (cur['date'] - base).days
-        start_log = np.random.normal(*_fan_start(
+        start_log = np.random.normal(*_fan_start_on_trend(
             fitted, np.log(cur['mult']), np.log(_RSI_CODE_POS_FACTOR) / 1.282), n)
 
         pdays = _fan_days(max((datetime(end_year, 12, 31) - cur['date']).days, 1))
@@ -8130,11 +8157,8 @@ def _render_rsi_direction(end_year):
     if slope > 0:
         n = N_SAMPLES
         proj_slope = np.log(2) / np.maximum(
-            _lognormal_from_ci(*_rsi_dir_dt_ci(frontier, round(fit_dt)), n=n), 1.0)
-        fitted = _logit(cur['better'] / 100)    # the measured score, as the card
-        sigma = (_logit((cur['better'] + _RSI_DIR_POS_CI) / 100)
-                 - _logit((cur['better'] - _RSI_DIR_POS_CI) / 100)) / (2 * 1.282)
-        start_logit = np.random.normal(fitted, max(float(sigma), 0), n)
+            _lognormal_around(fit_dt, *_rsi_dir_dt_ci(frontier, round(fit_dt)), n=n), 1.0)
+        start_logit = np.random.normal(*_rsi_dir_start(frontier), n)
 
         end_date = datetime(end_year, 12, 31)
         pdays = _fan_days(max((end_date - cur['date']).days, 1))
@@ -17696,8 +17720,8 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
                  _pc_rsi_code_eta(load_rsi_code(), n=n, samples=True), False,
                  "The merged-code fan above, at its defaults: OLS on "
                  "log(multiple) over the quarters from 2025 on, doubling "
-                 "time over that fit's t-widened rate CI, position between "
-                 "the fit and the latest quarter. "
+                 "time over that fit's t-widened rate CI, position on the "
+                 "fit, its band reaching the latest quarter. "
                  f"{_RSI_CODE_TARGET:.0f}x is one contributor merging what "
                  f"{_RSI_CODE_TARGET:.0f} did before 2025 \u2014 lines "
                  "merged, which a coding "
@@ -17717,9 +17741,9 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
                  _pc_nextstep_eta(rsi_dir_frontier_all, n=n, samples=True), True,
                  "The research-direction fan above, at its defaults: single "
                  "OLS in logit space, odds-doubling over [DT/2, DT\u00d72] "
-                 "widened to the slope's 80% t-interval, position "
-                 f"\u00b1{_RSI_DIR_POS_CI:g} points (the study's own binomial "
-                 f"SE on n={_RSI_DIR_N}). {_RSI_DIR_TARGET:.0f}% is the "
+                 "widened to the slope's 80% t-interval, position on the "
+                 f"fit, \u00b1{_RSI_DIR_POS_CI:g} points (the study's own binomial "
+                 f"SE on n={_RSI_DIR_N}) widened to reach the latest score. {_RSI_DIR_TARGET:.0f}% is the "
                  "study's own practical ceiling \u2014 what a judge shown the "
                  "finished session scores \u2014 and the sampled turns were "
                  "selected for having room for improvement."))
@@ -17960,9 +17984,9 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
 
     The RSI tab's survey fan at its defaults — OLS on log(multiple) over
     every round the tab fits (the carried-over `estimated` point included),
-    doubling time lognormal over `_rsi_survey_dt_ci()`'s t-widened interval,
-    position lognormal from `_fan_start()` between the fit and the latest
-    round, base width `_RSI_SURVEY_POS_FACTOR`. Returns None if the fitted slope is flat or
+    doubling time lognormal around the fit over `_rsi_survey_dt_ci()`'s
+    t-widened interval, position lognormal on the fit from
+    `_fan_start_on_trend()`, reaching the latest round, base width `_RSI_SURVEY_POS_FACTOR`. Returns None if the fitted slope is flat or
     negative.
     """
     n = n or N_SAMPLES
@@ -17974,9 +17998,9 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
         return None
     dt = np.log(2) / slope
     proj_slope = np.log(2) / np.maximum(
-        _lognormal_from_ci(*_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
+        _lognormal_around(dt, *_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
     fitted = intercept + slope * (rows[-1]['date'] - base).days
-    start = np.random.normal(*_fan_start(fitted, np.log(rows[-1]['uplift']),
+    start = np.random.normal(*_fan_start_on_trend(fitted, np.log(rows[-1]['uplift']),
                                          np.log(_RSI_SURVEY_POS_FACTOR) / 1.282), n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
     return _pc_eta_out(rows[-1]['date'], days_to, samples)
@@ -17991,8 +18015,9 @@ def _pc_rsi_code_eta(rows, target_x=_RSI_CODE_TARGET, n=None, samples=False):
     """(early, median, late) dates for merged code per person to reach `target_x`.
 
     The section's fan at its defaults — OLS on log(multiple) over the quarters
-    from 2025 on, doubling time lognormal over `_rsi_code_dt_ci()`, position
-    lognormal from `_fan_start()` between the fit and the latest quarter, base
+    from 2025 on, doubling time lognormal around the fit over
+    `_rsi_code_dt_ci()`, position lognormal on the fit from
+    `_fan_start_on_trend()`, reaching the latest quarter, base
     width `_RSI_CODE_POS_FACTOR`. Returns None if the fitted slope is flat.
     """
     n = n or N_SAMPLES
@@ -18000,10 +18025,11 @@ def _pc_rsi_code_eta(rows, target_x=_RSI_CODE_TARGET, n=None, samples=False):
     if slope <= 0:
         return None
     proj_slope = np.log(2) / np.maximum(
-        _lognormal_from_ci(*_rsi_code_dt_ci(rows, np.log(2) / slope), n=n), 1.0)
+        _lognormal_around(np.log(2) / slope, *_rsi_code_dt_ci(rows, np.log(2) / slope),
+                          n=n), 1.0)
     cur = rows[-1]
     fitted = icpt + slope * (cur['date'] - base).days
-    start = np.random.normal(*_fan_start(fitted, np.log(cur['mult']),
+    start = np.random.normal(*_fan_start_on_trend(fitted, np.log(cur['mult']),
                                          np.log(_RSI_CODE_POS_FACTOR) / 1.282), n)
     days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
     return _pc_eta_out(cur['date'], days_to, samples)
@@ -18045,8 +18071,8 @@ def _pc_nextstep_eta(frontier, target_pct=_RSI_DIR_TARGET, n=None,
     """(early, median, late) dates for the detour study to reach `target_pct`.
 
     The section's fan at its defaults — single OLS in logit space,
-    odds-doubling time lognormal over `_rsi_dir_dt_ci()`, position normal over
-    the last frontier score +/- `_RSI_DIR_POS_CI` points. Returns None if the
+    odds-doubling time lognormal around the fit over `_rsi_dir_dt_ci()`,
+    position `_rsi_dir_start()`. Returns None if the
     fitted slope is flat or negative.
     """
     n = n or N_SAMPLES
@@ -18054,12 +18080,10 @@ def _pc_nextstep_eta(frontier, target_pct=_RSI_DIR_TARGET, n=None,
     if slope <= 0:
         return None
     dt_lo, dt_hi = _rsi_dir_dt_ci(frontier, round(np.log(2) / slope))
-    proj_slope = np.log(2) / np.maximum(_lognormal_from_ci(dt_lo, dt_hi, n), 1.0)
+    proj_slope = np.log(2) / np.maximum(
+        _lognormal_around(np.log(2) / slope, dt_lo, dt_hi, n), 1.0)
     cur = frontier[-1]
-    sigma = (_logit((cur['better'] + _RSI_DIR_POS_CI) / 100)
-             - _logit((cur['better'] - _RSI_DIR_POS_CI) / 100)) / (2 * 1.282)
-    # From the measured score, as CoBench's card does.
-    start = np.random.normal(_logit(cur['better'] / 100), max(float(sigma), 0), n)
+    start = np.random.normal(*_rsi_dir_start(frontier), n)
     days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
     return _pc_eta_out(cur['date'], days_to, samples)
 
@@ -21809,7 +21833,7 @@ def _tk_nextstep_curves(n, seed, years=40.0, today=None):
     odds left at the study's own ceiling (`_RSI_DIR_TARGET`, what a judge shown
     the finished session reaches), so direction still needs people in
     proportion to what they add past that ceiling. Each draw climbs from the
-    fit's value today at its own rate, lognormal over the "next-step reaches
+    fit's value today at its own rate, lognormal around the fit over the "next-step reaches
     90%" card's range, from a fixed seed. None if the fit is flat."""
     frontier = rsi_dir_frontier_all
     base, icpt, slope = _rsi_dir_fit(frontier)
@@ -21817,7 +21841,7 @@ def _tk_nextstep_curves(n, seed, years=40.0, today=None):
         return None
     dt_lo, dt_hi = _rsi_dir_dt_ci(frontier, round(np.log(2) / slope))
     rng = np.random.default_rng(int(seed) + 11)
-    rate = np.log(2) / np.exp(rng.normal((np.log(dt_lo) + np.log(dt_hi)) / 2,
+    rate = np.log(2) / np.exp(rng.normal(np.log(np.log(2) / slope),
                                          (np.log(dt_hi) - np.log(dt_lo)) / (2 * 1.282), n))
     today = today or datetime.now()
     start = icpt + slope * (today - base).days
