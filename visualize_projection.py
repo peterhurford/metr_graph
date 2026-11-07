@@ -7950,7 +7950,11 @@ def _tk_render_pace_so_far(today):
          "because it was catching up; the public line dates models at release and lags. *Today's ECI growth* in the sidebar sets "
          "the model's start; its default is the thick line at the latest model."))
     st.markdown("**Why this isn't METR's ~2×**")
-    st.table(_tk_pace_comparison(eci_today))
+    # Markdown, not st.table: st.table caps a text cell's width, wrapping the
+    # long first column while the table still fills the page.
+    t = _tk_pace_comparison(eci_today)
+    st.markdown("| What is measured | Points a year | Ratio |\n|---|--:|--:|\n" + "\n".join(
+        f"| {w} | {p} | {r} |" for w, p, r in zip(*t.values())))
     _fn_caption(
         "METR's ratio and this pace answer different questions: whose models, which "
         "index, against which baseline, and whether compute's share is taken out.",
