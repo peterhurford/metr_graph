@@ -6586,3 +6586,11 @@ class TestTkPaceComparison:
         off = pts[1][0] - pts[2][0]
         assert off > 0 and pts[1][1] - pts[2][1] == pytest.approx(off, abs=0.11)
         assert pts[3][1] == pts[2][1]
+
+
+class TestTastevalPredictFan:
+    def test_median_is_the_papers_curve_and_the_band_brackets_it(self):
+        ds = [datetime(2027, 6, 1), datetime(2030, 10, 15)]
+        fan = vp._tasteval_predict_fan(ds)
+        np.testing.assert_allclose(fan[50], vp._tasteval_predict_mase(ds), atol=1e-6)
+        assert (fan[10] < fan[50]).all() and (fan[50] < fan[90]).all()

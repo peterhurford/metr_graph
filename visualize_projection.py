@@ -1384,6 +1384,26 @@ def _tasteval_predict_mase(dates):
     return _TASTEVAL_PREDICT_BASELINE - gap / (1 + np.exp(-_TASTEVAL_PREDICT_RATE * yrs))
 
 
+def _tasteval_predict_fan(dates, pcts=(10, 50, 90), n=400):
+    """Percentiles of the prediction-error curve at each date, over the
+    uncertainty `_pc_tasteval_predict_eta` gives the 90% crossing: each
+    quantile's crossing date sets the sigmoid's rate (midpoint held), so the
+    median is the paper's curve itself and the 80% band crosses the bar at the
+    card's 80% dates. A quantile grid, not random draws."""
+    mid = datetime.strptime(_TASTEVAL_PREDICT_MID, '%Y-%m-%d')
+    anchor = datetime.strptime(_TASTEVAL_PREDICT_PUBLISHED, '%Y-%m-%d')
+    lo, med, hi = ((datetime.strptime(d, '%Y-%m-%d') - anchor).days
+                   for d in _TASTEVAL_PREDICT_DATES)
+    sigma = (np.log(hi) - np.log(lo)) / (2 * 1.282)
+    z = np.array([statistics.NormalDist().inv_cdf((k + 0.5) / n) for k in range(n)])
+    lead = (anchor - mid).days
+    rates = _TASTEVAL_PREDICT_RATE * (med + lead) / (np.exp(np.log(med) + sigma * z) + lead)
+    yrs = np.array([(d - mid).days / 365.25 for d in dates])
+    gap = _TASTEVAL_PREDICT_BASELINE - _TASTEVAL_PREDICT_FLOOR
+    paths = _TASTEVAL_PREDICT_BASELINE - gap / (1 + np.exp(-rates[:, None] * yrs[None, :]))
+    return {p: np.percentile(paths, p, axis=0) for p in pcts}
+
+
 @st.cache_data
 def load_rsi_direction():
     rows = [{**r, 'date': datetime.strptime(r['date'], '%Y-%m-%d'),
@@ -8362,6 +8382,12 @@ def _render_rsi_tasteval(end_year):
     bar = (_TASTEVAL_PREDICT_BASELINE - _TASTEVAL_PREDICT_TARGET / 100
            * (_TASTEVAL_PREDICT_BASELINE - _TASTEVAL_PREDICT_FLOOR))
     fig = go.Figure()
+    fan_dates = [d for d in grid if d >= last]
+    fan = _tasteval_predict_fan(fan_dates)
+    fig.add_trace(go.Scatter(
+        x=fan_dates + fan_dates[::-1], y=list(fan[90]) + list(fan[10][::-1]),
+        fill='toself', fillcolor='rgba(52,152,219,0.18)', line=dict(width=0),
+        name='80% CI', hoverinfo='skip'))
     for past, dash, name in ((True, 'solid', "The paper's fit"),
                              (False, 'dash', "Its extrapolation")):
         idx = [i for i, d in enumerate(grid) if (d <= last) == past]
