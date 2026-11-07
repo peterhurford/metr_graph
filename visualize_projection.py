@@ -4347,7 +4347,7 @@ def _eci_tab_reset_keys(p):
         f"{p}_superexp_ppy_ci_hi", f"{p}_superexp_pos_lo",
         f"{p}_superexp_pos_hi",
         f"{p}_proj_basis", f"{p}_milestones", f"{p}_labels",
-        f"{p}_eci_metr_proj",
+        f"{p}_eci_metr_proj", f"{p}_internal",
         f"_{p}_proj_as_of", f"{p}_end_year",
         f"_{p}_seg_config",
     ]
@@ -4390,6 +4390,7 @@ def _eci_tab_defaults(p):
         f"{p}_milestones": True,
         f"{p}_labels": True,
         f"{p}_eci_metr_proj": False,
+        f"{p}_internal": False,
         f"{p}_end_year": 2027,
     }
 
@@ -5047,10 +5048,14 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         hover += _eci_gap_hover(m['eci_score'], m['date'])
         if eci_metr_proj:
             hover += _eci_metr_hover(m['eci_score'], m.get('organization', ''))
+        if m.get('internal'):
+            hover += "<br>Internal model: ECI projected from METR's AECI"
 
         if is_used:
-            color = '#e74c3c' if is_selected else '#4F8DFD'
-            sym = 'star' if is_selected else 'circle'
+            # Anthropic's internal models (the *Anthropic internal models* toggle)
+            # are orange diamonds, METR's colour for them.
+            color = '#e74c3c' if is_selected else '#e67e22' if m.get('internal') else '#4F8DFD'
+            sym = 'star' if is_selected else 'diamond' if m.get('internal') else 'circle'
             sz = 14 if is_selected else 10
             fig.add_trace(go.Scatter(
                 x=[m['date']], y=[m['eci_score']],
@@ -5393,13 +5398,43 @@ def _eci_same_frontier(a, b):
     return names(a) == names(b)
 
 
-def _eci_entity_models(label, full_window=False):
-    """Every model of a comparison entity, its frontier marked."""
+def _eci_entity_models(label, full_window=False, internal=None):
+    """Every model of a comparison entity, its frontier marked. With `internal`
+    (default: the ECI tab's *Anthropic internal models* toggle, set only while
+    that tab renders), Anthropic's internal models join any entity that has
+    Anthropic, at their projected ECI (`_eci_internal_models`)."""
     spec = _ECI_ENTITY_SPECS[label]
-    return load_eci_frontier(
+    models = load_eci_frontier(
         mtime=_eci_mtime(), country=spec.get("country"),
         orgs=tuple(spec["orgs"]) if spec.get("orgs") else None,
         full_window=full_window)
+    if internal is None:
+        internal = bool(st.session_state.get(_ECI_INTERNAL_ON, False))
+    has_anthropic = (spec.get("country") in (None, "United States of America")
+                     if "orgs" not in spec else "Anthropic" in spec["orgs"])
+    if not (internal and has_anthropic):
+        return models
+    extra = [m for m in _eci_internal_models()
+             if full_window or m['date'] >= datetime(2024, 2, 29)]
+    # Copies: the loader is cached, and re-marking the frontier mutates.
+    return _mark_eci_frontier(sorted([dict(m) for m in models] + extra,
+                                     key=lambda m: m['date']), 'eci_score')
+
+
+# Session key the ECI tab sets while it renders: its internal-models toggle.
+# Other tabs never see it on, so the Takeoff tab's public frontier is unchanged.
+_ECI_INTERNAL_ON = "_eci_internal_on"
+
+
+def _eci_internal_models():
+    """Anthropic's internal models from METR's chart, on Epoch's scale
+    (`_metr_on_eci`: AECI less Claude's AECI-ECI gap trend), dated at METR's
+    date, in `load_eci_frontier`'s shape with 'internal' True."""
+    return [{'version': r['model'], 'name': r['model'],
+             'display_name': f"{r['model']} (internal)", 'date': r['date'],
+             'eci_score': float(r['eci']), 'organization': 'Anthropic',
+             'country': 'United States of America', 'internal': True}
+            for r in _metr_on_eci() if r['kind'] == 'internal']
 
 
 def _eci_entity_data(label):
@@ -5437,6 +5472,13 @@ def render_eci():
             "Entity", _ECI_ENTITY_OPTIONS, index=_a_idx, key="eci_entity_a")
         entity_b = st.selectbox(
             "Compare to", _b_opts, index=_b_idx, key="eci_entity_b")
+        internal = st.toggle(
+            "Anthropic internal models", key="eci_internal",
+            help="Adds Anthropic's internal models (Mythos Preview, Model 2-4 and "
+                 "their early versions) from METR's October 2026 assessment, at "
+                 "projected ECI scores: METR's AECI less Claude's AECI-minus-ECI "
+                 "gap at that date. Dated when METR dates them, at first internal "
+                 "use, not at a public release.")
 
     # Keep the URL in sync (omit params at their defaults).
     if entity_a == "US best":
@@ -5449,6 +5491,14 @@ def render_eci():
         st.query_params["b"] = _ECI_ENTITY_SLUG[entity_b]
     st.query_params.pop("region", None)  # superseded by ?a= / ?b=
 
+    st.session_state[_ECI_INTERNAL_ON] = internal
+    try:
+        _render_eci_views(entity_a, entity_b)
+    finally:
+        st.session_state[_ECI_INTERNAL_ON] = False
+
+
+def _render_eci_views(entity_a, entity_b):
     st.subheader("Projection")
     if entity_b not in (_ECI_NONE_LABEL, entity_a) and _eci_same_frontier(entity_a, entity_b):
         st.info(f"{entity_a} and {entity_b} have the same frontier: every model that "
@@ -22473,7 +22523,7 @@ def _tk_density(samples, edges):
     return counts / len(samples) / np.diff(edges)
 
 
-def _tk_dist_fig(rsi, ultra, gap, today, view_end, sim_end, ultra_level=_TK_ULTRA_ECI):
+def _tk_dist_fig(rsi, ultra, gap, today, view_end, sim_end):
     """Section 4: density (top) and cumulative share (bottom) of the RSI and
     ultraintelligence dates (left, calendar, cropped to the chart year) and of
     the RSI-to-ultraintelligence gap (right, among draws reaching RSI by
@@ -22531,7 +22581,6 @@ def _tk_dist_fig(rsi, ultra, gap, today, view_end, sim_end, ultra_level=_TK_ULTR
     fig.update_yaxes(range=[0, 100], row=2, col=2)
     fig.update_xaxes(range=[today, view_end], col=1)
     fig.update_xaxes(range=[g_edges[0], g_edges[-1]], col=2)
-    fig.update_xaxes(title_text=f"Time from RSI to ECI {ultra_level:g}", row=2, col=2)
     fig.update_layout(height=560, margin=dict(l=55, r=20, t=40, b=40),
                       legend=dict(orientation="h", y=-0.12))
     return fig
@@ -24451,7 +24500,7 @@ def _render_takeoff(loading):
          f"{end_date:%Y}; one not reaching ultraintelligence by then stays in the "
          "denominator."))
     st.plotly_chart(_tf(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_end,
-                                     end_date, eci["ultra_level"])), width="stretch")
+                                     end_date)), width="stretch")
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────

@@ -174,6 +174,23 @@ class TestEciTab:
         assert heads == ["Projection", "OpenAI: months behind Frontier (any lab)",
                          "Where each lab stands"]
 
+    def test_internal_models_toggle_adds_anthropic_internal_frontier(self):
+        """Off by default; on, Anthropic's internal models (METR's AECI projected
+        onto ECI) join US best's frontier, and only while the ECI tab renders."""
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "ECI")
+        names = lambda: " ".join(str(c.proto.spec) for c in at.get("plotly_chart"))
+        assert at.toggle(key="eci_internal").value is False
+        assert "Model 4 (internal)" not in names()
+        at.toggle(key="eci_internal").set_value(True).run()
+        _assert_no_error(at, "ECI / internal on")
+        assert "Model 4 (internal)" in names()
+        assert at.query_params.get("eci_internal") in ("1", ["1"])
+        assert not at.session_state[vp._ECI_INTERNAL_ON]
+        assert all(not m.get('internal') for m in vp._eci_entity_models("US best"))
+
     def test_an_identical_frontier_draws_one_entity_not_a_flat_gap(self):
         at = _fresh_app()
         at.run()
