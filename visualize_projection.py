@@ -7978,13 +7978,13 @@ def _tk_pace_comparison(eci_today):
     anth_now = _metr_local_slope([r['date'] for r in on], [r['eci'] for r in on],
                                  [on[-1]['date']])[0][0]
     out = [
-        ("METR's AECI measure of Anthropic models (including internal) divided by Anthropic's 2024–25 AECI rate",
+        ("METR's AECI measure of Anthropic models (including internal) in 2026 divided by 2024-2025",
          f"{m['post']:.1f} vs {m['pre']:.1f}", f"{m['ratio']:.2f}×"),
-        ("Projected ECI measure of Anthropic models (including internal) divided by Anthropic's 2024–25 ECI rate",
+        ("Change from AECI to ECI",
          f"{e['post']:.1f} vs {e['pre']:.1f}", f"{e['ratio']:.2f}×"),
-        (f"Anthropic's latest climb as a pace: ({anth_now:.1f} − {c_pts:.1f}) ÷ {a_pts:.1f}",
+        (f"Change from the average since Oct 2025 to the latest climb ({anth_now:.1f}), less compute's {c_pts:.1f}",
          f"{anth_now - c_pts:.1f} vs {a_pts:.1f}", f"{(anth_now - c_pts) / a_pts:.2f}×"),
-        (f"US frontier, any lab (the model's input): ({eci_today:g} − {c_pts:.1f}) ÷ {a_pts:.1f}",
+        (f"Change from just Anthropic to all AI companies ({eci_today:g}, the model's input)",
          f"{eci_today - c_pts:.1f} vs {a_pts:.1f}", f"{(eci_today - c_pts) / a_pts:.2f}×"),
     ]
     return {"What is measured": [r[0] for r in out], "Points a year": [r[1] for r in out],
