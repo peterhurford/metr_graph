@@ -21504,7 +21504,26 @@ def _tk_al_bands(row):
     return [(cum[i] - cum[i + 1]) / 100 for i in range(5)]
 
 
-_TK_AL_HUMAN_HOURS = _tk_fit_al_hours(load_rsi_automation()[-1])
+def _tk_ladder_start_row():
+    """Today on the R&D automation index's projection: the ladder month
+    `_tk_ladder_curve` starts from (AL2 and AL3 on their fits, AL4 on its
+    trend via `_rsi_auto_start`, nested), as a row `_tk_al_bands` reads.
+    Every "today" the Takeoff model takes from the ladder is this row, so the
+    hours fitted to it put the curve's start at the speed-up setting
+    (`test_activity_readout_sums_to_the_model_and_ends_with_al5`)."""
+    rows = load_rsi_automation()
+    cur, centre, _sigma = _rsi_auto_start(rows)
+    al4 = float(_inv_logit(centre))
+    cum = {}
+    for k in ('al2', 'al3'):
+        b, icpt, sl = _rsi_auto_level_fit(rows, k)
+        cum[k] = float(_inv_logit(icpt + sl * (cur['date'] - b).days))
+    al3 = max(cum['al3'], al4)
+    al2 = max(cum['al2'], al3)
+    return {**cur, 'al1': 100.0, 'al2': 100 * al2, 'al3': 100 * al3, 'al4': 100 * al4}
+
+
+_TK_AL_HUMAN_HOURS = _tk_fit_al_hours(_tk_ladder_start_row())
 
 
 def _tk_stage_shares(row, hours=None):
@@ -21522,9 +21541,11 @@ def _tk_ladder_human_share(row, hours=None):
 
 
 def _tk_ladder_stage_starts(rows, hours=None):
-    """Today's human share per stage, from the ladder's latest month."""
+    """Today's human share per stage, from the ladder's projection today
+    (`_tk_ladder_start_row`)."""
     return {f"tk_human_{k}": round(float(100 * v), 1)
-            for k, v in zip(takeoff.WORKFLOW_KEYS, _tk_stage_shares(rows[-1], hours))}
+            for k, v in zip(takeoff.WORKFLOW_KEYS,
+                            _tk_stage_shares(_tk_ladder_start_row(), hours))}
 
 
 def _tk_ladder_stage_halvings(rows, floor, hours=None):
@@ -21653,7 +21674,7 @@ def _tk_copies_yearly(rows, params=None):
     speeding only AI's share of the work at the automation index's latest
     human share (Amdahl). It is netted out of the survey's coding fit."""
     params = params or takeoff.DEFAULTS
-    h = _tk_ladder_human_share(rows[-1])
+    h = _tk_ladder_human_share(_tk_ladder_start_row())
     s = params["ai_speed"]
     g = 2 ** (12 / params["software_months"] * params["ai_copies"])
     return float((h + (1 - h) / s) / (h + (1 - h) / (s * g)))
@@ -21664,7 +21685,7 @@ def _tk_human_calibration(accel):
     each stage's starting human share and halving time, read through the hours
     per level `_tk_fit_al_hours` fits to it."""
     rows = load_rsi_automation()
-    hours = _tk_fit_al_hours(rows[-1], accel=accel)
+    hours = _tk_fit_al_hours(_tk_ladder_start_row(), accel=accel)
     out = _tk_ladder_stage_starts(rows, hours)
     out.update(_tk_ladder_stage_halvings(rows, takeoff.DEFAULTS["human_floor"], hours))
     return out
@@ -21793,7 +21814,7 @@ def _tk_activity_path(accel):
     (hours, years, shares), shares one row per activity over the coming years
     on the automation index's projection (median AL4->AL5 gap), or None if
     the ladder will not fit."""
-    stage_hours = _tk_fit_al_hours(load_rsi_automation()[-1], accel=accel)
+    stage_hours = _tk_fit_al_hours(_tk_ladder_start_row(), accel=accel)
     stage_of = dict(zip(takeoff.WORKFLOW_KEYS, range(3)))
     prior = {k: sum(np.array(h) for _n, s, h in _TK_ACTIVITIES if s == k)
              for k in takeoff.WORKFLOW_KEYS}
@@ -21877,7 +21898,7 @@ def _tk_ladder_curves(hours, n, seed):
 def _tk_al_hours_now():
     """Hours per level at the session's human speed-up setting."""
     accel = st.session_state.get("tk_human_accel", _TK_HUMAN_ACCELERATION)
-    return _tk_fit_al_hours(load_rsi_automation()[-1], accel=float(accel))
+    return _tk_fit_al_hours(_tk_ladder_start_row(), accel=float(accel))
 
 
 def _tk_on_human_accel():
@@ -24351,12 +24372,13 @@ def _render_takeoff(loading):
          "level leaves people in each stage is assumed (table below)."))
     st.plotly_chart(_tf(_tk_to(_tk_humans_fig(result, today, load_rsi_automation(), markers),
                                view_end)), width="stretch")
-    latest = load_rsi_automation()[-1]
+    latest = _tk_ladder_start_row()
     hours = _tk_al_hours_now()
     accel = float(st.session_state["tk_human_accel"])
     st.markdown("**Where today's human share comes from**")
     _fn_caption(
-        f"The R&D automation index's {latest['date']:%B %Y} mix of tasks, times the human "
+        f"The R&D automation index's mix of tasks on its trend at {latest['date']:%B %Y}, "
+        "its latest rated month, times the human "
         f"time each level still takes: people at {1 / _tk_ladder_human_share(latest, hours):.2f}"
         "\u00d7 their unassisted speed.",
         ("human time each level still takes",

@@ -263,7 +263,8 @@ researcher's total; AL0 sums are `takeoff.WORKFLOW_WEIGHTS`, 20/70/10,
 `test_stages_are_their_activities`; at AL3 writing code goes to 0 and directing and
 reviewing AI's work peaks, `test_al3_moves_time_from_writing_code_to_directing_ai`),
 raised to one common power by
-`_tk_fit_al_hours` so the stage-weighted mix gives `tk_human_accel` (default 1.7×, from
+`_tk_fit_al_hours` so the stage-weighted mix on the index's trend today
+(`_tk_ladder_start_row`, where the ladder curve starts) gives `tk_human_accel` (default 1.7×, from
 Peter's conversations with researchers; *Human research speed-up today*), ends fixed.
 Direction keeps the most hours at every level short of AL5
 (`test_people_keep_directing_until_al5`). Changing it resets each stage's starting

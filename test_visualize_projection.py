@@ -6353,9 +6353,7 @@ class TestTakeoffHumanSpeedup:
         np.testing.assert_allclose(np.array(hours).sum(axis=0),
                                    vp.takeoff.WORKFLOW_WEIGHTS @ stage, atol=1e-12)
         total = shares.sum(axis=0)
-        # The hours are fitted to the latest rated month; the curve starts on
-        # the AL4 trend, which sits above that month, so a little lower.
-        assert total[0] == pytest.approx(1 / vp._TK_HUMAN_ACCELERATION, abs=0.03)
+        assert total[0] == pytest.approx(1 / vp._TK_HUMAN_ACCELERATION, abs=0.005)
         assert (np.diff(total) <= 1e-12).all() and total[-1] < 0.01
         names = [a[0] for a in vp._TK_ACTIVITIES]
         direction = shares[names.index("High-level direction")]
@@ -6422,12 +6420,14 @@ class TestTakeoffDirectionCurve:
 class TestTakeoffRsiCalibration:
     """Takeoff defaults read off RSI data rather than set by hand."""
 
-    def test_stage_starts_match_the_ladders_latest_month(self):
+    def test_stage_starts_match_the_ladders_trend_today(self):
         rows = vp.load_rsi_automation()
         starts = vp._tk_ladder_stage_starts(rows)
         keys = [f"tk_human_{k}" for k in vp.takeoff.WORKFLOW_KEYS]
         mean = np.array([starts[k] for k in keys]) @ vp.takeoff.WORKFLOW_WEIGHTS
-        assert mean == pytest.approx(100 * vp._tk_ladder_human_share(rows[-1]), abs=0.1)
+        assert mean == pytest.approx(
+            100 * vp._tk_ladder_human_share(vp._tk_ladder_start_row()), abs=0.1)
+        assert mean == pytest.approx(100 / vp._TK_HUMAN_ACCELERATION, abs=0.1)
 
     def test_ladder_human_share_falls_as_automation_climbs(self):
         shares = [vp._tk_ladder_human_share(r) for r in vp.load_rsi_automation()]
