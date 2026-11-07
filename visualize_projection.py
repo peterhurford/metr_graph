@@ -7982,8 +7982,8 @@ def _tk_pace_comparison(eci_today):
         ("METR's AECI measure of Anthropic models (including internal) in 2026 divided by 2024-2025",
          f"{m['post']:.1f} vs {m['pre']:.1f}", m['ratio']),
         ("Change from AECI to ECI", f"{e['post']:.1f} vs {e['pre']:.1f}", e['ratio']),
-        (f"Subtract compute's effect: bigger training runs add {c_pts:.1f} ECI a year, "
-         "then and now", f"{e['post'] - c_pts:.1f} vs {e_pre:.1f}",
+        (f"Subtract compute's effect: the largest training run grows {np.exp(hist):.1f}× "
+         f"each year, worth {c_pts:.1f} ECI a year with algorithms held fixed", f"{e['post'] - c_pts:.1f} vs {e_pre:.1f}",
          (e['post'] - c_pts) / e_pre),
         (f"Change from the average since Oct 2025 to the rate at the latest model "
          f"({on[-1]['model']}, {on[-1]['date']:%b %Y}), a slope weighted to the last ~6 months",
